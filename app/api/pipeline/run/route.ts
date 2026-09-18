@@ -1,18 +1,28 @@
 import { NextResponse } from "next/server";
 
 import { authorizeWorkspace } from "@/lib/auth/workspace";
+import { normalizePipelineOptions } from "@/lib/pipeline/options";
 import { runPipeline } from "@/lib/pipeline/run";
 
 export async function POST(req: Request) {
   try {
     const body = (await req.json().catch(() => ({}))) as {
       workspaceId?: string;
-      limit?: number;
-      threshold?: number;
+      limit?: unknown;
+      threshold?: unknown;
     };
     if (!body.workspaceId) {
       return NextResponse.json(
         { error: "workspaceId is required" },
+        { status: 400 },
+      );
+    }
+    let options: ReturnType<typeof normalizePipelineOptions>;
+    try {
+      options = normalizePipelineOptions(body);
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "invalid options" },
         { status: 400 },
       );
     }
@@ -25,8 +35,7 @@ export async function POST(req: Request) {
     }
     const result = await runPipeline({
       workspaceId: body.workspaceId,
-      limit: body.limit,
-      threshold: body.threshold,
+      ...options,
     });
     return NextResponse.json(result);
   } catch (err) {

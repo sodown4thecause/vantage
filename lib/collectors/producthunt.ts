@@ -1,4 +1,5 @@
 import { contentHash } from "@/lib/collectors/hash";
+import { parseValidDate } from "@/lib/collectors/date";
 import type {
   Collector,
   CollectorContext,
@@ -21,7 +22,7 @@ export const productHuntCollector: Collector = {
         platform: "producthunt",
         authorRef: p.maker ?? null,
         title: p.name,
-        postedAt: p.createdAt ? new Date(p.createdAt) : null,
+        postedAt: parseValidDate(p.createdAt),
         contentMd: body,
         contentHash: contentHash("producthunt", p.url, body),
         rawSnapshotRef: `ph:${p.id}`,

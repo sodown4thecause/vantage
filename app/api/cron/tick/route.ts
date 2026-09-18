@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
+import { mapWithConcurrency } from "@/lib/async/map-with-concurrency";
 import { collectorsByType } from "@/lib/collectors/registry";
 import { runCollector } from "@/lib/collectors/run";
 import { isCronAuthorized } from "@/lib/cron/authorize";
@@ -41,45 +42,49 @@ export async function GET(req: Request) {
         .from(source)
         .where(eq(source.workspaceId, ws.id));
 
-      for (const src of sources) {
-        const collector = collectorsByType[src.type];
-        if (!collector) {
-          collectorResults.push({
-            workspaceId: ws.id,
-            sourceId: src.id,
-            type: src.type,
-            skipped: true,
-            reason: "no collector registered",
-          });
-          continue;
-        }
-        try {
-          const result = await runCollector({
-            collector,
-            workspaceId: ws.id,
-            sourceId: src.id,
-          });
-          const { error, ...publicResult } = result;
-          collectorResults.push({
-            workspaceId: ws.id,
-            ...publicResult,
-            type: src.type,
-            ...(error ? { error: "collector failed" } : {}),
-          });
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          console.error("[tick] collector failed", src.id, message);
-          collectorResults.push({
-            workspaceId: ws.id,
-            sourceId: src.id,
-            type: src.type,
-            error: "collector failed",
-            inserted: 0,
-            skipped: 0,
-            collector: collector.name,
-          });
-        }
-      }
+      const workspaceCollectorResults = await mapWithConcurrency(
+        sources,
+        4,
+        async (src) => {
+          const collector = collectorsByType[src.type];
+          if (!collector) {
+            return {
+              workspaceId: ws.id,
+              sourceId: src.id,
+              type: src.type,
+              skipped: true,
+              reason: "no collector registered",
+            };
+          }
+          try {
+            const result = await runCollector({
+              collector,
+              workspaceId: ws.id,
+              sourceId: src.id,
+            });
+            const { error, ...publicResult } = result;
+            return {
+              workspaceId: ws.id,
+              ...publicResult,
+              type: src.type,
+              ...(error ? { error: "collector failed" } : {}),
+            };
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.error("[tick] collector failed", src.id, message);
+            return {
+              workspaceId: ws.id,
+              sourceId: src.id,
+              type: src.type,
+              error: "collector failed",
+              inserted: 0,
+              skipped: 0,
+              collector: collector.name,
+            };
+          }
+        },
+      );
+      collectorResults.push(...workspaceCollectorResults);
 
       try {
         const pipe = await runPipeline({ workspaceId: ws.id });

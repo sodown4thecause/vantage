@@ -1,4 +1,5 @@
 import { contentHash } from "@/lib/collectors/hash";
+import { parseValidDate } from "@/lib/collectors/date";
 import type {
   Collector,
   CollectorContext,
@@ -29,7 +30,7 @@ export const youtubeCollector: Collector = {
         platform: "youtube",
         authorRef: c.author,
         title: c.videoTitle,
-        postedAt: c.publishedAt ? new Date(c.publishedAt) : null,
+        postedAt: parseValidDate(c.publishedAt),
         contentMd: body,
         contentHash: contentHash("youtube", urlCanonical, body),
         rawSnapshotRef: `yt:${c.id}`,

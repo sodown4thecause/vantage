@@ -4,19 +4,18 @@ import { getDb } from "@/lib/db/client";
 import { document, lead } from "@/lib/db/schema";
 import {
   classifyIntent,
-  DEFAULT_LEAD_THRESHOLD,
   shouldCreateLead,
 } from "@/lib/pipeline/intent-ladder";
 import { normalizeDocuments } from "@/lib/pipeline/normalize";
+import { normalizePipelineOptions } from "@/lib/pipeline/options";
 
 export async function runPipeline(opts: {
   workspaceId: string;
-  limit?: number;
-  threshold?: number;
+  limit?: unknown;
+  threshold?: unknown;
 }) {
   const db = getDb();
-  const threshold = opts.threshold ?? DEFAULT_LEAD_THRESHOLD;
-  const limit = opts.limit ?? 100;
+  const { threshold, limit } = normalizePipelineOptions(opts);
 
   const docs = await db
     .select()

@@ -1,6 +1,7 @@
 import { XMLParser } from "fast-xml-parser";
 
 import { contentHash, sha256Hex } from "@/lib/collectors/hash";
+import { parseValidDate } from "@/lib/collectors/date";
 import type {
   Collector,
   CollectorContext,
@@ -112,7 +113,7 @@ export const rssCollector: Collector = {
         platform: "rss",
         authorRef: author || null,
         title: title || null,
-        postedAt: published ? new Date(published) : null,
+        postedAt: parseValidDate(published),
         contentMd: content,
         contentHash: contentHash("rss", urlCanonical, content),
         rawSnapshotRef: url,

@@ -1,4 +1,5 @@
 import { contentHash } from "@/lib/collectors/hash";
+import { parseValidDate } from "@/lib/collectors/date";
 import type {
   Collector,
   CollectorContext,
@@ -106,11 +107,9 @@ export const hnCollector: Collector = {
         `https://news.ycombinator.com/item?id=${hit.objectID}`;
       const body =
         fb?.text || hit.story_text || hit.comment_text || title || "";
-      const postedAt = hit.created_at_i
-        ? new Date(hit.created_at_i * 1000)
-        : hit.created_at
-          ? new Date(hit.created_at)
-          : null;
+      const postedAt = parseValidDate(
+        hit.created_at_i ? hit.created_at_i * 1000 : hit.created_at,
+      );
 
       documents.push({
         workspaceId: ctx.workspaceId,
