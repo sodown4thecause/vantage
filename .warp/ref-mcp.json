@@ -1,0 +1,11 @@
+{
+  "ref-plan": {
+    "url": "https://api.plan.ref.tools/mcp",
+    "headers": {
+      "x-ref-api-key": "{{REF_API_KEY}}"
+    }
+  },
+  "ref-context": {
+    "url": "https://api.ref.tools/mcp?apiKey={{REF_API_KEY}}"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "vantage-ref-worker",
+  "model_id": "auto",
+  "environment_id": "gxWqjwR1T4PADxzGeroSQ6",
+  "base_prompt": "You are a coding agent working under Ref Plans orchestration.\n\nRules:\n1. Read the assigned Ref plan/task context before coding.\n2. Implement only the scoped task; do not expand scope.\n3. Use the ref-plan MCP tools (Read, Edit, SendMessage, PrLinks) when available to report status back to the Ref orchestrator.\n4. When done or blocked, message the parent via SendMessage with a clear summary and any PR URL.\n5. Open a draft PR for reviewable work.\n6. Prefer the vantage repo sodown4thecause/vantage and keep commits focused.",
+  "mcp_servers": {
+    "ref-plan": {
+      "url": "https://api.plan.ref.tools/mcp",
+      "headers": {
+        "x-ref-api-key": "{{REF_API_KEY}}"
+      }
+    },
+    "ref-context": {
+      "url": "https://api.ref.tools/mcp?apiKey={{REF_API_KEY}}"
+    }
+  }
+}
