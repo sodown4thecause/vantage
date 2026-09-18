@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { collectorsByType } from "@/lib/collectors/registry";
 import { runCollector } from "@/lib/collectors/run";
+import { isCronAuthorized } from "@/lib/cron/authorize";
 import { getDb } from "@/lib/db/client";
 import { source, workspace } from "@/lib/db/schema";
 import { runPipeline } from "@/lib/pipeline/run";
@@ -10,19 +11,12 @@ import { runPipeline } from "@/lib/pipeline/run";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function authorize(req: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return true;
-  const header = req.headers.get("authorization");
-  return header === `Bearer ${secret}`;
-}
-
 /**
  * 3-hour tick: run every free-lane collector source, then pipeline.
  * Failures on one source are logged; other sources continue.
  */
 export async function GET(req: Request) {
-  if (!authorize(req)) {
+  if (!isCronAuthorized(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

@@ -48,9 +48,8 @@ export async function runCollector(
     };
   }
 
-  let result: CollectorResult;
   try {
-    result = await input.collector.run({
+    const result: CollectorResult = await input.collector.run({
       workspaceId: input.workspaceId,
       sourceId: input.sourceId,
       config: (row.config ?? {}) as Record<string, unknown>,
@@ -58,12 +57,66 @@ export async function runCollector(
       lastModified: row.lastModified,
       cursor: row.cursor,
     });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    let inserted = 0;
+    let skipped = 0;
+    for (const doc of result.documents) {
+      const rows = await db
+        .insert(document)
+        .values({
+          ...doc,
+          workspaceId: input.workspaceId,
+          sourceId: input.sourceId,
+        })
+        .onConflictDoNothing({
+          target: [document.workspaceId, document.contentHash],
+        })
+        .returning({ id: document.id });
+      if (rows.length) inserted += 1;
+      else skipped += 1;
+    }
+
+    const next = result.nextState ?? {};
     await db
       .update(source)
-      .set({ health: "failing", updatedAt: new Date() })
+      .set({
+        etag: next.etag === undefined ? row.etag : next.etag,
+        lastModified:
+          next.lastModified === undefined ? row.lastModified : next.lastModified,
+        cursor: next.cursor === undefined ? row.cursor : next.cursor,
+        lastPolledAt: new Date(),
+        health: "healthy",
+        updatedAt: new Date(),
+      })
       .where(eq(source.id, row.id));
+
+    return {
+      sourceId: input.sourceId,
+      collector: input.collector.name,
+      inserted,
+      skipped,
+      nextState: result.nextState,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[collector] run failed", {
+      collector: input.collector.name,
+      sourceId: input.sourceId,
+      workspaceId: input.workspaceId,
+      error: message,
+    });
+    try {
+      const now = new Date();
+      await db
+        .update(source)
+        .set({ health: "failing", lastPolledAt: now, updatedAt: now })
+        .where(eq(source.id, row.id));
+    } catch (healthErr) {
+      console.error("[collector] failed to persist source health", {
+        collector: input.collector.name,
+        sourceId: input.sourceId,
+        error: healthErr instanceof Error ? healthErr.message : String(healthErr),
+      });
+    }
     return {
       sourceId: input.sourceId,
       collector: input.collector.name,
@@ -72,46 +125,6 @@ export async function runCollector(
       error: message,
     };
   }
-
-  let inserted = 0;
-  let skipped = 0;
-  for (const doc of result.documents) {
-    const rows = await db
-      .insert(document)
-      .values({
-        ...doc,
-        workspaceId: input.workspaceId,
-        sourceId: input.sourceId,
-      })
-      .onConflictDoNothing({
-        target: [document.workspaceId, document.contentHash],
-      })
-      .returning({ id: document.id });
-    if (rows.length) inserted += 1;
-    else skipped += 1;
-  }
-
-  const next = result.nextState ?? {};
-  await db
-    .update(source)
-    .set({
-      etag: next.etag === undefined ? row.etag : next.etag,
-      lastModified:
-        next.lastModified === undefined ? row.lastModified : next.lastModified,
-      cursor: next.cursor === undefined ? row.cursor : next.cursor,
-      lastPolledAt: new Date(),
-      health: "healthy",
-      updatedAt: new Date(),
-    })
-    .where(eq(source.id, row.id));
-
-  return {
-    sourceId: input.sourceId,
-    collector: input.collector.name,
-    inserted,
-    skipped,
-    nextState: result.nextState,
-  };
 }
 
 export async function runCollectorForType(opts: {

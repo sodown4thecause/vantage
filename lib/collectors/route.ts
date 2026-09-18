@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { authorizeWorkspace } from "@/lib/auth/workspace";
 import { runCollectorForType } from "@/lib/collectors/run";
 import type { Collector, SourceType } from "@/lib/collectors/types";
 
@@ -19,6 +20,13 @@ export async function handleCollectorPost(
       return NextResponse.json(
         { error: "workspaceId is required" },
         { status: 400 },
+      );
+    }
+    const authorization = await authorizeWorkspace(body.workspaceId);
+    if (!authorization.ok) {
+      return NextResponse.json(
+        { error: authorization.error },
+        { status: authorization.status },
       );
     }
     const results = await runCollectorForType({

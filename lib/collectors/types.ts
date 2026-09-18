@@ -19,7 +19,12 @@ export type CollectorContext = {
 
 export type CollectorResult = {
   documents: NewDocument[];
-  /** Updated conditional-GET / pagination state to write back onto `source`. */
+  /**
+   * Conditional-GET / pagination state to write back onto `source`.
+   * Omitted properties and explicit `undefined` preserve the stored value;
+   * explicit `null` clears it. A conditional HTTP 304 returns no documents and
+   * echoes the current etag / lastModified validators here.
+   */
   nextState?: {
     etag?: string | null;
     lastModified?: string | null;

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { authorizeWorkspace } from "@/lib/auth/workspace";
 import { runPipeline } from "@/lib/pipeline/run";
 
 export async function POST(req: Request) {
@@ -13,6 +14,13 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "workspaceId is required" },
         { status: 400 },
+      );
+    }
+    const authorization = await authorizeWorkspace(body.workspaceId);
+    if (!authorization.ok) {
+      return NextResponse.json(
+        { error: authorization.error },
+        { status: authorization.status },
       );
     }
     const result = await runPipeline({
