@@ -37,6 +37,19 @@ function feedUrl(config: Record<string, unknown>): string {
   return url.trim();
 }
 
+function safeUrlForError(value: string): string {
+  try {
+    const parsed = new URL(value);
+    parsed.username = "";
+    parsed.password = "";
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return "[invalid feed URL]";
+  }
+}
+
 export const rssCollector: Collector = {
   name: "rss",
   async run(ctx: CollectorContext): Promise<CollectorResult> {
@@ -55,7 +68,7 @@ export const rssCollector: Collector = {
       };
     }
     if (!res.ok) {
-      throw new Error(`RSS fetch ${res.status} for ${url}`);
+      throw new Error(`RSS fetch ${res.status} for ${safeUrlForError(url)}`);
     }
 
     const xml = await res.text();

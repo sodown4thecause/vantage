@@ -2,8 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   row: null as Record<string, unknown> | null,
-  insertResults: [] as Array<Array<{ id: string }>>,
-  insertError: null as Error | null,
+  insertOutcomes: [] as Array<Array<{ id: string }> | Error>,
   updates: [] as Array<Record<string, unknown>>,
 }));
 
@@ -18,8 +17,9 @@ vi.mock("@/lib/db/client", () => ({
       values: () => ({
         onConflictDoNothing: () => ({
           returning: async () => {
-            if (state.insertError) throw state.insertError;
-            return state.insertResults.shift() ?? [];
+            const outcome = state.insertOutcomes.shift() ?? [];
+            if (outcome instanceof Error) throw outcome;
+            return outcome;
           },
         }),
       }),
@@ -57,15 +57,14 @@ const document = {
 
 beforeEach(() => {
   state.row = { ...sourceRow };
-  state.insertResults = [];
-  state.insertError = null;
+  state.insertOutcomes = [];
   state.updates = [];
   vi.restoreAllMocks();
 });
 
 describe("runCollector", () => {
   it("deduplicates atomically and preserves omitted state while clearing null", async () => {
-    state.insertResults = [[{ id: "doc-1" }], []];
+    state.insertOutcomes = [[{ id: "doc-1" }], []];
     const collector: Collector = {
       name: "test",
       run: async () => ({
@@ -90,7 +89,7 @@ describe("runCollector", () => {
   });
 
   it("logs and marks the source failing when persistence fails", async () => {
-    state.insertError = new Error("database unavailable");
+    state.insertOutcomes = [new Error("database unavailable")];
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const collector: Collector = {
       name: "test",
@@ -107,5 +106,31 @@ describe("runCollector", () => {
     expect(errorSpy).toHaveBeenCalled();
     expect(state.updates.at(-1)).toMatchObject({ health: "failing" });
     expect(state.updates.at(-1)?.lastPolledAt).toBeInstanceOf(Date);
+  });
+
+  it("reports inserts completed before a later persistence failure", async () => {
+    state.insertOutcomes = [
+      [{ id: "doc-1" }],
+      new Error("database unavailable"),
+    ];
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const collector: Collector = {
+      name: "test",
+      run: async () => ({
+        documents: [document, { ...document, contentHash: "hash-2" }],
+      }),
+    };
+
+    const result = await runCollector({
+      collector,
+      workspaceId: "workspace-1",
+      sourceId: "source-1",
+    });
+
+    expect(result).toMatchObject({
+      inserted: 1,
+      skipped: 0,
+      error: "database unavailable",
+    });
   });
 });

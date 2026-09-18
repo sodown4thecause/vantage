@@ -48,6 +48,8 @@ export async function runCollector(
     };
   }
 
+  let inserted = 0;
+  let skipped = 0;
   try {
     const result: CollectorResult = await input.collector.run({
       workspaceId: input.workspaceId,
@@ -57,8 +59,6 @@ export async function runCollector(
       lastModified: row.lastModified,
       cursor: row.cursor,
     });
-    let inserted = 0;
-    let skipped = 0;
     for (const doc of result.documents) {
       const rows = await db
         .insert(document)
@@ -120,8 +120,8 @@ export async function runCollector(
     return {
       sourceId: input.sourceId,
       collector: input.collector.name,
-      inserted: 0,
-      skipped: 0,
+      inserted,
+      skipped,
       error: message,
     };
   }

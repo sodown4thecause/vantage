@@ -26,4 +26,22 @@ describe("rssCollector conditional requests", () => {
       },
     });
   });
+
+  it("does not expose feed credentials or signed query parameters in errors", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(null, { status: 403 })),
+    );
+
+    await expect(
+      rssCollector.run({
+        workspaceId: "workspace-1",
+        sourceId: "source-1",
+        config: {
+          feedUrl:
+            "https://user:secret@example.com/private.xml?token=signed#fragment",
+        },
+      }),
+    ).rejects.toThrow("RSS fetch 403 for https://example.com/private.xml");
+  });
 });
