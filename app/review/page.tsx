@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { authorizeWorkspace } from "@/lib/auth/workspace";
 import { listReviewQueue } from "@/lib/pipeline/run";
 
 export const dynamic = "force-dynamic";
@@ -29,9 +30,18 @@ export default async function ReviewPage({
   let rows: Awaited<ReturnType<typeof listReviewQueue>> = [];
   let error: string | null = null;
   try {
-    rows = await listReviewQueue(workspaceId);
+    const authorization = await authorizeWorkspace(workspaceId);
+    if (!authorization.ok) {
+      error = "Unable to load this review queue.";
+    } else {
+      rows = await listReviewQueue(workspaceId);
+    }
   } catch (err) {
-    error = err instanceof Error ? err.message : String(err);
+    console.error("[review page] failed to load queue", {
+      workspaceId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    error = "Unable to load this review queue.";
   }
 
   return (

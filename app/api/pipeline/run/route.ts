@@ -31,6 +31,10 @@ export async function POST(req: Request) {
     return NextResponse.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[pipeline route] request failed", { error: message });
+    return NextResponse.json(
+      { error: "pipeline request failed" },
+      { status: 500 },
+    );
   }
 }

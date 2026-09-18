@@ -59,7 +59,13 @@ export async function GET(req: Request) {
             workspaceId: ws.id,
             sourceId: src.id,
           });
-          collectorResults.push({ workspaceId: ws.id, ...result, type: src.type });
+          const { error, ...publicResult } = result;
+          collectorResults.push({
+            workspaceId: ws.id,
+            ...publicResult,
+            type: src.type,
+            ...(error ? { error: "collector failed" } : {}),
+          });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           console.error("[tick] collector failed", src.id, message);
@@ -67,7 +73,7 @@ export async function GET(req: Request) {
             workspaceId: ws.id,
             sourceId: src.id,
             type: src.type,
-            error: message,
+            error: "collector failed",
             inserted: 0,
             skipped: 0,
             collector: collector.name,
@@ -81,7 +87,7 @@ export async function GET(req: Request) {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error("[tick] pipeline failed", ws.id, message);
-        pipelineResults.push({ workspaceId: ws.id, error: message });
+        pipelineResults.push({ workspaceId: ws.id, error: "pipeline failed" });
       }
     }
 
@@ -94,7 +100,8 @@ export async function GET(req: Request) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[tick] request failed", message);
+    return NextResponse.json({ error: "cron tick failed" }, { status: 500 });
   }
 }
 

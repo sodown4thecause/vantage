@@ -36,12 +36,22 @@ export async function handleCollectorPost(
       sourceType,
     });
     const failed = results.filter((r) => r.error);
+    const publicResults = results.map(({ error, ...result }) =>
+      error ? { ...result, error: "collector failed" } : result,
+    );
     return NextResponse.json(
-      { results },
+      { results: publicResults },
       { status: failed.length && failed.length === results.length ? 502 : 200 },
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[collector route] request failed", {
+      collector: collector.name,
+      error: message,
+    });
+    return NextResponse.json(
+      { error: "collector request failed" },
+      { status: 500 },
+    );
   }
 }
