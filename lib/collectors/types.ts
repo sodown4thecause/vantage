@@ -31,3 +31,13 @@ export interface Collector {
   readonly name: string;
   run(ctx: CollectorContext): Promise<CollectorResult>;
 }
+
+export type SourceType =
+  | "hn"
+  | "rss"
+  | "substack"
+  | "reddit"
+  | "web_search"
+  | "producthunt"
+  | "youtube"
+  | "other";

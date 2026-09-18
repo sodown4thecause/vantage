@@ -36,6 +36,21 @@ Tables in `lib/db/schema.ts`:
 | `document` | Normalized collected content |
 | `lead` | Scored opportunities tied to documents |
 
+## Collectors & pipeline
+
+| Route | Purpose |
+|-------|---------|
+| `POST /api/collectors/hn` | Hacker News (Algolia + Firebase) |
+| `POST /api/collectors/rss` | RSS/Atom with conditional GET |
+| `POST /api/collectors/substack` | Substack publication feed |
+| `POST /api/collectors/producthunt` | Product Hunt (fixture without token) |
+| `POST /api/collectors/youtube` | YouTube comments (fixture without key) |
+| `POST /api/pipeline/run` | Normalize + intent ladder → leads |
+| `GET /api/cron/tick` | 3-hour Vercel cron: all sources + pipeline |
+| `/review?workspaceId=` | Lead review UI |
+
+Body for collector routes: `{ "workspaceId": "...", "sourceId": "..." }`.
+
 ## Scripts
 
 | Script | Description |

@@ -23,6 +23,8 @@ export const sourceTypeEnum = pgEnum("source_type", [
   "substack",
   "reddit",
   "web_search",
+  "producthunt",
+  "youtube",
   "other",
 ]);
 
