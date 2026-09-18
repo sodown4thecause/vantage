@@ -12,6 +12,8 @@ const globalForDb = globalThis as unknown as {
 /**
  * Shared Drizzle client. Requires DATABASE_URL (Neon pooled connection string).
  * Lazily constructed so `next build` / typecheck work without secrets.
+ * The neon-http driver does not support interactive transactions; use atomic
+ * statements or `db.batch()` when several statements must be submitted together.
  */
 export function getDb(): VantageDb {
   if (globalForDb.vantageDb) {

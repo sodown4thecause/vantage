@@ -3,6 +3,7 @@
 import { auth } from "@/lib/auth/server";
 import { getDb } from "@/lib/db/client";
 import { document, lead, workspace } from "@/lib/db/schema";
+import type { SourcePlatform } from "@/lib/db/schema";
 
 /**
  * Creates a workspace row for the signed-in Neon Auth user.
@@ -31,7 +32,7 @@ export async function createWorkspaceForCurrentUser(name: string) {
 export async function insertDocumentAndLead(input: {
   workspaceId: string;
   urlCanonical: string;
-  platform: string;
+  platform: SourcePlatform;
   contentMd: string;
   contentHash: string;
   reason?: string;

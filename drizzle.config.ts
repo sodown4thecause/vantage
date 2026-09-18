@@ -5,7 +5,7 @@ export default defineConfig({
   schema: "./lib/db/schema.ts",
   out: "./drizzle",
   dialect: "postgresql",
-  schemaFilter: ["public", "neon_auth"],
+  schemaFilter: ["public"],
   dbCredentials: {
     url: process.env.DATABASE_URL!,
   },

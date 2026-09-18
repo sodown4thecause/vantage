@@ -1,6 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
 
-import { contentHash } from "@/lib/collectors/hash";
+import { contentHash, sha256Hex } from "@/lib/collectors/hash";
 import type {
   Collector,
   CollectorContext,
@@ -91,16 +91,17 @@ export const rssCollector: Collector = {
 
       if (!link && !title) continue;
 
+      const urlCanonical = link || `${url}#${sha256Hex(`${title}\n${content}`)}`;
       documents.push({
         workspaceId: ctx.workspaceId,
         sourceId: ctx.sourceId,
-        urlCanonical: link || `${url}#${contentHash([title, content])}`,
+        urlCanonical,
         platform: "rss",
         authorRef: author || null,
         title: title || null,
         postedAt: published ? new Date(published) : null,
         contentMd: content,
-        contentHash: contentHash(["rss", url, link, title, content]),
+        contentHash: contentHash("rss", urlCanonical, content),
         rawSnapshotRef: url,
         metadata: { feedUrl: url },
       });

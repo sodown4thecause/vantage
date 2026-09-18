@@ -40,13 +40,11 @@ export const substackCollector: Collector = {
       documents: result.documents.map((d) => ({
         ...d,
         platform: "substack",
-        contentHash: contentHash([
+        contentHash: contentHash(
           "substack",
-          feedUrl,
           d.urlCanonical,
-          d.title,
-          d.contentMd,
-        ]),
+          d.contentMd ?? "",
+        ),
         metadata: { ...(d.metadata ?? {}), feedUrl, kind: "post" },
       })),
     };

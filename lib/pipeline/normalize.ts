@@ -1,4 +1,4 @@
-import type { Document } from "@/lib/db/schema";
+import type { DocumentRecord } from "@/lib/db/schema";
 
 export type NormalizedDocument = {
   id: string;
@@ -13,7 +13,9 @@ export type NormalizedDocument = {
 };
 
 /** Strip HTML leftovers, collapse whitespace, drop empty docs. */
-export function normalizeDocument(doc: Document): NormalizedDocument | null {
+export function normalizeDocument(
+  doc: DocumentRecord,
+): NormalizedDocument | null {
   const raw = [doc.title ?? "", doc.contentMd ?? ""].join("\n");
   const text = raw
     .replace(/<[^>]+>/g, " ")
@@ -37,7 +39,9 @@ export function normalizeDocument(doc: Document): NormalizedDocument | null {
   };
 }
 
-export function normalizeDocuments(docs: Document[]): NormalizedDocument[] {
+export function normalizeDocuments(
+  docs: DocumentRecord[],
+): NormalizedDocument[] {
   const out: NormalizedDocument[] = [];
   const seen = new Set<string>();
   for (const d of docs) {

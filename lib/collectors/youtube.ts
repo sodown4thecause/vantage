@@ -21,16 +21,17 @@ export const youtubeCollector: Collector = {
         "",
         c.text,
       ].join("\n");
+      const urlCanonical = `${c.videoUrl}&lc=${c.id}`;
       return {
         workspaceId: ctx.workspaceId,
         sourceId: ctx.sourceId,
-        urlCanonical: `${c.videoUrl}&lc=${c.id}`,
+        urlCanonical,
         platform: "youtube",
         authorRef: c.author,
         title: c.videoTitle,
         postedAt: c.publishedAt ? new Date(c.publishedAt) : null,
         contentMd: body,
-        contentHash: contentHash(["youtube", c.id, c.text]),
+        contentHash: contentHash("youtube", urlCanonical, body),
         rawSnapshotRef: `yt:${c.id}`,
         metadata: {
           videoId: c.videoId,

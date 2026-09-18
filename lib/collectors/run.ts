@@ -76,26 +76,19 @@ export async function runCollector(
   let inserted = 0;
   let skipped = 0;
   for (const doc of result.documents) {
-    const existing = await db
-      .select({ id: document.id })
-      .from(document)
-      .where(
-        and(
-          eq(document.workspaceId, input.workspaceId),
-          eq(document.contentHash, doc.contentHash),
-        ),
-      )
-      .limit(1);
-    if (existing.length) {
-      skipped += 1;
-      continue;
-    }
-    await db.insert(document).values({
-      ...doc,
-      workspaceId: input.workspaceId,
-      sourceId: input.sourceId,
-    });
-    inserted += 1;
+    const rows = await db
+      .insert(document)
+      .values({
+        ...doc,
+        workspaceId: input.workspaceId,
+        sourceId: input.sourceId,
+      })
+      .onConflictDoNothing({
+        target: [document.workspaceId, document.contentHash],
+      })
+      .returning({ id: document.id });
+    if (rows.length) inserted += 1;
+    else skipped += 1;
   }
 
   const next = result.nextState ?? {};

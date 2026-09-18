@@ -23,7 +23,7 @@ export const productHuntCollector: Collector = {
         title: p.name,
         postedAt: p.createdAt ? new Date(p.createdAt) : null,
         contentMd: body,
-        contentHash: contentHash(["producthunt", p.id, p.url, body]),
+        contentHash: contentHash("producthunt", p.url, body),
         rawSnapshotRef: `ph:${p.id}`,
         metadata: {
           votesCount: p.votesCount,

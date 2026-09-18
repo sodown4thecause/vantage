@@ -23,10 +23,19 @@ export const sourceTypeEnum = pgEnum("source_type", [
   "substack",
   "reddit",
   "web_search",
+  "other",
   "producthunt",
   "youtube",
-  "other",
 ]);
+
+export const sourcePlatformValues = [
+  "hn",
+  "rss",
+  "substack",
+  "producthunt",
+  "youtube",
+] as const;
+export type SourcePlatform = (typeof sourcePlatformValues)[number];
 
 export const sourceLaneEnum = pgEnum("source_lane", [
   "free",
@@ -55,7 +64,7 @@ export const workspace = pgTable("workspace", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
   /** Owning Neon Auth user id (neon_auth.user.id) once Auth is provisioned. */
-  ownerUserId: uuid("owner_user_id"),
+  ownerUserId: text("owner_user_id"),
   plan: text("plan").notNull().default("free"),
   budgetUsdMonth: numeric("budget_usd_month", { precision: 12, scale: 2 })
     .notNull()
@@ -117,7 +126,7 @@ export const document = pgTable(
       onDelete: "set null",
     }),
     urlCanonical: text("url_canonical").notNull(),
-    platform: text("platform").notNull(),
+    platform: text("platform").$type<SourcePlatform>().notNull(),
     authorRef: text("author_ref"),
     title: text("title"),
     postedAt: timestamp("posted_at", { withTimezone: true }),
@@ -167,7 +176,7 @@ export type Workspace = typeof workspace.$inferSelect;
 export type NewWorkspace = typeof workspace.$inferInsert;
 export type Source = typeof source.$inferSelect;
 export type NewSource = typeof source.$inferInsert;
-export type Document = typeof document.$inferSelect;
+export type DocumentRecord = typeof document.$inferSelect;
 export type NewDocument = typeof document.$inferInsert;
 export type Lead = typeof lead.$inferSelect;
 export type NewLead = typeof lead.$inferInsert;

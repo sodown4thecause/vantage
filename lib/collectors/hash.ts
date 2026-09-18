@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
 
-export function contentHash(parts: Array<string | null | undefined>): string {
-  const h = createHash("sha256");
-  for (const p of parts) {
-    h.update(p ?? "");
-    h.update("\0");
-  }
-  return h.digest("hex");
+export function sha256Hex(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+export function contentHash(
+  platform: string,
+  urlCanonical: string,
+  contentMd: string,
+): string {
+  return sha256Hex(`${platform}\n${urlCanonical}\n${contentMd}`);
 }
