@@ -1,134 +1,203 @@
 import { contentHash } from "@/lib/collectors/hash";
-import { parseValidDate } from "@/lib/collectors/date";
-import type {
-  Collector,
-  CollectorContext,
-  CollectorResult,
-} from "@/lib/collectors/types";
+import type { Collector, CollectorContext, CollectorResult } from "@/lib/collectors/types";
 import type { NewDocument } from "@/lib/db/schema";
 
 const ALGOLIA = "https://hn.algolia.com/api/v1/search_by_date";
 const FIREBASE = "https://hacker-news.firebaseio.com/v0/item";
+const ALGOLIA_MAX_HITS = 1_000;
+const ALGOLIA_HITS_PER_PAGE = 100;
 
 type AlgoliaHit = {
   objectID: string;
   title?: string;
-  url?: string | null;
-  story_text?: string | null;
-  comment_text?: string | null;
   author?: string;
-  created_at_i?: number;
-  created_at?: string;
+};
+
+type AlgoliaResponse = {
+  hits?: AlgoliaHit[];
+  nbHits?: number;
+  nbPages?: number;
+};
+
+type FirebaseStory = {
+  id?: number;
+  type?: string;
+  by?: string;
+  time?: number;
+  title?: string;
+  text?: string;
+  url?: string;
+  deleted?: boolean;
+  dead?: boolean;
 };
 
 function queriesFromConfig(config: Record<string, unknown>): string[] {
-  if (Array.isArray(config.queries)) {
-    return config.queries.map(String).filter(Boolean);
+  if (!Array.isArray(config.queries)) {
+    throw new Error("HN collector requires config.queries");
   }
-  if (typeof config.query === "string" && config.query.trim()) {
-    return [config.query.trim()];
+
+  const queries = config.queries
+    .filter((query): query is string => typeof query === "string")
+    .map((query) => query.trim())
+    .filter(Boolean);
+
+  if (!queries.length) {
+    throw new Error("HN collector requires at least one query");
   }
-  return ["Show HN"];
+
+  return queries;
 }
 
 async function fetchAlgoliaPage(
   query: string,
-  numericFilters: string,
+  start: number,
+  end: number,
   page: number,
-): Promise<{ hits: AlgoliaHit[]; nbPages: number }> {
+): Promise<Required<AlgoliaResponse>> {
   const url = new URL(ALGOLIA);
   url.searchParams.set("query", query);
   url.searchParams.set("tags", "story");
-  url.searchParams.set("hitsPerPage", "100");
+  url.searchParams.set("hitsPerPage", String(ALGOLIA_HITS_PER_PAGE));
   url.searchParams.set("page", String(page));
-  url.searchParams.set("numericFilters", numericFilters);
-  const res = await fetch(url, { next: { revalidate: 0 } });
-  if (!res.ok) {
-    throw new Error(`Algolia HN error ${res.status}`);
+  url.searchParams.set(
+    "numericFilters",
+    `created_at_i>=${start},created_at_i<=${end}`,
+  );
+
+  const response = await fetch(url, { next: { revalidate: 0 } });
+  if (!response.ok) {
+    throw new Error(`Algolia HN error ${response.status}`);
   }
-  const data = (await res.json()) as {
-    hits: AlgoliaHit[];
-    nbPages?: number;
+
+  const data = (await response.json()) as AlgoliaResponse;
+  return {
+    hits: Array.isArray(data.hits) ? data.hits : [],
+    nbHits: typeof data.nbHits === "number" ? data.nbHits : 0,
+    nbPages: typeof data.nbPages === "number" ? data.nbPages : 0,
   };
-  return { hits: data.hits ?? [], nbPages: data.nbPages ?? 1 };
 }
 
-async function enrichFirebase(id: string): Promise<{
-  text?: string;
-  url?: string;
-  title?: string;
-} | null> {
-  try {
-    const res = await fetch(`${FIREBASE}/${id}.json`, {
-      next: { revalidate: 0 },
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as { text?: string; url?: string; title?: string };
-  } catch {
-    return null;
+async function fetchAlgoliaRange(
+  query: string,
+  start: number,
+  end: number,
+): Promise<AlgoliaHit[]> {
+  const firstPage = await fetchAlgoliaPage(query, start, end, 0);
+  const isAtCap =
+    firstPage.nbHits >= ALGOLIA_MAX_HITS || firstPage.nbPages >= 10;
+
+  if (isAtCap && start < end) {
+    const midpoint = Math.floor((start + end) / 2);
+    const earlier = await fetchAlgoliaRange(query, start, midpoint);
+    const later = await fetchAlgoliaRange(query, midpoint + 1, end);
+    return [...earlier, ...later];
   }
+
+  const hits = [...firstPage.hits];
+  const pageCount = Math.min(firstPage.nbPages, 10);
+  for (let page = 1; page < pageCount; page += 1) {
+    const nextPage = await fetchAlgoliaPage(query, start, end, page);
+    hits.push(...nextPage.hits);
+  }
+  return hits;
+}
+
+function isFirebaseStory(item: FirebaseStory | null): item is Required<
+  Pick<FirebaseStory, "id" | "type" | "time" | "title">
+> &
+  FirebaseStory {
+  return Boolean(
+    item &&
+      !item.deleted &&
+      !item.dead &&
+      item.type === "story" &&
+      Number.isInteger(item.id) &&
+      typeof item.time === "number" &&
+      item.time > 0 &&
+      typeof item.title === "string" &&
+      item.title.trim(),
+  );
+}
+
+async function fetchFirebaseStory(id: string): Promise<FirebaseStory | null> {
+  const response = await fetch(`${FIREBASE}/${id}.json`, {
+    next: { revalidate: 0 },
+  });
+  if (!response.ok) {
+    throw new Error(`Firebase HN error ${response.status}`);
+  }
+
+  const data = (await response.json()) as FirebaseStory | null;
+  return isFirebaseStory(data) ? data : null;
+}
+
+function contentFromStory(story: FirebaseStory): string {
+  const title = story.title?.trim() ?? "";
+  const body = story.text
+    ?.replace(/<br\s*\/?>(\r?\n)?/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .trim();
+  return body ? `# ${title}\n\n${body}` : `# ${title}`;
+}
+
+function canonicalUrl(id: string, url: string | undefined): string {
+  if (url) {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        return parsed.toString();
+      }
+    } catch {
+      // An invalid external URL falls back to the durable HN item URL.
+    }
+  }
+  return `https://news.ycombinator.com/item?id=${id}`;
+}
+
+function cursorStart(cursor: string | null | undefined, now: number): number {
+  const parsed = Number(cursor);
+  if (Number.isInteger(parsed) && parsed >= 0 && parsed <= now) {
+    return parsed;
+  }
+  return now - 24 * 60 * 60;
 }
 
 export const hnCollector: Collector = {
   name: "hn",
   async run(ctx: CollectorContext): Promise<CollectorResult> {
-    const queries = queriesFromConfig(ctx.config);
-    const lookbackHours = Number(ctx.config.lookbackHours ?? 24);
-    const since =
-      Number(ctx.cursor) ||
-      Math.floor(Date.now() / 1000) - lookbackHours * 3600;
-    const until = Math.floor(Date.now() / 1000);
-    const numericFilters = `created_at_i>${since},created_at_i<=${until}`;
+    const now = Math.floor(Date.now() / 1_000);
+    const start = cursorStart(ctx.cursor, now);
+    const hitsById = new Map<string, AlgoliaHit>();
 
-    const byId = new Map<string, AlgoliaHit>();
-
-    // Algolia caps ~1000 hits/query — page until nbPages or hard cap.
-    for (const q of queries) {
-      let page = 0;
-      let nbPages = 1;
-      while (page < nbPages && page < 10) {
-        const batch = await fetchAlgoliaPage(q, numericFilters, page);
-        nbPages = batch.nbPages;
-        for (const hit of batch.hits) {
-          if (hit.objectID) byId.set(hit.objectID, hit);
-        }
-        page += 1;
-        if (batch.hits.length === 0) break;
+    for (const query of queriesFromConfig(ctx.config)) {
+      for (const hit of await fetchAlgoliaRange(query, start, now)) {
+        if (hit.objectID) hitsById.set(hit.objectID, hit);
       }
     }
 
     const documents: NewDocument[] = [];
-    for (const hit of byId.values()) {
-      const fb = await enrichFirebase(hit.objectID);
-      const title = fb?.title ?? hit.title ?? `(hn ${hit.objectID})`;
-      const url =
-        fb?.url ||
-        hit.url ||
-        `https://news.ycombinator.com/item?id=${hit.objectID}`;
-      const body =
-        fb?.text || hit.story_text || hit.comment_text || title || "";
-      const postedAt = parseValidDate(
-        hit.created_at_i ? hit.created_at_i * 1000 : hit.created_at,
-      );
+    for (const [id, hit] of hitsById) {
+      const story = await fetchFirebaseStory(id);
+      if (!story) continue;
 
+      const urlCanonical = canonicalUrl(id, story.url);
+      const contentMd = contentFromStory(story);
       documents.push({
         workspaceId: ctx.workspaceId,
         sourceId: ctx.sourceId,
-        urlCanonical: url,
+        urlCanonical,
         platform: "hn",
-        authorRef: hit.author ?? null,
-        title,
-        postedAt,
-        contentMd: body,
-        contentHash: contentHash("hn", url, body),
-        rawSnapshotRef: `hn:${hit.objectID}`,
-        metadata: { objectID: hit.objectID, querySource: "algolia" },
+        authorRef: story.by ?? hit.author ?? null,
+        title: story.title.trim(),
+        postedAt: new Date(story.time * 1_000),
+        contentMd,
+        contentHash: contentHash("hn", urlCanonical, contentMd),
+        rawSnapshotRef: `hn:${id}`,
+        metadata: { objectID: id, querySource: "algolia" },
       });
     }
 
-    return {
-      documents,
-      nextState: { cursor: String(until) },
-    };
+    return { documents, nextState: { cursor: String(now) } };
   },
 };

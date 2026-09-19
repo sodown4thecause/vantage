@@ -1,0 +1,17 @@
+{
+  "algoliaHit": {
+    "objectID": "123",
+    "title": "Algolia title",
+    "author": "algolia-user",
+    "created_at_i": 1700000000
+  },
+  "firebaseStory": {
+    "id": 123,
+    "type": "story",
+    "by": "firebase-user",
+    "time": 1700000001,
+    "title": "Firebase title",
+    "text": "Full <b>story</b> body",
+    "url": "https://example.com/full-story"
+  }
+}
