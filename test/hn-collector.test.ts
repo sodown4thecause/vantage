@@ -41,6 +41,23 @@ afterEach(() => {
 });
 
 describe("hnCollector", () => {
+  it.each([
+    ["non-string", ["launch", 42]],
+    ["blank", ["launch", "  "]],
+  ])("rejects a query configuration containing a %s entry", async (_kind, queries) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Response.json({ hits: [], nbHits: 0, nbPages: 0 })),
+    );
+
+    await expect(
+      hnCollector.run({
+        ...context,
+        config: { queries },
+      }),
+    ).rejects.toThrow("HN collector requires config.queries to contain only non-empty strings");
+  });
+
   it("normalizes a validated Firebase story with full item content", async () => {
     vi.stubGlobal(
       "fetch",
@@ -75,9 +92,10 @@ describe("hnCollector", () => {
   });
 
   it("skips deleted, dead, missing, and malformed Firebase items", async () => {
-    const hits = ["deleted", "dead", "missing", "invalid", "valid"].map(
-      (objectID) => ({ ...fixture.algoliaHit, objectID }),
-    );
+    const hits = [124, 125, 126, 127, 123].map((objectID) => ({
+      ...fixture.algoliaHit,
+      objectID: String(objectID),
+    }));
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: URL | string) => {
@@ -85,10 +103,10 @@ describe("hnCollector", () => {
         if (url.hostname === "hn.algolia.com") {
           return Response.json({ hits, nbHits: hits.length, nbPages: 1 });
         }
-        if (url.pathname.endsWith("deleted.json")) return Response.json({ deleted: true });
-        if (url.pathname.endsWith("dead.json")) return Response.json({ ...fixture.firebaseStory, dead: true });
-        if (url.pathname.endsWith("missing.json")) return Response.json(null);
-        if (url.pathname.endsWith("invalid.json")) return Response.json({ id: "invalid", type: "story" });
+        if (url.pathname.endsWith("/124.json")) return Response.json({ deleted: true });
+        if (url.pathname.endsWith("/125.json")) return Response.json({ ...fixture.firebaseStory, dead: true });
+        if (url.pathname.endsWith("/126.json")) return Response.json(null);
+        if (url.pathname.endsWith("/127.json")) return Response.json({ id: "invalid", type: "story" });
         return Response.json(fixture.firebaseStory);
       }),
     );
@@ -96,7 +114,34 @@ describe("hnCollector", () => {
     const result = await hnCollector.run(context);
 
     expect(result.documents).toHaveLength(1);
-    expect(result.documents[0]).toMatchObject({ rawSnapshotRef: "hn:valid" });
+    expect(result.documents[0]).toMatchObject({ rawSnapshotRef: "hn:123" });
+  });
+
+  it.each([
+    ["text", null],
+    ["url", 42],
+    ["by", 42],
+    ["matching id", 456],
+  ])("skips a Firebase story with an invalid %s field", async (field, value) => {
+    const hit = { ...fixture.algoliaHit, objectID: "123" };
+    const story =
+      field === "matching id"
+        ? { ...fixture.firebaseStory, id: value }
+        : { ...fixture.firebaseStory, [field]: value };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: URL | string) => {
+        const url = new URL(String(input));
+        if (url.hostname === "hn.algolia.com") {
+          return Response.json({ hits: [hit], nbHits: 1, nbPages: 1 });
+        }
+        return Response.json(story);
+      }),
+    );
+
+    const result = await hnCollector.run(context);
+
+    expect(result.documents).toEqual([]);
   });
 
   it("splits an Algolia range before the 1,000-hit cap can omit stories", async () => {

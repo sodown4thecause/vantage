@@ -20,15 +20,13 @@ type AlgoliaResponse = {
 };
 
 type FirebaseStory = {
-  id?: number;
-  type?: string;
+  id: number;
+  type: "story";
   by?: string;
-  time?: number;
-  title?: string;
+  time: number;
+  title: string;
   text?: string;
   url?: string;
-  deleted?: boolean;
-  dead?: boolean;
 };
 
 function queriesFromConfig(config: Record<string, unknown>): string[] {
@@ -36,16 +34,18 @@ function queriesFromConfig(config: Record<string, unknown>): string[] {
     throw new Error("HN collector requires config.queries");
   }
 
-  const queries = config.queries
-    .filter((query): query is string => typeof query === "string")
-    .map((query) => query.trim())
-    .filter(Boolean);
-
-  if (!queries.length) {
-    throw new Error("HN collector requires at least one query");
+  if (
+    !config.queries.length ||
+    config.queries.some(
+      (query) => typeof query !== "string" || !query.trim(),
+    )
+  ) {
+    throw new Error(
+      "HN collector requires config.queries to contain only non-empty strings",
+    );
   }
 
-  return queries;
+  return config.queries.map((query) => query.trim());
 }
 
 async function fetchAlgoliaPage(
@@ -102,20 +102,29 @@ async function fetchAlgoliaRange(
   return hits;
 }
 
-function isFirebaseStory(item: FirebaseStory | null): item is Required<
-  Pick<FirebaseStory, "id" | "type" | "time" | "title">
-> &
-  FirebaseStory {
+function isFirebaseStory(item: unknown): item is FirebaseStory {
+  if (!item || typeof item !== "object" || Array.isArray(item)) {
+    return false;
+  }
+
+  const candidate = item as Record<string, unknown>;
   return Boolean(
-    item &&
-      !item.deleted &&
-      !item.dead &&
-      item.type === "story" &&
-      Number.isInteger(item.id) &&
-      typeof item.time === "number" &&
-      item.time > 0 &&
-      typeof item.title === "string" &&
-      item.title.trim(),
+    candidate.deleted !== true &&
+      candidate.dead !== true &&
+      (candidate.deleted === undefined || typeof candidate.deleted === "boolean") &&
+      (candidate.dead === undefined || typeof candidate.dead === "boolean") &&
+      candidate.type === "story" &&
+      typeof candidate.id === "number" &&
+      Number.isSafeInteger(candidate.id) &&
+      candidate.id > 0 &&
+      typeof candidate.time === "number" &&
+      Number.isSafeInteger(candidate.time) &&
+      candidate.time > 0 &&
+      typeof candidate.title === "string" &&
+      candidate.title.trim() &&
+      (candidate.by === undefined || typeof candidate.by === "string") &&
+      (candidate.text === undefined || typeof candidate.text === "string") &&
+      (candidate.url === undefined || typeof candidate.url === "string"),
   );
 }
 
@@ -127,12 +136,12 @@ async function fetchFirebaseStory(id: string): Promise<FirebaseStory | null> {
     throw new Error(`Firebase HN error ${response.status}`);
   }
 
-  const data = (await response.json()) as FirebaseStory | null;
-  return isFirebaseStory(data) ? data : null;
+  const data = (await response.json()) as unknown;
+  return isFirebaseStory(data) && data.id === Number(id) ? data : null;
 }
 
 function contentFromStory(story: FirebaseStory): string {
-  const title = story.title?.trim() ?? "";
+  const title = story.title.trim();
   const body = story.text
     ?.replace(/<br\s*\/?>(\r?\n)?/gi, "\n")
     .replace(/<\/p>/gi, "\n")
