@@ -58,6 +58,31 @@ describe("hnCollector", () => {
     ).rejects.toThrow("HN collector requires config.queries to contain only non-empty strings");
   });
 
+  it.each([
+    [null, 1_699_913_610],
+    [undefined, 1_699_913_610],
+    ["", 1_699_913_610],
+    ["   ", 1_699_913_610],
+    ["1699999999", 1_699_999_999],
+  ])("uses the correct start time for cursor %j", async (cursor, start) => {
+    vi.setSystemTime(new Date("2023-11-14T22:13:30.000Z"));
+    const numericFilters: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: URL | string) => {
+        const url = new URL(String(input));
+        numericFilters.push(url.searchParams.get("numericFilters") ?? "");
+        return Response.json({ hits: [], nbHits: 0, nbPages: 0 });
+      }),
+    );
+
+    await hnCollector.run({ ...context, cursor });
+
+    expect(numericFilters).toEqual([
+      `created_at_i>=${start},created_at_i<=1700000010`,
+    ]);
+  });
+
   it("normalizes a validated Firebase story with full item content", async () => {
     vi.stubGlobal(
       "fetch",
@@ -103,8 +128,8 @@ describe("hnCollector", () => {
         if (url.hostname === "hn.algolia.com") {
           return Response.json({ hits, nbHits: hits.length, nbPages: 1 });
         }
-        if (url.pathname.endsWith("/124.json")) return Response.json({ deleted: true });
-        if (url.pathname.endsWith("/125.json")) return Response.json({ ...fixture.firebaseStory, dead: true });
+        if (url.pathname.endsWith("/124.json")) return Response.json({ ...fixture.firebaseStory, id: 124, deleted: true });
+        if (url.pathname.endsWith("/125.json")) return Response.json({ ...fixture.firebaseStory, id: 125, dead: true });
         if (url.pathname.endsWith("/126.json")) return Response.json(null);
         if (url.pathname.endsWith("/127.json")) return Response.json({ id: "invalid", type: "story" });
         return Response.json(fixture.firebaseStory);
@@ -142,6 +167,56 @@ describe("hnCollector", () => {
     const result = await hnCollector.run(context);
 
     expect(result.documents).toEqual([]);
+  });
+
+  it("skips Firebase stories whose timestamp cannot form a valid Date", async () => {
+    const hits = [123, 124].map((objectID) => ({
+      ...fixture.algoliaHit,
+      objectID: String(objectID),
+    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: URL | string) => {
+        const url = new URL(String(input));
+        if (url.hostname === "hn.algolia.com") {
+          return Response.json({ hits, nbHits: 2, nbPages: 1 });
+        }
+        if (url.pathname.endsWith("/124.json")) {
+          return Response.json({
+            ...fixture.firebaseStory,
+            id: 124,
+            time: Number.MAX_SAFE_INTEGER,
+          });
+        }
+        return Response.json(fixture.firebaseStory);
+      }),
+    );
+
+    const result = await hnCollector.run(context);
+
+    expect(result.documents).toHaveLength(1);
+    expect(result.documents[0]).toMatchObject({ rawSnapshotRef: "hn:123" });
+  });
+
+  it.each([
+    ["non-array hits", { hits: "bad", nbHits: 0, nbPages: 0 }],
+    ["invalid pagination", { hits: [], nbHits: "0", nbPages: 0 }],
+  ])("rejects an Algolia response with %s", async (_kind, payload) => {
+    vi.stubGlobal("fetch", vi.fn(() => Response.json(payload)));
+
+    await expect(hnCollector.run(context)).rejects.toThrow("Invalid Algolia HN response");
+  });
+
+  it("throws when a one-second Algolia range remains capped", async () => {
+    vi.setSystemTime(new Date(1_000_000));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Response.json({ hits: [], nbHits: 1_000, nbPages: 10 })),
+    );
+
+    await expect(
+      hnCollector.run({ ...context, cursor: "1000" }),
+    ).rejects.toThrow("Algolia HN range saturated at one-second resolution");
   });
 
   it("splits an Algolia range before the 1,000-hit cap can omit stories", async () => {

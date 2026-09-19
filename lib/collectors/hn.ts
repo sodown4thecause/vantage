@@ -14,9 +14,9 @@ type AlgoliaHit = {
 };
 
 type AlgoliaResponse = {
-  hits?: AlgoliaHit[];
-  nbHits?: number;
-  nbPages?: number;
+  hits: AlgoliaHit[];
+  nbHits: number;
+  nbPages: number;
 };
 
 type FirebaseStory = {
@@ -69,12 +69,36 @@ async function fetchAlgoliaPage(
     throw new Error(`Algolia HN error ${response.status}`);
   }
 
-  const data = (await response.json()) as AlgoliaResponse;
-  return {
-    hits: Array.isArray(data.hits) ? data.hits : [],
-    nbHits: typeof data.nbHits === "number" ? data.nbHits : 0,
-    nbPages: typeof data.nbPages === "number" ? data.nbPages : 0,
-  };
+  const data = (await response.json()) as unknown;
+  if (!isAlgoliaResponse(data)) {
+    throw new Error("Invalid Algolia HN response");
+  }
+  return data;
+}
+
+function isAlgoliaResponse(data: unknown): data is AlgoliaResponse {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return false;
+  }
+
+  const candidate = data as Record<string, unknown>;
+  return Boolean(
+    Array.isArray(candidate.hits) &&
+      candidate.hits.every(
+        (hit) =>
+          Boolean(hit) &&
+          typeof hit === "object" &&
+          !Array.isArray(hit) &&
+          typeof (hit as Record<string, unknown>).objectID === "string",
+      ) &&
+      typeof candidate.nbHits === "number" &&
+      Number.isSafeInteger(candidate.nbHits) &&
+      candidate.nbHits >= 0 &&
+      typeof candidate.nbPages === "number" &&
+      Number.isSafeInteger(candidate.nbPages) &&
+      candidate.nbPages >= 0 &&
+      (candidate.nbHits === 0 ? candidate.nbPages === 0 : candidate.nbPages > 0),
+  );
 }
 
 async function fetchAlgoliaRange(
@@ -86,7 +110,11 @@ async function fetchAlgoliaRange(
   const isAtCap =
     firstPage.nbHits >= ALGOLIA_MAX_HITS || firstPage.nbPages >= 10;
 
-  if (isAtCap && start < end) {
+  if (isAtCap && start === end) {
+    throw new Error("Algolia HN range saturated at one-second resolution");
+  }
+
+  if (isAtCap) {
     const midpoint = Math.floor((start + end) / 2);
     const earlier = await fetchAlgoliaRange(query, start, midpoint);
     const later = await fetchAlgoliaRange(query, midpoint + 1, end);
@@ -165,6 +193,10 @@ function canonicalUrl(id: string, url: string | undefined): string {
 }
 
 function cursorStart(cursor: string | null | undefined, now: number): number {
+  if (cursor === null || cursor === undefined || !cursor.trim()) {
+    return now - 24 * 60 * 60;
+  }
+
   const parsed = Number(cursor);
   if (Number.isInteger(parsed) && parsed >= 0 && parsed <= now) {
     return parsed;
@@ -190,6 +222,9 @@ export const hnCollector: Collector = {
       const story = await fetchFirebaseStory(id);
       if (!story) continue;
 
+      const postedAt = new Date(story.time * 1_000);
+      if (!Number.isFinite(postedAt.getTime())) continue;
+
       const urlCanonical = canonicalUrl(id, story.url);
       const contentMd = contentFromStory(story);
       documents.push({
@@ -199,7 +234,7 @@ export const hnCollector: Collector = {
         platform: "hn",
         authorRef: story.by ?? hit.author ?? null,
         title: story.title.trim(),
-        postedAt: new Date(story.time * 1_000),
+        postedAt,
         contentMd,
         contentHash: contentHash("hn", urlCanonical, contentMd),
         rawSnapshotRef: `hn:${id}`,
