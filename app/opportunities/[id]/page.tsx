@@ -4,6 +4,7 @@ import { authorizeWorkspace } from "@/lib/auth/workspace";
 import { getOpportunityDetail } from "@/lib/opportunities/run";
 
 import { DraftPanel } from "./draft-panel";
+import { FeedbackPanel } from "./feedback-panel";
 
 export default async function OpportunityDetailPage({
   params,
@@ -93,6 +94,7 @@ export default async function OpportunityDetailPage({
       </section>
 
       <DraftPanel workspaceId={workspaceId} opportunityId={detail.id} />
+      <FeedbackPanel workspaceId={workspaceId} opportunityId={detail.id} />
 
       <section>
         <h2 className="text-sm font-semibold">
