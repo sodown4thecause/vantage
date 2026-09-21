@@ -75,6 +75,14 @@ export const productMaterialStatusEnum = pgEnum("product_material_status", [
   "manual",
 ]);
 
+/** Opportunity Queue lifecycle (Slice 3). */
+export const opportunityStatusEnum = pgEnum("opportunity_status", [
+  "ignore",
+  "monitor",
+  "opportunity",
+  "review",
+]);
+
 export const workspace = pgTable("workspace", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
@@ -222,6 +230,73 @@ export const monitoringProfile = pgTable(
   ],
 );
 
+
+/**
+ * Evidence-backed opportunity (Slice 3). Multiple documents cluster into one row.
+ */
+export const opportunity = pgTable(
+  "opportunity",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    status: opportunityStatusEnum("status").notNull().default("review"),
+    title: text("title").notNull(),
+    summary: text("summary").notNull().default(""),
+    whyItMatters: text("why_it_matters").notNull().default(""),
+    whyNow: text("why_now").notNull().default(""),
+    recommendedAction: text("recommended_action").notNull().default(""),
+    confidence: real("confidence").notNull().default(0),
+    urgency: real("urgency").notNull().default(0),
+    score: real("score").notNull().default(0),
+    coverage: text("coverage").notNull().default("unknown"),
+    /** Deterministic feature vector for ranking/explainability. */
+    features: jsonb("features")
+      .$type<Record<string, number | string | boolean>>()
+      .notNull()
+      .default({}),
+    clusterKey: text("cluster_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("opportunity_workspace_cluster_uidx").on(
+      table.workspaceId,
+      table.clusterKey,
+    ),
+  ],
+);
+
+export const opportunityEvidence = pgTable(
+  "opportunity_evidence",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    opportunityId: uuid("opportunity_id")
+      .notNull()
+      .references(() => opportunity.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => document.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("opportunity_evidence_opp_doc_uidx").on(
+      table.opportunityId,
+      table.documentId,
+    ),
+  ],
+);
+
 export type Workspace = typeof workspace.$inferSelect;
 export type NewWorkspace = typeof workspace.$inferInsert;
 export type Source = typeof source.$inferSelect;
@@ -232,3 +307,8 @@ export type Lead = typeof lead.$inferSelect;
 export type NewLead = typeof lead.$inferInsert;
 export type MonitoringProfile = typeof monitoringProfile.$inferSelect;
 export type NewMonitoringProfile = typeof monitoringProfile.$inferInsert;
+export type Opportunity = typeof opportunity.$inferSelect;
+export type NewOpportunity = typeof opportunity.$inferInsert;
+export type OpportunityEvidence = typeof opportunityEvidence.$inferSelect;
+export type NewOpportunityEvidence = typeof opportunityEvidence.$inferInsert;
+
