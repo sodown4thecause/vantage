@@ -307,8 +307,40 @@ export type Lead = typeof lead.$inferSelect;
 export type NewLead = typeof lead.$inferInsert;
 export type MonitoringProfile = typeof monitoringProfile.$inferSelect;
 export type NewMonitoringProfile = typeof monitoringProfile.$inferInsert;
+
+export const opportunityDraft = pgTable("opportunity_draft", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => workspace.id, { onDelete: "cascade" }),
+  opportunityId: uuid("opportunity_id")
+    .notNull()
+    .references(() => opportunity.id, { onDelete: "cascade" }),
+  /** Model/heuristic original text — immutable once created. */
+  originalText: text("original_text").notNull(),
+  /** User-edited text; starts equal to original. */
+  editedText: text("edited_text").notNull(),
+  citations: jsonb("citations")
+    .$type<Array<{ label: string; url: string; documentId?: string }>>()
+    .notNull()
+    .default([]),
+  flags: jsonb("flags")
+    .$type<Array<{ claim: string; reason: string }>>()
+    .notNull()
+    .default([]),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export type Opportunity = typeof opportunity.$inferSelect;
 export type NewOpportunity = typeof opportunity.$inferInsert;
 export type OpportunityEvidence = typeof opportunityEvidence.$inferSelect;
 export type NewOpportunityEvidence = typeof opportunityEvidence.$inferInsert;
+export type OpportunityDraft = typeof opportunityDraft.$inferSelect;
+export type NewOpportunityDraft = typeof opportunityDraft.$inferInsert;
 
