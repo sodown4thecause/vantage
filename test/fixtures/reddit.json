@@ -1,0 +1,26 @@
+{
+  "posts": [
+    {
+      "id": "t3_fixture1",
+      "title": "Anyone using free social listening instead of Brand24?",
+      "body": "Looking for HN + Reddit mention tracking before paying $99/mo.",
+      "url": "https://www.reddit.com/r/SaaS/comments/fixture1/social_listening/",
+      "author": "indie_ops",
+      "subreddit": "SaaS",
+      "score": 42,
+      "createdAt": "2026-09-18T12:00:00.000Z",
+      "numComments": 17
+    },
+    {
+      "id": "t3_fixture2",
+      "title": "Product Hunt launch monitoring stack?",
+      "body": "Need automated PH + X alerts into Slack for competitor launches.",
+      "url": "https://www.reddit.com/r/startups/comments/fixture2/ph_monitoring/",
+      "author": "launch_pad",
+      "subreddit": "startups",
+      "score": 28,
+      "createdAt": "2026-09-19T09:30:00.000Z",
+      "numComments": 9
+    }
+  ]
+}

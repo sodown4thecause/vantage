@@ -1,0 +1,24 @@
+{
+  "posts": [
+    {
+      "id": "x-fixture-1",
+      "text": "Anyone know a cheap alternative to Brandwatch for tracking Reddit + HN mentions?",
+      "url": "https://x.com/builder_jane/status/x-fixture-1",
+      "author": "builder_jane",
+      "createdAt": "2026-09-18T15:20:00.000Z",
+      "likeCount": 12,
+      "repostCount": 3,
+      "replyCount": 5
+    },
+    {
+      "id": "x-fixture-2",
+      "text": "Shipping a social listening MVP this week — free lane first (HN/RSS), paid later.",
+      "url": "https://x.com/ops_mike/status/x-fixture-2",
+      "author": "ops_mike",
+      "createdAt": "2026-09-19T08:10:00.000Z",
+      "likeCount": 7,
+      "repostCount": 1,
+      "replyCount": 2
+    }
+  ]
+}

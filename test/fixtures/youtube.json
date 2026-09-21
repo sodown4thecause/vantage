@@ -1,0 +1,34 @@
+{
+  "comments": [
+    {
+      "id": "yt-c-1",
+      "videoId": "vid-abc",
+      "videoTitle": "I tried 5 social listening tools for indie hackers",
+      "author": "jane_builds",
+      "text": "Anyone know a free way to track HN + Reddit mentions before buying Brand24?",
+      "publishedAt": "2026-09-16T18:22:00.000Z",
+      "likeCount": 14,
+      "videoUrl": "https://www.youtube.com/watch?v=vid-abc"
+    },
+    {
+      "id": "yt-c-2",
+      "videoId": "vid-abc",
+      "videoTitle": "I tried 5 social listening tools for indie hackers",
+      "author": "ops_mike",
+      "text": "We just want RSS + HN alerts into Slack. Paying $99/mo feels wrong for that.",
+      "publishedAt": "2026-09-17T11:05:00.000Z",
+      "likeCount": 7,
+      "videoUrl": "https://www.youtube.com/watch?v=vid-abc"
+    },
+    {
+      "id": "yt-c-3",
+      "videoId": "vid-xyz",
+      "videoTitle": "Building in public analytics stack",
+      "author": "sara_ship",
+      "text": "Looking for recommendations on monitoring Product Hunt launches automatically.",
+      "publishedAt": "2026-09-18T08:40:00.000Z",
+      "likeCount": 3,
+      "videoUrl": "https://www.youtube.com/watch?v=vid-xyz"
+    }
+  ]
+}

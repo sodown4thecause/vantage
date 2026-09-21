@@ -1,0 +1,28 @@
+{
+  "posts": [
+    {
+      "id": "ph-1001",
+      "name": "ShipLog",
+      "tagline": "Changelog that writes itself from git",
+      "url": "https://www.producthunt.com/posts/shiplog",
+      "website": "https://shiplog.example",
+      "votesCount": 412,
+      "createdAt": "2026-09-17T15:00:00.000Z",
+      "description": "Teams tracking launches want a lighter way to publish changelogs without a CMS.",
+      "topics": ["developer-tools", "productivity"],
+      "maker": "ava-chen"
+    },
+    {
+      "id": "ph-1002",
+      "name": "Listenlane",
+      "tagline": "Social listening for indie SaaS",
+      "url": "https://www.producthunt.com/posts/listenlane",
+      "website": "https://listenlane.example",
+      "votesCount": 188,
+      "createdAt": "2026-09-18T09:30:00.000Z",
+      "description": "Looking for recommendations on free HN + RSS monitoring before paying for Brandwatch.",
+      "topics": ["marketing", "saas"],
+      "maker": "devon-park"
+    }
+  ]
+}
