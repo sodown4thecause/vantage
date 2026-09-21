@@ -492,3 +492,24 @@ git -C 'C:\Users\install\Documents\vantage-m2-hn' status --short --branch
 ```
 
 Expected: both pull requests remain open, #2 remains based on `feat/m1-task1-scaffold`, CircleCI is green on current heads, and both worktrees are clean.
+
+## 2026-09-21 provider architecture update (PR #21)
+
+Supersedes the earlier Product Hunt GraphQL / YouTube Data API-only discovery framing and the portable-Postgres-without-Neon wording for current work.
+
+### What changed in implementation
+- Neon is the documented DB/Auth path (`.env.example`, README).
+- Collectors prefer Scavio (YouTube/Reddit/X) and TinyFish (Product Hunt, YT fallback).
+- Source type `x` added; Reddit/X routes and fixtures shipped.
+- Provider provenance lives on `document.metadata.provider`.
+
+### Board actions completed outside this markdown file
+1. Rewrote issues #11, #13, #14, #15, #16 for Neon/Scavio/TinyFish/X.
+2. Opened #22 (Product Hunt / TinyFish) and #23 (YouTube / Scavio).
+3. Left comments on #12 and #17 for dependency sync.
+4. Project v2 field updates still need a GitHub token with `project` scope (current cloud token is forbidden on Projects).
+
+### Verification snapshot from PR #21
+- `pnpm test` 42 passing
+- `pnpm typecheck` clean
+

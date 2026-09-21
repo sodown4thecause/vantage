@@ -119,3 +119,41 @@ Merge the updated pull request #1 branch into the pull request #2 branch so both
 - The current pull requests and all planned vertical-slice issues appear in the project with accurate slice, stage, dependency, and ownership metadata.
 - Every future-work issue contains the complete agent handoff contract and executable verification commands.
 - Neither pull request is merged as part of this work.
+
+## 2026-09-21 provider architecture update (PR #21)
+
+PR https://github.com/sodown4thecause/vantage/pull/21 is the current implementation head for foundation + collectors. The delivery board issues were rewritten to match:
+
+### Foundation
+- **Neon Postgres** (pooled `DATABASE_URL`) + **Neon Auth** (`NEON_AUTH_BASE_URL`, `NEON_AUTH_COOKIE_SECRET`) is the supported runtime path.
+- Drizzle schema/migrations under `lib/db/**` and `drizzle/**` remain the persistence contract.
+
+### Collector providers
+Prefer search/fetch scrapers over full browser agents:
+
+| Source | Primary | Fallbacks |
+| --- | --- | --- |
+| YouTube | Scavio comments | TinyFish → YouTube Data API → fixture |
+| Product Hunt | TinyFish search+fetch | PH GraphQL → fixture |
+| Reddit | Scavio `reddit.search` | fixture |
+| X | Scavio `x.search` | fixture |
+| HN / RSS / Substack | existing collectors | unchanged |
+
+Env keys: `SCAVIO_API_KEY`, `TINYFISH_API_KEY`, optional `PH_DEV_TOKEN`, `YOUTUBE_API_KEY`. Documents store `metadata.provider`.
+
+### Issue map (open board)
+- #11 Slice 0 Neon foundation (In Review via PR #21)
+- #12 Slice 1 onboarding/profile
+- #13 Slice 2 collector contracts/registry (largely in PR #21)
+- #14 Slice 2A Reddit via Scavio
+- #15 Slice 2B HN/RSS/Substack
+- #16 Slice 2C X via Scavio (replaces prior GitHub-adapter framing)
+- #22 Slice 2D Product Hunt via TinyFish
+- #23 Slice 2E YouTube via Scavio
+- #17–#20 queue, drafting, outcomes, learning (unchanged goals; depend on collectors above)
+
+### Paths of record
+`lib/collectors/**`, `lib/scavio/**`, `lib/tinyfish/**`, `lib/reddit/**`, `lib/x/**`, `lib/youtube/**`, `lib/producthunt/**`, `app/api/collectors/**`.
+
+GitHub Projects field edits may require a token with the `project` scope; issue bodies are the executable contracts when project metadata cannot be updated.
+
