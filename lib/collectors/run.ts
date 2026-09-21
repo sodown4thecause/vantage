@@ -1,6 +1,15 @@
 import { and, eq } from "drizzle-orm";
 
-import type { Collector, CollectorResult, SourceType } from "@/lib/collectors/types";
+import {
+  classifyCollectorCoverage,
+  withLastRunReceipt,
+  type SourceRunReceipt,
+} from "@/lib/collectors/coverage";
+import type {
+  Collector,
+  CollectorResult,
+  SourceType,
+} from "@/lib/collectors/types";
 import { getDb } from "@/lib/db/client";
 import { document, source } from "@/lib/db/schema";
 
@@ -16,12 +25,14 @@ export type RunCollectorOutput = {
   inserted: number;
   skipped: number;
   nextState?: CollectorResult["nextState"];
+  receipt?: SourceRunReceipt;
   error?: string;
 };
 
 /**
  * Load a source row, run a collector, insert documents (deduped by content_hash),
- * and persist etag/last_modified/cursor back onto the source.
+ * and persist etag/cursor + a coverage receipt back onto the source.
+ * Failures are isolated per source — callers may continue other sources.
  */
 export async function runCollector(
   input: RunCollectorInput,
@@ -75,6 +86,16 @@ export async function runCollector(
       else skipped += 1;
     }
 
+    const classified = classifyCollectorCoverage({
+      documents: result.documents,
+      inserted,
+      skipped,
+    });
+    const receipt: SourceRunReceipt = {
+      ...classified,
+      ranAt: new Date().toISOString(),
+    };
+
     const next = result.nextState ?? {};
     await db
       .update(source)
@@ -84,7 +105,11 @@ export async function runCollector(
           next.lastModified === undefined ? row.lastModified : next.lastModified,
         cursor: next.cursor === undefined ? row.cursor : next.cursor,
         lastPolledAt: new Date(),
-        health: "healthy",
+        health: receipt.health,
+        config: withLastRunReceipt(
+          (row.config ?? {}) as Record<string, unknown>,
+          receipt,
+        ),
         updatedAt: new Date(),
       })
       .where(eq(source.id, row.id));
@@ -95,6 +120,7 @@ export async function runCollector(
       inserted,
       skipped,
       nextState: result.nextState,
+      receipt,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -104,11 +130,29 @@ export async function runCollector(
       workspaceId: input.workspaceId,
       error: message,
     });
+    const classified = classifyCollectorCoverage({
+      documents: [],
+      inserted,
+      skipped,
+      error: message,
+    });
+    const receipt: SourceRunReceipt = {
+      ...classified,
+      ranAt: new Date().toISOString(),
+    };
     try {
       const now = new Date();
       await db
         .update(source)
-        .set({ health: "failing", lastPolledAt: now, updatedAt: now })
+        .set({
+          health: receipt.health,
+          lastPolledAt: now,
+          updatedAt: now,
+          config: withLastRunReceipt(
+            (row.config ?? {}) as Record<string, unknown>,
+            receipt,
+          ),
+        })
         .where(eq(source.id, row.id));
     } catch (healthErr) {
       console.error("[collector] failed to persist source health", {
@@ -122,6 +166,7 @@ export async function runCollector(
       collector: input.collector.name,
       inserted,
       skipped,
+      receipt,
       error: message,
     };
   }

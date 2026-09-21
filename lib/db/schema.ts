@@ -51,6 +51,11 @@ export const sourceHealthEnum = pgEnum("source_health", [
   "degraded",
   "failing",
   "paused",
+  /** Slice 2 coverage labels (Settings → Sources & Coverage). */
+  "access_pending",
+  "budget_limited",
+  "blocked",
+  "failed",
 ]);
 
 export const leadStatusEnum = pgEnum("lead_status", [

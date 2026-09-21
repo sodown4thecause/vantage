@@ -88,7 +88,7 @@ describe("runCollector", () => {
     });
   });
 
-  it("logs and marks the source failing when persistence fails", async () => {
+  it("logs and marks the source failed when persistence fails", async () => {
     state.insertOutcomes = [new Error("database unavailable")];
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const collector: Collector = {
@@ -104,7 +104,7 @@ describe("runCollector", () => {
 
     expect(result.error).toBe("database unavailable");
     expect(errorSpy).toHaveBeenCalled();
-    expect(state.updates.at(-1)).toMatchObject({ health: "failing" });
+    expect(state.updates.at(-1)).toMatchObject({ health: "failed" });
     expect(state.updates.at(-1)?.lastPolledAt).toBeInstanceOf(Date);
   });
 
