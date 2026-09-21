@@ -3,6 +3,8 @@ import Link from "next/link";
 import { authorizeWorkspace } from "@/lib/auth/workspace";
 import { getOpportunityDetail } from "@/lib/opportunities/run";
 
+import { DraftPanel } from "./draft-panel";
+
 export default async function OpportunityDetailPage({
   params,
   searchParams,
@@ -89,6 +91,8 @@ export default async function OpportunityDetailPage({
           {detail.features.lowConfidence ? " (low confidence → review)" : ""}
         </p>
       </section>
+
+      <DraftPanel workspaceId={workspaceId} opportunityId={detail.id} />
 
       <section>
         <h2 className="text-sm font-semibold">

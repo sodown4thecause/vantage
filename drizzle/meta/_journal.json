@@ -50,6 +50,13 @@
       "when": 1789988709362,
       "tag": "0006_high_lake",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789988949626,
+      "tag": "0007_last_ego",
+      "breakpoints": true
     }
   ]
 }
