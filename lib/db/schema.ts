@@ -341,6 +341,48 @@ export type Opportunity = typeof opportunity.$inferSelect;
 export type NewOpportunity = typeof opportunity.$inferInsert;
 export type OpportunityEvidence = typeof opportunityEvidence.$inferSelect;
 export type NewOpportunityEvidence = typeof opportunityEvidence.$inferInsert;
+
+export const opportunityOutcomeEventEnum = pgEnum("opportunity_outcome_event", [
+  "useful",
+  "not_useful",
+  "saved",
+  "rejected",
+  "acted_on",
+  "draft_edit",
+  "published_url",
+  "utm_click",
+  "conversion",
+]);
+
+/** Append-only outcome/feedback audit log (Slice 5). */
+export const opportunityOutcome = pgTable("opportunity_outcome", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => workspace.id, { onDelete: "cascade" }),
+  opportunityId: uuid("opportunity_id")
+    .notNull()
+    .references(() => opportunity.id, { onDelete: "cascade" }),
+  draftId: uuid("draft_id").references(() => opportunityDraft.id, {
+    onDelete: "set null",
+  }),
+  event: opportunityOutcomeEventEnum("event").notNull(),
+  /** Optional payload (URL, UTM, notes). Never rewrite history — append corrections. */
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+  /** Client-supplied idempotency key to avoid duplicate clicks. */
+  idempotencyKey: text("idempotency_key"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+}, (table) => [
+  uniqueIndex("opportunity_outcome_idem_uidx").on(
+    table.workspaceId,
+    table.idempotencyKey,
+  ),
+]);
+
 export type OpportunityDraft = typeof opportunityDraft.$inferSelect;
 export type NewOpportunityDraft = typeof opportunityDraft.$inferInsert;
+export type OpportunityOutcome = typeof opportunityOutcome.$inferSelect;
+export type NewOpportunityOutcome = typeof opportunityOutcome.$inferInsert;
 
