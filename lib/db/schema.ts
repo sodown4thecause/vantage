@@ -63,6 +63,13 @@ export const leadStatusEnum = pgEnum("lead_status", [
   "expired",
 ]);
 
+/** How product URL / docs material was resolved during onboarding. */
+export const productMaterialStatusEnum = pgEnum("product_material_status", [
+  "ok",
+  "inaccessible",
+  "manual",
+]);
+
 export const workspace = pgTable("workspace", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
@@ -175,6 +182,41 @@ export const lead = pgTable("lead", {
     .notNull(),
 });
 
+/**
+ * Append-only monitoring profile versions (Slice 1).
+ * Downstream ranking/drafting pin a stable `version` per workspace.
+ */
+export const monitoringProfile = pgTable(
+  "monitoring_profile",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    productUrl: text("product_url").notNull(),
+    docsUrls: jsonb("docs_urls").$type<string[]>().notNull().default([]),
+    productDescription: text("product_description").notNull(),
+    targetCustomer: text("target_customer").notNull(),
+    competitors: jsonb("competitors").$type<string[]>().notNull().default([]),
+    topics: jsonb("topics").$type<string[]>().notNull().default([]),
+    productMaterialStatus: productMaterialStatusEnum("product_material_status")
+      .notNull()
+      .default("manual"),
+    productMaterialText: text("product_material_text").notNull().default(""),
+    retrievalNotes: text("retrieval_notes").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("monitoring_profile_workspace_version_uidx").on(
+      table.workspaceId,
+      table.version,
+    ),
+  ],
+);
+
 export type Workspace = typeof workspace.$inferSelect;
 export type NewWorkspace = typeof workspace.$inferInsert;
 export type Source = typeof source.$inferSelect;
@@ -183,3 +225,5 @@ export type DocumentRecord = typeof document.$inferSelect;
 export type NewDocument = typeof document.$inferInsert;
 export type Lead = typeof lead.$inferSelect;
 export type NewLead = typeof lead.$inferInsert;
+export type MonitoringProfile = typeof monitoringProfile.$inferSelect;
+export type NewMonitoringProfile = typeof monitoringProfile.$inferInsert;
