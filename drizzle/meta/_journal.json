@@ -43,6 +43,13 @@
       "when": 1789988347431,
       "tag": "0005_next_brother_voodoo",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789988709362,
+      "tag": "0006_high_lake",
+      "breakpoints": true
     }
   ]
 }
