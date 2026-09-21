@@ -6,7 +6,7 @@ import type {
   CollectorResult,
 } from "@/lib/collectors/types";
 import type { NewDocument } from "@/lib/db/schema";
-import { fetchYouTubeComments } from "@/lib/youtube/client";
+import { fetchYouTubeCommentsWithMeta } from "@/lib/youtube/client";
 
 export const youtubeCollector: Collector = {
   name: "youtube",
@@ -14,7 +14,12 @@ export const youtubeCollector: Collector = {
     const videoIds = Array.isArray(ctx.config.videoIds)
       ? ctx.config.videoIds.map(String)
       : undefined;
-    const comments = await fetchYouTubeComments({ videoIds });
+    const query =
+      typeof ctx.config.query === "string" ? ctx.config.query : undefined;
+    const { comments, meta } = await fetchYouTubeCommentsWithMeta({
+      videoIds,
+      query,
+    });
     const documents: NewDocument[] = comments.map((c) => {
       const body = [
         `Video: ${c.videoTitle}`,
@@ -37,7 +42,8 @@ export const youtubeCollector: Collector = {
         metadata: {
           videoId: c.videoId,
           likeCount: c.likeCount,
-          mocked: !process.env.YOUTUBE_API_KEY,
+          provider: meta.provider,
+          mocked: meta.provider === "fixture",
         },
       };
     });

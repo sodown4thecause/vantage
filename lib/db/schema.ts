@@ -26,6 +26,7 @@ export const sourceTypeEnum = pgEnum("source_type", [
   "other",
   "producthunt",
   "youtube",
+  "x",
 ]);
 
 export const sourcePlatformValues = [
@@ -34,6 +35,8 @@ export const sourcePlatformValues = [
   "substack",
   "producthunt",
   "youtube",
+  "reddit",
+  "x",
 ] as const;
 export type SourcePlatform = (typeof sourcePlatformValues)[number];
 

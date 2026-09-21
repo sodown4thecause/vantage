@@ -12,6 +12,8 @@ describe("repository delivery contract", () => {
     expect(envExample).toContain('PH_DEV_TOKEN=""');
     expect(envExample).toContain('YOUTUBE_API_KEY=""');
     expect(envExample).toContain('AI_GATEWAY_API_KEY=""');
+    expect(envExample).toContain('TINYFISH_API_KEY=""');
+    expect(envExample).toContain('SCAVIO_API_KEY=""');
   });
 
   it("limits drizzle-kit to the application-owned public schema", () => {

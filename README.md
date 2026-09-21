@@ -43,13 +43,26 @@ Tables in `lib/db/schema.ts`:
 | `POST /api/collectors/hn` | Hacker News (Algolia + Firebase) |
 | `POST /api/collectors/rss` | RSS/Atom with conditional GET |
 | `POST /api/collectors/substack` | Substack publication feed |
-| `POST /api/collectors/producthunt` | Product Hunt (fixture without token) |
-| `POST /api/collectors/youtube` | YouTube comments (fixture without key) |
+| `POST /api/collectors/producthunt` | Product Hunt via TinyFish **Search+Fetch** (agent last), else PH GraphQL, else fixture |
+| `POST /api/collectors/youtube` | YouTube via **Scavio** comments scrape, else TinyFish Fetch/Search, else agent, else Data API, else fixture |
+| `POST /api/collectors/reddit` | Reddit via **Scavio** `reddit.search` (`SCAVIO_API_KEY`), else fixture |
+| `POST /api/collectors/x` | X/Twitter via **Scavio** `x.search` (`SCAVIO_API_KEY`), else fixture |
 | `POST /api/pipeline/run` | Normalize + intent ladder → leads |
 | `GET /api/cron/tick` | 3-hour Vercel cron: all sources + pipeline |
 | `/review?workspaceId=` | Lead review UI |
 
 Body for collector routes: `{ "workspaceId": "...", "sourceId": "..." }`.
+
+### Scrape providers
+
+Prefer **search + fetch/scrape** over full browser agents. **Scavio is enough** for Reddit/X/YouTube structured APIs.
+
+1. **YouTube order:** Scavio comments → TinyFish Fetch/Search → TinyFish Agent → `YOUTUBE_API_KEY` → fixture.
+2. **Product Hunt order:** TinyFish Search+Fetch → homepage Fetch → TinyFish Agent → `PH_DEV_TOKEN` → fixture.
+3. **Reddit:** Scavio `client.reddit.search` (`config.query`, `config.limit`) → fixture.
+4. **X:** Scavio `client.x.search` (`config.query`, `config.searchType`, `config.limit`) → fixture.
+5. Documents store `metadata.provider` (`scavio`, `tinyfish_*`, native APIs, or `fixture`).
+6. Optional: deploy [arcade-scavio](https://pypi.org/project/arcade-scavio/) on Arcade if you want the same Scavio tools as MCP (`Scavio.SearchReddit`, etc.). Vantage talks to Scavio directly.
 
 ## Scripts
 

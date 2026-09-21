@@ -6,7 +6,15 @@ import { sourceTypeEnum, workspace } from "../lib/db/schema";
 describe("M1 database contract", () => {
   it("accepts every M1 collector source type", () => {
     expect(sourceTypeEnum.enumValues).toEqual(
-      expect.arrayContaining(["hn", "rss", "substack", "producthunt", "youtube"]),
+      expect.arrayContaining([
+        "hn",
+        "rss",
+        "substack",
+        "producthunt",
+        "youtube",
+        "reddit",
+        "x",
+      ]),
     );
   });
 

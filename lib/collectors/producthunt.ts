@@ -5,14 +5,16 @@ import type {
   CollectorContext,
   CollectorResult,
 } from "@/lib/collectors/types";
-import { fetchProductHuntPosts } from "@/lib/producthunt/client";
+import { fetchProductHuntPostsWithMeta } from "@/lib/producthunt/client";
 import type { NewDocument } from "@/lib/db/schema";
 
 export const productHuntCollector: Collector = {
   name: "producthunt",
   async run(ctx: CollectorContext): Promise<CollectorResult> {
     const first = Number(ctx.config.first ?? 20);
-    const posts = await fetchProductHuntPosts({ first });
+    const query =
+      typeof ctx.config.query === "string" ? ctx.config.query : undefined;
+    const { posts, meta } = await fetchProductHuntPostsWithMeta({ first, query });
     const documents: NewDocument[] = posts.map((p) => {
       const body = [`# ${p.name}`, p.tagline, "", p.description].join("\n");
       return {
@@ -30,7 +32,8 @@ export const productHuntCollector: Collector = {
           votesCount: p.votesCount,
           topics: p.topics,
           website: p.website,
-          mocked: !process.env.PH_DEV_TOKEN,
+          provider: meta.provider,
+          mocked: meta.provider === "fixture",
         },
       };
     });

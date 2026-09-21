@@ -45,4 +45,5 @@ export type SourceType =
   | "web_search"
   | "producthunt"
   | "youtube"
+  | "x"
   | "other";
