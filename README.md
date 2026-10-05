@@ -69,11 +69,77 @@ Prefer **search + fetch/scrape** over full browser agents. **Scavio is enough** 
 | Script | Description |
 |--------|-------------|
 | `pnpm dev` | Next dev server |
-| `pnpm build` | Production build |
+| `pnpm build` | Production Next build |
 | `pnpm typecheck` | `tsc --noEmit` |
+| `pnpm test` | Vitest suite |
 | `pnpm db:generate` | Generate migrations from schema |
-| `pnpm db:migrate` | Apply migrations |
+| `pnpm db:migrate` | Apply migrations (run manually — see Deploy) |
 | `pnpm db:push` | Push schema (dev) |
+| `pnpm cf:build` | Build the Cloudflare Worker bundle |
+| `pnpm cf:preview` | Build and preview locally on Workers |
+| `pnpm deploy` | Build and deploy to Cloudflare |
+| `pnpm cf:typegen` | Generate `cloudflare-env.d.ts` bindings |
+
+## Deploy (Cloudflare Workers)
+
+Vantage runs on Workers via `@opennextjs/cloudflare`. Config lives in
+`wrangler.jsonc` and `open-next.config.ts`; `worker-entry.mjs` is the Worker
+entrypoint.
+
+`compatibility_date` is `2026-10-05`, so `nodejs_compat` is enabled implicitly and
+`node:crypto` / `Buffer` / `process.env` work without extra flags.
+
+### One-time setup
+
+```bash
+pnpm install
+wrangler login
+wrangler secret put CRON_SECRET              # 32+ random bytes
+wrangler secret put NEON_AUTH_COOKIE_SECRET  # 32+ chars
+wrangler secret put DATABASE_URL             # Neon pooled connection string
+```
+
+`NEON_AUTH_BASE_URL` must be a **real, reachable** Neon Auth URL. A placeholder
+value builds green and then fails every login at runtime.
+
+### Migrations are a deliberate manual step
+
+`pnpm db:migrate` is **not** chained into `pnpm deploy`. Every preview shares one
+production `DATABASE_URL`, so building migrations into the deploy step would let
+concurrent preview builds race each other against the same database. Apply them
+deliberately, after merge:
+
+```bash
+DATABASE_URL="postgresql://…" pnpm db:migrate
+```
+
+### Deploy
+
+```bash
+pnpm deploy
+```
+
+### Cron
+
+`wrangler.jsonc` schedules `0 */3 * * *` (every 3 hours, UTC). The adapter emits
+only a `fetch` handler, so `worker-entry.mjs` adds a `scheduled` handler that
+reaches the tick route through the `WORKER_SELF_REFERENCE` service binding with
+`Authorization: Bearer ${CRON_SECRET}`. This reuses the single deployed bundle and
+the existing constant-time check in `lib/cron/authorize.ts` rather than duplicating
+the collector pipeline into a second entrypoint.
+
+Worker script limits are 3 MB (Free) and 10 MB (Paid). CI measures
+`.open-next/worker.js` and fails the build above 10 MB.
+
+### Local development notes
+
+- `pnpm dev` runs the Next dev server on Node, not Workers. Use `pnpm cf:preview`
+  to exercise the real Worker runtime.
+- `opennextjs-cloudflare build` calls `fs.symlinkSync`, which needs Developer Mode
+  on Windows. Run it on Linux (WSL, Docker, or CI) if you hit `EPERM`.
+- The build requires no secrets. `lib/auth/server.ts` and `app/api/auth/[...path]/route.ts`
+  both defer Neon Auth construction to request time, and CI has a job that fails if
+  the build ever needs `NEON_AUTH_*` again.
 
 ## Ref orchestration
 
