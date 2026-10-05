@@ -92,12 +92,12 @@ export function resolveLearningConfig(
     maxAbsWeight: parseNumber(
       env.VANTAGE_LEARNING_MAX_WEIGHT,
       base.maxAbsWeight,
-      { min: 0, max: 1 },
+      { min: 0, max: base.maxAbsWeight },
     ),
     maxTotalDelta: parseNumber(
       env.VANTAGE_LEARNING_MAX_DELTA,
       base.maxTotalDelta,
-      { min: 0, max: 1 },
+      { min: 0, max: base.maxTotalDelta },
     ),
     maxRankShift: parseNumber(
       env.VANTAGE_LEARNING_MAX_RANK_SHIFT,

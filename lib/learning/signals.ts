@@ -2,11 +2,12 @@ import { tokenize } from "@/lib/opportunities/features";
 import { classifyIntent } from "@/lib/pipeline/intent-ladder";
 import type { NormalizedDocument } from "@/lib/pipeline/normalize";
 import { DIMENSION_FACTORS, type LearningConfig } from "@/lib/learning/config";
-import type {
-  LearningDimension,
-  LearningSample,
-  PreferenceModel,
-  PreferenceWeight,
+import {
+  LEARNING_DIMENSIONS,
+  type LearningDimension,
+  type LearningSample,
+  type PreferenceModel,
+  type PreferenceWeight,
 } from "@/lib/learning/types";
 
 export const MAX_TOPIC_TERMS = 6;
@@ -82,6 +83,14 @@ const FORBIDDEN_FIELD_PARTS = new Set([
 
 /** A legitimate key or term is a short lowercase token; anything longer is prose. */
 const MAX_TERM_LENGTH = 40;
+
+/**
+ * A key is `<dimension>:<term>`. The term alone is bounded — production source
+ * ids are 36-char UUIDs, so the dimension prefix must not count against it.
+ */
+const KEY_PATTERN = new RegExp(
+  `^(?:${LEARNING_DIMENSIONS.join("|")}):[a-z0-9:_-]{1,${MAX_TERM_LENGTH}}$`,
+);
 
 export function clamp(n: number, min: number, max: number): number {
   if (Number.isNaN(n)) return min;
@@ -272,13 +281,22 @@ export function findRawContentLeakage(
   const violations: string[] = [];
   for (const weight of weights) {
     const label = typeof weight.key === "string" ? weight.key : "<unknown>";
+    if (typeof weight.key !== "string" || !KEY_PATTERN.test(weight.key)) {
+      violations.push(`${label}: key is not a bounded <dimension>:<term> token`);
+    }
     for (const [field, value] of Object.entries(weight)) {
       if (fieldParts(field).some((part) => FORBIDDEN_FIELD_PARTS.has(part))) {
         violations.push(`${label}: forbidden field "${field}"`);
         continue;
       }
-      if (typeof value === "string" && value.length > MAX_TERM_LENGTH) {
-        violations.push(`${label}: term "${field}" exceeds ${MAX_TERM_LENGTH} chars`);
+      if (
+        field !== "key" &&
+        typeof value === "string" &&
+        value.length > MAX_TERM_LENGTH
+      ) {
+        violations.push(
+          `${label}: term "${field}" exceeds ${MAX_TERM_LENGTH} chars`,
+        );
       }
       if (typeof value === "number" && !Number.isFinite(value)) {
         violations.push(`${label}: field "${field}" is not finite`);

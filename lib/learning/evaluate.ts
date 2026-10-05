@@ -1,9 +1,9 @@
 import {
-  DEFAULT_LEARNING_CONFIG,
+  resolveLearningConfig,
   type LearningConfig,
 } from "@/lib/learning/config";
 import { rankWithPreferences } from "@/lib/learning/rank";
-import { buildPreferenceModel, round6 } from "@/lib/learning/signals";
+import { buildPreferenceModel, round6, signalKey } from "@/lib/learning/signals";
 import { decideStatus, scoreFeatures } from "@/lib/opportunities/features";
 import type {
   EvaluationGate,
@@ -11,6 +11,7 @@ import type {
   LearningEvaluationVerdict,
   LearningInactiveReason,
   LearningSample,
+  PreferenceModel,
   ReplayMetrics,
 } from "@/lib/learning/types";
 
@@ -103,9 +104,15 @@ export function evaluateReplay(input: {
   holdout: LearningSample[];
   workspaceId?: string;
   config?: Partial<LearningConfig>;
+  env?: Record<string, string | undefined>;
   createdAt?: Date;
 }): EvaluationReport {
-  const config: LearningConfig = { ...DEFAULT_LEARNING_CONFIG, ...input.config };
+  // Resolve through the same path production uses so a replay can never report
+  // against a different configuration than the ranker will actually apply.
+  const config = resolveLearningConfig(
+    input.env ?? process.env,
+    input.config,
+  );
   const model = buildPreferenceModel({
     workspaceId: input.workspaceId ?? "offline-replay",
     version: 1,
@@ -120,17 +127,28 @@ export function evaluateReplay(input: {
   );
 
   const baselineScore = (s: LearningSample) => scoreFeatures(s.features!);
-  const learnedScore = (s: LearningSample) =>
+  const contextFor = (s: LearningSample) => ({
+    topics: s.topics,
+    sourceIds: s.sourceIds,
+    intents: s.intents,
+  });
+  const adjustmentFor = (s: LearningSample, active: PreferenceModel | null) =>
     rankWithPreferences({
       features: s.features!,
       status: statusFor(s),
-      model,
-      context: { topics: s.topics, sourceIds: s.sourceIds, intents: s.intents },
+      model: active,
+      context: contextFor(s),
       config,
-    }).score;
+    });
+  const learnedScore = (s: LearningSample) => adjustmentFor(s, model).score;
 
   const baselineRanked = rankByScore(scored, baselineScore).map((s) => s.opportunityId);
   const learnedRanked = rankByScore(scored, learnedScore).map((s) => s.opportunityId);
+  // Learning-off replay of the same inputs. Falsifiable: it fails if the learned
+  // path mutates features or otherwise perturbs the baseline it is layered on.
+  const inertRanked = rankByScore(scored, (s) => adjustmentFor(s, null).score).map(
+    (s) => s.opportunityId,
+  );
 
   const baseline = replayMetrics(baselineRanked, relevant, config.k);
   const learned = replayMetrics(learnedRanked, relevant, config.k);
@@ -141,27 +159,52 @@ export function evaluateReplay(input: {
   let maxRankShift = 0;
   for (const sample of scored) {
     if (sample.decision === "none") continue;
-    const before = baselineRank.get(sample.opportunityId) ?? 0;
-    const after = learnedRank.get(sample.opportunityId) ?? 0;
+    const before = baselineRank.get(sample.opportunityId)!;
+    const after = learnedRank.get(sample.opportunityId)!;
     maxRankShift = Math.max(maxRankShift, Math.abs(before - after));
   }
 
+  // Re-derive status from features rather than trusting the threaded value, so a
+  // caller that passes a mutated status is caught.
   let statusFlips = 0;
   let maxScoreDelta = 0;
+  let clampFailures = 0;
+  let clampEngagements = 0;
   for (const sample of scored) {
-    const baselineStatus = statusFor(sample);
-    const adjustment = rankWithPreferences({
-      features: sample.features!,
-      status: baselineStatus,
-      model,
-      context: { topics: sample.topics, sourceIds: sample.sourceIds, intents: sample.intents },
-      config,
-    });
-    if (adjustment.status !== baselineStatus) statusFlips += 1;
-    maxScoreDelta = Math.max(maxScoreDelta, Math.abs(adjustment.score - adjustment.baselineScore));
+    const derivedStatus = decideStatus(sample.features!);
+    const adjustment = adjustmentFor(sample, model);
+    if (adjustment.status !== derivedStatus) statusFlips += 1;
+    maxScoreDelta = Math.max(
+      maxScoreDelta,
+      Math.abs(adjustment.score - adjustment.baselineScore),
+    );
+
+    // Where the raw contributor sum exceeds the cap, the applied delta must sit
+    // exactly on it. That is what makes this gate falsifiable: removing the clamp
+    // in rank.ts lets the raw sum through and trips it.
+    const raw = adjustment.reasons.reduce((sum, r) => sum + r.contribution, 0);
+    if (Math.abs(raw) > config.maxTotalDelta + EPS) {
+      clampEngagements += 1;
+      if (Math.abs(adjustment.delta) > config.maxTotalDelta + EPS) {
+        clampFailures += 1;
+      }
+    }
   }
 
   const trainDecisions = input.train.filter((s) => s.decision !== "none").length;
+  // Observations the model attributes to keys, derived independently from train.
+  const expectedObservations = input.train.reduce((total, sample) => {
+    if (sample.decision === "none") return total;
+    const keys = new Set<string>();
+    for (const topic of sample.topics) keys.add(signalKey("topic", topic));
+    for (const sourceId of sample.sourceIds) keys.add(signalKey("source", sourceId));
+    for (const intent of sample.intents) keys.add(signalKey("intent", intent));
+    return total + keys.size;
+  }, 0);
+  const actualObservations = model.weights.reduce(
+    (total, w) => total + w.evidence,
+    0,
+  );
   const inactiveReason: LearningInactiveReason | null = model.disabledReason;
 
   const gates: EvaluationGate[] = [
@@ -174,13 +217,13 @@ export function evaluateReplay(input: {
     },
     {
       name: "deterministic_baseline",
-      passed: scored.every((s) => baselineScore(s) === scoreFeatures(s.features!)),
-      detail: "baseline scores recomputed independently of the learned path",
+      passed: inertRanked.join("|") === baselineRanked.join("|"),
+      detail: "a learning-off replay of the same inputs reproduces the baseline ranking",
     },
     {
       name: "train_holdout_separation",
-      passed: model.evidence === trainDecisions,
-      detail: `model saw ${model.evidence} train decisions; holdout labels never entered weights`,
+      passed: actualObservations === expectedObservations,
+      detail: `model attributes ${actualObservations} observations; train alone contributes ${expectedObservations}`,
     },
     {
       name: "no_status_change",
@@ -189,8 +232,8 @@ export function evaluateReplay(input: {
     },
     {
       name: "bounded_score_delta",
-      passed: maxScoreDelta <= config.maxTotalDelta + EPS,
-      detail: `max score delta ${maxScoreDelta.toFixed(4)} vs cap ${config.maxTotalDelta}`,
+      passed: clampFailures === 0 && maxScoreDelta <= config.maxTotalDelta + EPS,
+      detail: `max score delta ${maxScoreDelta.toFixed(4)} vs cap ${config.maxTotalDelta}; clamp engaged on ${clampEngagements} candidate(s), ${clampFailures} failure(s)`,
     },
     {
       name: "bounded_rank_shift",

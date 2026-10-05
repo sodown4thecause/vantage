@@ -76,6 +76,7 @@ export async function collectLearningSamples(opts: {
     .where(
       and(
         eq(opportunityEvidence.workspaceId, opts.workspaceId),
+        eq(document.workspaceId, opts.workspaceId),
         inArray(opportunityEvidence.opportunityId, opportunityIds),
       ),
     );

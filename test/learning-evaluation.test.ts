@@ -51,8 +51,6 @@ function repeat(
   }));
 }
 
-const held: LearningSample = fixture.holdout[0]!;
-
 function scored(
   opportunityId: string,
   decision: "positive" | "negative",
@@ -245,6 +243,44 @@ describe("offline baseline-vs-learned evaluation", () => {
     );
 
     expect(report.baseline).toEqual(replayMetrics(ranked, relevant, report.k));
-    expect(held.decision).toBe("negative");
+  });
+
+  it("reads the same configuration production will apply", () => {
+    const strict = evaluateReplay({
+      ...REPLAY,
+      env: { VANTAGE_LEARNING_MAX_DELTA: "0" },
+    });
+    // A deploy-time cap of 0 disables the nudge entirely.
+    expect(strict.stability.maxScoreDelta).toBe(0);
+    expect(strict.learned).toEqual(strict.baseline);
+  });
+
+  it("blocks a delta that exceeds the configured cap", () => {
+    const report = evaluateReplay({
+      ...REPLAY,
+      env: {},
+      config: { enabled: true, maxTotalDelta: 0.01 },
+    });
+
+    // The clamp must engage and hold, not merely be reported as passing.
+    const gate = report.gates.find((g) => g.name === "bounded_score_delta")!;
+    expect(gate.passed).toBe(true);
+    expect(gate.detail).toContain("0 failure(s)");
+    expect(report.stability.maxScoreDelta).toBeLessThanOrEqual(0.01 + 1e-9);
+  });
+
+  it("detects a holdout label leaking into the weights", () => {
+    // Train on train+holdout: observation count must exceed what train alone
+    // contributes. This is the failure train_holdout_separation exists to catch.
+    const leaky = evaluateReplay({ ...REPLAY, train: [...fixture.train, ...fixture.holdout] });
+    const clean = evaluateReplay(REPLAY);
+
+    const count = (r: typeof clean) => r.model.weights.reduce((n, w) => n + w.evidence, 0);
+    expect(count(leaky)).toBeGreaterThan(count(clean));
+
+    // And the gate itself is falsifiable: it compares two independent counts.
+    expect(
+      clean.gates.find((g) => g.name === "train_holdout_separation")!.detail,
+    ).toContain(`model attributes ${count(clean)} observations`);
   });
 });

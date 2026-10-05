@@ -187,29 +187,65 @@ describe("conservative per-workspace learning", () => {
   });
 
   it("keeps preference weights scoped to the workspace they came from", () => {
+    // Both models clear the evidence threshold, so any inert result comes from
+    // key isolation rather than from a lack of evidence.
+    const cryptoOnly = Array.from({ length: 20 }, (_, i) => ({
+      ...fixture.train[i % fixture.train.length]!,
+      opportunityId: `crypto-${i}`,
+      decision: "negative" as const,
+      topics: ["crypto"],
+      sourceIds: ["s_crypto_only"],
+    }));
+    const observabilityOnly = Array.from({ length: 20 }, (_, i) => ({
+      ...fixture.train[i % fixture.train.length]!,
+      opportunityId: `obs-${i}`,
+      decision: "positive" as const,
+      topics: ["observability"],
+      sourceIds: ["s_obs_only"],
+    }));
+
     const observed = buildPreferenceModel({
       workspaceId: "ws-crypto",
       version: 1,
-      samples: fixture.train.filter((s) => s.decision === "negative"),
+      samples: cryptoOnly,
       config: ACTIVE,
     });
-    const observability = model(fixture.train);
+    const observability = buildPreferenceModel({
+      workspaceId: "ws-observability",
+      version: 1,
+      samples: observabilityOnly,
+      config: ACTIVE,
+    });
 
-    expect(observed.workspaceId).toBe("ws-crypto");
-    expect(weightOf(observability, "source:s_observability")).toBeDefined();
-    expect(weightOf(observed, "source:s_observability")).toBeUndefined();
+    expect(observed.active).toBe(true);
+    expect(observability.active).toBe(true);
+
+    expect(weightOf(observability, "source:s_observability")).toBeUndefined();
     expect(weightOf(observed, "topic:crypto")).toBeDefined();
-    expect(weightOf(observability, "topic:crypto")).toBeDefined();
+    expect(weightOf(observability, "topic:crypto")).toBeUndefined();
+    expect(weightOf(observed, "source:s_obs_only")).toBeUndefined();
+    expect(weightOf(observability, "source:s_crypto_only")).toBeUndefined();
 
-    const crossed = rankWithPreferences({
+    // An active model from one workspace must not move another workspace's
+    // candidate, even when the shared config would otherwise nudge it.
+    const foreign = rankWithPreferences({
       features: STRONG,
       status: decideStatus(STRONG),
-      model: observed,
+      model: observability,
+      context: { topics: ["crypto"], sourceIds: ["s_crypto_only"], intents: [] },
+      config: ACTIVE,
+    });
+    expect(foreign.active).toBe(false);
+    expect(foreign.score).toBe(scoreFeatures(STRONG));
+
+    const own = rankWithPreferences({
+      features: STRONG,
+      status: decideStatus(STRONG),
+      model: observability,
       context: OBSERVABILITY_CONTEXT,
       config: ACTIVE,
     });
-    expect(crossed.active).toBe(false);
-    expect(crossed.score).toBe(scoreFeatures(STRONG));
+    expect(own.active).toBe(true);
   });
 
   it("explains every adjustment it applies", () => {
@@ -288,26 +324,62 @@ describe("conservative per-workspace learning", () => {
     expect(serialized).not.toContain("Our competitor launched");
     expect(findRawContentLeakage(preferenceModel.weights)).toEqual([]);
     for (const weight of preferenceModel.weights) {
-      expect(weight.key.length).toBeLessThanOrEqual(40);
+      const [dimension, term] = weight.key.split(":");
+      expect(weight.key.startsWith(`${dimension}:`)).toBe(true);
+      expect(term!.length).toBeLessThanOrEqual(40);
     }
+  });
+
+  it("accepts real UUID source ids and long topics", () => {
+    const uuid = "3f2504e0-4f89-11d3-9a0c-0305e82c3301";
+    const longTopic = "a".repeat(40);
+    const samples: LearningSample[] = Array.from({ length: 20 }, (_, i) => ({
+      opportunityId: `u${i}`,
+      decision: "positive",
+      topics: [longTopic, "observability"],
+      sourceIds: [uuid],
+      intents: ["rung_4"],
+    }));
+
+    const preferenceModel = buildPreferenceModel({
+      workspaceId: "ws-uuid",
+      version: 1,
+      samples,
+      config: ACTIVE,
+    });
+
+    expect(preferenceModel.active).toBe(true);
+    const sourceWeight = weightOf(preferenceModel, `source:${uuid}`);
+    expect(sourceWeight).toBeDefined();
+    expect(sourceWeight!.weight).toBeGreaterThan(0);
+    expect(findRawContentLeakage(preferenceModel.weights)).toEqual([]);
+  });
+
+  it("rejects a key that is not a bounded dimension token", () => {
+    const violations = findRawContentLeakage([
+      { key: "website:whatever", dimension: "topic", weight: 0.1 },
+      { key: `topic:${"b".repeat(41)}`, dimension: "topic", weight: 0.1 },
+      { key: 42, dimension: "topic", weight: 0.1 },
+    ]);
+    expect(violations).toHaveLength(3);
+    expect(violations.every((v) => v.includes("key is not a bounded"))).toBe(true);
   });
 
   it("refuses a weight payload carrying raw content", () => {
     const violations = findRawContentLeakage([
       { key: "topic:social", dimension: "topic", weight: 0.2, contentMd: "post" },
       { key: "topic:x", dimension: "topic", weight: 0.2, url: "https://x.test/1" },
-      {
-        key: `topic:${"y".repeat(80)}`,
-        dimension: "topic",
-        weight: Number.NaN,
-      },
+      { key: `topic:${"y".repeat(80)}`, dimension: "topic", weight: Number.NaN },
+      { key: "topic:fine", dimension: "topic", weight: 0.2, note: "z".repeat(80) },
     ]);
 
-    expect(violations).toHaveLength(4);
-    expect(violations.join(" ")).toMatch(/contentMd/);
-    expect(violations.join(" ")).toMatch(/url/);
-    expect(violations.join(" ")).toMatch(/exceeds 40 chars/);
-    expect(violations.join(" ")).toMatch(/not finite/);
+    expect(violations).toHaveLength(5);
+    const joined = violations.join(" ");
+    expect(joined).toMatch(/contentMd/);
+    expect(joined).toMatch(/url/);
+    expect(joined).toMatch(/key is not a bounded/);
+    expect(joined).toMatch(/not finite/);
+    expect(joined).toMatch(/term "note" exceeds 40 chars/);
   });
 
   it("treats conflicting decisions on one opportunity as no signal", () => {
@@ -361,6 +433,7 @@ describe("conservative per-workspace learning", () => {
       "VANTAGE_LEARNING_MAX_DELTA",
       "VANTAGE_LEARNING_MAX_WEIGHT",
       "VANTAGE_LEARNING_MAX_RANK_SHIFT",
+      "VANTAGE_LEARNING_K",
     ]) {
       expect(envExample).toContain(flag);
     }
@@ -377,11 +450,28 @@ describe("conservative per-workspace learning", () => {
     });
 
     expect(config.enabled).toBe(true);
-    expect(config.maxTotalDelta).toBe(1);
+    // Out-of-range values fall back to the safe default, never to the loosest
+    // bound: a bad deploy must only ever weaken learning.
+    expect(config.maxTotalDelta).toBe(DEFAULT_LEARNING_CONFIG.maxTotalDelta);
+    expect(config.maxAbsWeight).toBe(DEFAULT_LEARNING_CONFIG.maxAbsWeight);
     expect(config.minWorkspaceEvidence).toBe(
       DEFAULT_LEARNING_CONFIG.minWorkspaceEvidence,
     );
     expect(config.maxRankShift).toBe(0);
-    expect(config.maxAbsWeight).toBe(DEFAULT_LEARNING_CONFIG.maxAbsWeight);
+  });
+
+  it("never lets an out-of-range value loosen learning beyond the default", () => {
+    for (const value of ["999", "1", "-5", "NaN", ""]) {
+      const config = resolveLearningConfig({
+        VANTAGE_LEARNING_MAX_DELTA: value,
+        VANTAGE_LEARNING_MAX_WEIGHT: value,
+      });
+      expect(config.maxTotalDelta).toBeLessThanOrEqual(
+        DEFAULT_LEARNING_CONFIG.maxTotalDelta,
+      );
+      expect(config.maxAbsWeight).toBeLessThanOrEqual(
+        DEFAULT_LEARNING_CONFIG.maxAbsWeight,
+      );
+    }
   });
 });

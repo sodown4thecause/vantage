@@ -129,6 +129,9 @@ export type EvaluationReport = {
 };
 
 export function decisionForEvent(event: OutcomeEvent): DecisionSignal {
+  if ((UNSCORED_DECISION_EVENTS as readonly string[]).includes(event)) {
+    return "none";
+  }
   if ((POSITIVE_DECISION_EVENTS as readonly string[]).includes(event)) {
     return "positive";
   }
