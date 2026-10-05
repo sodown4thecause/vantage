@@ -64,6 +64,13 @@
       "when": 1789989152490,
       "tag": "0008_black_scrambler",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791172729851,
+      "tag": "0009_lively_sway",
+      "breakpoints": true
     }
   ]
 }

@@ -91,14 +91,50 @@ export function computeFeatures(
   };
 }
 
+export type ScoredFeatureName =
+  | "fit"
+  | "intent"
+  | "evidence"
+  | "momentum"
+  | "timing";
+
+/**
+ * The deterministic baseline weights. Offline evaluation compares against this
+ * exact vector, so it must stay the only definition of the baseline score.
+ */
+export const BASELINE_FEATURE_WEIGHTS: Record<ScoredFeatureName, number> = {
+  fit: 0.25,
+  intent: 0.3,
+  evidence: 0.2,
+  momentum: 0.15,
+  timing: 0.1,
+};
+
 export function scoreFeatures(features: OpportunityFeatures): number {
+  const w = BASELINE_FEATURE_WEIGHTS;
   return (
-    features.fit * 0.25 +
-    features.intent * 0.3 +
-    features.evidence * 0.2 +
-    features.momentum * 0.15 +
-    features.timing * 0.1
+    features.fit * w.fit +
+    features.intent * w.intent +
+    features.evidence * w.evidence +
+    features.momentum * w.momentum +
+    features.timing * w.timing
   );
+}
+
+/** Read a stored feature vector defensively; unknown shapes degrade to zero. */
+export function featuresFromRecord(
+  raw: Record<string, number | string | boolean> | null | undefined,
+): OpportunityFeatures {
+  const r = raw ?? {};
+  return {
+    fit: Number(r.fit ?? 0) || 0,
+    intent: Number(r.intent ?? 0) || 0,
+    evidence: Number(r.evidence ?? 0) || 0,
+    momentum: Number(r.momentum ?? 0) || 0,
+    timing: Number(r.timing ?? 0) || 0,
+    modelConfidence: Number(r.modelConfidence ?? 0) || 0,
+    lowConfidence: Boolean(r.lowConfidence),
+  };
 }
 
 export function decideStatus(features: OpportunityFeatures): OpportunityStatus {
