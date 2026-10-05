@@ -137,6 +137,10 @@ Worker script limits are 3 MB (Free) and 10 MB (Paid). CI measures
   to exercise the real Worker runtime.
 - `opennextjs-cloudflare build` calls `fs.symlinkSync`, which needs Developer Mode
   on Windows. Run it on Linux (WSL, Docker, or CI) if you hit `EPERM`.
+- Do **not** work around that with `pnpm install --node-linker=hoisted`. Hoisted
+  installs copy every platform variant of native packages such as sharp's libvips
+  instead of hardlinking them, which can exhaust the disk. The default linked
+  layout hardlinks from the pnpm store and costs almost nothing.
 - The build requires no secrets. `lib/auth/server.ts` and `app/api/auth/[...path]/route.ts`
   both defer Neon Auth construction to request time, and CI has a job that fails if
   the build ever needs `NEON_AUTH_*` again.
