@@ -1,0 +1,247 @@
+{
+  "workspaceId": "ws-learning-a",
+  "description": "Offline replay fixture for Slice 6. The workspace repeatedly acted on an observability source and rejected crypto topics. Holdout candidates are deliberately near-tied on baseline score so a bounded preference nudge can reorder them; baseline puts the three rejected items on top.",
+  "config": {
+    "enabled": true
+  },
+  "train": [
+    {
+      "opportunityId": "t01",
+      "decision": "negative",
+      "topics": ["crypto", "trading"],
+      "sourceIds": ["s_crypto_news"],
+      "intents": ["rung_1"]
+    },
+    {
+      "opportunityId": "t02",
+      "decision": "negative",
+      "topics": ["crypto", "trading"],
+      "sourceIds": ["s_crypto_news"],
+      "intents": ["rung_1"]
+    },
+    {
+      "opportunityId": "t03",
+      "decision": "negative",
+      "topics": ["crypto", "nft"],
+      "sourceIds": ["s_crypto_news"],
+      "intents": ["rung_1"]
+    },
+    {
+      "opportunityId": "t04",
+      "decision": "negative",
+      "topics": ["crypto", "nft"],
+      "sourceIds": ["s_crypto_news"],
+      "intents": ["rung_2"]
+    },
+    {
+      "opportunityId": "t05",
+      "decision": "negative",
+      "topics": ["crypto", "defi"],
+      "sourceIds": ["s_crypto_blog"],
+      "intents": ["rung_2"]
+    },
+    {
+      "opportunityId": "t06",
+      "decision": "negative",
+      "topics": ["crypto", "defi"],
+      "sourceIds": ["s_crypto_blog"],
+      "intents": ["rung_2"]
+    },
+    {
+      "opportunityId": "t07",
+      "decision": "negative",
+      "topics": ["crypto", "nft"],
+      "sourceIds": ["s_crypto_blog"],
+      "intents": ["rung_2"]
+    },
+    {
+      "opportunityId": "t08",
+      "decision": "negative",
+      "topics": ["crypto", "trading"],
+      "sourceIds": ["s_crypto_blog"],
+      "intents": ["rung_1"]
+    },
+    {
+      "opportunityId": "u01",
+      "decision": "positive",
+      "topics": ["observability", "tracing"],
+      "sourceIds": ["s_observability"],
+      "intents": ["rung_4"]
+    },
+    {
+      "opportunityId": "u02",
+      "decision": "positive",
+      "topics": ["observability", "tracing"],
+      "sourceIds": ["s_observability"],
+      "intents": ["rung_4"]
+    },
+    {
+      "opportunityId": "u03",
+      "decision": "positive",
+      "topics": ["observability", "tracing"],
+      "sourceIds": ["s_observability"],
+      "intents": ["rung_4"]
+    },
+    {
+      "opportunityId": "u04",
+      "decision": "positive",
+      "topics": ["observability", "tracing"],
+      "sourceIds": ["s_observability"],
+      "intents": ["rung_4"]
+    },
+    {
+      "opportunityId": "u05",
+      "decision": "positive",
+      "topics": ["observability", "logging"],
+      "sourceIds": ["s_observability"],
+      "intents": ["rung_3"]
+    },
+    {
+      "opportunityId": "u06",
+      "decision": "positive",
+      "topics": ["observability", "logging"],
+      "sourceIds": ["s_observability"],
+      "intents": ["rung_3"]
+    },
+    {
+      "opportunityId": "u07",
+      "decision": "positive",
+      "topics": ["observability", "logging"],
+      "sourceIds": ["s_observability"],
+      "intents": ["rung_3"]
+    },
+    {
+      "opportunityId": "u08",
+      "decision": "positive",
+      "topics": ["observability", "logging"],
+      "sourceIds": ["s_observability"],
+      "intents": ["rung_3"]
+    },
+    {
+      "opportunityId": "u09",
+      "decision": "positive",
+      "topics": ["observability", "apm"],
+      "sourceIds": ["s_observability"],
+      "intents": ["rung_4"]
+    },
+    {
+      "opportunityId": "u10",
+      "decision": "positive",
+      "topics": ["observability", "apm"],
+      "sourceIds": ["s_observability"],
+      "intents": ["rung_4"]
+    },
+    {
+      "opportunityId": "u11",
+      "decision": "positive",
+      "topics": ["observability", "apm"],
+      "sourceIds": ["s_observability"],
+      "intents": ["rung_4"]
+    },
+    {
+      "opportunityId": "u12",
+      "decision": "positive",
+      "topics": ["observability", "apm"],
+      "sourceIds": ["s_observability"],
+      "intents": ["rung_4"]
+    }
+  ],
+  "holdout": [
+    {
+      "opportunityId": "h1",
+      "decision": "negative",
+      "topics": ["crypto", "trading"],
+      "sourceIds": ["s_crypto_news"],
+      "intents": ["rung_1"],
+      "features": {
+        "fit": 0.55,
+        "intent": 0.5,
+        "evidence": 0.4,
+        "momentum": 0.45,
+        "timing": 0.61,
+        "modelConfidence": 0.7,
+        "lowConfidence": false
+      }
+    },
+    {
+      "opportunityId": "h2",
+      "decision": "negative",
+      "topics": ["crypto", "nft"],
+      "sourceIds": ["s_crypto_news"],
+      "intents": ["rung_1"],
+      "features": {
+        "fit": 0.55,
+        "intent": 0.5,
+        "evidence": 0.4,
+        "momentum": 0.45,
+        "timing": 0.58,
+        "modelConfidence": 0.7,
+        "lowConfidence": false
+      }
+    },
+    {
+      "opportunityId": "h3",
+      "decision": "negative",
+      "topics": ["crypto", "defi"],
+      "sourceIds": ["s_crypto_blog"],
+      "intents": ["rung_2"],
+      "features": {
+        "fit": 0.55,
+        "intent": 0.5,
+        "evidence": 0.4,
+        "momentum": 0.45,
+        "timing": 0.55,
+        "modelConfidence": 0.7,
+        "lowConfidence": false
+      }
+    },
+    {
+      "opportunityId": "h4",
+      "decision": "positive",
+      "topics": ["observability", "tracing"],
+      "sourceIds": ["s_observability"],
+      "intents": ["rung_4"],
+      "features": {
+        "fit": 0.55,
+        "intent": 0.5,
+        "evidence": 0.4,
+        "momentum": 0.45,
+        "timing": 0.54,
+        "modelConfidence": 0.7,
+        "lowConfidence": false
+      }
+    },
+    {
+      "opportunityId": "h5",
+      "decision": "positive",
+      "topics": ["observability", "logging"],
+      "sourceIds": ["s_observability"],
+      "intents": ["rung_3"],
+      "features": {
+        "fit": 0.55,
+        "intent": 0.5,
+        "evidence": 0.4,
+        "momentum": 0.45,
+        "timing": 0.51,
+        "modelConfidence": 0.7,
+        "lowConfidence": false
+      }
+    },
+    {
+      "opportunityId": "h6",
+      "decision": "positive",
+      "topics": ["observability", "apm"],
+      "sourceIds": ["s_observability"],
+      "intents": ["rung_4"],
+      "features": {
+        "fit": 0.55,
+        "intent": 0.5,
+        "evidence": 0.4,
+        "momentum": 0.45,
+        "timing": 0.48,
+        "modelConfidence": 0.7,
+        "lowConfidence": false
+      }
+    }
+  ]
+}

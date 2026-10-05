@@ -1,4 +1,5 @@
 import {
+  boolean,
   integer,
   jsonb,
   numeric,
@@ -385,4 +386,58 @@ export type OpportunityDraft = typeof opportunityDraft.$inferSelect;
 export type NewOpportunityDraft = typeof opportunityDraft.$inferInsert;
 export type OpportunityOutcome = typeof opportunityOutcome.$inferSelect;
 export type NewOpportunityOutcome = typeof opportunityOutcome.$inferInsert;
+
+/**
+ * One bounded weight per learned preference key (Slice 6).
+ * Deliberately aggregate-only: no collected content, titles, URLs, or author
+ * references may be stored here. `findRawContentLeakage` rejects violations
+ * before a version is persisted.
+ */
+export type PreferenceWeightRow = {
+  key: string;
+  dimension: string;
+  positives: number;
+  negatives: number;
+  evidence: number;
+  weight: number;
+};
+
+/**
+ * Append-only, versioned per-workspace preference weights.
+ * `active` is the evidence gate; `enabled` is the operator switch that makes a
+ * version eligible to affect ranking, so flipping `enabled` back to false rolls
+ * out instantly without touching any other workspace.
+ */
+export const workspacePreferenceModel = pgTable(
+  "workspace_preference_model",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    weights: jsonb("weights")
+      .$type<PreferenceWeightRow[]>()
+      .notNull()
+      .default([]),
+    positiveEvents: integer("positive_events").notNull().default(0),
+    negativeEvents: integer("negative_events").notNull().default(0),
+    evidence: integer("evidence").notNull().default(0),
+    active: boolean("active").notNull().default(false),
+    disabledReason: text("disabled_reason"),
+    enabled: boolean("enabled").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("workspace_preference_model_version_uidx").on(
+      table.workspaceId,
+      table.version,
+    ),
+  ],
+);
+
+export type WorkspacePreferenceModel = typeof workspacePreferenceModel.$inferSelect;
+export type NewWorkspacePreferenceModel = typeof workspacePreferenceModel.$inferInsert;
 

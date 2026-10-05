@@ -4,15 +4,14 @@ import {
   clusterKeyForDocuments,
   computeFeatures,
   decideStatus,
+  featuresFromRecord,
   recommendedAction,
-  scoreFeatures,
 } from "@/lib/opportunities/features";
 import type {
   BuildOpportunitiesResult,
   OpportunityCardView,
   OpportunityDetailView,
   OpportunityEvidenceView,
-  OpportunityFeatures,
   OpportunityStatus,
 } from "@/lib/opportunities/types";
 import { getDb } from "@/lib/db/client";
@@ -22,6 +21,14 @@ import {
   opportunityEvidence,
   type Opportunity,
 } from "@/lib/db/schema";
+import { resolveLearningConfig } from "@/lib/learning/config";
+import { formatLearningReasons, rankWithPreferences } from "@/lib/learning/rank";
+import { getActivePreferenceModel } from "@/lib/learning/repository";
+import {
+  intentTermsForDocuments,
+  sourceIdsForDocuments,
+  topicTermsForDocuments,
+} from "@/lib/learning/signals";
 import {
   normalizeDocuments,
   type NormalizedDocument,
@@ -32,21 +39,6 @@ const QUEUE_STATUSES: OpportunityStatus[] = [
   "monitor",
   "review",
 ];
-
-function featuresFromRow(
-  raw: Record<string, number | string | boolean> | null | undefined,
-): OpportunityFeatures {
-  const r = raw ?? {};
-  return {
-    fit: Number(r.fit ?? 0) || 0,
-    intent: Number(r.intent ?? 0) || 0,
-    evidence: Number(r.evidence ?? 0) || 0,
-    momentum: Number(r.momentum ?? 0) || 0,
-    timing: Number(r.timing ?? 0) || 0,
-    modelConfidence: Number(r.modelConfidence ?? 0) || 0,
-    lowConfidence: Boolean(r.lowConfidence),
-  };
-}
 
 function toCard(
   row: Opportunity,
@@ -65,7 +57,7 @@ function toCard(
     urgency: row.urgency,
     score: row.score,
     coverage: row.coverage,
-    features: featuresFromRow(row.features),
+    features: featuresFromRecord(row.features),
     evidenceCount,
     clusterKey: row.clusterKey,
     createdAt: row.createdAt.toISOString(),
@@ -123,6 +115,10 @@ function summarize(docs: NormalizedDocument[]): string {
 /**
  * Cluster workspace documents into opportunities, upsert by cluster key,
  * and return the ranked queue (max 5 strong cards, excluding pure ignore).
+ *
+ * Ranking is the deterministic baseline plus a bounded, explainable preference
+ * nudge. Learning is inert unless a workspace has an enabled model version that
+ * cleared the evidence threshold, and it never changes `status`.
  */
 export async function buildOpportunities(opts: {
   workspaceId: string;
@@ -140,16 +136,38 @@ export async function buildOpportunities(opts: {
 
   const normalized = normalizeDocuments(rows);
 
+  const learningConfig = resolveLearningConfig();
+  const preferenceModel = await getActivePreferenceModel({
+    workspaceId: opts.workspaceId,
+    config: learningConfig,
+  });
+  const sourceIdByDocId = new Map(rows.map((r) => [r.id, r.sourceId]));
+
   const clusters = clusterDocuments(normalized);
   let upserted = 0;
 
   for (const [clusterKey, docs] of clusters) {
     const features = computeFeatures(docs);
     const status = decideStatus(features);
-    const score = scoreFeatures(features);
+    const ranking = rankWithPreferences({
+      features,
+      status,
+      model: preferenceModel,
+      context: {
+        topics: topicTermsForDocuments(docs),
+        sourceIds: sourceIdsForDocuments(docs, sourceIdByDocId),
+        intents: intentTermsForDocuments(docs),
+      },
+      config: learningConfig,
+    });
+    const score = ranking.score;
+    const learnedNote =
+      ranking.active && ranking.reasons.length > 0
+        ? ` Learned v${ranking.modelVersion} (${ranking.delta >= 0 ? "+" : "-"}${Math.abs(ranking.delta).toFixed(2)}): ${formatLearningReasons(ranking.reasons)}.`
+        : "";
     const title = titleFor(docs);
     const summary = summarize(docs);
-    const whyItMatters = `Fit ${features.fit.toFixed(2)}, intent ${features.intent.toFixed(2)} across ${docs.length} evidence item(s).`;
+    const whyItMatters = `Fit ${features.fit.toFixed(2)}, intent ${features.intent.toFixed(2)} across ${docs.length} evidence item(s).${learnedNote}`;
     const whyNow = `Timing ${features.timing.toFixed(2)}, momentum ${features.momentum.toFixed(2)}.`;
     const action = recommendedAction(status);
     const coverage = features.lowConfidence ? "review" : status;
