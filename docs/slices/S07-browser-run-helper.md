@@ -24,3 +24,9 @@ One safe function wraps Cloudflare Browser Run Quick Actions for the rest of the
 
 ## Out of scope
 Crawling jobs (`/crawl`) and full Puppeteer sessions; add only if a later slice needs them.
+
+## Learned
+- Implemented in `lib/browser/run.ts` with injectable `deps`; see `docs/browser-run.md`.
+- `getUnitCost` did not exist; the helper queries `provider_price` directly with a 0.09 fallback.
+- `quickAction` returns a Response with the REST `{success, result}` envelope; screenshot is raw bytes.
+- Not verified against a live binding (S02 adds it).
