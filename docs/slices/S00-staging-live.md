@@ -31,6 +31,7 @@ Production, custom domain, new features, Reddit/X/paid sources.
 ## Learned
 - Done 6 Oct: `DATABASE_URL` set; tick 200; Playwright (headless Chromium, `ignoreHTTPSErrors` because of the sandbox proxy CA) drove sign-up → create workspace → onboarding → profile v1 → auto-provisioned "Profile: Hacker News" source. Scan via `GET /api/cron/tick?workspaceId=<id>` inserted 1 HN document and 1 opportunity.
 - Staging cron `0 */3 * * *` is registered (Cloudflare schedules API confirms). **Still to verify:** first scheduled run at 18:00 UTC (look for `[cron] tick completed` in `wrangler tail vantage-staging`), then a second at 21:00 UTC.
+- **Auth pages 404 bug (fixed 6 Oct):** `/auth/sign-up` and `/auth/sign-in` returned 404 on the Worker because `app/auth/[path]/page.tsx` was prerendered (`generateStaticParams` + `dynamicParams=false`) and the Worker has no incremental cache. Now `force-dynamic` with `notFound()` for unknown paths. API-only smoke tests missed it: always test the pages a visitor clicks to. Verified with a browser form sign-up on staging.
 - Saving a profile auto-provisions the HN source (`provisionProfileSources` in `lib/profile/repository.ts`), so a separate "add source" step is not needed.
 - The Sources page scan button was not found by a text match on "scan"; check the label in `app/source-controls.tsx` before writing UI tests.
 - The smoke workspace `f65e5abb-c0c0-4bb3-afac-acf9cc7bd208` and two smoke users exist on staging only; delete after the cron checks (needs owner OK).
