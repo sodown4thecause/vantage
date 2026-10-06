@@ -16,8 +16,8 @@ Worker `vantage-staging` is deployed. Secrets set: `CRON_SECRET`, `NEON_AUTH_COO
 5. Delete the smoke-test user and its workspace (ask the owner first; destructive).
 
 ## Acceptance criteria
-- [ ] Manual tick returns 200 with `ok:true`.
-- [ ] A signed-up staging workspace has at least one `document` and one `opportunity` row from an HN source.
+- [x] Manual tick returns 200 with `ok:true` (6 Oct 16:19 UTC).
+- [x] A signed-up staging workspace has at least one `document` and one `opportunity` row from an HN source (6 Oct 16:20 UTC: 1 document, 1 opportunity, source healthy).
 - [ ] One scheduled cron run succeeded (log line seen), and a second one 3 hours later (check the next day).
 - [ ] `docs/slices/README.md` status table updated; "Learned" notes added below.
 - [ ] No secret value appears in any commit, PR, or log excerpt.
@@ -29,4 +29,8 @@ Production, custom domain, new features, Reddit/X/paid sources.
 `/` returns 200 without a database (signed-out page), so use `/api/cron/tick` or a signed-in page to test the DB. `wrangler tail` needs the Worker name without `--env` (`vantage-staging`). A new Neon Auth trusted origin is required for every new hostname.
 
 ## Learned
-(fill in)
+- Done 6 Oct: `DATABASE_URL` set; tick 200; Playwright (headless Chromium, `ignoreHTTPSErrors` because of the sandbox proxy CA) drove sign-up → create workspace → onboarding → profile v1 → auto-provisioned "Profile: Hacker News" source. Scan via `GET /api/cron/tick?workspaceId=<id>` inserted 1 HN document and 1 opportunity.
+- Staging cron `0 */3 * * *` is registered (Cloudflare schedules API confirms). **Still to verify:** first scheduled run at 18:00 UTC (look for `[cron] tick completed` in `wrangler tail vantage-staging`), then a second at 21:00 UTC.
+- Saving a profile auto-provisions the HN source (`provisionProfileSources` in `lib/profile/repository.ts`), so a separate "add source" step is not needed.
+- The Sources page scan button was not found by a text match on "scan"; check the label in `app/source-controls.tsx` before writing UI tests.
+- The smoke workspace `f65e5abb-c0c0-4bb3-afac-acf9cc7bd208` and two smoke users exist on staging only; delete after the cron checks (needs owner OK).
