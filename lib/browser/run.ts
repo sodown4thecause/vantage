@@ -307,16 +307,18 @@ export async function browserMarkdown(
  * AI extraction. `schema` is a JSON Schema describing the output. Without `opts.validate` the data is
  * `unknown` and must be checked by the caller; pass `validate` (e.g. a zod parse) to get a typed result.
  */
-export async function browserJson(
-  url: string,
-  schema: Record<string, unknown>,
-  opts?: BrowserRunOptions & { prompt?: string },
-): Promise<{ data: unknown; ms: number }>;
+// Overload order matters: the validator overload must come first so options held in a variable still get
+// the validated type instead of falling through to the broad `unknown` overload.
 export async function browserJson<T>(
   url: string,
   schema: Record<string, unknown>,
   opts: BrowserRunOptions & { prompt?: string; validate: (value: unknown) => T },
 ): Promise<{ data: T; ms: number }>;
+export async function browserJson(
+  url: string,
+  schema: Record<string, unknown>,
+  opts?: BrowserRunOptions & { prompt?: string },
+): Promise<{ data: unknown; ms: number }>;
 export async function browserJson(
   url: string,
   schema: Record<string, unknown>,

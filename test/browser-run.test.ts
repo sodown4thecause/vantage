@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
 vi.mock("@/lib/db/client", () => ({ getDb: () => ({}) }));
 
@@ -220,8 +220,13 @@ describe("happy paths", () => {
   it("json without a validator hands back unknown data for the caller to check", async () => {
     const { deps } = setup({ result: { name: "A" }, ms: 10 });
     const out = await browserJson("https://example.com/", {}, { deps });
-    const data: unknown = out.data;
-    expect(data).toEqual({ name: "A" });
+    expectTypeOf(out.data).toBeUnknown();
+    expect(out.data).toEqual({ name: "A" });
+
+    // Options held in a variable must still get the validated type.
+    const opts = { deps, validate: (value: unknown) => String(value) };
+    const typed = await browserJson("https://example.com/", {}, opts);
+    expectTypeOf(typed.data).toBeString();
   });
 
   it("only accepts a BROWSER binding that exposes quickAction", () => {
