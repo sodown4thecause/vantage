@@ -608,6 +608,29 @@ export const sharedSweepRun = pgTable("shared_sweep_run", {
   state: text("state").$type<SweepState>().notNull().default("running"),
 });
 
+/**
+ * Public endpoint guard (S06). `budget_day` is the global daily dollar budget
+ * for unauthenticated, cost-bearing routes; `public_visitor` counts scans per
+ * salted visitor hash per day (raw IPs are never stored).
+ */
+export const budgetDay = pgTable("budget_day", {
+  day: date("day").primaryKey(),
+  spentUsd: numeric("spent_usd", { precision: 12, scale: 6 })
+    .notNull()
+    .default("0"),
+  capUsd: numeric("cap_usd", { precision: 12, scale: 6 }).notNull(),
+});
+
+export const publicVisitor = pgTable(
+  "public_visitor",
+  {
+    visitorHash: text("visitor_hash").notNull(),
+    day: date("day").notNull(),
+    scans: integer("scans").notNull().default(0),
+  },
+  (table) => [primaryKey({ columns: [table.visitorHash, table.day] })],
+);
+
 export type SourceSwitchRow = typeof sourceSwitch.$inferSelect;
 export type CostEventInsert = typeof costEvent.$inferInsert;
 export type SharedPostInsert = typeof sharedPost.$inferInsert;
