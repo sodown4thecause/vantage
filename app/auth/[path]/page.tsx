@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { AuthView } from "@neondatabase/auth-ui";
 import { authViewPaths } from "@neondatabase/auth-ui/server";
 
+import { Shell } from "@/components/shell";
+
 /**
  * Rendered per request on purpose. This route used to be prerendered with
  * generateStaticParams + dynamicParams=false, but the Worker has no incremental
@@ -21,8 +23,10 @@ export default async function AuthPage({
   if (!VALID_PATHS.has(path)) notFound();
 
   return (
-    <main className="flex flex-1 items-center justify-center p-6">
-      <AuthView path={path} />
-    </main>
+    <Shell>
+      <div className="flex justify-center">
+        <AuthView path={path} />
+      </div>
+    </Shell>
   );
 }

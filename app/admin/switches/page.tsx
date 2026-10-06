@@ -1,3 +1,4 @@
+import { Shell } from "@/components/shell";
 import { requireAdmin } from "@/lib/auth/admin";
 import { sourceSwitchStateValues } from "@/lib/db/schema";
 import { SOURCE_SWITCH_KEYS, isSourceSwitchKey } from "@/lib/sources/keys";
@@ -16,8 +17,8 @@ export default async function SourceSwitchesPage({
   const rows = new Map((await listSourceSwitches()).map((row) => [row.sourceKey, row]));
 
   return (
-    <div className="flex flex-1 flex-col items-center bg-zinc-50 px-6 py-16 font-sans dark:bg-black">
-      <main className="w-full max-w-3xl space-y-6 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+    <Shell>
+      <div className="space-y-6">
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
           Source switches
         </h1>
@@ -85,7 +86,7 @@ export default async function SourceSwitchesPage({
             );
           })}
         </ul>
-      </main>
-    </div>
+      </div>
+    </Shell>
   );
 }

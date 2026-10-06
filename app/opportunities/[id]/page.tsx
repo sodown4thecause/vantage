@@ -3,6 +3,9 @@ import Link from "next/link";
 import { authorizeWorkspace } from "@/lib/auth/workspace";
 import { getOpportunityDetail } from "@/lib/opportunities/run";
 
+import { Glyph } from "@/components/glyph";
+import { Shell } from "@/components/shell";
+
 import { DraftPanel } from "./draft-panel";
 import { FeedbackPanel } from "./feedback-panel";
 
@@ -20,7 +23,7 @@ export default async function OpportunityDetailPage({
   if (!workspaceId) {
     return (
       <Shell>
-        <p className="text-sm text-zinc-600">workspaceId is required.</p>
+        <p className="text-ridge">Open this opportunity from your queue so Vantage knows which workspace it belongs to.</p>
       </Shell>
     );
   }
@@ -28,8 +31,8 @@ export default async function OpportunityDetailPage({
   const authorization = await authorizeWorkspace(workspaceId);
   if (!authorization.ok) {
     return (
-      <Shell>
-        <p className="text-sm text-red-600" role="alert">
+      <Shell workspaceId={workspaceId}>
+        <p className="text-stop" role="alert">
           Unable to load this opportunity.
         </p>
       </Shell>
@@ -42,11 +45,11 @@ export default async function OpportunityDetailPage({
   });
   if (!detail) {
     return (
-      <Shell>
-        <p className="text-sm text-zinc-500">Opportunity not found.</p>
+      <Shell workspaceId={workspaceId} active="queue">
+        <p className="mb-3 text-xl font-semibold">This opportunity is no longer in your queue.</p>
         <Link
           href={`/queue?workspaceId=${encodeURIComponent(workspaceId)}`}
-          className="text-sm underline"
+          className="link"
         >
           Back to queue
         </Link>
@@ -54,89 +57,109 @@ export default async function OpportunityDetailPage({
     );
   }
 
+  const f = detail.features;
+  const axes = [
+    ["Fit", f.fit],
+    ["Intent", f.intent],
+    ["Evidence", f.evidence],
+    ["Momentum", f.momentum],
+    ["Timing", f.timing],
+  ] as const;
+
   return (
-    <Shell>
-      <div className="space-y-2">
-        <Link
-          href={`/queue?workspaceId=${encodeURIComponent(workspaceId)}`}
-          className="text-xs font-medium text-zinc-500 underline"
-        >
-          ← Queue
-        </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">{detail.title}</h1>
-        <p className="text-sm text-zinc-500">
-          {detail.status} · score {detail.score.toFixed(2)} · coverage{" "}
-          {detail.coverage}
-        </p>
+    <Shell workspaceId={workspaceId} active="queue" wide>
+      <Link
+        href={`/queue?workspaceId=${encodeURIComponent(workspaceId)}`}
+        className="link text-sm text-ridge"
+      >
+        Back to queue
+      </Link>
+
+      <div className="mt-6 grid items-start gap-x-14 gap-y-12 lg:grid-cols-[1fr_24rem]">
+        <div className="min-w-0 space-y-10">
+          <header className="space-y-3">
+            <h1 className="display text-3xl sm:text-4xl">{detail.title}</h1>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ridge">
+              <span className="rounded-full px-2.5 py-0.5 font-medium capitalize text-ink shadow-[inset_0_0_0_1px_var(--contour)]">
+                {detail.status}
+              </span>
+              <span>Score <b className="text-ink">{detail.score.toFixed(2)}</b></span>
+              <span>Coverage {detail.coverage}</span>
+              {f.lowConfidence && (
+                <span className="rounded-full bg-flag px-2.5 py-0.5 font-semibold text-[#3a2800]">
+                  Low confidence: check before acting
+                </span>
+              )}
+            </div>
+          </header>
+
+          <section className="space-y-5 text-[1.0625rem] leading-snug">
+            <div>
+              <h2 className="font-semibold">Why it matters</h2>
+              <p className="max-w-[62ch] text-ridge">{detail.whyItMatters}</p>
+            </div>
+            <div>
+              <h2 className="font-semibold">Why now</h2>
+              <p className="max-w-[62ch] text-ridge">{detail.whyNow}</p>
+            </div>
+            <div>
+              <h2 className="font-semibold">Recommended next step</h2>
+              <p className="max-w-[62ch] text-ridge">{detail.recommendedAction}</p>
+            </div>
+          </section>
+
+          <DraftPanel workspaceId={workspaceId} opportunityId={detail.id} />
+          <FeedbackPanel workspaceId={workspaceId} opportunityId={detail.id} />
+        </div>
+
+        <aside className="min-w-0 space-y-10 lg:sticky lg:top-6">
+          <section aria-labelledby="score-heading" className="space-y-3">
+            <h2 id="score-heading" className="font-semibold">How it scored</h2>
+            <div className="mx-auto max-w-[17rem]">
+              <Glyph features={f} size={272} labels />
+            </div>
+            <dl className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-1 text-sm">
+              {axes.map(([k, v]) => (
+                <div key={k} className="contents">
+                  <dt className="text-ridge">{k}</dt>
+                  <dd className="font-semibold">{v.toFixed(2)}</dd>
+                </div>
+              ))}
+              <div className="contents">
+                <dt className="text-ridge">Model confidence</dt>
+                <dd className="font-semibold">{f.modelConfidence.toFixed(2)}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section aria-labelledby="evidence-heading">
+            <h2 id="evidence-heading" className="font-semibold">
+              What people said ({detail.evidence.length})
+            </h2>
+            <ul className="mt-4 space-y-6">
+              {detail.evidence.map((e) => (
+                <li key={e.documentId} className="space-y-2 border-l-2 border-signal pl-4">
+                  <a
+                    href={e.urlCanonical}
+                    className="link font-semibold leading-snug"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {e.title || e.urlCanonical}
+                  </a>
+                  <p className="text-sm text-ridge">
+                    {[e.platform, e.provider, e.postedAt].filter(Boolean).join(", ")}
+                  </p>
+                  <p className="quote whitespace-pre-wrap">
+                    {e.contentMd.slice(0, 500)}
+                    {e.contentMd.length > 500 ? "…" : ""}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </aside>
       </div>
-
-      <section className="space-y-2 text-sm">
-        <p>
-          <span className="font-medium">Why it matters:</span>{" "}
-          {detail.whyItMatters}
-        </p>
-        <p>
-          <span className="font-medium">Why now:</span> {detail.whyNow}
-        </p>
-        <p>
-          <span className="font-medium">Recommended action:</span>{" "}
-          {detail.recommendedAction}
-        </p>
-        <p className="text-xs text-zinc-500">
-          Features — fit {detail.features.fit.toFixed(2)}, intent{" "}
-          {detail.features.intent.toFixed(2)}, evidence{" "}
-          {detail.features.evidence.toFixed(2)}, momentum{" "}
-          {detail.features.momentum.toFixed(2)}, timing{" "}
-          {detail.features.timing.toFixed(2)}, modelConfidence{" "}
-          {detail.features.modelConfidence.toFixed(2)}
-          {detail.features.lowConfidence ? " (low confidence → review)" : ""}
-        </p>
-      </section>
-
-      <DraftPanel workspaceId={workspaceId} opportunityId={detail.id} />
-      <FeedbackPanel workspaceId={workspaceId} opportunityId={detail.id} />
-
-      <section>
-        <h2 className="text-sm font-semibold">
-          Evidence ({detail.evidence.length})
-        </h2>
-        <ul className="mt-3 space-y-3">
-          {detail.evidence.map((e) => (
-            <li
-              key={e.documentId}
-              className="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-800"
-            >
-              <a
-                href={e.urlCanonical}
-                className="font-medium underline"
-                target="_blank"
-                rel="noreferrer"
-              >
-                {e.title || e.urlCanonical}
-              </a>
-              <p className="mt-1 text-xs text-zinc-500">
-                {e.platform}
-                {e.provider ? ` · ${e.provider}` : ""}
-                {e.postedAt ? ` · ${e.postedAt}` : ""}
-              </p>
-              <p className="mt-2 whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">
-                {e.contentMd.slice(0, 500)}
-                {e.contentMd.length > 500 ? "…" : ""}
-              </p>
-            </li>
-          ))}
-        </ul>
-      </section>
     </Shell>
-  );
-}
-
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex flex-1 flex-col items-center bg-zinc-50 px-6 py-16 font-sans dark:bg-black">
-      <main className="w-full max-w-2xl space-y-8 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        {children}
-      </main>
-    </div>
   );
 }

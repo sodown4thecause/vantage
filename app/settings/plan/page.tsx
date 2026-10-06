@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
+
+import { PageHead, Shell } from "@/components/shell";
 import { eq } from "drizzle-orm";
 
 import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
@@ -21,7 +23,7 @@ export default async function PlanUsagePage({
   const authorization = await authorizeWorkspace(workspaceId);
   if (!authorization.ok) {
     return (
-      <Shell>
+      <Shell workspaceId={workspaceId} active="plan">
         <p className="text-sm text-red-600 dark:text-red-400" role="alert">
           Unable to load plan and usage for this workspace.
         </p>
@@ -41,14 +43,11 @@ export default async function PlanUsagePage({
   });
 
   return (
-    <Shell>
-      <div className="space-y-2">
-        <p className="text-sm font-medium uppercase tracking-wide text-zinc-500">Settings</p>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">Plan &amp; usage</h1>
-        <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-          Current plan: <strong data-testid="plan-name" className="capitalize">{view.plan}</strong>. Limits are set per plan and can change without a deploy.
-        </p>
-      </div>
+    <Shell workspaceId={workspaceId} active="plan">
+      <PageHead title="Plan & usage" />
+      <p className="-mt-4 mb-8 max-w-[56ch] text-lg leading-snug text-ridge">
+        Current plan: <strong data-testid="plan-name" className="capitalize text-ink">{view.plan}</strong>. Limits are set per plan and can change without a deploy.
+      </p>
       <ul className="space-y-3" data-testid="plan-usage">
         {view.usage.map((row) => {
           const pct = row.limit > 0 && row.used != null ? Math.min(100, Math.round((row.used / row.limit) * 100)) : 0;
@@ -78,15 +77,5 @@ export default async function PlanUsagePage({
         </Link>
       ) : null}
     </Shell>
-  );
-}
-
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex flex-1 flex-col items-center bg-zinc-50 px-6 py-16 font-sans dark:bg-black">
-      <main className="w-full max-w-2xl space-y-8 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        {children}
-      </main>
-    </div>
   );
 }
