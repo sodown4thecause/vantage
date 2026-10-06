@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 
 import {
   clusterKeyForDocuments,
@@ -15,11 +15,14 @@ import type {
   OpportunityStatus,
 } from "@/lib/opportunities/types";
 import { getDb } from "@/lib/db/client";
+import { documentsAreFixtureOnly } from "@/lib/collectors/coverage";
+import { getLatestMonitoringProfile } from "@/lib/profile/repository";
 import {
   document,
   opportunity,
   opportunityEvidence,
   type Opportunity,
+  type DocumentRecord,
 } from "@/lib/db/schema";
 import { resolveLearningConfig } from "@/lib/learning/config";
 import { formatLearningReasons, rankWithPreferences } from "@/lib/learning/rank";
@@ -39,6 +42,16 @@ const QUEUE_STATUSES: OpportunityStatus[] = [
   "monitor",
   "review",
 ];
+
+const liveEvidenceSql = sql`coalesce(${document.postedAt}, ${document.collectedAt}) between now() - interval '7 days' and now() + interval '5 minutes'
+  and ${document.metadata}->>'provider' is distinct from 'fixture'
+  and coalesce(${document.metadata}->>'mocked', 'false') <> 'true'`;
+
+function isLiveEvidence(doc: Pick<DocumentRecord, "metadata" | "postedAt" | "collectedAt">): boolean {
+  const time = (doc.postedAt ?? doc.collectedAt).getTime();
+  const age = Date.now() - time;
+  return !documentsAreFixtureOnly([doc]) && Number.isFinite(age) && age >= -300_000 && age <= 7 * 86400_000;
+}
 
 function toCard(
   row: Opportunity,
@@ -123,18 +136,22 @@ function summarize(docs: NormalizedDocument[]): string {
 export async function buildOpportunities(opts: {
   workspaceId: string;
   limitDocs?: number;
+  signal?: AbortSignal;
 }): Promise<BuildOpportunitiesResult> {
   const db = getDb();
-  const limitDocs = Math.min(Math.max(opts.limitDocs ?? 200, 1), 500);
+  opts.signal?.throwIfAborted();
+  const limitDocs = Math.min(Math.max(Math.floor(opts.limitDocs ?? 200), 1), 200);
+  const profile = await getLatestMonitoringProfile(opts.workspaceId);
+  if (!profile) throw new Error("Monitoring profile required before opportunity generation.");
 
   const rows = await db
     .select()
     .from(document)
-    .where(eq(document.workspaceId, opts.workspaceId))
+    .where(and(eq(document.workspaceId, opts.workspaceId), liveEvidenceSql))
     .orderBy(desc(document.collectedAt))
     .limit(limitDocs);
 
-  const normalized = normalizeDocuments(rows);
+  const normalized = normalizeDocuments(rows.filter(isLiveEvidence));
 
   const learningConfig = resolveLearningConfig();
   const preferenceModel = await getActivePreferenceModel({
@@ -144,10 +161,16 @@ export async function buildOpportunities(opts: {
   const sourceIdByDocId = new Map(rows.map((r) => [r.id, r.sourceId]));
 
   const clusters = clusterDocuments(normalized);
+  opts.signal?.throwIfAborted();
+  // The bounded recent scan is the current queue; retire clusters it no longer supports.
+  await db.update(opportunity).set({ status: "ignore", updatedAt: new Date() })
+    .where(and(eq(opportunity.workspaceId, opts.workspaceId),
+      clusters.size ? notInArray(opportunity.clusterKey, [...clusters.keys()]) : undefined));
   let upserted = 0;
 
   for (const [clusterKey, docs] of clusters) {
-    const features = computeFeatures(docs);
+    opts.signal?.throwIfAborted();
+    const features = { ...computeFeatures(docs, profile), profileVersion: profile.version };
     const status = decideStatus(features);
     const ranking = rankWithPreferences({
       features,
@@ -167,7 +190,7 @@ export async function buildOpportunities(opts: {
         : "";
     const title = titleFor(docs);
     const summary = summarize(docs);
-    const whyItMatters = `Fit ${features.fit.toFixed(2)}, intent ${features.intent.toFixed(2)} across ${docs.length} evidence item(s).${learnedNote}`;
+    const whyItMatters = `Product profile v${profile.version}: fit ${features.fit.toFixed(2)}, intent ${features.intent.toFixed(2)} across ${docs.length} evidence item(s).${learnedNote}`;
     const whyNow = `Timing ${features.timing.toFixed(2)}, momentum ${features.momentum.toFixed(2)}.`;
     const action = recommendedAction(status);
     const coverage = features.lowConfidence ? "review" : status;
@@ -239,14 +262,16 @@ export async function buildOpportunities(opts: {
       opportunityId = inserted[0]!.id;
     }
 
-    for (const doc of docs) {
+    await db.delete(opportunityEvidence).where(and(eq(opportunityEvidence.opportunityId, opportunityId),
+      notInArray(opportunityEvidence.documentId, docs.map((doc) => doc.id))));
+    if (docs.length) {
       await db
         .insert(opportunityEvidence)
-        .values({
+        .values(docs.map((doc) => ({
           workspaceId: opts.workspaceId,
           opportunityId,
           documentId: doc.id,
-        })
+        })))
         .onConflictDoNothing({
           target: [
             opportunityEvidence.opportunityId,
@@ -276,6 +301,8 @@ export async function listOpportunityQueue(opts: {
 }): Promise<OpportunityCardView[]> {
   const db = getDb();
   const limit = Math.min(Math.max(opts.limit ?? 5, 1), 5);
+  const profile = await getLatestMonitoringProfile(opts.workspaceId);
+  if (!profile) return [];
   const rows = await db
     .select()
     .from(opportunity)
@@ -283,6 +310,15 @@ export async function listOpportunityQueue(opts: {
       and(
         eq(opportunity.workspaceId, opts.workspaceId),
         inArray(opportunity.status, QUEUE_STATUSES),
+        sql`${opportunity.features}->>'profileVersion' = ${String(profile.version)}`,
+        sql`exists (select 1 from ${opportunityEvidence}
+          where ${opportunityEvidence.opportunityId} = ${opportunity.id})`,
+        sql`not exists (select 1 from ${opportunityEvidence}
+          inner join ${document} on ${document.id} = ${opportunityEvidence.documentId}
+          where ${opportunityEvidence.opportunityId} = ${opportunity.id}
+          and (not (${liveEvidenceSql})
+            or ${document.workspaceId} <> ${opportunity.workspaceId}
+            or ${opportunityEvidence.workspaceId} <> ${opportunity.workspaceId}))`,
       ),
     )
     .orderBy(desc(opportunity.score), desc(opportunity.updatedAt))
@@ -290,10 +326,13 @@ export async function listOpportunityQueue(opts: {
 
   const cards: OpportunityCardView[] = [];
   for (const row of rows) {
+    if (row.features?.profileVersion !== profile.version) continue;
     const evidenceRows = await db
-      .select()
+      .select({ doc: document })
       .from(opportunityEvidence)
+      .innerJoin(document, eq(document.id, opportunityEvidence.documentId))
       .where(eq(opportunityEvidence.opportunityId, row.id));
+    if (!evidenceRows.length || evidenceRows.some((evidence) => !isLiveEvidence(evidence.doc))) continue;
     cards.push(toCard(row, evidenceRows.length));
   }
   return cards;
@@ -314,7 +353,9 @@ export async function getOpportunityDetail(opts: {
       ),
     )
     .limit(1);
-  if (!row) return null;
+  if (!row || row.status === "ignore") return null;
+  const profile = await getLatestMonitoringProfile(opts.workspaceId);
+  if (!profile || row.features?.profileVersion !== profile.version) return null;
 
   const evidenceJoin = await db
     .select({
@@ -324,6 +365,7 @@ export async function getOpportunityDetail(opts: {
     .from(opportunityEvidence)
     .innerJoin(document, eq(document.id, opportunityEvidence.documentId))
     .where(eq(opportunityEvidence.opportunityId, row.id));
+  if (!evidenceJoin.length || evidenceJoin.some((evidence) => !isLiveEvidence(evidence.doc))) return null;
 
   const evidence: OpportunityEvidenceView[] = evidenceJoin.map((e) => ({
     documentId: e.doc.id,

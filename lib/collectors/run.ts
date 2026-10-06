@@ -1,8 +1,8 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import {
   classifyCollectorCoverage,
-  withLastRunReceipt,
+  documentsAreFixtureOnly,
   type SourceRunReceipt,
 } from "@/lib/collectors/coverage";
 import type {
@@ -17,6 +17,7 @@ export type RunCollectorInput = {
   collector: Collector;
   workspaceId: string;
   sourceId: string;
+  signal?: AbortSignal;
 };
 
 export type RunCollectorOutput = {
@@ -59,31 +60,39 @@ export async function runCollector(
     };
   }
 
+  if (row.health === "paused") {
+    return { sourceId: row.id, collector: input.collector.name, inserted: 0, skipped: 0 };
+  }
+
   let inserted = 0;
   let skipped = 0;
   try {
+    input.signal?.throwIfAborted();
+    // ponytail: free pilot only; add paid lanes after enforceable spend limits.
+    if (process.env.NODE_ENV === "production" &&
+        (row.lane !== "free" || !["hn", "rss", "substack"].includes(row.type))) {
+      throw new Error("Budget limited: paid providers are disabled for the production pilot.");
+    }
     const result: CollectorResult = await input.collector.run({
       workspaceId: input.workspaceId,
       sourceId: input.sourceId,
       config: (row.config ?? {}) as Record<string, unknown>,
+      signal: input.signal,
       etag: row.etag,
       lastModified: row.lastModified,
       cursor: row.cursor,
     });
-    for (const doc of result.documents) {
-      const rows = await db
-        .insert(document)
-        .values({
-          ...doc,
-          workspaceId: input.workspaceId,
-          sourceId: input.sourceId,
-        })
-        .onConflictDoNothing({
-          target: [document.workspaceId, document.contentHash],
-        })
-        .returning({ id: document.id });
-      if (rows.length) inserted += 1;
-      else skipped += 1;
+    if (process.env.NODE_ENV === "production" &&
+        result.documents.some((doc) => documentsAreFixtureOnly([doc]))) {
+      throw new Error("Access pending: synthetic provider output rejected; configure live access.");
+    }
+    if (result.documents.length) {
+      input.signal?.throwIfAborted();
+      const rows = await db.insert(document).values(result.documents.map((doc) => ({
+        ...doc, workspaceId: input.workspaceId, sourceId: input.sourceId,
+      }))).onConflictDoNothing({ target: [document.workspaceId, document.contentHash] }).returning({ id: document.id });
+      inserted = rows.length;
+      skipped = result.documents.length - inserted;
     }
 
     const classified = classifyCollectorCoverage({
@@ -106,10 +115,7 @@ export async function runCollector(
         cursor: next.cursor === undefined ? row.cursor : next.cursor,
         lastPolledAt: new Date(),
         health: receipt.health,
-        config: withLastRunReceipt(
-          (row.config ?? {}) as Record<string, unknown>,
-          receipt,
-        ),
+        config: sql`${source.config} || ${JSON.stringify({ lastRun: receipt })}::jsonb`,
         updatedAt: new Date(),
       })
       .where(eq(source.id, row.id));
@@ -148,10 +154,7 @@ export async function runCollector(
           health: receipt.health,
           lastPolledAt: now,
           updatedAt: now,
-          config: withLastRunReceipt(
-            (row.config ?? {}) as Record<string, unknown>,
-            receipt,
-          ),
+          config: sql`${source.config} || ${JSON.stringify({ lastRun: receipt })}::jsonb`,
         })
         .where(eq(source.id, row.id));
     } catch (healthErr) {
@@ -177,6 +180,7 @@ export async function runCollectorForType(opts: {
   workspaceId: string;
   sourceType: SourceType;
   sourceId?: string;
+  signal?: AbortSignal;
 }): Promise<RunCollectorOutput[]> {
   const db = getDb();
   const rows = await db
@@ -212,6 +216,7 @@ export async function runCollectorForType(opts: {
         collector: opts.collector,
         workspaceId: opts.workspaceId,
         sourceId: t.id,
+        signal: opts.signal,
       }),
     );
   }

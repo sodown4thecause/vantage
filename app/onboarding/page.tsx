@@ -1,6 +1,7 @@
+import { redirect } from "next/navigation";
 import Link from "next/link";
 
-import { authorizeWorkspace } from "@/lib/auth/workspace";
+import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
 
 import { OnboardingForm } from "./onboarding-form";
 
@@ -10,24 +11,9 @@ export default async function OnboardingPage({
   searchParams: Promise<{ workspaceId?: string }>;
 }) {
   const params = await searchParams;
-  const workspaceId = params.workspaceId?.trim();
+  const workspaceId = params.workspaceId?.trim() || (await getCurrentWorkspace())?.id;
 
-  if (!workspaceId) {
-    return (
-      <Shell>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Pass{" "}
-          <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-900">
-            ?workspaceId=…
-          </code>{" "}
-          to complete the five-minute monitoring profile.
-        </p>
-        <Link href="/" className="text-sm font-medium text-zinc-900 underline dark:text-zinc-50">
-          Back home
-        </Link>
-      </Shell>
-    );
-  }
+  if (!workspaceId) redirect("/");
 
   const authorization = await authorizeWorkspace(workspaceId);
   if (!authorization.ok) {
@@ -56,6 +42,10 @@ export default async function OnboardingPage({
         </p>
       </div>
       <OnboardingForm workspaceId={workspaceId} />
+      <nav className="flex gap-4 text-sm">
+        <Link href={`/queue?workspaceId=${encodeURIComponent(workspaceId)}`} className="underline">Opportunity queue</Link>
+        <Link href={`/settings/sources?workspaceId=${encodeURIComponent(workspaceId)}`} className="underline">Sources &amp; Coverage</Link>
+      </nav>
     </Shell>
   );
 }

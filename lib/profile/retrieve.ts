@@ -2,6 +2,7 @@ import type {
   MonitoringProfileInput,
   ProductMaterialResult,
 } from "@/lib/profile/types";
+import { fetchPublicText } from "@/lib/http/public-fetch";
 
 /** Hard caps so onboarding never hangs on a bad URL. */
 export const PRODUCT_FETCH_TIMEOUT_MS = 4_000;
@@ -29,23 +30,17 @@ async function fetchText(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PRODUCT_FETCH_TIMEOUT_MS);
   try {
-    const res = await fetchImpl(url, {
+    const { response: res, text: raw } = await fetchPublicText(url, {
       method: "GET",
-      redirect: "follow",
       signal: controller.signal,
       headers: {
         accept: "text/html,text/plain,application/xhtml+xml",
         "user-agent": "VantageOnboarding/1.0",
       },
-    });
+    }, PRODUCT_FETCH_MAX_BYTES, fetchImpl);
     if (!res.ok) {
       return { ok: false, reason: `HTTP ${res.status} for ${url}` };
     }
-    const buf = await res.arrayBuffer();
-    const slice = buf.byteLength > PRODUCT_FETCH_MAX_BYTES
-      ? buf.slice(0, PRODUCT_FETCH_MAX_BYTES)
-      : buf;
-    const raw = new TextDecoder("utf-8", { fatal: false }).decode(slice);
     const text = stripHtml(raw).slice(0, 12_000);
     if (!text) {
       return { ok: false, reason: `Empty body for ${url}` };

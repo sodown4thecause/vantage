@@ -25,7 +25,7 @@ vi.mock("@/lib/db/client", () => ({
   }),
 }));
 
-import { authorizeWorkspace } from "@/lib/auth/workspace";
+import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
 
 beforeEach(() => {
   state.userId = null;
@@ -33,6 +33,13 @@ beforeEach(() => {
 });
 
 describe("authorizeWorkspace", () => {
+  it("chooses an owned workspace only for the signed-in user", async () => {
+    expect(await getCurrentWorkspace()).toBeNull();
+    state.userId = "user-1";
+    expect(await getCurrentWorkspace()).toBeNull();
+    state.workspaceFound = true;
+    expect(await getCurrentWorkspace()).toEqual({ id: "workspace-1" });
+  });
   it("rejects unauthenticated requests", async () => {
     await expect(authorizeWorkspace("workspace-1")).resolves.toEqual({
       ok: false,

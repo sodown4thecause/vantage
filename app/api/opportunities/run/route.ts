@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { authorizeWorkspace } from "@/lib/auth/workspace";
 import { buildOpportunities } from "@/lib/opportunities/run";
+import { withWorkspaceScanLease } from "@/lib/cron/lease";
 
 export async function POST(req: Request) {
   try {
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
         ? body.limitDocs
         : undefined;
 
-    const result = await buildOpportunities({ workspaceId, limitDocs });
+    const result = await withWorkspaceScanLease(workspaceId, (signal) => buildOpportunities({ workspaceId, limitDocs, signal }));
     return NextResponse.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

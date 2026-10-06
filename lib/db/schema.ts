@@ -87,6 +87,8 @@ export const opportunityStatusEnum = pgEnum("opportunity_status", [
 export const workspace = pgTable("workspace", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
+  scanLeaseToken: text("scan_lease_token"),
+  scanLeaseUntil: timestamp("scan_lease_until", { withTimezone: true }),
   /** Owning Neon Auth user id (neon_auth.user.id) once Auth is provisioned. */
   ownerUserId: text("owner_user_id"),
   plan: text("plan").notNull().default("free"),

@@ -3,6 +3,7 @@ import type {
   MonitoringProfileInput,
   ValidationResult,
 } from "@/lib/profile/types";
+import { isPublicHttpUrl } from "@/lib/http/public-fetch";
 
 const MIN_COMPETITORS = 3;
 const MAX_COMPETITORS = 5;
@@ -30,12 +31,7 @@ function asStringList(value: unknown, maxItems: number): string[] {
 }
 
 function isHttpUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
+  return isPublicHttpUrl(value);
 }
 
 /**

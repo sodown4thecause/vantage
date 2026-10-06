@@ -24,6 +24,21 @@ function doc(
 }
 
 describe("opportunity features and ranking", () => {
+  it("does not treat URL fragments as product relevance", () => {
+    const features = computeFeatures([doc({ id: "urls", text: "Looking to buy an alternative at https://example.com" })], {
+      productDescription: "Invoice accounting", topics: ["invoice accounting"], competitors: ["https://bookkeeping.com"],
+    });
+    expect(features.fit).toBe(0);
+    expect(decideStatus(features)).toBe("ignore");
+  });
+  it("scores relevance against the owning product rather than buying words", () => {
+    const docs = [doc({ id: "agent", title: "Looking for agent evaluation", text: "Need reliable agent evaluation benchmarks. What should I buy?" })];
+    const relevant = { productDescription: "Agent evaluation benchmarks", targetCustomer: "Teams", topics: ["agent evaluation"], competitors: [] };
+    const unrelated = { ...relevant, productDescription: "Invoice accounting", topics: ["invoice accounting"] };
+    expect(computeFeatures(docs, relevant).fit).toBeGreaterThan(0.5);
+    expect(computeFeatures(docs, unrelated).fit).toBe(0);
+    expect(decideStatus(computeFeatures(docs, unrelated))).toBe("ignore");
+  });
   it("clusters related documents under a shared key", () => {
     const docs = [
       doc({
@@ -51,7 +66,7 @@ describe("opportunity features and ranking", () => {
         postedAt: new Date(Date.now() - i * 3600_000),
       }),
     );
-    const features = computeFeatures(docs);
+    const features = computeFeatures(docs, { productDescription: "Social listening and brand monitoring", topics: ["social listening"], competitors: [] });
     expect(features.evidence).toBeGreaterThan(0.4);
     expect(features.intent).toBeGreaterThan(0.5);
     const status = decideStatus(features);
@@ -67,7 +82,7 @@ describe("opportunity features and ranking", () => {
         text: "random chatter without buying signals",
       }),
     ];
-    const features = computeFeatures(docs);
+    const features = computeFeatures(docs, { productDescription: "Random chatter", topics: ["chatter"], competitors: [] });
     expect(features.lowConfidence).toBe(true);
     expect(decideStatus(features)).toBe("review");
   });

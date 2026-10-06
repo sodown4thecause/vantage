@@ -1,12 +1,10 @@
 import { classifyIntent } from "@/lib/pipeline/intent-ladder";
+import type { MonitoringProfileInput } from "@/lib/profile/types";
 import type { NormalizedDocument } from "@/lib/pipeline/normalize";
 import type {
   OpportunityFeatures,
   OpportunityStatus,
 } from "@/lib/opportunities/types";
-
-const BUY_RE =
-  /\b(buy|purchase|pricing|subscribe|sign[\s-]?up|checkout|looking for|recommend|alternative)\b/i;
 
 export function clamp01(n: number): number {
   if (Number.isNaN(n)) return 0;
@@ -51,16 +49,20 @@ export function clusterKeyForDocuments(
 
 export function computeFeatures(
   docs: NormalizedDocument[],
+  profile?: Pick<MonitoringProfileInput, "productDescription" | "topics" | "competitors"> | null,
 ): OpportunityFeatures {
   const intents = docs.map((d) => classifyIntent(d));
   const maxIntent = intents.reduce((m, i) => Math.max(m, i.intentRung), 0);
   const avgConfidence =
     intents.reduce((s, i) => s + i.confidence, 0) / Math.max(intents.length, 1);
 
-  const buyHits = docs.filter((d) =>
-    BUY_RE.test(`${d.title ?? ""} ${d.text}`),
-  ).length;
-  const fit = clamp01(0.35 + buyHits / Math.max(docs.length, 1) * 0.4 + maxIntent / 10);
+  // ponytail: deterministic keyword fit; evaluate richer matching on labelled evidence.
+  const terms = new Set(tokenize(profile
+    ? [...profile.topics, ...profile.competitors, profile.productDescription].join(" ")
+    : "").filter((term) => !/^(the|and|for|with|your|our|from|that|this|tool|product|platform|software|teams|https|http|www|com|org|net)$/.test(term)));
+  const evidenceTerms = new Set(tokenize(docs.map((d) => `${d.title ?? ""} ${d.text}`).join(" ")));
+  const matches = [...terms].filter((term) => evidenceTerms.has(term)).length;
+  const fit = clamp01(matches / Math.max(1, Math.min(terms.size, 4)));
 
   const intent = clamp01(maxIntent / 4);
   const evidence = clamp01(Math.log2(1 + docs.length) / 4);
@@ -138,6 +140,7 @@ export function featuresFromRecord(
 }
 
 export function decideStatus(features: OpportunityFeatures): OpportunityStatus {
+  if (features.fit < 0.5) return "ignore";
   if (features.lowConfidence) return "review";
   const score = scoreFeatures(features);
   if (score >= 0.72 && features.intent >= 0.5) return "opportunity";

@@ -1,19 +1,16 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
-import { mapWithConcurrency } from "@/lib/async/map-with-concurrency";
-import { collectorsByType } from "@/lib/collectors/registry";
-import { runCollector } from "@/lib/collectors/run";
+import { scanWorkspace } from "@/lib/cron/scan";
 import { isCronAuthorized } from "@/lib/cron/authorize";
 import { getDb } from "@/lib/db/client";
-import { source, workspace } from "@/lib/db/schema";
-import { runPipeline } from "@/lib/pipeline/run";
+import { workspace } from "@/lib/db/schema";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * 3-hour tick: run every free-lane collector source, then pipeline.
+ * Run collectors, then refresh the profile-based opportunity queue.
  * Failures on one source are logged; other sources continue.
  */
 export async function GET(req: Request) {
@@ -31,77 +28,37 @@ export async function GET(req: Request) {
           .select()
           .from(workspace)
           .where(eq(workspace.id, workspaceId))
-      : await db.select().from(workspace);
+      // ponytail: rotate three pilot workspaces per tick; use queue fan-out for larger cohorts.
+      : await db.select().from(workspace)
+          .where(sql`(${workspace.scanLeaseUntil} is null or ${workspace.scanLeaseUntil} < now())`)
+          .orderBy(workspace.updatedAt).limit(3);
 
     const collectorResults = [];
-    const pipelineResults = [];
+    const opportunityResults = [];
+    const deadline = AbortSignal.any([req.signal, AbortSignal.timeout(120_000)]);
 
     for (const ws of workspaces) {
-      const sources = await db
-        .select()
-        .from(source)
-        .where(eq(source.workspaceId, ws.id));
-
-      const workspaceCollectorResults = await mapWithConcurrency(
-        sources,
-        4,
-        async (src) => {
-          const collector = collectorsByType[src.type];
-          if (!collector) {
-            return {
-              workspaceId: ws.id,
-              sourceId: src.id,
-              type: src.type,
-              skipped: true,
-              reason: "no collector registered",
-            };
-          }
-          try {
-            const result = await runCollector({
-              collector,
-              workspaceId: ws.id,
-              sourceId: src.id,
-            });
-            const { error, ...publicResult } = result;
-            return {
-              workspaceId: ws.id,
-              ...publicResult,
-              type: src.type,
-              ...(error ? { error: "collector failed" } : {}),
-            };
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            console.error("[tick] collector failed", src.id, message);
-            return {
-              workspaceId: ws.id,
-              sourceId: src.id,
-              type: src.type,
-              error: "collector failed",
-              inserted: 0,
-              skipped: 0,
-              collector: collector.name,
-            };
-          }
-        },
-      );
-      collectorResults.push(...workspaceCollectorResults);
-
+      if (deadline.aborted) {
+        opportunityResults.push({ workspaceId: ws.id, skipped: true, reason: "tick deadline reached; deferred to next scan" });
+        continue;
+      }
       try {
-        const pipe = await runPipeline({ workspaceId: ws.id });
-        pipelineResults.push({ workspaceId: ws.id, ...pipe });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.error("[tick] pipeline failed", ws.id, message);
-        pipelineResults.push({ workspaceId: ws.id, error: "pipeline failed" });
+        const result = await scanWorkspace(ws.id, deadline);
+        collectorResults.push(...result.collectorResults);
+        opportunityResults.push(...result.opportunityResults);
+      } catch (error) {
+        console.error("[tick] workspace scan failed", ws.id, error instanceof Error ? error.message : String(error));
+        const busy = error instanceof Error && error.message === "Workspace scan already running.";
+        opportunityResults.push(busy ? { workspaceId: ws.id, skipped: true, reason: "scan already running" } : { workspaceId: ws.id, error: "workspace scan failed" });
       }
     }
 
     return NextResponse.json({
-      ok: true,
+      ok: ![...collectorResults, ...opportunityResults].some((result) => "error" in result),
       ranAt: new Date().toISOString(),
       workspaces: workspaces.length,
       collectorResults,
-      pipelineResults,
+      opportunityResults,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

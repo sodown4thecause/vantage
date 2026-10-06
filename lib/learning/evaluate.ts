@@ -191,7 +191,6 @@ export function evaluateReplay(input: {
     }
   }
 
-  const trainDecisions = input.train.filter((s) => s.decision !== "none").length;
   // Observations the model attributes to keys, derived independently from train.
   const expectedObservations = input.train.reduce((total, sample) => {
     if (sample.decision === "none") return total;

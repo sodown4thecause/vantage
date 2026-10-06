@@ -8,6 +8,14 @@ export type WorkspaceAuthorization =
   | { ok: true; userId: string }
   | { ok: false; status: 401 | 403; error: "unauthorized" | "forbidden" };
 
+export async function getCurrentWorkspace(): Promise<{ id: string; name: string } | null> {
+  const { data: session } = await auth.getSession();
+  if (!session?.user?.id) return null;
+  const [owned] = await getDb().select({ id: workspace.id, name: workspace.name })
+    .from(workspace).where(eq(workspace.ownerUserId, String(session.user.id))).limit(1);
+  return owned ?? null;
+}
+
 /** Require an authenticated Neon Auth user who owns the requested workspace. */
 export async function authorizeWorkspace(
   workspaceId: string,

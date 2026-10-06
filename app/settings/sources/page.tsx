@@ -1,7 +1,9 @@
+import { redirect } from "next/navigation";
 import Link from "next/link";
 
-import { authorizeWorkspace } from "@/lib/auth/workspace";
+import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
 import { listWorkspaceSources } from "@/lib/sources/list";
+import { FeedForm } from "@/app/source-controls";
 
 export default async function SourcesCoveragePage({
   searchParams,
@@ -9,27 +11,9 @@ export default async function SourcesCoveragePage({
   searchParams: Promise<{ workspaceId?: string }>;
 }) {
   const params = await searchParams;
-  const workspaceId = params.workspaceId?.trim();
+  const workspaceId = params.workspaceId?.trim() || (await getCurrentWorkspace())?.id;
 
-  if (!workspaceId) {
-    return (
-      <Shell>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Pass{" "}
-          <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-900">
-            ?workspaceId=…
-          </code>{" "}
-          to view Sources &amp; Coverage.
-        </p>
-        <Link
-          href="/"
-          className="text-sm font-medium text-zinc-900 underline dark:text-zinc-50"
-        >
-          Back home
-        </Link>
-      </Shell>
-    );
-  }
+  if (!workspaceId) redirect("/");
 
   const authorization = await authorizeWorkspace(workspaceId);
   if (!authorization.ok) {
@@ -59,6 +43,8 @@ export default async function SourcesCoveragePage({
         </p>
       </div>
 
+      <FeedForm workspaceId={workspaceId} />
+
       {sources.length === 0 ? (
         <p className="text-sm text-zinc-500" data-testid="sources-empty">
           No sources configured for this workspace yet.
@@ -66,7 +52,7 @@ export default async function SourcesCoveragePage({
       ) : (
         <ul className="space-y-3" data-testid="sources-list">
           {sources.map((s) => {
-            const coverage = s.coverage ?? s.health;
+            const coverage = s.health === "paused" ? "paused" : s.coverage ?? "awaiting_scan";
             const reason = s.lastRun?.reason ?? "No scan receipt yet.";
             const resultCount = s.lastRun?.resultCount;
             return (
