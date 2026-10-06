@@ -464,6 +464,19 @@ export const sourceSwitch = pgTable("source_switch", {
   changedBy: text("changed_by"),
 });
 
+/** Append-only audit trail of every source_switch change. */
+export const sourceSwitchLog = pgTable("source_switch_log", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sourceKey: text("source_key").notNull(),
+  fromState: text("from_state").$type<SourceSwitchState>().notNull(),
+  toState: text("to_state").$type<SourceSwitchState>().notNull(),
+  reason: text("reason").notNull().default(""),
+  changedBy: text("changed_by"),
+  changedAt: timestamp("changed_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 /** Editable provider prices so the calculator and ledger need no deploy to change. */
 export const providerPrice = pgTable(
   "provider_price",

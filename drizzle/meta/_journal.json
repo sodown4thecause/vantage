@@ -85,6 +85,13 @@
       "when": 1791297553172,
       "tag": "0011_stormy_scarecrow",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791304093814,
+      "tag": "0012_giant_cobalt_man",
+      "breakpoints": true
     }
   ]
 }

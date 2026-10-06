@@ -46,6 +46,15 @@ export async function scanWorkspace(workspaceId: string, deadline?: AbortSignal)
             sourceId: src.id,
             signal,
           });
+          if (result.switchedOff) {
+            return {
+              workspaceId: workspaceId,
+              sourceId: src.id,
+              type: src.type,
+              skipped: true,
+              reason: "source paused",
+            };
+          }
           const { error, ...publicResult } = result;
           return {
             workspaceId: workspaceId,

@@ -1,7 +1,12 @@
 import { eq } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
-import { sourceSwitch, type SourceSwitchRow, type SourceSwitchState } from "@/lib/db/schema";
+import {
+  sourceSwitch,
+  sourceSwitchLog,
+  type SourceSwitchRow,
+  type SourceSwitchState,
+} from "@/lib/db/schema";
 
 export type SwitchDecision = {
   enabled: boolean;
@@ -44,12 +49,39 @@ export async function getSourceSwitch(sourceKey: string): Promise<SwitchDecision
   }
 }
 
+/** Every switch row that exists. Source keys with no row are on. */
+export async function listSourceSwitches(): Promise<SourceSwitchRow[]> {
+  return getDb().select().from(sourceSwitch);
+}
+
+/** Switches that are off, for labelling sources. Lookup failure means none. */
+export async function listOffSwitches(): Promise<Map<string, SwitchDecision>> {
+  const out = new Map<string, SwitchDecision>();
+  try {
+    for (const row of await listSourceSwitches()) {
+      const decision = decideSwitch(row);
+      if (!decision.enabled) out.set(row.sourceKey, decision);
+    }
+  } catch (err) {
+    console.error("[switch] list failed; treating sources as on", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  return out;
+}
+
 export async function setSourceSwitch(opts: {
   sourceKey: string;
   state: SourceSwitchState;
   reason?: string;
   changedBy?: string | null;
 }): Promise<void> {
+  const db = getDb();
+  const [previous] = await db
+    .select()
+    .from(sourceSwitch)
+    .where(eq(sourceSwitch.sourceKey, opts.sourceKey))
+    .limit(1);
   const values = {
     sourceKey: opts.sourceKey,
     state: opts.state,
@@ -57,8 +89,16 @@ export async function setSourceSwitch(opts: {
     changedBy: opts.changedBy ?? null,
     changedAt: new Date(),
   };
-  await getDb()
+  await db
     .insert(sourceSwitch)
     .values(values)
     .onConflictDoUpdate({ target: sourceSwitch.sourceKey, set: values });
+  await db.insert(sourceSwitchLog).values({
+    sourceKey: opts.sourceKey,
+    fromState: previous?.state ?? "on",
+    toState: opts.state,
+    reason: values.reason,
+    changedBy: values.changedBy,
+    changedAt: values.changedAt,
+  });
 }
