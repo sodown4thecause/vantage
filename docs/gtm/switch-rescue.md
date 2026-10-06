@@ -1,6 +1,6 @@
 # Switch Rescue: two-week manual test (1 to 14 Nov 2026)
 
-Source: Astra's report and the 6 Oct competitor review. Purpose: find out, by hand and before building more, whether people losing GummySearch, F5Bot or Reddit-RSS tooling will switch to Vantage and pay. Reddit RSS ends **13 Nov**; GummySearch lifetime access ends **30 Nov**.
+Source: Astra's report and the 6 Oct 2026 competitor review (dates below are as of 6 Oct; **verify each against the primary source before repeating it to anyone**: TechCrunch and PPC Land on Reddit's API/RSS shutdown, GummySearch's own closing notice). Purpose: find out, by hand and before building more, whether people losing GummySearch, F5Bot or Reddit-RSS tooling will switch to Vantage and pay. Reddit RSS ends **13 Nov**; GummySearch lifetime access ends **30 Nov**.
 
 **Everything here is done by the owner personally, from their own accounts, in their own words.** Agents prepared this kit only. No automation, no mass messaging, no AI-written messages or comments (Hacker News bans AI-generated text and several subreddits ban or restrict it).
 
@@ -19,10 +19,17 @@ Only people who **publicly** said they are losing a tool or asked for an alterna
 - the competitors' own communities and issue trackers where users ask about alternatives (read-only; follow each venue's rules);
 - people you already know from your own network.
 
-Do not scrape contact details, buy lists, or message people who have not publicly asked. Before posting anywhere, re-read that venue's rules the same day (see `/rules` once the Rules Index ships, until then read the rules page yourself). Skip r/SaaS entirely.
+Do not scrape contact details, buy lists, or message people who have not publicly asked. Before posting anywhere, re-read that venue's rules the same day (see `/rules` once the Rules Index ships, until then read the rules page yourself). Skip r/SaaS entirely (it banned promoting tools that detect opportunities or generate promotional replies, June 2026; breaking the rule can get you banned and the tool's URL blacklisted).
 
-## The offer (one paragraph, edit in your own voice)
-"I'm building a free, open-source alternative that keeps watching Reddit and developer communities (HN, GitHub, Stack Overflow and more) for people asking about your category. If you send me your keyword list, I'll set it up for you and send the first leads within 24 hours. It's free to start, and Pro is $5 a month. I made it, so I'm biased." Always disclose you built it.
+## What to cover in your own message (facts to cover, not a template to paste)
+Write each message yourself, specific to the person. Cover these points, **but only the ones that are true on the day you send it**:
+
+- **Who you are and that you built it** ("I made this, so I'm biased").
+- **What it does today.** List only the sources you have personally seen running in production that day. As of 6 Oct 2026 the scheduled scan only runs Hacker News, RSS and Substack; Reddit, GitHub and Stack Overflow are planned (slices S11, S13, S14), so do not promise them until they are live. If some are still being added, say so.
+- **"Free to start".** Do not say "free" and "$5 Pro" as if they were one offer. Say what is free now and that a paid plan is planned or available.
+- **"Open source"** only if the repository is public and has a LICENSE file when you send the message (there is none as of 6 Oct 2026). Otherwise leave the word out.
+- **Payment.** Stripe billing (slice S40) is not built yet. If you want to test the "paying" gate before it ships, say plainly that you will take payment manually (for example a payment link) and record it as such. Otherwise the paying gate cannot be met.
+- **What you will do for them:** set up their keywords and send the first leads within 24 hours.
 
 ## Rescue procedure (target: first leads within 24 hours)
 1. Ask for their keyword export or list (GummySearch CSV, F5Bot list, Syften queries) and what they sell.
@@ -39,16 +46,16 @@ Copy `docs/gtm/switch-rescue-tracking.csv` and fill one row per person. Columns:
 |---|---|
 | `id` | short label you choose (no personal data needed) |
 | `source_tool` | gummysearch, f5bot, syften, reddit_rss, other |
-| `found_via` | where you found the public ask (venue name, not a link to a private message) |
+| `found_via` | where you found the public ask (venue name only) |
 | `contacted_on` | date |
-| `rescued_on` | date their keywords were running and first leads sent (blank if not) |
-| `activated` | yes/no: acted on or opened at least one lead in week one |
-| `paying` | yes/no |
+| `rescued_on` | `YYYY-MM-DD` date their keywords were running and first leads sent; **leave blank if not rescued** (anything else is rejected) |
+| `activated` | `yes` or `no`: acted on or opened at least one lead in week one |
+| `paying` | `yes` or `no` |
 | `founder_minutes` | your time spent |
 | `provider_cost_usd` | from the cost ledger for their workspace |
 | `notes` | what broke, which keyword syntax could not be imported, what they asked for |
 
-Summarize with `pnpm tsx scripts/gtm/summarize.ts docs/gtm/switch-rescue-tracking.csv` (prints gate status, founder time and cost per rescue).
+**No names, handles, emails or links in any column** (`id` is a label you choose, and each id must be unique; log follow-ups in `notes`). Summarize with `pnpm tsx scripts/gtm/summarize.ts docs/gtm/switch-rescue-tracking.csv` (prints gate status, founder time and cost per rescue). The script rejects the sheet and lists every problem (empty or duplicate ids, a `rescued_on` that is not a date, `activated`/`paying` values other than yes/no, minutes or cost that are not numbers) instead of guessing.
 
 ## No-spam checklist (tick before each message)
 - [ ] They publicly asked or complained about this exact problem.

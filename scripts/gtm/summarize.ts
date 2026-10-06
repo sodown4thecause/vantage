@@ -63,17 +63,42 @@ export function parseCsv(text: string): string[][] {
   return rows;
 }
 
-const yes = (value: string) => /^(y|yes|true|1)$/i.test(value.trim());
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-function num(value: string): number {
-  const parsed = Number(value.trim());
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+function parseYesNo(value: string, field: string, rowLabel: string, problems: string[]): boolean {
+  const v = value.trim().toLowerCase();
+  if (v === "" || v === "no" || v === "n" || v === "false" || v === "0") return false;
+  if (v === "yes" || v === "y" || v === "true" || v === "1") return true;
+  problems.push(`${rowLabel}: ${field} must be yes or no (got "${value.trim()}")`);
+  return false;
 }
 
+function parseNumber(value: string, field: string, rowLabel: string, problems: string[]): number {
+  const v = value.trim();
+  if (v === "") return 0;
+  const parsed = Number(v);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    problems.push(`${rowLabel}: ${field} must be a non-negative number (got "${v}")`);
+    return 0;
+  }
+  return parsed;
+}
+
+const REQUIRED_COLUMNS = ["id", "rescued_on", "activated", "paying"] as const;
+
+/**
+ * Parse the tracking sheet. Anything ambiguous is rejected with every problem
+ * listed at once, because a silently wrong gate decision is worse than an error.
+ */
 export function parseRescueCsv(text: string): RescueRow[] {
   const [header, ...body] = parseCsv(text);
   if (!header) return [];
-  const col = (name: string) => header.map((h) => h.trim().toLowerCase()).indexOf(name);
+  const names = header.map((h) => h.trim().toLowerCase());
+  const col = (name: string) => names.indexOf(name);
+  const missing = REQUIRED_COLUMNS.filter((name) => col(name) < 0);
+  if (missing.length) {
+    throw new Error(`CSV is missing required column(s): ${missing.join(", ")}`);
+  }
   const idx = {
     id: col("id"),
     sourceTool: col("source_tool"),
@@ -84,20 +109,34 @@ export function parseRescueCsv(text: string): RescueRow[] {
     founderMinutes: col("founder_minutes"),
     providerCostUsd: col("provider_cost_usd"),
   };
-  if (idx.id < 0 || idx.rescuedOn < 0) {
-    throw new Error("CSV must include at least the id and rescued_on columns");
-  }
   const get = (row: string[], i: number) => (i >= 0 ? (row[i] ?? "").trim() : "");
-  return body.map((row) => ({
-    id: get(row, idx.id),
-    sourceTool: get(row, idx.sourceTool),
-    contactedOn: get(row, idx.contactedOn),
-    rescuedOn: get(row, idx.rescuedOn),
-    activated: yes(get(row, idx.activated)),
-    paying: yes(get(row, idx.paying)),
-    founderMinutes: num(get(row, idx.founderMinutes)),
-    providerCostUsd: num(get(row, idx.providerCostUsd)),
-  }));
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  const rows: RescueRow[] = body.map((row, n) => {
+    const id = get(row, idx.id);
+    const label = id ? `row ${n + 2} (${id})` : `row ${n + 2}`;
+    if (!id) problems.push(`${label}: id is empty`);
+    else if (seen.has(id.toLowerCase())) problems.push(`${label}: duplicate id`);
+    seen.add(id.toLowerCase());
+    const rescuedOn = get(row, idx.rescuedOn);
+    if (rescuedOn !== "" && !ISO_DATE.test(rescuedOn)) {
+      problems.push(`${label}: rescued_on must be YYYY-MM-DD or blank (got "${rescuedOn}")`);
+    }
+    return {
+      id,
+      sourceTool: get(row, idx.sourceTool),
+      contactedOn: get(row, idx.contactedOn),
+      rescuedOn: ISO_DATE.test(rescuedOn) ? rescuedOn : "",
+      activated: parseYesNo(get(row, idx.activated), "activated", label, problems),
+      paying: parseYesNo(get(row, idx.paying), "paying", label, problems),
+      founderMinutes: parseNumber(get(row, idx.founderMinutes), "founder_minutes", label, problems),
+      providerCostUsd: parseNumber(get(row, idx.providerCostUsd), "provider_cost_usd", label, problems),
+    };
+  });
+  if (problems.length) {
+    throw new Error(`Tracking sheet has ${problems.length} problem(s):\n- ${problems.join("\n- ")}`);
+  }
+  return rows;
 }
 
 export function summarize(rows: RescueRow[]): GateStatus {
@@ -147,5 +186,10 @@ if (process.argv[1] && /summarize\.[mc]?[tj]s$/.test(process.argv[1])) {
     console.error("usage: pnpm tsx scripts/gtm/summarize.ts <tracking.csv>");
     process.exit(2);
   }
-  console.log(formatSummary(summarize(parseRescueCsv(readFileSync(path, "utf8")))));
+  try {
+    console.log(formatSummary(summarize(parseRescueCsv(readFileSync(path, "utf8")))));
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
 }

@@ -48,12 +48,32 @@ describe("summarize", () => {
     expect(formatSummary(status)).toContain("Gates not all met");
   });
 
-  it("tolerates bad numbers and rejects sheets without required columns", () => {
-    const csv = [HEADER, "a,x,y,2026-11-01,2026-11-02,YES,y,abc,-5,"].join("\n");
-    const row = parseRescueCsv(csv)[0];
-    expect(row.founderMinutes).toBe(0);
-    expect(row.providerCostUsd).toBe(0);
-    expect(row.activated).toBe(true);
-    expect(() => parseRescueCsv("name,date\nx,y")).toThrow();
+  it("rejects a rescued_on that is not a date, so 'no' or 'pending' cannot count as a rescue", () => {
+    for (const bad of ["no", "n/a", "-", "pending", "11/03/2026"]) {
+      const csv = [HEADER, `a,x,y,2026-11-01,${bad},yes,yes,10,0,`].join("\n");
+      expect(() => parseRescueCsv(csv)).toThrow(/rescued_on must be YYYY-MM-DD/);
+    }
+  });
+
+  it("rejects empty and duplicate ids", () => {
+    const csv = [HEADER, "a,x,y,,2026-11-02,yes,no,1,0,", "A,x,y,,2026-11-03,yes,no,1,0,", ",x,y,,,no,no,0,0,"].join("\n");
+    expect(() => parseRescueCsv(csv)).toThrow(/duplicate id[\s\S]*id is empty/);
+  });
+
+  it("rejects unrecognised yes/no and number values instead of guessing", () => {
+    const csv = [HEADER, "a,x,y,,2026-11-02,Yes.,x,30 min,-5,"].join("\n");
+    expect(() => parseRescueCsv(csv)).toThrow(/activated must be yes or no[\s\S]*paying must be yes or no[\s\S]*founder_minutes[\s\S]*provider_cost_usd/);
+  });
+
+  it("accepts the documented yes/no spellings and blank optional cells", () => {
+    const csv = [HEADER, "a,x,y,,2026-11-02,Y,TRUE,,,", "b,x,y,,,no,,,,"].join("\n");
+    const rows = parseRescueCsv(csv);
+    expect(rows[0]).toMatchObject({ activated: true, paying: true, founderMinutes: 0, providerCostUsd: 0 });
+    expect(rows[1]).toMatchObject({ activated: false, paying: false, rescuedOn: "" });
+  });
+
+  it("requires id, rescued_on, activated and paying columns", () => {
+    expect(() => parseRescueCsv("id,rescued_on\na,2026-11-01")).toThrow(/activated, paying/);
+    expect(() => parseRescueCsv("name,date\nx,y")).toThrow(/missing required column/);
   });
 });
