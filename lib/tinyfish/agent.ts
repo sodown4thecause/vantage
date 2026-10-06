@@ -1,5 +1,6 @@
 import type { AgentRunParams, TinyFish } from "@tiny-fish/sdk";
 
+import { withCost, type CostContext } from "@/lib/costs/meter";
 import { createTinyFishClient } from "@/lib/tinyfish/client";
 
 export type TinyFishStructuredRunOptions = {
@@ -10,6 +11,8 @@ export type TinyFishStructuredRunOptions = {
   maxSteps?: number;
   maxDurationSeconds?: number;
   client?: TinyFish;
+  /** Cost attribution; defaults to source key "tinyfish". */
+  ctx?: CostContext;
 };
 
 /**
@@ -32,7 +35,17 @@ export async function runTinyFishStructuredAgent(
     },
   };
 
-  const response = await client.agent.run(params);
+  const ctx = opts.ctx ?? { sourceKey: "tinyfish" };
+  const response = await withCost(
+    {
+      sourceKey: ctx.sourceKey,
+      workspaceId: ctx.workspaceId,
+      provider: "tinyfish",
+      action: "agent_step",
+      units: (r) => Math.max(1, r.num_of_steps ?? 1),
+    },
+    () => client.agent.run(params),
+  );
   if (response.status !== "COMPLETED" || response.error) {
     const message =
       response.error?.message ??

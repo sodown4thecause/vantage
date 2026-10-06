@@ -1,11 +1,13 @@
 import {
   boolean,
+  date,
   index,
   integer,
   jsonb,
   numeric,
   pgEnum,
   pgTable,
+  primaryKey,
   real,
   text,
   timestamp,
@@ -519,6 +521,27 @@ export const costEvent = pgTable(
   (table) => [
     index("cost_event_ts_idx").on(table.ts),
     index("cost_event_workspace_ts_idx").on(table.workspaceId, table.ts),
+  ],
+);
+
+/** Daily rollup of cost_event: what each source/provider/action cost per UTC day. */
+export const costDaily = pgTable(
+  "cost_daily",
+  {
+    day: date("day").notNull(),
+    sourceKey: text("source_key").notNull(),
+    provider: text("provider").notNull(),
+    action: text("action").notNull(),
+    calls: integer("calls").notNull().default(0),
+    costUsd: numeric("cost_usd", { precision: 12, scale: 6 })
+      .notNull()
+      .default("0"),
+    failed: integer("failed").notNull().default(0),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.day, table.sourceKey, table.provider, table.action],
+    }),
   ],
 );
 

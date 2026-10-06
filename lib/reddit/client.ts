@@ -4,6 +4,7 @@ import {
   numberField,
   stringField,
 } from "@/lib/tinyfish/agent";
+import { withCost, type CostContext } from "@/lib/costs/meter";
 import { createScavioClient, hasScavioApiKey } from "@/lib/scavio/client";
 
 export type RedditPost = {
@@ -82,14 +83,16 @@ async function fetchViaScavio(opts?: {
   query?: string;
   limit?: number;
   cursor?: string;
+  ctx?: CostContext;
 }): Promise<{ posts: RedditPost[]; cursor?: string | null }> {
   const client = createScavioClient();
   const query = opts?.query?.trim() || "social listening indie saas";
   const limit = opts?.limit ?? 20;
-  const payload = (await client.reddit.search({
-    query,
-    cursor: opts?.cursor,
-  })) as Record<string, unknown>;
+  const ctx = opts?.ctx ?? { sourceKey: "reddit" };
+  const payload = (await withCost(
+    { sourceKey: ctx.sourceKey, workspaceId: ctx.workspaceId, provider: "scavio", action: "reddit_search" },
+    () => client.reddit.search({ query, cursor: opts?.cursor }),
+  )) as Record<string, unknown>;
 
   const posts = mapPosts(unwrapResults(payload), limit);
   const nextCursor =
@@ -109,6 +112,7 @@ export async function fetchRedditPosts(opts?: {
   query?: string;
   limit?: number;
   cursor?: string;
+  ctx?: CostContext;
 }): Promise<RedditPost[]> {
   const { posts } = await fetchRedditPostsWithMeta(opts);
   return posts;
@@ -118,6 +122,7 @@ export async function fetchRedditPostsWithMeta(opts?: {
   query?: string;
   limit?: number;
   cursor?: string;
+  ctx?: CostContext;
 }): Promise<{
   posts: RedditPost[];
   meta: RedditFetchMeta;
