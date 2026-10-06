@@ -14,7 +14,7 @@ Options: `binding` or `env` (pass explicitly from Workflows, queues and cron, wh
 1. Rejects non-public URLs (`isPublicHttpUrl`) and the denylist: reddit.com, linkedin.com, facebook.com, instagram.com, x.com, twitter.com and subdomains (platform terms, bot-identifying crawler).
 2. Checks the `browser_run` source switch (paused sources throw `source_paused`, never an empty result).
 3. Calls `env.BROWSER.quickAction(action, params)` with a timeout and output size cap.
-4. Reads `X-Browser-Ms-Used` and writes a `cost_event` (`provider: cloudflare_browser_run`, units = seconds because `cost_event.units` is numeric(14,4), price = hourly `provider_price` / 3600, default 0.09 USD/hour). A missing header or a timeout falls back to measured wall time and is charged, since the call may still be billing. Failures are recorded at zero cost unless time was measured.
+4. Reads `X-Browser-Ms-Used` and writes a `cost_event` (`provider: cloudflare_browser_run`, units = seconds because `cost_event.units` is numeric(14,4), price = the `provider_price` row `browser_run` / `browser_hour` (USD per hour, same row for every quick action) / 3600, default 0.09 USD/hour; the cost event itself is recorded under provider `cloudflare_browser_run` with the quick action as its action). A missing header or a timeout falls back to measured wall time and is charged, since the call may still be billing. Failures are recorded at zero cost unless time was measured.
 5. Throws `BrowserRunError` with a fixed message and a `code`; binding errors are never surfaced.
 
 ## Limits and setup
