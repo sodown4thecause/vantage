@@ -52,6 +52,31 @@ beforeEach(() => {
   vi.stubEnv("VANTAGE_ADMIN_USER_IDS", "admin-1, admin-2");
 });
 
+describe("PUT origin check", () => {
+  const body = JSON.stringify({ sourceKey: "reddit", state: "paused", reason: "x" });
+  const withOrigin = (origin?: string) =>
+    PUT(
+      new Request("https://x.test/api/admin/switches", {
+        method: "PUT",
+        headers: origin ? { origin } : {},
+        body,
+      }),
+    );
+
+  it("rejects a request whose Origin is another site, before changing anything", async () => {
+    state.userId = "admin-1";
+    expect((await withOrigin("https://evil.example")).status).toBe(403);
+    expect((await withOrigin("not a url")).status).toBe(403);
+    expect(state.batches).toHaveLength(0);
+  });
+
+  it("allows the same origin and clients that send no Origin header", async () => {
+    state.userId = "admin-1";
+    expect((await withOrigin("https://x.test")).status).toBe(200);
+    expect((await withOrigin()).status).toBe(200);
+  });
+});
+
 describe("PUT body validation", () => {
   it("answers 400, not 500, for JSON null, arrays and primitives", async () => {
     state.userId = "admin-1";

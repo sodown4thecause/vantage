@@ -6,6 +6,21 @@ import { listSourceSwitches, setSourceSwitch } from "@/lib/sources/switch";
 
 const notFound = () => NextResponse.json({ error: "not found" }, { status: 404 });
 
+/**
+ * Defence in depth against cross-site requests on this privileged route: a browser always sends Origin on
+ * cross-origin writes, so when it is present it must match this request's own origin. Non-browser clients
+ * (no Origin header) are still authenticated by the admin session.
+ */
+function isCrossOrigin(req: Request): boolean {
+  const origin = req.headers.get("origin");
+  if (!origin) return false;
+  try {
+    return new URL(origin).origin !== new URL(req.url).origin;
+  } catch {
+    return true;
+  }
+}
+
 export async function GET() {
   if (!(await getAdminUserId())) return notFound();
   try {
@@ -21,6 +36,7 @@ export async function GET() {
 export async function PUT(req: Request) {
   const adminId = await getAdminUserId();
   if (!adminId) return notFound();
+  if (isCrossOrigin(req)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   try {
     const raw: unknown = await req.json().catch(() => null);
     const body: { sourceKey?: unknown; state?: unknown; reason?: unknown } =
