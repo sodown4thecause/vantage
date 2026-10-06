@@ -1,8 +1,9 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import {
   monitoringProfile,
+  source,
   type MonitoringProfile,
 } from "@/lib/db/schema";
 import { retrieveProductMaterial } from "@/lib/profile/retrieve";
@@ -100,5 +101,16 @@ export async function saveMonitoringProfile(args: {
   if (!row) {
     throw new Error("failed to persist monitoring profile");
   }
+  await provisionProfileSources(args.workspaceId, args.input.topics);
   return toProfileView(row);
+}
+
+export async function provisionProfileSources(workspaceId: string, topics: string[]): Promise<void> {
+  const config = { queries: topics.slice(0, 5), maxPages: 1, enrich: false };
+  await getDb().insert(source).values({
+    workspaceId, name: "Profile: Hacker News", type: "hn", lane: "free", config,
+  }).onConflictDoUpdate({
+    target: [source.workspaceId, source.name],
+    set: { config: sql`${source.config} || ${JSON.stringify(config)}::jsonb`, updatedAt: new Date() },
+  });
 }

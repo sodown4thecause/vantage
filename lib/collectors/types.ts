@@ -12,6 +12,7 @@ export type CollectorContext = {
   sourceId: string;
   /** Opaque source.config jsonb from the DB. */
   config: Record<string, unknown>;
+  signal?: AbortSignal;
   etag?: string | null;
   lastModified?: string | null;
   cursor?: string | null;

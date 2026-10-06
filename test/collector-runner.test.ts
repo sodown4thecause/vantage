@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 const state = vi.hoisted(() => ({
   row: null as Record<string, unknown> | null,
   insertOutcomes: [] as Array<Array<{ id: string }> | Error>,
   updates: [] as Array<Record<string, unknown>>,
+  insertValues: [] as unknown[],
 }));
 
 vi.mock("@/lib/db/client", () => ({
@@ -14,7 +16,7 @@ vi.mock("@/lib/db/client", () => ({
       }),
     }),
     insert: () => ({
-      values: () => ({
+      values: (values: unknown) => { state.insertValues.push(values); return ({
         onConflictDoNothing: () => ({
           returning: async () => {
             const outcome = state.insertOutcomes.shift() ?? [];
@@ -22,7 +24,7 @@ vi.mock("@/lib/db/client", () => ({
             return outcome;
           },
         }),
-      }),
+      }); },
     }),
     update: () => ({
       set: (values: Record<string, unknown>) => ({
@@ -40,6 +42,8 @@ import type { Collector } from "@/lib/collectors/types";
 const sourceRow = {
   id: "source-1",
   workspaceId: "workspace-1",
+  type: "hn",
+  lane: "free",
   config: {},
   etag: "old-etag",
   lastModified: "old-modified",
@@ -59,10 +63,40 @@ beforeEach(() => {
   state.row = { ...sourceRow };
   state.insertOutcomes = [];
   state.updates = [];
+  state.insertValues = [];
   vi.restoreAllMocks();
 });
 
 describe("runCollector", () => {
+  it("blocks paid providers in production before any external call", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    state.row = { ...sourceRow, type: "reddit", lane: "paid" };
+    const run = vi.fn(async () => ({ documents: [] }));
+    const result = await runCollector({ collector: { name: "reddit", run }, workspaceId: "workspace-1", sourceId: "source-1" });
+    vi.unstubAllEnvs();
+    expect(run).not.toHaveBeenCalled();
+    expect(result.receipt?.coverage).toBe("budget_limited");
+  });
+  it("does not invoke a paused source", async () => {
+    state.row = { ...sourceRow, health: "paused" };
+    const run = vi.fn(async () => ({ documents: [document] }));
+    const result = await runCollector({ collector: { name: "hn", run }, workspaceId: "workspace-1", sourceId: "source-1" });
+    expect(run).not.toHaveBeenCalled();
+    expect(result.inserted).toBe(0);
+  });
+
+  it("rejects synthetic evidence before persistence in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    state.insertOutcomes = [[{ id: "synthetic" }]];
+    const result = await runCollector({
+      collector: { name: "hn", run: async () => ({ documents: [{ ...document, metadata: { provider: "fixture" } }] }) },
+      workspaceId: "workspace-1", sourceId: "source-1",
+    });
+    vi.unstubAllEnvs();
+    expect(result.inserted).toBe(0);
+    expect(result.receipt?.coverage).toBe("access_pending");
+    expect(state.insertOutcomes).toHaveLength(1);
+  });
   it("deduplicates atomically and preserves omitted state while clearing null", async () => {
     state.insertOutcomes = [[{ id: "doc-1" }], []];
     const collector: Collector = {
@@ -80,12 +114,19 @@ describe("runCollector", () => {
     });
 
     expect(result).toMatchObject({ inserted: 1, skipped: 1 });
+    expect(state.insertValues).toHaveLength(1);
+    expect(state.insertValues[0]).toHaveLength(2);
     expect(state.updates.at(-1)).toMatchObject({
       etag: null,
       lastModified: "old-modified",
       cursor: "old-cursor",
       health: "healthy",
     });
+    const config = state.updates.at(-1)?.config;
+    const merge = new PgDialect().sqlToQuery(config as Parameters<PgDialect["sqlToQuery"]>[0]);
+    expect(merge.sql).toContain('"source"."config" ||');
+    expect(JSON.parse(String(merge.params[0]))).toHaveProperty("lastRun");
+    expect(JSON.parse(String(merge.params[0]))).not.toHaveProperty("queries");
   });
 
   it("logs and marks the source failed when persistence fails", async () => {
@@ -108,11 +149,8 @@ describe("runCollector", () => {
     expect(state.updates.at(-1)?.lastPolledAt).toBeInstanceOf(Date);
   });
 
-  it("reports inserts completed before a later persistence failure", async () => {
-    state.insertOutcomes = [
-      [{ id: "doc-1" }],
-      new Error("database unavailable"),
-    ];
+  it("reports no partial inserts when the atomic document batch fails", async () => {
+    state.insertOutcomes = [new Error("database unavailable")];
     vi.spyOn(console, "error").mockImplementation(() => {});
     const collector: Collector = {
       name: "test",
@@ -128,7 +166,7 @@ describe("runCollector", () => {
     });
 
     expect(result).toMatchObject({
-      inserted: 1,
+      inserted: 0,
       skipped: 0,
       error: "database unavailable",
     });

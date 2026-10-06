@@ -1,6 +1,7 @@
 "use server";
 
 import { auth } from "@/lib/auth/server";
+import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
 import { getDb } from "@/lib/db/client";
 import { document, lead, workspace } from "@/lib/db/schema";
 import type { SourcePlatform } from "@/lib/db/schema";
@@ -10,11 +11,15 @@ import type { SourcePlatform } from "@/lib/db/schema";
  * Requires DATABASE_URL + Neon Auth env vars.
  */
 export async function createWorkspaceForCurrentUser(name: string) {
+  name = name.trim();
+  if (!name || name.length > 100) throw new Error("Workspace name must contain 1–100 characters.");
   const { data: session } = await auth.getSession();
   if (!session?.user?.id) {
     throw new Error("Unauthorized");
   }
 
+  const existing = await getCurrentWorkspace();
+  if (existing) return existing;
   const db = getDb();
   const [row] = await db
     .insert(workspace)
@@ -37,6 +42,8 @@ export async function insertDocumentAndLead(input: {
   contentHash: string;
   reason?: string;
 }) {
+  const authorization = await authorizeWorkspace(input.workspaceId);
+  if (!authorization.ok) throw new Error(authorization.error);
   const db = getDb();
   const [doc] = await db
     .insert(document)

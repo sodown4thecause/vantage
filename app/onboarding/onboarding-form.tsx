@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 import type {
   FieldErrors,
@@ -342,9 +343,12 @@ export function OnboardingForm({ workspaceId }: Props) {
         </p>
       ) : null}
       {savedMessage ? (
-        <p className="text-sm text-emerald-700 dark:text-emerald-300">
+        <div className="space-y-3">
+        <p role="status" className="text-sm text-emerald-700 dark:text-emerald-300">
           {savedMessage}
         </p>
+        <Link href={`/queue?workspaceId=${encodeURIComponent(workspaceId)}`} className="inline-block rounded bg-zinc-900 px-4 py-2 text-sm text-white">Continue to opportunity queue</Link>
+        </div>
       ) : null}
 
       <button

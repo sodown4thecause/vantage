@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { authorizeWorkspace } from "@/lib/auth/workspace";
 import { runCollectorForType } from "@/lib/collectors/run";
 import type { Collector, SourceType } from "@/lib/collectors/types";
+import { withWorkspaceScanLease } from "@/lib/cron/lease";
 
 export type { SourceType };
 
@@ -29,12 +30,13 @@ export async function handleCollectorPost(
         { status: authorization.status },
       );
     }
-    const results = await runCollectorForType({
+    const results = await withWorkspaceScanLease(body.workspaceId, (signal) => runCollectorForType({
       collector,
-      workspaceId: body.workspaceId,
+      workspaceId: body.workspaceId!,
       sourceId: body.sourceId,
       sourceType,
-    });
+      signal,
+    }));
     const failed = results.filter((r) => r.error);
     const publicResults = results.map(({ error, ...result }) =>
       error ? { ...result, error: "collector failed" } : result,

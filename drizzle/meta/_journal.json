@@ -71,6 +71,13 @@
       "when": 1791172729851,
       "tag": "0009_lively_sway",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791245525023,
+      "tag": "0010_brown_hydra",
+      "breakpoints": true
     }
   ]
 }

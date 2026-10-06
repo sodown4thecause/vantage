@@ -15,7 +15,19 @@
 		}
 	],
 	"triggers": {
-		"crons": ["0 */3 * * *"]
+		"crons": []
+	},
+	"env": {
+		"staging": {
+			"name": "vantage-staging",
+			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "vantage-staging" }],
+			"triggers": { "crons": [] }
+		},
+		"production": {
+			"name": "vantage",
+			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "vantage" }],
+			"triggers": { "crons": [] }
+		}
 	},
 	"observability": {
 		"enabled": true

@@ -44,7 +44,7 @@ jobs:
           command: pnpm typecheck
       - run:
           name: Test
-          command: pnpm test
+          command: pnpm test && node --test test/worker-entry.test.mjs
       - run:
           name: Check migration drift
           command: |
@@ -55,8 +55,8 @@ jobs:
           command: pnpm build
 
   # No `environment:` block on purpose. Nothing here may inherit secrets, so this
-  # job fails if the build ever needs NEON_AUTH_* again. Worker script limits are
-  # 3 MB (Free) and 10 MB (Paid), so the bundle is measured and gated here.
+  # job fails if the build ever needs NEON_AUTH_* again. Validate the complete
+  # upload, including generated server chunks, with Wrangler's dry run.
   workers-build:
     docker:
       - image: cimg/node:22.14.0
@@ -90,27 +90,12 @@ jobs:
             fi
             echo "Built with no secrets in the environment."
       - run:
-          name: Check Worker bundle size
+          name: Validate complete Worker upload
           command: |
             set -e
-            WORKER=.open-next/worker.js
-            test -f "$WORKER" || { echo "missing $WORKER"; exit 1; }
-            SIZE=$(wc -c < "$WORKER")
-            MB=$(awk "BEGIN{printf \"%.2f\", $SIZE/1048576}")
-            echo "worker bundle: $SIZE bytes ($MB MB)"
-            FREE_LIMIT=3145728
-            PAID_LIMIT=10485760
-            if [ "$SIZE" -gt "$PAID_LIMIT" ]; then
-              echo "FAIL: $MB MB exceeds the 10 MB Workers Paid limit."
-              exit 1
-            fi
-            if [ "$SIZE" -gt "$FREE_LIMIT" ]; then
-              echo "WARN: $MB MB exceeds the 3 MB Free limit; Workers Paid is required."
-            else
-              echo "OK: fits the 3 MB Workers Free limit."
-            fi
+            pnpm exec wrangler deploy --dry-run --env staging --outdir .wrangler/audit-bundle
       - store_artifacts:
-          path: .open-next/worker.js
+          path: .wrangler/audit-bundle
           destination: worker-bundle
 
 workflows:

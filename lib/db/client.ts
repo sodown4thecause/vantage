@@ -1,9 +1,14 @@
-import { neon } from "@neondatabase/serverless";
+import { neon, neonConfig } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 
 import * as schema from "@/lib/db/schema";
 
 type VantageDb = ReturnType<typeof drizzle<typeof schema>>;
+
+neonConfig.fetchFunction = (input: RequestInfo | URL, init?: RequestInit) => {
+  const timeout = AbortSignal.timeout(10_000);
+  return fetch(input, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout });
+};
 
 const globalForDb = globalThis as unknown as {
   vantageDb?: VantageDb;

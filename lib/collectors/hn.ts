@@ -8,7 +8,6 @@ import type {
 import type { NewDocument } from "@/lib/db/schema";
 
 const ALGOLIA = "https://hn.algolia.com/api/v1/search_by_date";
-const FIREBASE = "https://hacker-news.firebaseio.com/v0/item";
 
 type AlgoliaHit = {
   objectID: string;
@@ -35,14 +34,15 @@ async function fetchAlgoliaPage(
   query: string,
   numericFilters: string,
   page: number,
+  signal?: AbortSignal,
 ): Promise<{ hits: AlgoliaHit[]; nbPages: number }> {
   const url = new URL(ALGOLIA);
   url.searchParams.set("query", query);
   url.searchParams.set("tags", "story");
-  url.searchParams.set("hitsPerPage", "100");
+  url.searchParams.set("hitsPerPage", "20");
   url.searchParams.set("page", String(page));
   url.searchParams.set("numericFilters", numericFilters);
-  const res = await fetch(url, { next: { revalidate: 0 } });
+  const res = await fetch(url, { next: { revalidate: 0 }, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(4_000)]) : AbortSignal.timeout(4_000) });
   if (!res.ok) {
     throw new Error(`Algolia HN error ${res.status}`);
   }
@@ -53,26 +53,12 @@ async function fetchAlgoliaPage(
   return { hits: data.hits ?? [], nbPages: data.nbPages ?? 1 };
 }
 
-async function enrichFirebase(id: string): Promise<{
-  text?: string;
-  url?: string;
-  title?: string;
-} | null> {
-  try {
-    const res = await fetch(`${FIREBASE}/${id}.json`, {
-      next: { revalidate: 0 },
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as { text?: string; url?: string; title?: string };
-  } catch {
-    return null;
-  }
-}
-
 export const hnCollector: Collector = {
   name: "hn",
   async run(ctx: CollectorContext): Promise<CollectorResult> {
-    const queries = queriesFromConfig(ctx.config);
+    ctx.signal?.throwIfAborted();
+    const queries = queriesFromConfig(ctx.config).slice(0, 5);
+    const maxPages = Math.min(2, Math.max(1, Math.floor(Number(ctx.config.maxPages) || 1)));
     const lookbackHours = Number(ctx.config.lookbackHours ?? 24);
     const since =
       Number(ctx.cursor) ||
@@ -82,12 +68,13 @@ export const hnCollector: Collector = {
 
     const byId = new Map<string, AlgoliaHit>();
 
-    // Algolia caps ~1000 hits/query — page until nbPages or hard cap.
+    // ponytail: sample at most two pages across five queries; use a backfill job for history.
     for (const q of queries) {
       let page = 0;
       let nbPages = 1;
-      while (page < nbPages && page < 10) {
-        const batch = await fetchAlgoliaPage(q, numericFilters, page);
+      while (page < nbPages && page < maxPages) {
+        ctx.signal?.throwIfAborted();
+        const batch = await fetchAlgoliaPage(q, numericFilters, page, ctx.signal);
         nbPages = batch.nbPages;
         for (const hit of batch.hits) {
           if (hit.objectID) byId.set(hit.objectID, hit);
@@ -99,14 +86,12 @@ export const hnCollector: Collector = {
 
     const documents: NewDocument[] = [];
     for (const hit of byId.values()) {
-      const fb = await enrichFirebase(hit.objectID);
-      const title = fb?.title ?? hit.title ?? `(hn ${hit.objectID})`;
+      const title = hit.title ?? `(hn ${hit.objectID})`;
       const url =
-        fb?.url ||
         hit.url ||
         `https://news.ycombinator.com/item?id=${hit.objectID}`;
       const body =
-        fb?.text || hit.story_text || hit.comment_text || title || "";
+        hit.story_text || hit.comment_text || title || "";
       const postedAt = parseValidDate(
         hit.created_at_i ? hit.created_at_i * 1000 : hit.created_at,
       );

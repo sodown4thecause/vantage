@@ -36,17 +36,11 @@ const worker = {
 			// Fail loud. `lib/cron/authorize.ts` would answer 401 for every
 			// invocation of a misconfigured deployment, which is safe but silent —
 			// the schedule would simply stop working with nothing in the logs.
-			console.error(
-				"[cron] CRON_SECRET is not set. Set it with `wrangler secret put CRON_SECRET`.",
-			);
-			return;
+			throw new Error("CRON_SECRET is not set");
 		}
 
 		if (!env.WORKER_SELF_REFERENCE) {
-			console.error(
-				"[cron] WORKER_SELF_REFERENCE binding is missing; cannot reach the tick route.",
-			);
-			return;
+			throw new Error("WORKER_SELF_REFERENCE binding is missing");
 		}
 
 		const started = Date.now();
@@ -63,16 +57,19 @@ const worker = {
 
 			const elapsedMs = Date.now() - started;
 			if (!response.ok) {
-				const body = await response.text().catch(() => "");
-				console.error(
-					`[cron] tick failed after ${elapsedMs}ms: ${response.status} ${body.slice(0, 500)}`,
-				);
-				return;
+				throw new Error(`tick failed: HTTP ${response.status}`);
+			}
+			const result = await response.json();
+			const failures = [...(result.collectorResults ?? []), ...(result.opportunityResults ?? [])]
+				.filter((item) => item.error);
+			if (result.ok !== true || failures.length) {
+				throw new Error(`tick partial failure: ${failures.length} failed runs`);
 			}
 
 			console.log(`[cron] tick completed in ${elapsedMs}ms`);
 		} catch (error) {
 			console.error(`[cron] tick threw after ${Date.now() - started}ms`, error);
+			throw error;
 		}
 	},
 };

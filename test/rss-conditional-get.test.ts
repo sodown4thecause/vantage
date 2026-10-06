@@ -42,6 +42,6 @@ describe("rssCollector conditional requests", () => {
             "https://user:secret@example.com/private.xml?token=signed#fragment",
         },
       }),
-    ).rejects.toThrow("RSS fetch 403 for https://example.com/private.xml");
+    ).rejects.toThrow("A public HTTP(S) URL is required.");
   });
 });

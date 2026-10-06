@@ -8,6 +8,7 @@ import type {
   CollectorResult,
 } from "@/lib/collectors/types";
 import type { NewDocument } from "@/lib/db/schema";
+import { fetchPublicText } from "@/lib/http/public-fetch";
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -61,7 +62,7 @@ export const rssCollector: Collector = {
     if (ctx.etag) headers["If-None-Match"] = ctx.etag;
     if (ctx.lastModified) headers["If-Modified-Since"] = ctx.lastModified;
 
-    const res = await fetch(url, { headers, next: { revalidate: 0 } });
+    const { response: res, text: xml } = await fetchPublicText(url, { headers, cache: "no-store", signal: ctx.signal }, 512_000);
     if (res.status === 304) {
       return {
         documents: [],
@@ -72,7 +73,6 @@ export const rssCollector: Collector = {
       throw new Error(`RSS fetch ${res.status} for ${safeUrlForError(url)}`);
     }
 
-    const xml = await res.text();
     const parsed = parser.parse(xml);
     const channel = parsed?.rss?.channel ?? parsed?.feed;
     const items = asArray(
@@ -80,7 +80,8 @@ export const rssCollector: Collector = {
     ) as Array<Record<string, unknown>>;
 
     const documents: NewDocument[] = [];
-    for (const item of items) {
+    // ponytail: latest 50 feed entries per poll; add pagination for historical imports.
+    for (const item of items.slice(0, 50)) {
       const title = textOf(item.title);
       const link =
         textOf(item.link) ||

@@ -1,7 +1,9 @@
+import { redirect } from "next/navigation";
 import Link from "next/link";
 
-import { authorizeWorkspace } from "@/lib/auth/workspace";
+import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
 import { listOpportunityQueue } from "@/lib/opportunities/run";
+import { ScanButton } from "@/app/source-controls";
 
 export default async function OpportunityQueuePage({
   searchParams,
@@ -9,24 +11,9 @@ export default async function OpportunityQueuePage({
   searchParams: Promise<{ workspaceId?: string }>;
 }) {
   const params = await searchParams;
-  const workspaceId = params.workspaceId?.trim();
+  const workspaceId = params.workspaceId?.trim() || (await getCurrentWorkspace())?.id;
 
-  if (!workspaceId) {
-    return (
-      <Shell>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Pass{" "}
-          <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-900">
-            ?workspaceId=…
-          </code>{" "}
-          to open the Opportunity Queue.
-        </p>
-        <Link href="/" className="text-sm font-medium underline">
-          Back home
-        </Link>
-      </Shell>
-    );
-  }
+  if (!workspaceId) redirect("/");
 
   const authorization = await authorizeWorkspace(workspaceId);
   if (!authorization.ok) {
@@ -52,12 +39,14 @@ export default async function OpportunityQueuePage({
         </h1>
         <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
           At most five evidence-backed opportunities. Empty is a valid state.
-          Run{" "}
-          <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-900">
-            POST /api/opportunities/run
-          </code>{" "}
-          after collectors to refresh.
+          New scans refresh the queue automatically.
         </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-4 text-sm">
+        <ScanButton workspaceId={workspaceId} />
+        <Link href={`/settings/sources?workspaceId=${encodeURIComponent(workspaceId)}`} className="underline">Sources &amp; Coverage</Link>
+        <Link href={`/onboarding?workspaceId=${encodeURIComponent(workspaceId)}`} className="underline">Edit monitoring profile</Link>
       </div>
 
       {cards.length === 0 ? (
