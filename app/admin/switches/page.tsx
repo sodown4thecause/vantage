@@ -1,13 +1,18 @@
 import { requireAdmin } from "@/lib/auth/admin";
 import { sourceSwitchStateValues } from "@/lib/db/schema";
-import { SOURCE_SWITCH_KEYS } from "@/lib/sources/keys";
+import { SOURCE_SWITCH_KEYS, isSourceSwitchKey } from "@/lib/sources/keys";
 import { decideSwitch, listSourceSwitches } from "@/lib/sources/switch";
 import { updateSwitch } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function SourceSwitchesPage() {
+export default async function SourceSwitchesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string; key?: string }>;
+}) {
   await requireAdmin();
+  const { status, key: savedKey } = await searchParams;
   const rows = new Map((await listSourceSwitches()).map((row) => [row.sourceKey, row]));
 
   return (
@@ -20,6 +25,21 @@ export default async function SourceSwitchesPage() {
           Pause or block a source type for every workspace. Users see
           &ldquo;Paused by operator&rdquo; with your reason.
         </p>
+        {status === "saved" && isSourceSwitchKey(savedKey) && (
+          <p role="status" className="text-sm text-emerald-700 dark:text-emerald-400">
+            Saved {savedKey}.
+          </p>
+        )}
+        {status === "invalid" && (
+          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+            That change was not valid and was not saved.
+          </p>
+        )}
+        {status === "failed" && (
+          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+            The change could not be saved. Try again.
+          </p>
+        )}
         <ul className="space-y-3" data-testid="switch-list">
           {SOURCE_SWITCH_KEYS.map((key) => {
             const row = rows.get(key);

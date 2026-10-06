@@ -18,8 +18,16 @@ export async function scanNow(workspaceId: string): Promise<SourceActionState> {
     const result = await scanWorkspace(workspaceId);
     revalidatePath("/queue");
     revalidatePath("/settings/sources");
+    const attempted = (result.collectorResults as Array<Record<string, unknown>>).filter((row) => "sourceId" in row);
+    const paused = attempted.filter((row) => row.reason === "source paused").length;
     if ([...result.collectorResults, ...result.opportunityResults].some((row) => "error" in row)) {
       return { error: "Some sources could not be scanned. Check Sources & Coverage." };
+    }
+    if (paused > 0 && paused === attempted.length) {
+      return { message: "All of your sources are paused by the operator, so nothing was fetched. The opportunity queue was rebuilt from existing data." };
+    }
+    if (paused > 0) {
+      return { message: `Scan completed. ${paused} source${paused === 1 ? " is" : "s are"} paused by the operator and were skipped.` };
     }
     return { message: "Scan completed. The opportunity queue is refreshed." };
   } catch (error) {

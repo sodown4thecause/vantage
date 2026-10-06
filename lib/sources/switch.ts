@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import {
@@ -77,11 +77,6 @@ export async function setSourceSwitch(opts: {
   changedBy?: string | null;
 }): Promise<void> {
   const db = getDb();
-  const [previous] = await db
-    .select()
-    .from(sourceSwitch)
-    .where(eq(sourceSwitch.sourceKey, opts.sourceKey))
-    .limit(1);
   const values = {
     sourceKey: opts.sourceKey,
     state: opts.state,
@@ -89,16 +84,21 @@ export async function setSourceSwitch(opts: {
     changedBy: opts.changedBy ?? null,
     changedAt: new Date(),
   };
-  await db
-    .insert(sourceSwitch)
-    .values(values)
-    .onConflictDoUpdate({ target: sourceSwitch.sourceKey, set: values });
-  await db.insert(sourceSwitchLog).values({
-    sourceKey: opts.sourceKey,
-    fromState: previous?.state ?? "on",
-    toState: opts.state,
-    reason: values.reason,
-    changedBy: values.changedBy,
-    changedAt: values.changedAt,
-  });
+  // One atomic batch (neon-http has no interactive transactions). The log row
+  // comes first and reads from_state in SQL, so a concurrent edit cannot log a
+  // stale state and a live switch can never exist without its audit row.
+  await db.batch([
+    db.insert(sourceSwitchLog).values({
+      sourceKey: values.sourceKey,
+      fromState: sql<SourceSwitchState>`coalesce((select ${sourceSwitch.state} from ${sourceSwitch} where ${sourceSwitch.sourceKey} = ${values.sourceKey}), 'on')`,
+      toState: values.state,
+      reason: values.reason,
+      changedBy: values.changedBy,
+      changedAt: values.changedAt,
+    }),
+    db
+      .insert(sourceSwitch)
+      .values(values)
+      .onConflictDoUpdate({ target: sourceSwitch.sourceKey, set: values }),
+  ]);
 }
