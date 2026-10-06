@@ -34,3 +34,31 @@ Payment (S40), credits (S41).
 - Existing quirk noticed, not fixed (out of scope): `clusterDocuments` in `lib/opportunities/run.ts` merges almost every document into one cluster.
 - UI: `/settings/plan` (linked from Sources & Coverage). The Upgrade link points to `/pricing` until S43/S40 ship it.
 - Human gates: migration 0012 must be applied to Neon staging/main by the owner (`pnpm db:migrate`). Nothing was applied from this slice.
+- Keyword cap grandfathers existing data: `saveMonitoringProfile` passes the latest saved version's topic count, so a workspace with 6 to 12 topics can keep editing as long as it does not add topics (reducing is always fine). A new Free user typing 6+ topics is refused with a field-level message on the topics field (route returns `fieldErrors.topics`).
+- `consume()` spends the unit before the opportunity insert and does not refund if a later step throws. Accepted: it is a soft daily cap.
+- Source cap is check-then-insert; a double submit at the boundary could exceed it by one. Accepted for S05; close it later with a conditional `INSERT ... WHERE (select count(*) ...) < limit`.
+- Tick starvation: the tick takes 3 workspaces per run ordered by `updatedAt`, and skipped not-due workspaces are touched and sent to the back, so a due Pro workspace can wait about ceil(N/3) ticks when there are N workspaces. Fine at pilot size; S45/S40 should filter due workspaces in the tick query instead of after selecting 3.
+- `/pricing` does not exist yet (S43/S40): the Upgrade link 404s until then, so do not release this to production users before it lands.
+- Zero-limit rows (e.g. deep searches on Free) render "Not included on this plan".
+
+### Manual SQL check for `consume()` (run once on the staging Neon branch after applying 0012, never on main first)
+The statement has only been exercised through mocks. Using a throwaway workspace id `W` (an existing staging workspace; the FK requires it):
+```sql
+-- set the free limit to 1 for the check, then restore it
+update plan_limit set value = 1 where plan = 'free' and key = 'scored_leads_per_day';
+delete from workspace_usage where workspace_id = 'W' and period = current_date;
+-- run this statement twice (it is the statement built by consume() in lib/plans/limits.ts)
+insert into "workspace_usage" ("workspace_id", "period", "scored_leads")
+select 'W'::uuid, current_date, 1
+where 1 <= coalesce((select "value" from "plan_limit" where "plan" = (select "plan" from "workspace" where "id" = 'W'::uuid) and "key" = 'scored_leads_per_day'),
+                    (select "value" from "plan_limit" where "plan" = 'free' and "key" = 'scored_leads_per_day'), 20)
+on conflict ("workspace_id", "period") do update
+  set "scored_leads" = "workspace_usage"."scored_leads" + 1, "updated_at" = now()
+  where "workspace_usage"."scored_leads" + 1 <= coalesce((select "value" from "plan_limit" where "plan" = (select "plan" from "workspace" where "id" = 'W'::uuid) and "key" = 'scored_leads_per_day'),
+                    (select "value" from "plan_limit" where "plan" = 'free' and "key" = 'scored_leads_per_day'), 20)
+returning "scored_leads" as "used";
+-- expected: first run returns one row (used = 1); second run returns zero rows and the counter stays 1
+update plan_limit set value = 20 where plan = 'free' and key = 'scored_leads_per_day';
+delete from workspace_usage where workspace_id = 'W' and period = current_date;
+```
+Status: not yet run against Postgres (no local server available to the agent); the owner or S00/S01 owner should run it.

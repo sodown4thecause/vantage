@@ -127,6 +127,13 @@ describe("keyword and source limits", () => {
     await expect(assertWithinCount("ws", "keywords", 0, 8)).rejects.toBeInstanceOf(PlanLimitError);
   });
 
+  it("grandfathers existing over-limit profiles: keep or shrink is allowed, growing is not", async () => {
+    await expect(assertWithinCount("ws", "keywords", 0, 8, 8)).resolves.toBeUndefined(); // edit description, same 8 topics
+    await expect(assertWithinCount("ws", "keywords", 0, 6, 8)).resolves.toBeUndefined();
+    await expect(assertWithinCount("ws", "keywords", 0, 9, 8)).rejects.toBeInstanceOf(PlanLimitError);
+    await expect(assertWithinCount("ws", "keywords", 0, 6, 0)).rejects.toBeInstanceOf(PlanLimitError); // new Free user
+  });
+
   it("gives Pro 25 keywords", async () => {
     state.workspaceRows = [{ plan: "pro" }];
     await expect(assertWithinCount("ws", "keywords", 0, 25)).resolves.toBeUndefined();

@@ -98,5 +98,5 @@ it("returns a clear 403 (not a 500) when the profile exceeds the keyword limit",
     }),
   }));
   expect(response.status).toBe(403);
-  expect(await response.json()).toEqual({ error: "Your Free plan allows 5 keywords. Upgrade for more.", code: "plan_limit_exceeded" });
+  expect(await response.json()).toEqual({ error: "Your Free plan allows 5 keywords. Upgrade for more.", code: "plan_limit_exceeded", fieldErrors: { topics: "Your Free plan allows 5 keywords. Upgrade for more." } });
 });

@@ -94,7 +94,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ profile }, { status: 201 });
   } catch (err) {
     if (err instanceof PlanLimitError) {
-      return NextResponse.json({ error: err.message, code: err.code }, { status: 403 });
+      const fieldErrors = err.key === "keywords" ? { topics: err.message } : undefined;
+      return NextResponse.json({ error: err.message, code: err.code, ...(fieldErrors ? { fieldErrors } : {}) }, { status: 403 });
     }
     const message = err instanceof Error ? err.message : String(err);
     console.error("[profile route] POST failed", { error: message });

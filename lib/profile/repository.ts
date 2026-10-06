@@ -72,10 +72,11 @@ export async function saveMonitoringProfile(args: {
   input: MonitoringProfileInput;
   fetchImpl?: typeof fetch;
 }): Promise<MonitoringProfileView> {
-  // Plan keyword cap (throws PlanLimitError, mapped to a clear 403 by the route).
-  await assertWithinCount(args.workspaceId, "keywords", 0, args.input.topics.length);
   const db = getDb();
   const latest = await getLatestMonitoringProfile(args.workspaceId);
+  // Plan keyword cap. Profiles saved before plans existed are grandfathered: a save may keep
+  // (but not grow) the keyword count the workspace already has. Throws PlanLimitError.
+  await assertWithinCount(args.workspaceId, "keywords", 0, args.input.topics.length, latest?.topics.length ?? 0);
   const nextVersion = (latest?.version ?? 0) + 1;
 
   const material = await retrieveProductMaterial(

@@ -167,10 +167,17 @@ export function limitMessage(plan: PlanId, key: LimitKey, limit: number): string
 }
 
 /** Throws a PlanLimitError (a clear message, never a 500) if `current + adding` exceeds the plan limit. */
-export async function assertWithinCount(workspaceId: string, key: "keywords" | "sources", current: number, adding = 1): Promise<void> {
+export async function assertWithinCount(
+  workspaceId: string,
+  key: "keywords" | "sources",
+  current: number,
+  adding = 1,
+  /** Existing over-limit data is grandfathered: the total may stay at this count but not grow past it. */
+  grandfathered = 0,
+): Promise<void> {
   const plan = await getWorkspacePlan(workspaceId);
   const limit = (await getLimits(plan))[key];
-  if (!checkCountLimit(limit, current, adding).allowed) {
+  if (current + adding > grandfathered && !checkCountLimit(limit, current, adding).allowed) {
     throw new PlanLimitError(key, limit, limitMessage(plan, key, limit));
   }
 }
