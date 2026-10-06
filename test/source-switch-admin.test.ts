@@ -70,6 +70,21 @@ describe("PUT origin check", () => {
     expect(state.batches).toHaveLength(0);
   });
 
+  it("rejects a browser request that declares itself cross-site or same-site-only via Fetch Metadata", async () => {
+    state.userId = "admin-1";
+    for (const site of ["cross-site", "same-site"]) {
+      const res = await PUT(
+        new Request("https://x.test/api/admin/switches", { method: "PUT", headers: { "sec-fetch-site": site }, body }),
+      );
+      expect(res.status).toBe(403);
+    }
+    const ok = await PUT(
+      new Request("https://x.test/api/admin/switches", { method: "PUT", headers: { "sec-fetch-site": "same-origin" }, body }),
+    );
+    expect(ok.status).toBe(200);
+    expect(state.batches).toHaveLength(1);
+  });
+
   it("allows the same origin and clients that send no Origin header", async () => {
     state.userId = "admin-1";
     expect((await withOrigin("https://x.test")).status).toBe(200);

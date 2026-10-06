@@ -7,11 +7,13 @@ import { listSourceSwitches, setSourceSwitch } from "@/lib/sources/switch";
 const notFound = () => NextResponse.json({ error: "not found" }, { status: 404 });
 
 /**
- * Defence in depth against cross-site requests on this privileged route: a browser always sends Origin on
- * cross-origin writes, so when it is present it must match this request's own origin. Non-browser clients
- * (no Origin header) are still authenticated by the admin session.
+ * Defence in depth against cross-site requests on this privileged route. Browsers always send Fetch Metadata
+ * (Sec-Fetch-Site) and send Origin on cross-origin writes, so either one pointing elsewhere is rejected.
+ * Non-browser clients send neither and are still authenticated by the admin session.
  */
 function isCrossOrigin(req: Request): boolean {
+  const site = req.headers.get("sec-fetch-site");
+  if (site && site !== "same-origin" && site !== "none") return true;
   const origin = req.headers.get("origin");
   if (!origin) return false;
   try {
