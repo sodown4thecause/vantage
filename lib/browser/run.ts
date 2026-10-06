@@ -1,6 +1,6 @@
 import { and, desc, eq, lte } from "drizzle-orm";
 
-import { recordCost } from "@/lib/costs/ledger";
+import { recordCost, roundUsd } from "@/lib/costs/ledger";
 import { getDb } from "@/lib/db/client";
 import { providerPrice } from "@/lib/db/schema";
 import { isPublicHttpUrl } from "@/lib/http/public-fetch";
@@ -18,6 +18,8 @@ export const BROWSER_RUN_PROVIDER = "cloudflare_browser_run";
 export const DEFAULT_BROWSER_HOUR_USD = 0.09;
 export const DEFAULT_TIMEOUT_MS = 20_000;
 export const DEFAULT_MAX_BYTES = 1_000_000;
+/** PNG screenshots routinely exceed 1 MB. */
+export const DEFAULT_SCREENSHOT_MAX_BYTES = 10_000_000;
 export const BROWSER_MS_HEADER = "X-Browser-Ms-Used";
 
 /** Platforms whose terms or robots rules forbid a bot-identifying crawler. */
@@ -28,6 +30,14 @@ export const DENIED_HOSTS = [
   "instagram.com",
   "x.com",
   "twitter.com",
+  // Short-link redirectors that land on the platforms above.
+  "redd.it",
+  "lnkd.in",
+  "fb.com",
+  "fb.me",
+  "fb.watch",
+  "instagr.am",
+  "t.co",
 ] as const;
 
 export type BrowserRunErrorCode =
@@ -68,13 +78,24 @@ export type BrowserRunOptions = {
   workspaceId?: string | null;
   /** Extra Quick Action parameters (viewport, gotoOptions, waitForSelector ...). Never put secrets here. */
   params?: Record<string, unknown>;
+  /**
+   * Explicit binding (or an env holding `BROWSER`). Use this from Workflows,
+   * queue consumers and cron handlers, where no OpenNext request context exists.
+   */
+  binding?: BrowserBinding;
+  env?: { BROWSER?: BrowserBinding };
   deps?: Partial<BrowserRunDeps>;
 };
 
+/** getCloudflareContext() only works inside an OpenNext request; anywhere else it throws. */
 async function defaultGetBinding(): Promise<BrowserBinding | undefined> {
-  const { getCloudflareContext } = await import("@opennextjs/cloudflare");
-  const env = getCloudflareContext().env as unknown as { BROWSER?: BrowserBinding };
-  return env.BROWSER;
+  try {
+    const { getCloudflareContext } = await import("@opennextjs/cloudflare");
+    const env = getCloudflareContext().env as unknown as { BROWSER?: BrowserBinding };
+    return env.BROWSER;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Latest provider_price row for the action, else the default hourly price. */
@@ -99,13 +120,14 @@ async function defaultGetUnitCost(action: string): Promise<number> {
   }
 }
 
-function resolveDeps(partial?: Partial<BrowserRunDeps>): BrowserRunDeps {
+function resolveDeps(opts: BrowserRunOptions): BrowserRunDeps {
+  const explicit = opts.binding ?? opts.env?.BROWSER;
   return {
-    getBinding: defaultGetBinding,
+    getBinding: explicit ? () => explicit : defaultGetBinding,
     getSwitch: getSourceSwitch,
     record: recordCost,
     getUnitCost: defaultGetUnitCost,
-    ...partial,
+    ...opts.deps,
   };
 }
 
@@ -114,17 +136,19 @@ export function isDeniedHost(host: string): boolean {
   return DENIED_HOSTS.some((d) => h === d || h.endsWith(`.${d}`));
 }
 
-/** Throws unless the URL is public http(s) and not on a denied platform. */
-export function assertBrowsableUrl(url: string): void {
+/** Throws unless the URL is public http(s) and not on a denied platform. Returns the normalized URL. */
+export function assertBrowsableUrl(url: string): string {
   if (typeof url !== "string" || !isPublicHttpUrl(url)) {
     throw new BrowserRunError("invalid_url", "A public HTTP(S) URL is required.");
   }
-  if (isDeniedHost(new URL(url).hostname)) {
+  const parsed = new URL(url);
+  if (isDeniedHost(parsed.hostname)) {
     throw new BrowserRunError(
       "denied_host",
       "Browser Run is not used for this platform (terms of service).",
     );
   }
+  return parsed.href;
 }
 
 type Invocation = {
@@ -169,7 +193,7 @@ async function run(
   inv: Invocation,
   opts: BrowserRunOptions,
 ): Promise<{ body: Uint8Array; ms: number }> {
-  const deps = resolveDeps(opts.deps);
+  const deps = resolveDeps(opts);
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
 
@@ -182,14 +206,19 @@ async function run(
     throw new BrowserRunError("binding_missing", "Browser Run is not configured.");
   }
 
+  const started = Date.now();
   let ms = 0;
+  let measured = false;
   let ok = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const call = (async () => {
       const response = await binding.quickAction(inv.action, { ...opts.params, ...inv.params });
       const header = Number(response.headers.get(BROWSER_MS_HEADER));
-      if (Number.isFinite(header) && header >= 0) ms = header;
+      if (response.headers.has(BROWSER_MS_HEADER) && Number.isFinite(header) && header >= 0) {
+        ms = header;
+        measured = true;
+      }
       if (!response.ok) {
         await response.body?.cancel().catch(() => undefined);
         console.error("[browser-run] upstream status", { action: inv.action, status: response.status });
@@ -216,18 +245,24 @@ async function run(
     throw new BrowserRunError("upstream_error", "Browser Run request failed.");
   } finally {
     if (timer) clearTimeout(timer);
-    // Failed calls are recorded too, but at zero cost unless time was measured.
-    const hours = ms / 3_600_000;
-    const unitCostUsd = await deps.getUnitCost(inv.action).catch(() => DEFAULT_BROWSER_HOUR_USD);
+    // Without the header (or on timeout, where the call may still be running
+    // and billing) fall back to wall time so billable time is never recorded as $0.
+    if (!measured) {
+      ms = Date.now() - started;
+      console.error("[browser-run] no X-Browser-Ms-Used; using wall time", { action: inv.action, ms });
+    }
+    // cost_event.units is numeric(14,4): hours would truncate, so units are seconds
+    // (0.1 ms resolution) priced per second. getUnitCost returns USD per hour.
+    const hourly = await deps.getUnitCost(inv.action).catch(() => DEFAULT_BROWSER_HOUR_USD);
     await deps.record({
       sourceKey: BROWSER_RUN_SOURCE_KEY,
       provider: BROWSER_RUN_PROVIDER,
       action: inv.action,
-      units: hours,
-      unitCostUsd,
+      units: ms / 1000,
+      unitCostUsd: roundUsd(hourly / 3600),
       workspaceId: opts.workspaceId ?? null,
       ok,
-      chargedOnFailure: !ok && ms > 0,
+      chargedOnFailure: !ok,
     });
   }
 }
@@ -250,8 +285,8 @@ export async function browserMarkdown(
   url: string,
   opts: BrowserRunOptions = {},
 ): Promise<{ markdown: string; ms: number }> {
-  assertBrowsableUrl(url);
-  const { body, ms } = await run({ action: "markdown", params: { url } }, opts);
+  const href = assertBrowsableUrl(url);
+  const { body, ms } = await run({ action: "markdown", params: { url: href } }, opts);
   const result = parseResult(body);
   if (typeof result !== "string") {
     throw new BrowserRunError("bad_response", "Browser Run returned an unexpected response.");
@@ -268,9 +303,9 @@ export async function browserJson<T>(
   schema: Record<string, unknown>,
   opts: BrowserRunOptions & { prompt?: string; validate?: (value: unknown) => T } = {},
 ): Promise<{ data: T; ms: number }> {
-  assertBrowsableUrl(url);
+  const href = assertBrowsableUrl(url);
   const params: Record<string, unknown> = {
-    url,
+    url: href,
     response_format: { type: "json_schema", json_schema: schema },
   };
   if (opts.prompt) params.prompt = opts.prompt;
@@ -289,18 +324,21 @@ export async function browserScreenshot(
   input: { url?: string; html?: string },
   opts: BrowserRunOptions = {},
 ): Promise<{ png: Uint8Array; ms: number }> {
-  if (input.url !== undefined) assertBrowsableUrl(input.url);
-  else if (typeof input.html !== "string") {
+  const href = input.url !== undefined ? assertBrowsableUrl(input.url) : undefined;
+  if (href === undefined && typeof input.html !== "string") {
     throw new BrowserRunError("invalid_url", "A public HTTP(S) URL or HTML is required.");
   }
-  const params = input.url !== undefined ? { url: input.url } : { html: input.html };
-  const { body, ms } = await run({ action: "screenshot", params }, opts);
+  const params = href !== undefined ? { url: href } : { html: input.html };
+  const { body, ms } = await run(
+    { action: "screenshot", params },
+    { maxBytes: DEFAULT_SCREENSHOT_MAX_BYTES, ...opts },
+  );
   return { png: body, ms };
 }
 
 export async function browserLinks(url: string, opts: BrowserRunOptions = {}): Promise<string[]> {
-  assertBrowsableUrl(url);
-  const { body } = await run({ action: "links", params: { url } }, opts);
+  const href = assertBrowsableUrl(url);
+  const { body } = await run({ action: "links", params: { url: href } }, opts);
   const result = parseResult(body);
   if (!Array.isArray(result) || !result.every((l) => typeof l === "string")) {
     throw new BrowserRunError("bad_response", "Browser Run returned an unexpected response.");

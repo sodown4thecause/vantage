@@ -4,6 +4,14 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/db/client", () => ({ getDb: () => ({}) }));
 
+const ctx = vi.hoisted(() => ({ env: undefined as unknown, throws: false }));
+vi.mock("@opennextjs/cloudflare", () => ({
+  getCloudflareContext: () => {
+    if (ctx.throws) throw new Error("OpenNext context is not available");
+    return { env: ctx.env };
+  },
+}));
+
 import {
   BrowserRunError,
   browserJson,
@@ -77,6 +85,13 @@ describe("platform denylist", () => {
     "https://twitter.com/a",
     "https://mobile.twitter.com/a",
     "https://REDDIT.COM./r/x",
+    "https://redd.it/abc",
+    "https://t.co/abc",
+    "https://lnkd.in/abc",
+    "https://fb.com/a",
+    "https://fb.me/a",
+    "https://instagr.am/p/a",
+    "https://fb.watch/a",
   ])("refuses %s", async (url) => {
     const { deps, calls } = setup({ result: "x" });
     expect(await code(browserMarkdown(url, { deps }))).toBe("denied_host");
@@ -88,6 +103,8 @@ describe("platform denylist", () => {
     expect(isDeniedHost("notreddit.com")).toBe(false);
     expect(isDeniedHost("box.com")).toBe(false);
     expect(isDeniedHost("example.com")).toBe(false);
+    expect(isDeniedHost("fit.co")).toBe(false);
+    expect(isDeniedHost(new URL("https://a.t.co/x").hostname)).toBe(true);
   });
 });
 
@@ -102,18 +119,69 @@ describe("happy paths", () => {
         sourceKey: "browser_run",
         provider: "cloudflare_browser_run",
         action: "markdown",
-        units: 0.5,
-        unitCostUsd: 0.09,
+        units: 1800,
+        unitCostUsd: 0.000025,
         workspaceId: "w1",
         ok: true,
       }),
     ]);
   });
 
-  it("uses the price returned by getUnitCost", async () => {
-    const { deps, recorded } = setup({ result: "x", ms: 1000 }, { getUnitCost: async () => 0.12 });
+  it("uses the hourly price returned by getUnitCost, as a per-second price", async () => {
+    const { deps, recorded } = setup({ result: "x", ms: 1000 }, { getUnitCost: async () => 0.36 });
     await browserMarkdown("https://example.com/", { deps });
-    expect(recorded[0].unitCostUsd).toBe(0.12);
+    expect(recorded[0].unitCostUsd).toBeCloseTo(0.0001, 10);
+    expect(recorded[0].units).toBe(1);
+  });
+
+  it("sends the normalized URL to the binding", async () => {
+    const { deps, calls } = setup({ result: "x", ms: 1 });
+    await browserMarkdown("https://EXAMPLE.com", { deps });
+    expect(calls[0].params.url).toBe("https://example.com/");
+  });
+
+  it("falls back to wall time when X-Browser-Ms-Used is missing", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { deps, recorded } = setup({ result: "x" });
+    await browserMarkdown("https://example.com/", { deps });
+    expect(recorded[0].ok).toBe(true);
+    expect(typeof recorded[0].units).toBe("number");
+    expect(console.error).toHaveBeenCalled();
+  });
+
+  it("uses an explicit binding or env without OpenNext context", async () => {
+    ctx.throws = true;
+    const a = createFakeBrowser({ result: "A", ms: 1 });
+    const rec = vi.fn(async () => true);
+    const sw = async () => ({ enabled: true, state: "on" as const, reason: "" });
+    const common = { deps: { record: rec, getSwitch: sw, getUnitCost: async () => 0.09 } };
+    expect((await browserMarkdown("https://example.com/", { ...common, binding: a.binding })).markdown).toBe("A");
+    expect((await browserMarkdown("https://example.com/", { ...common, env: { BROWSER: a.binding } })).markdown).toBe("A");
+    ctx.throws = false;
+  });
+
+  it("default binding: reads env.BROWSER from the OpenNext context", async () => {
+    const f = createFakeBrowser({ result: "ctx", ms: 1 });
+    ctx.env = { BROWSER: f.binding };
+    const deps = {
+      record: async () => true,
+      getSwitch: async () => ({ enabled: true, state: "on" as const, reason: "" }),
+      getUnitCost: async () => 0.09,
+    };
+    expect((await browserMarkdown("https://example.com/", { deps })).markdown).toBe("ctx");
+  });
+
+  it("default binding: no context or no BROWSER becomes binding_missing", async () => {
+    const deps = {
+      record: async () => true,
+      getSwitch: async () => ({ enabled: true, state: "on" as const, reason: "" }),
+      getUnitCost: async () => 0.09,
+    };
+    ctx.throws = true;
+    expect(await code(browserMarkdown("https://example.com/", { deps }))).toBe("binding_missing");
+    ctx.throws = false;
+    ctx.env = {};
+    expect(await code(browserMarkdown("https://example.com/", { deps }))).toBe("binding_missing");
   });
 
   it("json sends a schema and validates the result", async () => {
@@ -154,14 +222,16 @@ describe("happy paths", () => {
 });
 
 describe("limits and failures", () => {
-  it("times out and records a zero-cost failed row", async () => {
+  it("times out and records the elapsed wall time as billable", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.useFakeTimers();
     try {
       const { deps, recorded } = setup({ hang: true });
       const p = code(browserMarkdown("https://example.com/", { deps, timeoutMs: 50 }));
       await vi.advanceTimersByTimeAsync(60);
       expect(await p).toBe("timeout");
-      expect(recorded[0]).toMatchObject({ ok: false, units: 0 });
+      expect(recorded[0]).toMatchObject({ ok: false, chargedOnFailure: true });
+      expect(recorded[0].units as number).toBeGreaterThanOrEqual(0.05);
     } finally {
       vi.useRealTimers();
     }
@@ -174,6 +244,8 @@ describe("limits and failures", () => {
     expect(await code(browserScreenshot({ url: "https://example.com/" }, { deps: big.deps, maxBytes: 100 }))).toBe(
       "too_large",
     );
+    const png = setup({ raw: new Uint8Array(2_000_000), ms: 1 });
+    expect((await browserScreenshot({ url: "https://example.com/" }, { deps: png.deps })).png.length).toBe(2_000_000);
   });
 
   it("blocks the call when the browser_run switch is off", async () => {
@@ -210,17 +282,17 @@ describe("limits and failures", () => {
 describe("single entry point", () => {
   it("no file outside lib/browser/run.ts touches the BROWSER binding", () => {
     const root = process.cwd();
-    const skip = new Set(["node_modules", ".next", ".open-next", ".git", ".claude", "docs", "drizzle"]);
+    const skip = new Set(["node_modules", ".next", ".open-next", ".git", ".claude", ".wrangler", "docs", "drizzle"]);
     const hits: string[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {
         if (skip.has(name)) continue;
         const full = join(dir, name);
         if (statSync(full).isDirectory()) walk(full);
-        else if (/\.(ts|tsx|js|mjs)$/.test(name)) {
+        else if (/\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$/.test(name) && !name.endsWith(".d.ts")) {
           const rel = relative(root, full);
           if (rel === "lib/browser/run.ts" || rel.startsWith("test/")) continue;
-          if (/quickAction\s*\(|env\.BROWSER\b|\.BROWSER\b/.test(readFileSync(full, "utf8"))) hits.push(rel);
+          if (/quickAction|\bBROWSER\b/.test(readFileSync(full, "utf8"))) hits.push(rel);
         }
       }
     };
