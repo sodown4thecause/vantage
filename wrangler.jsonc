@@ -1,6 +1,6 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "vantage",
+	"name": "dontkillmyvibe",
 	"main": "worker-entry.mjs",
 	"compatibility_date": "2026-10-05",
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
@@ -11,7 +11,7 @@
 	"services": [
 		{
 			"binding": "WORKER_SELF_REFERENCE",
-			"service": "vantage"
+			"service": "dontkillmyvibe"
 		}
 	],
 	"triggers": {
@@ -24,8 +24,8 @@
 			"triggers": { "crons": [] }
 		},
 		"production": {
-			"name": "vantage",
-			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "vantage" }],
+			"name": "dontkillmyvibe",
+			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "dontkillmyvibe" }],
 			"triggers": { "crons": [] }
 		}
 	},
