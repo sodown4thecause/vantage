@@ -1,4 +1,5 @@
 import fixture from "@/test/fixtures/producthunt.json";
+import type { CostContext } from "@/lib/costs/meter";
 import {
   asRecordArray,
   numberField,
@@ -195,6 +196,7 @@ function postsFromSearchAndPages(
 async function fetchViaTinyFishSearchFetch(opts?: {
   first?: number;
   query?: string;
+  ctx?: CostContext;
 }): Promise<ProductHuntPost[]> {
   const first = opts?.first ?? 20;
   const query =
@@ -203,6 +205,7 @@ async function fetchViaTinyFishSearchFetch(opts?: {
   const hits = await tinyFishSearch(query, {
     includeDomains: ["producthunt.com"],
     purpose: "Find Product Hunt post pages for launches and products.",
+    ctx: opts?.ctx,
   });
   const postUrls = [
     ...new Set(
@@ -221,12 +224,14 @@ async function fetchViaTinyFishSearchFetch(opts?: {
     purpose:
       "Extract Product Hunt product name, tagline, description, votes, maker, topics.",
     highlightQuery: "product launch tagline upvotes maker topics",
+    ctx: opts?.ctx,
   });
   return postsFromSearchAndPages(hits, pages, first);
 }
 
 async function fetchViaTinyFishHomepageFetch(opts?: {
   first?: number;
+  ctx?: CostContext;
 }): Promise<ProductHuntPost[]> {
   const first = opts?.first ?? 20;
   const pages = await tinyFishFetchMarkdown(
@@ -234,6 +239,7 @@ async function fetchViaTinyFishHomepageFetch(opts?: {
     {
       purpose: "Extract featured Product Hunt launches and product cards.",
       highlightQuery: "product name tagline votes maker",
+      ctx: opts?.ctx,
     },
   );
   return postsFromSearchAndPages([], pages, first);
@@ -241,11 +247,13 @@ async function fetchViaTinyFishHomepageFetch(opts?: {
 
 async function fetchViaTinyFishAgent(opts?: {
   first?: number;
+  ctx?: CostContext;
 }): Promise<ProductHuntPost[]> {
   const first = opts?.first ?? 20;
   const result = await runTinyFishStructuredAgent({
     url: "https://www.producthunt.com/",
     browserProfile: "lite",
+    ctx: opts?.ctx,
     goal: [
       "Browse Product Hunt and extract current featured / top posts.",
       `Collect up to ${first} products with name, tagline, URL, votes, maker, topics, description.`,
@@ -263,6 +271,7 @@ async function fetchViaTinyFishAgent(opts?: {
 
 async function fetchViaProductHuntApi(opts?: {
   first?: number;
+  ctx?: CostContext;
 }): Promise<ProductHuntPost[]> {
   const token = process.env.PH_DEV_TOKEN;
   if (!token?.trim()) throw new Error("PH_DEV_TOKEN is not configured");
@@ -341,6 +350,7 @@ async function fetchViaProductHuntApi(opts?: {
 export async function fetchProductHuntPosts(opts?: {
   first?: number;
   query?: string;
+  ctx?: CostContext;
 }): Promise<ProductHuntPost[]> {
   const { posts } = await fetchProductHuntPostsWithMeta(opts);
   return posts;
@@ -349,6 +359,7 @@ export async function fetchProductHuntPosts(opts?: {
 export async function fetchProductHuntPostsWithMeta(opts?: {
   first?: number;
   query?: string;
+  ctx?: CostContext;
 }): Promise<{ posts: ProductHuntPost[]; meta: ProductHuntFetchMeta }> {
   const tryPath = async (
     provider: ProductHuntFetchMeta["provider"],
