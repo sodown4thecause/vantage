@@ -6,6 +6,7 @@ import {
   getMonitoringProfileVersion,
   saveMonitoringProfile,
 } from "@/lib/profile/repository";
+import { PlanLimitError } from "@/lib/plans/types";
 import { validateMonitoringProfileInput } from "@/lib/profile/validate";
 
 export async function GET(req: Request) {
@@ -92,6 +93,9 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ profile }, { status: 201 });
   } catch (err) {
+    if (err instanceof PlanLimitError) {
+      return NextResponse.json({ error: err.message, code: err.code }, { status: 403 });
+    }
     const message = err instanceof Error ? err.message : String(err);
     console.error("[profile route] POST failed", { error: message });
     return NextResponse.json(

@@ -126,6 +126,12 @@ export default async function SourcesCoveragePage({
           Onboarding
         </Link>
         <Link
+          href={`/settings/plan?workspaceId=${encodeURIComponent(workspaceId)}`}
+          className="font-medium text-zinc-900 underline dark:text-zinc-50"
+        >
+          Plan &amp; usage
+        </Link>
+        <Link
           href={`/review?workspaceId=${encodeURIComponent(workspaceId)}`}
           className="font-medium text-zinc-900 underline dark:text-zinc-50"
         >

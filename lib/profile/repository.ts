@@ -6,6 +6,7 @@ import {
   source,
   type MonitoringProfile,
 } from "@/lib/db/schema";
+import { assertWithinCount } from "@/lib/plans/limits";
 import { retrieveProductMaterial } from "@/lib/profile/retrieve";
 import type {
   MonitoringProfileInput,
@@ -71,6 +72,8 @@ export async function saveMonitoringProfile(args: {
   input: MonitoringProfileInput;
   fetchImpl?: typeof fetch;
 }): Promise<MonitoringProfileView> {
+  // Plan keyword cap (throws PlanLimitError, mapped to a clear 403 by the route).
+  await assertWithinCount(args.workspaceId, "keywords", 0, args.input.topics.length);
   const db = getDb();
   const latest = await getLatestMonitoringProfile(args.workspaceId);
   const nextVersion = (latest?.version ?? 0) + 1;

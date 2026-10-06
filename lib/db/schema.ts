@@ -1,11 +1,13 @@
 import {
   boolean,
+  date,
   index,
   integer,
   jsonb,
   numeric,
   pgEnum,
   pgTable,
+  primaryKey,
   real,
   text,
   timestamp,
@@ -575,3 +577,38 @@ export const sharedSweepRun = pgTable("shared_sweep_run", {
 export type SourceSwitchRow = typeof sourceSwitch.$inferSelect;
 export type CostEventInsert = typeof costEvent.$inferInsert;
 export type SharedPostInsert = typeof sharedPost.$inferInsert;
+
+
+/**
+ * S05 plans and entitlements. Limits are data (edit with SQL, no deploy).
+ * `workspace.plan` selects the row set; a missing key falls back to the `free` plan.
+ */
+export const planLimit = pgTable(
+  "plan_limit",
+  {
+    plan: text("plan").notNull(),
+    key: text("key").notNull(),
+    value: integer("value").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.plan, table.key] })],
+);
+
+/**
+ * Metered usage. `period` is the UTC day for per-day counters (scored_leads) and the
+ * first UTC day of the month for per-month counters (deep_searches).
+ */
+export const workspaceUsage = pgTable(
+  "workspace_usage",
+  {
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    period: date("period", { mode: "string" }).notNull(),
+    scoredLeads: integer("scored_leads").notNull().default(0),
+    deepSearches: integer("deep_searches").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.workspaceId, table.period] })],
+);

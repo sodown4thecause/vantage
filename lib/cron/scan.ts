@@ -3,12 +3,37 @@ import { mapWithConcurrency } from "@/lib/async/map-with-concurrency";
 import { collectorsByType } from "@/lib/collectors/registry";
 import { runCollector } from "@/lib/collectors/run";
 import { getDb } from "@/lib/db/client";
-import { source } from "@/lib/db/schema";
+import { source, workspace } from "@/lib/db/schema";
+import { getLimits, getWorkspacePlan, isScanDue } from "@/lib/plans/limits";
 import { buildOpportunities } from "@/lib/opportunities/run";
 import { getLatestMonitoringProfile } from "@/lib/profile/repository";
 import { withWorkspaceScanLease } from "@/lib/cron/lease";
 
-export async function scanWorkspace(workspaceId: string, deadline?: AbortSignal) {
+/**
+ * Scheduled scans honour the plan's `scan_interval_hours` (Free: daily, Pro: 3 hours).
+ * Returns the skip reason when the workspace is not due yet, otherwise null.
+ */
+async function scanNotDueReason(workspaceId: string, now = new Date()): Promise<string | null> {
+  const plan = await getWorkspacePlan(workspaceId);
+  const { scan_interval_hours: intervalHours } = await getLimits(plan);
+  const rows = await getDb()
+    .select({ last: sql<Date | string | null>`max(${source.lastPolledAt})` })
+    .from(source)
+    .where(eq(source.workspaceId, workspaceId));
+  const raw = Array.isArray(rows) ? rows[0]?.last : null;
+  const last = raw ? new Date(raw) : null;
+  return isScanDue(last, now, intervalHours) ? null : `${plan} plan scans at most every ${intervalHours} hours`;
+}
+
+export async function scanWorkspace(workspaceId: string, deadline?: AbortSignal, options: { enforceCadence?: boolean } = {}) {
+  if (options.enforceCadence) {
+    const reason = await scanNotDueReason(workspaceId);
+    if (reason) {
+      // Move the workspace to the back of the tick rotation so not-due workspaces cannot starve due ones.
+      await getDb().update(workspace).set({ updatedAt: new Date() }).where(eq(workspace.id, workspaceId));
+      return { collectorResults: [], opportunityResults: [{ workspaceId, skipped: true, reason }] };
+    }
+  }
   return withWorkspaceScanLease(workspaceId, async (leaseSignal) => {
     const signal = deadline ? AbortSignal.any([deadline, leaseSignal]) : leaseSignal;
     const opportunityResults = [];

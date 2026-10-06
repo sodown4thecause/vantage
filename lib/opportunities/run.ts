@@ -24,6 +24,7 @@ import {
   type Opportunity,
   type DocumentRecord,
 } from "@/lib/db/schema";
+import { consume } from "@/lib/plans/limits";
 import { resolveLearningConfig } from "@/lib/learning/config";
 import { formatLearningReasons, rankWithPreferences } from "@/lib/learning/rank";
 import { getActivePreferenceModel } from "@/lib/learning/repository";
@@ -167,6 +168,7 @@ export async function buildOpportunities(opts: {
     .where(and(eq(opportunity.workspaceId, opts.workspaceId),
       clusters.size ? notInArray(opportunity.clusterKey, [...clusters.keys()]) : undefined));
   let upserted = 0;
+  let budgetLimited = 0;
 
   for (const [clusterKey, docs] of clusters) {
     opts.signal?.throwIfAborted();
@@ -217,6 +219,16 @@ export async function buildOpportunities(opts: {
         ),
       )
       .limit(1);
+
+    // A new lead counts against the plan's daily scored-lead cap. Existing leads keep
+    // refreshing so a capped workspace never loses what it already has.
+    if (!existing[0]) {
+      const spend = await consume(opts.workspaceId, "scored_leads_per_day", 1);
+      if (!spend.allowed) {
+        budgetLimited += 1;
+        continue;
+      }
+    }
 
     let opportunityId: string;
     const now = new Date();
@@ -292,6 +304,7 @@ export async function buildOpportunities(opts: {
     clusters: clusters.size,
     upserted,
     top,
+    ...(budgetLimited > 0 ? { coverage: "budget_limited" as const, budgetLimited } : {}),
   };
 }
 
