@@ -2,6 +2,7 @@
 
 **Source:** "Five moves that put Vantage ahead of the field" (Polar competitor review, 6 Oct 2026).
 **Builds on:** `2026-10-06-cloudflare-launch.md` (Tasks 6–7 there are still ACCESS_PENDING; this plan treats them as Phase 0).
+**Superseded for execution by `docs/slices/README.md`** (35 vertical slices an agent can pick up one at a time). This file remains the narrative rationale.
 **Status date:** 6 Oct 2026. Facts about the live accounts were read from the Cloudflare and Neon APIs today.
 
 ## 0. Where things stand
