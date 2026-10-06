@@ -20,3 +20,6 @@ Pro and Free users can run X scans and LinkedIn/Facebook/Instagram checks, payin
 
 ## Out of scope
 Auto-posting (never). Bundled unlimited plans (explicitly rejected in the review).
+
+## Follow-up from the #34 review (6 Oct 2026)
+`getSourceSwitch` fails **open** (a failed lookup lets the source run). That is acceptable for the free sources but **paid sources must fail closed**: add a `failClosed` option to the switch lookup and use it for x/linkedin/facebook/instagram, with a test for the lookup-failure path.
