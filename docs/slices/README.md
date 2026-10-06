@@ -33,8 +33,9 @@
    - public (unauthenticated) endpoints must use the guard from S06 and show only public data.
 7. **Conventions:** route handlers follow `app/api/opportunities/run/route.ts` (validate input, `authorizeWorkspace(workspaceId)`, never return raw error text, see `test/error-disclosure-contract.test.ts`). Repositories live in `lib/<area>/repository.ts`. Collectors implement `Collector` from `lib/collectors/types.ts`. Match nearby comment density and naming.
 8. **Adding a new source type** touches five places; do all of them: `sourceTypeEnum` + `sourcePlatformValues` in `lib/db/schema.ts` (and an `ALTER TYPE "public"."source_type" ADD VALUE IF NOT EXISTS '<x>'` migration, see `drizzle/0003_source_type_x.sql`), the `SourceType` union in `lib/collectors/types.ts`, `lib/collectors/registry.ts`, the type allow-lists in `lib/cron/scan.ts` and the production guard in `lib/collectors/run.ts`, and the add-source UI (`app/settings/sources/page.tsx`, `app/source-controls.tsx`, `lib/sources/actions.ts`).
-9. **Definition of done (every slice):** acceptance criteria all met and demonstrated in the PR description; tests added; lint/typecheck/tests green; migration (if any) generated; docs in the slice file updated (check the boxes, add "Learned" notes); no secrets; PR left as draft with a checklist of human gates still open.
-10. **Hot-spot files (expect merge conflicts, keep edits small and additive):** `lib/db/schema.ts`, `drizzle/meta/_journal.json`, `wrangler.jsonc`, `lib/collectors/registry.ts`, `lib/collectors/types.ts`, `lib/cron/scan.ts`, `app/page.tsx`, `app/layout.tsx`.
+9. **Review:** every PR goes through the specialized review in [`REVIEW.md`](REVIEW.md) by someone other than the author before merge.
+10. **Definition of done (every slice):** acceptance criteria all met and demonstrated in the PR description; tests added; lint/typecheck/tests green; migration (if any) generated; docs in the slice file updated (check the boxes, add "Learned" notes); no secrets; PR left as draft with a checklist of human gates still open.
+11. **Hot-spot files (expect merge conflicts, keep edits small and additive):** `lib/db/schema.ts`, `drizzle/meta/_journal.json`, `wrangler.jsonc`, `lib/collectors/registry.ts`, `lib/collectors/types.ts`, `lib/cron/scan.ts`, `app/page.tsx`, `app/layout.tsx`.
 
 ## 3. Human gates (agents must stop and hand these to the owner)
 
@@ -92,8 +93,8 @@ Size: S = under a day, M = 1 to 3 days, L = 3 to 5 days of agent work. "Idea" re
 | [S00](S00-staging-live.md) | Staging live end to end | base | S | none | H1 | [ ] |
 | [S01](S01-production-and-rollback.md) | Production promotion, rollback, CI deploy | base | M | S00 | H2 | [ ] |
 | [S02](S02-cloudflare-resources.md) | Queues, R2, rate-limit, Browser, Workflow bindings | base | S | S00 | H3 | [ ] |
-| [S03](S03-cost-ledger-wiring.md) | Wire cost ledger into every provider + rollups | 5 | M | none | none | [ ] |
-| [S04](S04-source-switch-admin.md) | Source switch admin + paused-state UI | 1 | S | none | none | [ ] |
+| [S03](S03-cost-ledger-wiring.md) | Wire cost ledger into every provider + rollups | 5 | M | none | none | [x] merged |
+| [S04](S04-source-switch-admin.md) | Source switch admin + paused-state UI | 1 | S | none | none | [x] (PR open) |
 | [S05](S05-plans-and-entitlements.md) | Plans and entitlement enforcement | 5 | M | none | none | [ ] |
 | [S06](S06-public-route-guard.md) | Public endpoint guard (rate limit, Turnstile, budget) | 2 | M | none | H8 | [ ] |
 | [S07](S07-browser-run-helper.md) | Browser Run helper with cost + SSRF guard | 2 | S | none | none | [ ] |

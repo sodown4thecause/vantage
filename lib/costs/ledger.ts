@@ -41,10 +41,13 @@ export function computeCost(input: CostInput): CostRow {
   }
   const ok = input.ok ?? true;
   const charged = ok || input.chargedOnFailure === true;
-  const total = charged ? roundUsd(units * input.unitCostUsd) : 0;
+  // Price the row from the unit price that is actually stored (6 dp), so
+  // units * unit_cost_usd always reproduces cost_usd.
+  const unitCostUsd = roundUsd(input.unitCostUsd);
+  const total = charged ? roundUsd(units * unitCostUsd) : 0;
   return {
     units: String(units),
-    unitCostUsd: roundUsd(input.unitCostUsd).toFixed(6),
+    unitCostUsd: unitCostUsd.toFixed(6),
     costUsd: total.toFixed(6),
   };
 }

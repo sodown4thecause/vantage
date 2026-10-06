@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  verify:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Placeholders only. The build must not need real secrets.
+      DATABASE_URL: postgresql://user:pass@localhost:5432/vantage
+      NEON_AUTH_BASE_URL: https://example.invalid/auth
+      NEON_AUTH_COOKIE_SECRET: 0123456789abcdef0123456789abcdef
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.5.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: |
+          pnpm test
+          node --test test/worker-entry.test.mjs
+      - name: Check migration drift
+        run: |
+          pnpm db:generate
+          git diff --exit-code -- drizzle
+      - name: Build
+        run: pnpm build
+
+  workers-build:
+    # No secrets or placeholder env on purpose: this job fails if the Worker
+    # build ever starts needing DATABASE_URL or NEON_AUTH_* again.
+    name: Cloudflare Worker bundle (no secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.5.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify no secrets are present
+        run: |
+          if [ -n "${NEON_AUTH_BASE_URL:-}" ] || [ -n "${NEON_AUTH_COOKIE_SECRET:-}" ] || [ -n "${DATABASE_URL:-}" ]; then
+            echo "This job must run without database or auth secrets."
+            exit 1
+          fi
+      - name: Build Cloudflare Worker bundle
+        run: pnpm cf:build
+      - name: Check Worker size (10 MB paid-plan limit)
+        run: |
+          size=$(stat -c%s .open-next/worker.js)
+          echo "worker.js: $size bytes"
+          if [ "$size" -gt 10485760 ]; then
+            echo "::error::.open-next/worker.js is over 10 MB"
+            exit 1
+          fi
+      - name: Validate complete Worker upload (dry run)
+        run: pnpm exec wrangler deploy --dry-run --env staging --outdir .wrangler/audit-bundle
+      - uses: actions/upload-artifact@v7
+        with:
+          name: worker-bundle
+          path: .wrangler/audit-bundle
+          retention-days: 7

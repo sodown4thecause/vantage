@@ -1,5 +1,6 @@
 import type { TinyFish } from "@tiny-fish/sdk";
 
+import { withCost, type CostContext } from "@/lib/costs/meter";
 import { createTinyFishClient } from "@/lib/tinyfish/client";
 
 export type TinyFishSearchHit = {
@@ -25,15 +26,21 @@ export async function tinyFishSearch(
     purpose?: string;
     page?: number;
     client?: TinyFish;
+    ctx?: CostContext;
   },
 ): Promise<TinyFishSearchHit[]> {
   const client = opts?.client ?? createTinyFishClient();
-  const response = await client.search.query({
-    query,
-    purpose: opts?.purpose,
-    include_domains: opts?.includeDomains?.join(",") || undefined,
-    page: opts?.page,
-  });
+  const ctx = opts?.ctx ?? { sourceKey: "tinyfish" };
+  const response = await withCost(
+    { sourceKey: ctx.sourceKey, workspaceId: ctx.workspaceId, provider: "tinyfish", action: "search" },
+    () =>
+      client.search.query({
+        query,
+        purpose: opts?.purpose,
+        include_domains: opts?.includeDomains?.join(",") || undefined,
+        page: opts?.page,
+      }),
+  );
   return (response.results ?? [])
     .map((r) => ({
       url: r.url,
@@ -50,16 +57,21 @@ export async function tinyFishFetchMarkdown(
     purpose?: string;
     highlightQuery?: string;
     client?: TinyFish;
+    ctx?: CostContext;
   },
 ): Promise<TinyFishFetchedPage[]> {
   if (urls.length === 0) return [];
   const client = opts?.client ?? createTinyFishClient();
+  const ctx = opts?.ctx ?? { sourceKey: "tinyfish" };
   // SDK batches; keep requests small and stable.
   const batchSize = 10;
   const pages: TinyFishFetchedPage[] = [];
   for (let i = 0; i < urls.length; i += batchSize) {
     const batch = urls.slice(i, i + batchSize);
-    const response = await client.fetch.getContents({
+    const response = await withCost(
+      { sourceKey: ctx.sourceKey, workspaceId: ctx.workspaceId, provider: "tinyfish", action: "fetch" },
+      () =>
+        client.fetch.getContents({
       urls: batch,
       format: "markdown",
       purpose: opts?.purpose,
@@ -71,7 +83,8 @@ export async function tinyFishFetchMarkdown(
             include_full_page_text: true,
           }
         : undefined,
-    });
+        }),
+    );
 for (const row of response.results ?? []) {
       const text =
         typeof row.text === "string"
