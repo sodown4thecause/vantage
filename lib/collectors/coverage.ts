@@ -12,6 +12,16 @@ export const COVERAGE_STATUSES = [
 
 export type CoverageStatus = (typeof COVERAGE_STATUSES)[number];
 
+/**
+ * Display-only coverage: a global operator switch overrides what the source
+ * row says. Never persisted on source.health.
+ */
+export type DisplayCoverage = CoverageStatus | "paused_global";
+
+export function pausedGlobalLabel(reason: string): string {
+  return `Paused by operator: ${reason}`;
+}
+
 /** Values persisted on source.health (includes legacy failing/paused). */
 export type SourceHealthValue =
   | CoverageStatus

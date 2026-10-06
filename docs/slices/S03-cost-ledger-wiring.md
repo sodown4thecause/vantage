@@ -20,14 +20,21 @@ withCost<T>(meta: {sourceKey: string; provider: string; action: string; workspac
 ```
 
 ## Acceptance criteria
-- [ ] Unit tests: price lookup with and without DB row, cache expiry, `withCost` records success, failure (zero cost unless `chargedOnFailure`), and never swallows the provider error.
-- [ ] Each wired client has a test proving one `cost_event` per call using a mocked fetch and mocked `recordCost`.
-- [ ] Rollup test: idempotent (running twice gives the same totals).
-- [ ] No behaviour change when `provider_price` or `cost_event` are missing (logged, run continues).
-- [ ] `docs/costs.md` complete.
+- [x] Unit tests: price lookup with and without DB row, cache expiry, `withCost` records success, failure (zero cost unless `chargedOnFailure`), and never swallows the provider error.
+- [x] Each wired client has a test proving one `cost_event` per call using a mocked fetch and mocked `recordCost`.
+- [x] Rollup test: idempotent (running twice gives the same totals).
+- [x] No behaviour change when `provider_price` or `cost_event` are missing (logged, run continues).
+- [x] `docs/costs.md` complete.
 
 ## Out of scope
 Credits/billing (S41), public ledger page (S44), paid sources behind credits (S42).
 
 ## Gotchas
 neon-http has no interactive transactions; rollup uses one `INSERT ... ON CONFLICT DO UPDATE ... SELECT` statement. Do not log request bodies.
+
+## Learned
+- Status: [x] implemented on `slice/S03-cost-ledger-wiring` (draft PR); migration `0012_ambitious_rocket_raccoon.sql` (`cost_daily`) not yet applied to any Neon branch (human step), and `scripts/seed-prices.ts` not yet run (`DEFAULT_PRICES` is the fallback until then).
+- Metering lives in the lowest layer (TinyFish agent/search/fetch wrappers and the Scavio call sites), so every path (collectors, fallbacks) is covered by one wrapper per call. `docs/costs.md` is the map.
+- Free-quota APIs (YouTube Data, Product Hunt GraphQL) are deliberately not metered. Scavio X and YouTube prices are assumed equal to Scavio Reddit ($0.004) until confirmed.
+- The tick rollup is best effort: `rollupRecent` swallows errors (the existing `cron-tick` mock has no `execute`).
+- Grok/ScrapeCreators/Browser Run prices are seeded only; their callers arrive in S42/S07.

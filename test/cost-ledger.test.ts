@@ -48,6 +48,14 @@ describe("computeCost", () => {
     expect(computeCost({ sourceKey: "x", provider: "xai", action: "post", units: 25, unitCostUsd: 0.005 }).costUsd).toBe("0.125000");
   });
 
+  it("prices from the stored 6 dp unit price so cost matches its own columns", () => {
+    const row = computeCost({ sourceKey: "x", provider: "p", action: "a", units: 1000, unitCostUsd: 0.0000004 });
+    expect(row.unitCostUsd).toBe("0.000000");
+    expect(row.costUsd).toBe("0.000000");
+    const priced = computeCost({ sourceKey: "x", provider: "p", action: "a", units: 3, unitCostUsd: 0.0019 });
+    expect(Number(priced.units) * Number(priced.unitCostUsd)).toBeCloseTo(Number(priced.costUsd), 6);
+  });
+
   it("rejects negative or non-finite inputs", () => {
     expect(() => computeCost({ sourceKey: "x", provider: "p", action: "a", units: -1, unitCostUsd: 1 })).toThrow();
     expect(() => computeCost({ sourceKey: "x", provider: "p", action: "a", unitCostUsd: Number.NaN })).toThrow();
