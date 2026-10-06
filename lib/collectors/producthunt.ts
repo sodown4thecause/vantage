@@ -14,7 +14,11 @@ export const productHuntCollector: Collector = {
     const first = Number(ctx.config.first ?? 20);
     const query =
       typeof ctx.config.query === "string" ? ctx.config.query : undefined;
-    const { posts, meta } = await fetchProductHuntPostsWithMeta({ first, query });
+    const { posts, meta } = await fetchProductHuntPostsWithMeta({
+      first,
+      query,
+      ctx: { workspaceId: ctx.workspaceId, sourceKey: "producthunt" },
+    });
     const documents: NewDocument[] = posts.map((p) => {
       const body = [`# ${p.name}`, p.tagline, "", p.description].join("\n");
       return {

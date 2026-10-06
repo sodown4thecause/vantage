@@ -17,6 +17,7 @@ export const youtubeCollector: Collector = {
     const query =
       typeof ctx.config.query === "string" ? ctx.config.query : undefined;
     const { comments, meta } = await fetchYouTubeCommentsWithMeta({
+      ctx: { workspaceId: ctx.workspaceId, sourceKey: "youtube" },
       videoIds,
       query,
     });

@@ -1,4 +1,5 @@
 import fixture from "@/test/fixtures/youtube.json";
+import { withCost, type CostContext } from "@/lib/costs/meter";
 import {
   asRecordArray,
   numberField,
@@ -198,6 +199,7 @@ function commentsFromMarkdown(
 
 async function fetchViaScavio(opts?: {
   videoIds?: string[];
+  ctx?: CostContext;
 }): Promise<YouTubeComment[]> {
   const client = createScavioClient();
   const seeds =
@@ -207,9 +209,11 @@ async function fetchViaScavio(opts?: {
 
   const out: YouTubeComment[] = [];
   for (const videoId of seeds) {
-    const payload = (await client.youtube.comments({
-      video_id: videoId,
-    })) as Record<string, unknown>;
+    const ctx = opts?.ctx ?? { sourceKey: "youtube" };
+    const payload = (await withCost(
+      { sourceKey: ctx.sourceKey, workspaceId: ctx.workspaceId, provider: "scavio", action: "youtube_comments" },
+      () => client.youtube.comments({ video_id: videoId }),
+    )) as Record<string, unknown>;
     const rows = asRecordArray(payload, [
       "comments",
       "items",
@@ -246,6 +250,7 @@ async function fetchViaScavio(opts?: {
 
 async function fetchViaTinyFishFetch(opts?: {
   videoIds?: string[];
+  ctx?: CostContext;
 }): Promise<YouTubeComment[]> {
   const seeds =
     opts?.videoIds?.length
@@ -256,6 +261,7 @@ async function fetchViaTinyFishFetch(opts?: {
     purpose:
       "Extract public top-level YouTube comments with author and comment text.",
     highlightQuery: "viewer comments discussion replies feedback",
+    ctx: opts?.ctx,
   });
 
   const out: YouTubeComment[] = [];
@@ -291,6 +297,7 @@ async function fetchViaTinyFishFetch(opts?: {
 async function fetchViaTinyFishSearchFetch(opts?: {
   videoIds?: string[];
   query?: string;
+  ctx?: CostContext;
 }): Promise<YouTubeComment[]> {
   // Discovery path when no explicit video IDs — search then fetch.
   if (opts?.videoIds?.length) {
@@ -302,6 +309,7 @@ async function fetchViaTinyFishSearchFetch(opts?: {
   const hits = await tinyFishSearch(query, {
     includeDomains: ["youtube.com", "youtu.be"],
     purpose: "Find YouTube videos relevant to social listening / SaaS demand.",
+    ctx: opts?.ctx,
   });
   const videoIds = [
     ...new Set(
@@ -311,11 +319,12 @@ async function fetchViaTinyFishSearchFetch(opts?: {
     ),
   ].slice(0, 5);
   if (!videoIds.length) return [];
-  return fetchViaTinyFishFetch({ videoIds });
+  return fetchViaTinyFishFetch({ videoIds, ctx: opts?.ctx });
 }
 
 async function fetchViaTinyFishAgent(opts?: {
   videoIds?: string[];
+  ctx?: CostContext;
 }): Promise<YouTubeComment[]> {
   const seeds =
     opts?.videoIds?.length
@@ -327,6 +336,7 @@ async function fetchViaTinyFishAgent(opts?: {
     const result = await runTinyFishStructuredAgent({
       url,
       browserProfile: "lite",
+      ctx: opts?.ctx,
       goal: [
         `Open the YouTube video at ${url}.`,
         "Extract top-level public comments only (no replies).",
@@ -342,6 +352,7 @@ async function fetchViaTinyFishAgent(opts?: {
 
 async function fetchViaYouTubeApi(opts?: {
   videoIds?: string[];
+  ctx?: CostContext;
 }): Promise<YouTubeComment[]> {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) throw new Error("YOUTUBE_API_KEY is not configured");
@@ -410,6 +421,7 @@ async function fetchViaYouTubeApi(opts?: {
 export async function fetchYouTubeComments(opts?: {
   videoIds?: string[];
   query?: string;
+  ctx?: CostContext;
 }): Promise<YouTubeComment[]> {
   const { comments } = await fetchYouTubeCommentsWithMeta(opts);
   return comments;
@@ -418,6 +430,7 @@ export async function fetchYouTubeComments(opts?: {
 export async function fetchYouTubeCommentsWithMeta(opts?: {
   videoIds?: string[];
   query?: string;
+  ctx?: CostContext;
 }): Promise<{ comments: YouTubeComment[]; meta: YouTubeFetchMeta }> {
   const tryPath = async (
     provider: YouTubeFetchMeta["provider"],

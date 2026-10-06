@@ -4,6 +4,7 @@ import {
   numberField,
   stringField,
 } from "@/lib/tinyfish/agent";
+import { withCost, type CostContext } from "@/lib/costs/meter";
 import { createScavioClient, hasScavioApiKey } from "@/lib/scavio/client";
 
 export type XPost = {
@@ -112,15 +113,21 @@ async function fetchViaScavio(opts?: {
   limit?: number;
   cursor?: string;
   searchType?: "Top" | "Latest" | "People" | "Photos" | "Videos";
+  ctx?: CostContext;
 }): Promise<{ posts: XPost[]; cursor?: string | null }> {
   const client = createScavioClient();
   const search = opts?.query?.trim() || "social listening OR brand monitoring";
   const limit = opts?.limit ?? 20;
-  const payload = (await client.x.search({
-    search,
-    search_type: opts?.searchType ?? "Latest",
-    cursor: opts?.cursor,
-  })) as Record<string, unknown>;
+  const ctx = opts?.ctx ?? { sourceKey: "x" };
+  const payload = (await withCost(
+    { sourceKey: ctx.sourceKey, workspaceId: ctx.workspaceId, provider: "scavio", action: "x_search" },
+    () =>
+      client.x.search({
+        search,
+        search_type: opts?.searchType ?? "Latest",
+        cursor: opts?.cursor,
+      }),
+  )) as Record<string, unknown>;
 
   const posts = mapPosts(unwrapResults(payload), limit);
   const nextCursor =
@@ -146,6 +153,7 @@ export async function fetchXPosts(opts?: {
   limit?: number;
   cursor?: string;
   searchType?: "Top" | "Latest" | "People" | "Photos" | "Videos";
+  ctx?: CostContext;
 }): Promise<XPost[]> {
   const { posts } = await fetchXPostsWithMeta(opts);
   return posts;
@@ -156,6 +164,7 @@ export async function fetchXPostsWithMeta(opts?: {
   limit?: number;
   cursor?: string;
   searchType?: "Top" | "Latest" | "People" | "Photos" | "Videos";
+  ctx?: CostContext;
 }): Promise<{ posts: XPost[]; meta: XFetchMeta; cursor?: string | null }> {
   if (hasScavioApiKey()) {
     try {
