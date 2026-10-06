@@ -16,7 +16,7 @@ export function SafeLink({
   const safe = safeHttpUrl(href);
   if (!safe) return <span>{children}</span>;
   return (
-    <a href={safe} className={className} target="_blank" rel="noreferrer">
+    <a href={safe} className={className} target="_blank" rel="noopener noreferrer">
       {children}
     </a>
   );

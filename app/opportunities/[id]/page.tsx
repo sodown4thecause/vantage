@@ -147,7 +147,7 @@ export default async function OpportunityDetailPage({
                       href={href}
                       className="link font-semibold leading-snug"
                       target="_blank"
-                      rel="noreferrer"
+                      rel="noopener noreferrer"
                     >
                       {e.title || e.urlCanonical}
                     </a>
