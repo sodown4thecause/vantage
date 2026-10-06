@@ -38,6 +38,7 @@ vi.mock("@/lib/profile/repository", () => ({
 }));
 vi.mock("@/lib/learning/repository", () => ({ getActivePreferenceModel: async () => null }));
 vi.mock("@/lib/plans/limits", () => ({
+  release: async () => undefined,
   consume: async () => {
     if (state.allow > state.consumed) { state.consumed++; return { allowed: true, consumed: 1, used: state.consumed, limit: state.allow, remaining: 0 }; }
     return { allowed: false, consumed: 0, used: state.consumed, limit: state.allow, remaining: 0 };

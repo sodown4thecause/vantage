@@ -169,6 +169,7 @@ export async function buildOpportunities(opts: {
       clusters.size ? notInArray(opportunity.clusterKey, [...clusters.keys()]) : undefined));
   let upserted = 0;
   let budgetLimited = 0;
+  let leadCapReached = false;
 
   for (const [clusterKey, docs] of clusters) {
     opts.signal?.throwIfAborted();
@@ -224,8 +225,14 @@ export async function buildOpportunities(opts: {
     // refreshing so a capped workspace never loses what it already has.
     const spendAt = new Date();
     if (!existing[0]) {
+      // Once the cap says no it cannot rise during this scan, so skip the queries for later new clusters.
+      if (leadCapReached) {
+        budgetLimited += 1;
+        continue;
+      }
       const spend = await consume(opts.workspaceId, "scored_leads_per_day", 1, spendAt);
       if (!spend.allowed) {
+        leadCapReached = true;
         budgetLimited += 1;
         continue;
       }
