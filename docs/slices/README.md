@@ -93,8 +93,8 @@ Size: S = under a day, M = 1 to 3 days, L = 3 to 5 days of agent work. "Idea" re
 | [S00](S00-staging-live.md) | Staging live end to end | base | S | none | H1 | [ ] |
 | [S01](S01-production-and-rollback.md) | Production promotion, rollback, CI deploy | base | M | S00 | H2 | [ ] |
 | [S02](S02-cloudflare-resources.md) | Queues, R2, rate-limit, Browser, Workflow bindings | base | S | S00 | H3 | [ ] |
-| [S03](S03-cost-ledger-wiring.md) | Wire cost ledger into every provider + rollups | 5 | M | none | none | [x] |
-| [S04](S04-source-switch-admin.md) | Source switch admin + paused-state UI | 1 | S | none | none | [ ] |
+| [S03](S03-cost-ledger-wiring.md) | Wire cost ledger into every provider + rollups | 5 | M | none | none | [x] merged |
+| [S04](S04-source-switch-admin.md) | Source switch admin + paused-state UI | 1 | S | none | none | [x] (PR open) |
 | [S05](S05-plans-and-entitlements.md) | Plans and entitlement enforcement | 5 | M | none | none | [ ] |
 | [S06](S06-public-route-guard.md) | Public endpoint guard (rate limit, Turnstile, budget) | 2 | M | none | H8 | [ ] |
 | [S07](S07-browser-run-helper.md) | Browser Run helper with cost + SSRF guard | 2 | S | none | none | [ ] |
