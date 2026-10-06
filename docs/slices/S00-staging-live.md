@@ -18,7 +18,7 @@ Worker `vantage-staging` is deployed. Secrets set: `CRON_SECRET`, `NEON_AUTH_COO
 ## Acceptance criteria
 - [x] Manual tick returns 200 with `ok:true` (6 Oct 16:19 UTC).
 - [x] A signed-up staging workspace has at least one `document` and one `opportunity` row from an HN source (6 Oct 16:20 UTC: 1 document, 1 opportunity, source healthy).
-- [ ] One scheduled cron run succeeded (log line seen), and a second one 3 hours later (check the next day).
+- [~] Scheduled cron: the first run fired on schedule at 18:01 UTC (source polled; wiring works) but the HN collector hit its 4 s timeout, so that run counts as a failure (`The operation was aborted due to timeout`, recorded in `source.config.lastRun`). Two manual ticks at 18:20 were healthy. **Still needed:** a fully clean scheduled run (next at 21:00 UTC, then 00:00 UTC). If timeouts repeat, raise the 4 s limit in `lib/collectors/hn.ts`.
 - [ ] `docs/slices/README.md` status table updated; "Learned" notes added below.
 - [ ] No secret value appears in any commit, PR, or log excerpt.
 
