@@ -96,7 +96,9 @@ Do this before any feature work. It is Tasks 1, 6, 7 of the existing launch plan
 6. **Enable the 3-hour cron on staging only** (`"crons": ["0 */3 * * *"]` under `env.staging`). Watch Workers observability for 24h.
 7. **Promote to production**, demonstrate rollback (`wrangler rollback`), then enable cron on prod.
 8. **Fix the scan gap:** extend the `inArray(source.type, …)` list in `lib/cron/scan.ts` as each new collector becomes safe, rather than in one jump.
-9. **CI:** add a staging deploy job and a `wrangler deploy --dry-run` on PRs (the plan notes CircleCI has `verify` and `workers-build` only).
+9. **CI:** `workers-build` already runs `wrangler deploy --dry-run --env staging`. Only an automated staging *deploy* job is missing, and it can wait until a Cloudflare API token is stored in CircleCI.
+
+**Progress (6 Oct):** baseline verified on Linux (lint, typecheck, 121 tests + 5 worker-entry tests, `pnpm cf:build` all pass). Neon branch `staging` (`br-quiet-pine-b7ukjr3b`) created from `main`, with all 11 migrations and the `neon_auth` schema present. Blocked on step 1/4/5: no Cloudflare credentials in this environment (`wrangler whoami` = not authenticated).
 
 Exit gate: one real signup on staging produces real documents and ranked opportunities from cron, with no secrets in the build.
 
