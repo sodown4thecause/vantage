@@ -1,6 +1,6 @@
 # S60 — Switch Rescue manual test kit
 
-**Track:** Go-to-market · **Wave:** 5 · **Size:** S · **Owner:** human-led, agent prepares · **Depends on:** none · **Window:** **1 to 14 Nov 2026** (Reddit RSS ends 13 Nov)
+**Track:** Go-to-market · **Wave:** 5 · **Size:** S · **Owner:** human-led, agent prepares · **Depends on:** none to prepare; **the "paying" gate needs S40 (Stripe) or a manual payment link**, and any "open-source" or source-coverage claim needs the repo licensed/public and the sources live · **Window:** **1 to 14 Nov 2026** (Reddit RSS ends 13 Nov)
 
 ## Outcome
 Everything needed to run Astra's two-week manual test on GummySearch, F5Bot and Reddit-RSS users, with pass/fail gates tracked.
@@ -19,3 +19,10 @@ Three completed rescues, two activations, two founders paying. Stop and rethink 
 
 ## Human gate (H9)
 All outreach is performed by the owner personally, from their own accounts, in their own words.
+
+## Learned
+- Kit added 6 Oct: `docs/gtm/switch-rescue.md`, `docs/gtm/switch-rescue-tracking.csv`, `scripts/gtm/summarize.ts` (+ `test/gtm-summarize.test.ts`). Gates: 3 rescues, 2 activations, 2 paying; only rescued rows count toward activation and payment.
+- Owner still has to review the offer paragraph, confirm the real keyword-export column names (S15), and do all outreach personally (H9).
+- Running `pnpm test` in the main checkout also picks up `.claude/worktrees/**` copies while agents are active; use `pnpm vitest run --exclude '.claude/**'`.
+
+- Review of 6 Oct (REVIEW.md): the first draft of the offer overclaimed (open-source, Reddit/GitHub/Stack Overflow, $5 Pro). The doc now lists facts to cover only if true on the day, and the summary script rejects ambiguous rows.
