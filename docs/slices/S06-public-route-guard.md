@@ -7,7 +7,7 @@ Any unauthenticated, cost-bearing endpoint (first user: Radar scan) is protected
 
 ## Scope
 - **DB:** `budget_day(day date primary key, spent_usd numeric(12,6), cap_usd numeric(12,6))`, `public_visitor(visitor_hash text, day date, scans int, primary key(visitor_hash, day))` (migration).
-- **Lib:** `lib/public/guard.ts`: `guardPublicRequest(req, {action, costEstimateUsd, perVisitorPerDay})` returning `{ok:true, visitorHash}` or `{ok:false, status, code}`. Checks in order: Turnstile token (header `x-turnstile-token`, verify against `https://challenges.cloudflare.com/turnstile/v0/siteverify`; skip in non-production if `TURNSTILE_SECRET_KEY` unset), `RADAR_LIMITER` binding (when present), per-visitor daily count, global budget (atomic `UPDATE budget_day SET spent_usd = spent_usd + $est WHERE spent_usd + $est <= cap_usd`).
+- **Lib:** `lib/public/guard.ts`: `guardPublicRequest(req, {action, costEstimateUsd, perVisitorPerDay})` returning `{ok:true, visitorHash, reservation: {day, estimateUsd}}` or `{ok:false, status, code}`. Checks in order: Turnstile token (header `x-turnstile-token`, verify against `https://challenges.cloudflare.com/turnstile/v0/siteverify`; fails closed when `TURNSTILE_SECRET_KEY` is unset; bypassed only outside production when `TURNSTILE_DEV_BYPASS=true`), `RADAR_LIMITER` binding (when present), per-visitor daily count, global budget (atomic `UPDATE budget_day SET spent_usd = spent_usd + $est WHERE spent_usd + $est <= cap_usd`).
 - `visitorHash` = SHA-256 of IP + daily salt (env `VISITOR_SALT`), never store raw IP.
 - `lib/public/budget.ts` `recordPublicSpend(actualUsd)` reconciles estimate vs actual from `cost_event`.
 - Env: `PUBLIC_DAILY_BUDGET_USD` (default 5), `TURNSTILE_SECRET_KEY`, `VISITOR_SALT`.
