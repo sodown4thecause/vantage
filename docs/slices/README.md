@@ -48,7 +48,7 @@
 | H5 | S13, S14 | `GITHUB_TOKEN` (read-only public data) |
 | H6 | S42 | `XAI_API_KEY`, `SCRAPECREATORS_API_KEY`, `SCAVIO_API_KEY` |
 | H7 | S40, S41 | Stripe (Australian account) keys, products and webhook endpoint |
-| H8 | S06 | Cloudflare Turnstile site/secret keys |
+| H8 | S06 | Cloudflare Turnstile site/secret keys and `VISITOR_SALT` |
 | H9 | S60, S61 | Outreach to Switch Rescue users; the Show HN post is **written by the owner** (HN bans AI-written text) |
 | H10 | all | Owner decisions flagged "Decision" inside slices |
 
