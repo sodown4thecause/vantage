@@ -1,0 +1,7 @@
+{
+  "strictness": 2,
+  "commentTypes": ["logic", "syntax"],
+  "triggerOnUpdates": true,
+  "ignorePatterns": "pnpm-lock.yaml\ndrizzle/meta/**\n.open-next/**\n.next/**\ncloudflare-env.d.ts\ndocs/**",
+  "statusCheck": true
+}

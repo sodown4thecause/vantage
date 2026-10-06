@@ -6,7 +6,7 @@
 
 **Architecture:** Retain the existing Next.js application, use the OpenNext integration already proposed in PR #30, and keep Neon HTTP PostgreSQL/Drizzle and Neon Auth. Start with one application Worker and its scheduled handler; introduce Queues only if measured workloads cannot meet the bounded scan budget. Staging and production have separate Workers, database/auth endpoints, secrets, and self bindings.
 
-**Tech Stack:** Existing Next.js 16.3.5, React, TypeScript, Drizzle/Neon HTTP, Neon Auth, Vitest, CircleCI; PR #30 adds OpenNext 1.20.8 and Wrangler 4.147.0. Use its locked dependency versions before considering upgrades.
+**Tech Stack:** Existing Next.js 16.3.5, React, TypeScript, Drizzle/Neon HTTP, Neon Auth, Vitest, GitHub Actions; PR #30 adds OpenNext 1.20.8 and Wrangler 4.147.0. Use its locked dependency versions before considering upgrades.
 
 **Spec:** `docs/VANTAGE-PRD.md` in the current planning folder, with this document specifying launch acceptance. The remote repository does not contain that local PRD; copy the agreed PRD into the implementation branch before execution so the spec travels with the code.
 
@@ -18,7 +18,9 @@ The audit table below records the starting point. The launch branch now implemen
 
 Pilot ceilings: three workspaces per scheduled tick, eight eligible sources per workspace, four concurrent collectors, fifty recent documents per opportunity build, seven-day evidence freshness, two-minute scan deadline, five-minute lease and ten-second database fetch timeout. Paid collection remains disabled in production. Ranking and drafting remain deterministic; learning stays off.
 
-Local verification: application tests, scheduled wrapper tests, lint, typecheck and migration generation pass. Next.js compiles and generates pages. Full OpenNext packaging cannot be confirmed locally: Windows rejects packaging symlinks and the WSL filesystem reports input/output errors. CircleCI must pass the full Linux Worker build and staging dry run before merge.
+Local verification: application tests, scheduled wrapper tests, lint, typecheck and migration generation pass. Next.js compiles and generates pages. Full OpenNext packaging cannot be confirmed locally: Windows rejects packaging symlinks and the WSL filesystem reports input/output errors. CI must pass the full Linux Worker build and staging dry run before merge.
+
+> **Update:** CI moved from CircleCI to GitHub Actions (`a960267`); CircleCI is no longer used. Code review is by Greptile (`.greptile/`).
 
 **Tasks 6–7 remain ACCESS_PENDING.** The user chose existing Cloudflare and Neon resources. Cloudflare CLI is unauthenticated and the Neon console presents sign-in. No deployment, live migration, auth callback, real ingestion acceptance, custom hostname, schedule activation or rollback has been demonstrated. Authenticate, identify the existing account/project and staging targets, apply `0010_brown_hydra.sql` to staging, then follow the acceptance and promotion sequence below. Do not enable cron until staging passes.
 
@@ -66,7 +68,7 @@ GitHub evidence is saved under `docs/audit/2026-10-06/` in the planning folder: 
 - Keep `VANTAGE_LEARNING_ENABLED=false` until offline and live evidence justify enablement.
 - WSL/Linux for adapter builds; native Windows symlink failure is not a reason to change the app framework. The current WSL shell starts, but `pnpm` resolves to a Windows shim, so fix the project toolchain before local Linux verification.
 - Store secrets in environment-specific Worker secrets; do not commit values, include them in build logs, or copy them into the PRD.
-- One reviewed release path through CircleCI. Migrations are controlled separately from preview/deploy builds.
+- One reviewed release path through GitHub Actions (CI, then Deploy). Migrations are controlled separately from preview/deploy builds.
 
 ## Review Focus
 
@@ -107,7 +109,7 @@ Paid HTTP execution has a default 30-second CPU budget, distinct from elapsed wa
 | Neon production database/auth endpoint and isolated staging equivalents | Account owner + deployment engineer | Schema, sessions and environment isolation |
 | Runtime secrets listed below | Account owner | Auth, DB, protected cron and opted-in paid lanes |
 | Provider entitlements and a numeric external-data monthly budget | Account owner | Enable paid social collection; start disabled until confirmed |
-| CircleCI deployment credential restricted to the selected account/resources | Account owner + deployment engineer | Reproducible deployments after verification |
+| GitHub Actions deployment credential (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) restricted to the selected account/resources | Account owner + deployment engineer | Reproducible deployments after verification |
 
 The plan does not assume those inputs are absent; they have not been inspected. First inventory existing resources, then reuse correct ones rather than creating duplicates.
 
@@ -117,7 +119,7 @@ The plan does not assume those inputs are absent; they have not been inspected. 
 
 **Depends on:** Account inventory; current PR #30.
 
-**Files:** Modify `wrangler.jsonc`, `worker-entry.mjs`, `.circleci/config.yml`, `README.md`, `.env.example`; reuse `open-next.config.ts` and current package scripts. Add `test/worker-entry.test.mjs` using Node's built-in test runner, with a temporary generated-worker stub.
+**Files:** Modify `wrangler.jsonc`, `worker-entry.mjs`, `.github/workflows/ci.yml`, `.github/workflows/deploy.yml`, `README.md`, `.env.example`; reuse `open-next.config.ts` and current package scripts. Add `test/worker-entry.test.mjs` using Node's built-in test runner, with a temporary generated-worker stub.
 
 **Interfaces:** Existing `fetch(request, env, ctx)` remains delegated to OpenNext. Scheduled self fetch remains authenticated with `CRON_SECRET`. Staging uses Worker `vantage-staging` and production `vantage`; each `WORKER_SELF_REFERENCE` binding targets its own environment. Use explicit `--env staging` / `--env production` consistently.
 
@@ -235,9 +237,9 @@ The plan does not assume those inputs are absent; they have not been inspected. 
 
 **Depends on:** Staging acceptance, confirmed account/domain/budget inputs and reviewed release.
 
-**Files:** Update runbook and CircleCI deployment job; modify production `wrangler.jsonc` trigger/domain settings. No new runtime service required.
+**Files:** Update runbook and the GitHub Actions deploy workflow; modify production `wrangler.jsonc` trigger/domain settings. No new runtime service required.
 
-- [ ] Make CircleCI deploy staging only after verification and Workers-build succeed. Use one release approval to promote the tested SHA/artifact to production; preview jobs have no production secrets and never migrate production.
+- [ ] Make the Deploy workflow deploy staging only after verification and Workers-build succeed. Use one release approval to promote the tested SHA/artifact to production; preview jobs have no production secrets and never migrate production.
 - [ ] Capture prior Worker version/config and DB recovery point. Use additive migrations compatible with rollback; separately rehearse restore in an isolated database.
 - [ ] Apply reviewed production migrations once, set production runtime secrets and exact Auth origins, deploy with production cron still disabled. Validate HTTPS/custom domain and session behavior on that hostname.
 - [ ] Complete a real production user walkthrough and manually trigger one protected scan. Record inserted/skipped counts, opportunity results, provider receipt/cost, elapsed time and source status.
