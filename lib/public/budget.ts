@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
+import { numericField, rowsOf } from "@/lib/db/rows";
 import { roundUsd } from "@/lib/costs/ledger";
 
 export const DEFAULT_PUBLIC_DAILY_BUDGET_USD = 5;
@@ -26,11 +27,7 @@ export function assertValidUsd(value: number, label: string): void {
   }
 }
 
-export function rowsOf(result: unknown): unknown[] {
-  if (Array.isArray(result)) return result;
-  const rows = (result as { rows?: unknown } | null)?.rows;
-  return Array.isArray(rows) ? rows : [];
-}
+export { rowsOf };
 
 /**
  * Reserve `estimateUsd` against today's budget in ONE atomic statement
@@ -94,8 +91,7 @@ export async function reconcilePublicSpend(
     select coalesce(sum(cost_usd), 0)::text as total
     from cost_event where request_ref = ${requestRef}
   `);
-  const total = Number((rowsOf(result)[0] as { total?: string } | undefined)?.total ?? 0);
-  const actual = Number.isFinite(total) ? total : 0;
+  const actual = numericField(rowsOf(result)[0], "total") ?? 0;
   await settlePublicSpend(reservation, actual);
   return actual;
 }

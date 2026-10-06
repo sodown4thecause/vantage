@@ -1,6 +1,7 @@
 import { eq, inArray, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
+import { numericField, rowsOf } from "@/lib/db/rows";
 import { planLimit, workspace, workspaceUsage } from "@/lib/db/schema";
 import {
   DEFAULT_LIMITS,
@@ -142,9 +143,13 @@ export async function consume(
       set ${col} = ${qualified} + ${n}::int, "updated_at" = now()
       where ${qualified} + ${n}::int <= ${limitExpr}
     returning ${col} as "used", ${limitExpr} as "limit"`);
-  const rows = (Array.isArray(result) ? result : (result as { rows?: unknown[] }).rows ?? []) as Array<{ used: number | string; limit: number | string }>;
-  if (rows[0]) {
-    return { ...evaluateLimit(Number(rows[0].limit), Number(rows[0].used), 0), allowed: true, consumed: n };
+  const row = rowsOf(result)[0];
+  if (row !== undefined) {
+    const used = numericField(row, "used");
+    const limit = numericField(row, "limit");
+    // The write already happened, so a malformed row must be loud, not a silent success with bad numbers.
+    if (used === null || limit === null) throw new Error("Unexpected quota result shape");
+    return { ...evaluateLimit(limit, used, 0), allowed: true, consumed: n };
   }
   const current = await checkLimit(workspaceId, key, now);
   return { ...current, allowed: false, consumed: 0 };
