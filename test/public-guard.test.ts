@@ -34,6 +34,11 @@ vi.mock("@/lib/db/client", () => {
           row.cap = cap;
           return { rows: [{ spent_usd: row.spent }] };
         }
+        if (text.includes("update budget_day")) {
+          const row = state.budget.get(String(params[1]));
+          if (row) row.spent = Math.max(0, row.spent + Number(params[0]));
+          return { rows: [] };
+        }
         if (text.includes("into public_visitor")) {
           const key = `${params[0]}|${params[1]}`;
           const limit = Number(params[2]);
@@ -60,7 +65,7 @@ vi.mock("@opennextjs/cloudflare", () => ({
   },
 }));
 
-import { reservePublicBudget } from "@/lib/public/budget";
+import { refundPublicSpend, reservePublicBudget, settlePublicSpend } from "@/lib/public/budget";
 import { guardPublicRequest, hashVisitor } from "@/lib/public/guard";
 
 const opts = { action: "radar", costEstimateUsd: 1, perVisitorPerDay: 2 };
@@ -81,6 +86,7 @@ beforeEach(() => {
   state.limiter = null;
   vi.stubEnv("NODE_ENV", "test");
   vi.stubEnv("TURNSTILE_SECRET_KEY", "");
+  vi.stubEnv("TURNSTILE_DEV_BYPASS", "true");
   vi.stubEnv("VISITOR_SALT", "test-salt");
   vi.stubEnv("PUBLIC_DAILY_BUDGET_USD", "5");
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -219,5 +225,78 @@ describe("guardPublicRequest", () => {
     const res = await guardPublicRequest(req(), opts);
     expect(res).toEqual({ ok: false, status: 503, code: "guard_unavailable" });
     expect(JSON.stringify(res)).not.toContain("postgres");
+  });
+
+  it("returns a reservation handle pinned to the reserved day", async () => {
+    const res = await guardPublicRequest(req(), opts);
+    expect(res.ok && res.reservation).toEqual({
+      day: new Date().toISOString().slice(0, 10),
+      estimateUsd: 1,
+    });
+  });
+
+  it("refunds a reservation when the scan fails", async () => {
+    const res = await guardPublicRequest(req(), opts);
+    if (!res.ok) throw new Error("expected ok");
+    expect(state.budget.get(res.reservation.day)!.spent).toBe(1);
+    await refundPublicSpend(res.reservation);
+    expect(state.budget.get(res.reservation.day)!.spent).toBe(0);
+  });
+
+  it("settles against the reserved day even after UTC midnight", async () => {
+    state.budget.set("2026-10-06", { spent: 1, cap: 5 });
+    state.budget.set("2026-10-07", { spent: 2, cap: 5 });
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-07T00:00:30Z"));
+    await settlePublicSpend({ day: "2026-10-06", estimateUsd: 1 }, 0.25);
+    vi.useRealTimers();
+    expect(state.budget.get("2026-10-06")!.spent).toBeCloseTo(0.25);
+    expect(state.budget.get("2026-10-07")!.spent).toBe(2);
+  });
+
+  it("rejects invalid estimates and visitor limits", async () => {
+    for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(await guardPublicRequest(req(), { ...opts, costEstimateUsd: bad })).toEqual({
+        ok: false,
+        status: 503,
+        code: "guard_unavailable",
+      });
+    }
+    await expect(reservePublicBudget(-1)).rejects.toThrow(RangeError);
+    expect((await guardPublicRequest(req(), { ...opts, perVisitorPerDay: 0 })).ok).toBe(false);
+  });
+
+  it("fails closed without a Turnstile secret unless the dev bypass is set", async () => {
+    vi.stubEnv("TURNSTILE_DEV_BYPASS", "");
+    expect(await guardPublicRequest(req(), opts)).toEqual({
+      ok: false,
+      status: 503,
+      code: "guard_unavailable",
+    });
+  });
+
+  it("ignores the dev bypass in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    expect((await guardPublicRequest(req(), opts)).ok).toBe(false);
+  });
+
+  it("passes a timeout signal to siteverify", async () => {
+    vi.stubEnv("TURNSTILE_SECRET_KEY", "secret");
+    const fetchMock = siteverify(true) as unknown as ReturnType<typeof vi.fn>;
+    vi.stubGlobal("fetch", fetchMock);
+    await guardPublicRequest(req({ "x-turnstile-token": "t" }), opts);
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("does not trust x-forwarded-for in production and rejects unidentified clients", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("TURNSTILE_SECRET_KEY", "secret");
+    vi.stubGlobal("fetch", siteverify(true));
+    const headers = new Headers({ "x-forwarded-for": "9.9.9.9", "x-turnstile-token": "t" });
+    const res = await guardPublicRequest(
+      new Request("https://vantage.test/api/public/ping", { method: "POST", headers }),
+      opts,
+    );
+    expect(res).toEqual({ ok: false, status: 400, code: "client_unidentified" });
   });
 });

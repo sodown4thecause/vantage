@@ -17,6 +17,15 @@ export function publicDailyBudgetUsd(
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_PUBLIC_DAILY_BUDGET_USD;
 }
 
+/** What a successful guard reserved: pinned to the UTC day it was reserved on. */
+export type BudgetReservation = { day: string; estimateUsd: number };
+
+export function assertValidUsd(value: number, label: string): void {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new RangeError(`${label} must be a non-negative finite number`);
+  }
+}
+
 export function rowsOf(result: unknown): unknown[] {
   if (Array.isArray(result)) return result;
   const rows = (result as { rows?: unknown } | null)?.rows;
@@ -33,6 +42,7 @@ export async function reservePublicBudget(
   estimateUsd: number,
   opts: { day?: string; capUsd?: number } = {},
 ): Promise<boolean> {
+  assertValidUsd(estimateUsd, "estimateUsd");
   const day = opts.day ?? utcDay();
   const cap = roundUsd(opts.capUsd ?? publicDailyBudgetUsd()).toFixed(6);
   const est = roundUsd(estimateUsd).toFixed(6);
@@ -49,16 +59,8 @@ export async function reservePublicBudget(
   return rowsOf(result).length > 0;
 }
 
-/**
- * Reconcile a reservation with what was actually spent: adds
- * `actualUsd - estimateUsd` (never below zero) to today's total.
- */
-export async function recordPublicSpend(
-  actualUsd: number,
-  estimateUsd = 0,
-  day: string = utcDay(),
-): Promise<void> {
-  const delta = roundUsd(actualUsd - estimateUsd).toFixed(6);
+async function adjustSpend(day: string, deltaUsd: number): Promise<void> {
+  const delta = roundUsd(deltaUsd).toFixed(6);
   await getDb().execute(sql`
     update budget_day
     set spent_usd = greatest(0, spent_usd + ${delta}::numeric)
@@ -66,11 +68,27 @@ export async function recordPublicSpend(
   `);
 }
 
-/** Sum the real cost recorded in `cost_event` for a request and reconcile it. */
+/** Give back a reservation whose work failed or never ran (uses the reserved day). */
+export async function refundPublicSpend(reservation: BudgetReservation): Promise<void> {
+  await adjustSpend(reservation.day, -reservation.estimateUsd);
+}
+
+/**
+ * Settle a reservation against what was actually spent: adds
+ * `actualUsd - estimateUsd` (never below zero) to the day it was reserved on.
+ */
+export async function settlePublicSpend(
+  reservation: BudgetReservation,
+  actualUsd: number,
+): Promise<void> {
+  assertValidUsd(actualUsd, "actualUsd");
+  await adjustSpend(reservation.day, actualUsd - reservation.estimateUsd);
+}
+
+/** Sum the real cost recorded in `cost_event` for a request and settle it. */
 export async function reconcilePublicSpend(
   requestRef: string,
-  estimateUsd: number,
-  day: string = utcDay(),
+  reservation: BudgetReservation,
 ): Promise<number> {
   const result = await getDb().execute(sql`
     select coalesce(sum(cost_usd), 0)::text as total
@@ -78,6 +96,16 @@ export async function reconcilePublicSpend(
   `);
   const total = Number((rowsOf(result)[0] as { total?: string } | undefined)?.total ?? 0);
   const actual = Number.isFinite(total) ? total : 0;
-  await recordPublicSpend(actual, estimateUsd, day);
+  await settlePublicSpend(reservation, actual);
   return actual;
+}
+
+/**
+ * Delete guard rows older than `retentionDays`. Nothing schedules this yet;
+ * call it from the cron tick (or a later slice) to keep the tables small.
+ */
+export async function pruneOldPublicRows(retentionDays = 14): Promise<void> {
+  const days = Math.max(1, Math.floor(retentionDays));
+  await getDb().execute(sql`delete from public_visitor where day < current_date - ${days}::int`);
+  await getDb().execute(sql`delete from budget_day where day < current_date - ${days}::int`);
 }

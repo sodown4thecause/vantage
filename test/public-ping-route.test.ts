@@ -12,4 +12,11 @@ describe("POST /api/public/ping", () => {
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ error: "guard_unavailable" });
   });
+
+  it("is a 404 in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const res = await POST(new Request("https://vantage.test/api/public/ping", { method: "POST" }));
+    expect(res.status).toBe(404);
+    vi.unstubAllEnvs();
+  });
 });
