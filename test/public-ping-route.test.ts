@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/public/guard", () => ({
   guardPublicRequest: vi.fn(async () => ({ ok: false, status: 503, code: "guard_unavailable" })),
@@ -6,7 +6,16 @@ vi.mock("@/lib/public/guard", () => ({
 
 import { POST } from "@/app/api/public/ping/route";
 
+beforeEach(() => vi.stubEnv("ENABLE_PUBLIC_PING", "true"));
+afterEach(() => vi.unstubAllEnvs());
+
 describe("POST /api/public/ping", () => {
+  it("is a 404 unless explicitly enabled", async () => {
+    vi.stubEnv("ENABLE_PUBLIC_PING", "");
+    const res = await POST(new Request("https://vantage.test/api/public/ping", { method: "POST" }));
+    expect(res.status).toBe(404);
+  });
+
   it("returns only a stable error code when the guard rejects", async () => {
     const res = await POST(new Request("https://vantage.test/api/public/ping", { method: "POST" }));
     expect(res.status).toBe(503);
