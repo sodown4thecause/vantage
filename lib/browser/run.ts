@@ -87,12 +87,18 @@ export type BrowserRunOptions = {
   deps?: Partial<BrowserRunDeps>;
 };
 
+/** True only for a value that really exposes `quickAction`, so a mis-bound or stubbed `BROWSER` is treated as missing. */
+export function isBrowserBinding(value: unknown): value is BrowserBinding {
+  return typeof value === "object" && value !== null && "quickAction" in value && typeof value.quickAction === "function";
+}
+
 /** getCloudflareContext() only works inside an OpenNext request; anywhere else it throws. */
 async function defaultGetBinding(): Promise<BrowserBinding | undefined> {
   try {
     const { getCloudflareContext } = await import("@opennextjs/cloudflare");
-    const env = getCloudflareContext().env as unknown as { BROWSER?: BrowserBinding };
-    return env.BROWSER;
+    const env: unknown = getCloudflareContext().env;
+    const candidate = typeof env === "object" && env !== null && "BROWSER" in env ? env.BROWSER : undefined;
+    return isBrowserBinding(candidate) ? candidate : undefined;
   } catch {
     return undefined;
   }
@@ -278,11 +284,10 @@ function parseResult(body: Uint8Array): unknown {
   } catch {
     throw new BrowserRunError("bad_response", "Browser Run returned an unreadable response.");
   }
-  const envelope = parsed as { success?: boolean; result?: unknown } | null;
-  if (!envelope || typeof envelope !== "object" || envelope.success === false || !("result" in envelope)) {
+  if (typeof parsed !== "object" || parsed === null || !("result" in parsed) || ("success" in parsed && parsed.success === false)) {
     throw new BrowserRunError("bad_response", "Browser Run returned an unexpected response.");
   }
-  return envelope.result;
+  return parsed.result;
 }
 
 export async function browserMarkdown(
@@ -299,14 +304,24 @@ export async function browserMarkdown(
 }
 
 /**
- * AI extraction. `schema` is a JSON Schema describing the output; the caller
- * may pass `opts.validate` to check the shape (e.g. a zod parse) before use.
+ * AI extraction. `schema` is a JSON Schema describing the output. Without `opts.validate` the data is
+ * `unknown` and must be checked by the caller; pass `validate` (e.g. a zod parse) to get a typed result.
  */
+export async function browserJson(
+  url: string,
+  schema: Record<string, unknown>,
+  opts?: BrowserRunOptions & { prompt?: string },
+): Promise<{ data: unknown; ms: number }>;
 export async function browserJson<T>(
   url: string,
   schema: Record<string, unknown>,
-  opts: BrowserRunOptions & { prompt?: string; validate?: (value: unknown) => T } = {},
-): Promise<{ data: T; ms: number }> {
+  opts: BrowserRunOptions & { prompt?: string; validate: (value: unknown) => T },
+): Promise<{ data: T; ms: number }>;
+export async function browserJson(
+  url: string,
+  schema: Record<string, unknown>,
+  opts: BrowserRunOptions & { prompt?: string; validate?: (value: unknown) => unknown } = {},
+): Promise<{ data: unknown; ms: number }> {
   const href = assertBrowsableUrl(url);
   const params: Record<string, unknown> = {
     url: href,
@@ -315,9 +330,9 @@ export async function browserJson<T>(
   if (opts.prompt) params.prompt = opts.prompt;
   const { body, ms } = await run({ action: "json", params }, opts);
   const result = parseResult(body);
-  let data: T;
+  let data: unknown;
   try {
-    data = opts.validate ? opts.validate(result) : (result as T);
+    data = opts.validate ? opts.validate(result) : result;
   } catch {
     throw new BrowserRunError("bad_response", "Browser Run output did not match the schema.");
   }

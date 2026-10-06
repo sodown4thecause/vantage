@@ -15,6 +15,7 @@ vi.mock("@opennextjs/cloudflare", () => ({
 import {
   BrowserRunError,
   browserJson,
+  isBrowserBinding,
   browserLinks,
   browserMarkdown,
   browserScreenshot,
@@ -187,11 +188,18 @@ describe("happy paths", () => {
   it("json sends a schema and validates the result", async () => {
     const { deps, calls } = setup({ result: { name: "A" }, ms: 10 });
     const schema = { type: "object", properties: { name: { type: "string" } } };
-    const out = await browserJson<{ name: string }>("https://example.com/", schema, {
+    const out = await browserJson("https://example.com/", schema, {
       deps,
       prompt: "get name",
+      validate: (value: unknown) => {
+        if (typeof value !== "object" || value === null || !("name" in value) || typeof value.name !== "string") {
+          throw new Error("bad shape");
+        }
+        return { name: value.name };
+      },
     });
     expect(out.data).toEqual({ name: "A" });
+    expect(out.data.name).toBe("A");
     expect(calls[0].params).toMatchObject({
       response_format: { type: "json_schema", json_schema: schema },
       prompt: "get name",
@@ -207,6 +215,18 @@ describe("happy paths", () => {
         }),
       ),
     ).toBe("bad_response");
+  });
+
+  it("json without a validator hands back unknown data for the caller to check", async () => {
+    const { deps } = setup({ result: { name: "A" }, ms: 10 });
+    const out = await browserJson("https://example.com/", {}, { deps });
+    const data: unknown = out.data;
+    expect(data).toEqual({ name: "A" });
+  });
+
+  it("only accepts a BROWSER binding that exposes quickAction", () => {
+    expect(isBrowserBinding({ quickAction: async () => new Response("") })).toBe(true);
+    for (const bad of [undefined, null, {}, "browser", 5, { quickAction: "nope" }]) expect(isBrowserBinding(bad)).toBe(false);
   });
 
   it("links returns strings and screenshot returns bytes (url or html)", async () => {

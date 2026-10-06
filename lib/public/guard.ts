@@ -39,13 +39,17 @@ const fail = (status: number, code: GuardErrorCode): GuardResult => ({
 
 type RateLimitBinding = { limit(opts: { key: string }): Promise<{ success: boolean }> };
 
+function isRateLimitBinding(value: unknown): value is RateLimitBinding {
+  return typeof value === "object" && value !== null && "limit" in value && typeof value.limit === "function";
+}
+
 /** The S02 rate-limit binding is optional: absent locally and until S02 lands. */
 async function getRateLimiter(): Promise<RateLimitBinding | null> {
   try {
     const { getCloudflareContext } = await import("@opennextjs/cloudflare");
-    const env = getCloudflareContext().env as unknown as Record<string, unknown>;
-    const binding = env.RADAR_LIMITER as RateLimitBinding | undefined;
-    return binding && typeof binding.limit === "function" ? binding : null;
+    const env: unknown = getCloudflareContext().env;
+    const binding = typeof env === "object" && env !== null && "RADAR_LIMITER" in env ? env.RADAR_LIMITER : undefined;
+    return isRateLimitBinding(binding) ? binding : null;
   } catch (err) {
     // Expected locally (no Cloudflare context); logged so a broken binding in
     // production is visible rather than silently unenforced.
@@ -93,8 +97,9 @@ async function verifyTurnstile(req: Request, ip: string, isProd: boolean): Promi
       signal: AbortSignal.timeout(SITEVERIFY_TIMEOUT_MS),
     });
     if (!res.ok) return fail(503, "guard_unavailable");
-    const json = (await res.json()) as { success?: boolean };
-    return json.success === true ? null : fail(403, "turnstile_failed");
+    const json: unknown = await res.json();
+    const success = typeof json === "object" && json !== null && "success" in json && json.success === true;
+    return success ? null : fail(403, "turnstile_failed");
   } catch {
     return fail(503, "guard_unavailable");
   }
