@@ -44,7 +44,7 @@ export async function GET(req: Request) {
         continue;
       }
       try {
-        const result = await scanWorkspace(ws.id, deadline);
+        const result = await scanWorkspace(ws.id, deadline, { enforceCadence: !workspaceId });
         collectorResults.push(...result.collectorResults);
         opportunityResults.push(...result.opportunityResults);
       } catch (error) {

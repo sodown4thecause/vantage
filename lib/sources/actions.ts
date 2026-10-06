@@ -7,6 +7,8 @@ import { sha256Hex } from "@/lib/collectors/hash";
 import { getDb } from "@/lib/db/client";
 import { source } from "@/lib/db/schema";
 import { isPublicHttpUrl } from "@/lib/http/public-fetch";
+import { assertWithinCount } from "@/lib/plans/limits";
+import { PlanLimitError } from "@/lib/plans/types";
 import { scanWorkspace } from "@/lib/cron/scan";
 
 export type SourceActionState = { error?: string; message?: string };
@@ -43,15 +45,16 @@ export async function addFeed(workspaceId: string, _previous: SourceActionState,
     if (feedUrl.length > 2_000 || !isPublicHttpUrl(feedUrl)) throw new Error("Enter a public HTTP(S) feed URL.");
     const db = getDb();
     const name = `RSS: ${new URL(feedUrl).hostname} (${sha256Hex(feedUrl).slice(0, 10)})`;
-    const rows = await db.select({ name: source.name }).from(source).where(eq(source.workspaceId, workspaceId)).limit(8);
+    const rows = await db.select({ name: source.name }).from(source).where(eq(source.workspaceId, workspaceId)).limit(100);
     if (rows.some((row) => row.name === name)) return { message: "This feed is already configured." };
-    if (rows.length >= 8) throw new Error("The pilot supports up to eight sources per workspace.");
+    await assertWithinCount(workspaceId, "sources", rows.length);
     await db.insert(source).values({ workspaceId, name, type: "rss", lane: "free", config: { feedUrl } })
       .onConflictDoNothing({ target: [source.workspaceId, source.name] });
     revalidatePath("/settings/sources");
     return { message: "Feed added. Run a scan to collect its latest entries." };
   } catch (error) {
+    if (error instanceof PlanLimitError) return { error: error.message };
     const message = error instanceof Error ? error.message : "";
-    return { error: ["Enter a public HTTP(S) feed URL.", "The pilot supports up to eight sources per workspace."].includes(message) ? message : "Feed could not be added. Please try again." };
+    return { error: ["Enter a public HTTP(S) feed URL."].includes(message) ? message : "Feed could not be added. Please try again." };
   }
 }

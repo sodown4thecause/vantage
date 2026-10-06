@@ -6,6 +6,7 @@ import {
   source,
   type MonitoringProfile,
 } from "@/lib/db/schema";
+import { assertWithinCount } from "@/lib/plans/limits";
 import { retrieveProductMaterial } from "@/lib/profile/retrieve";
 import type {
   MonitoringProfileInput,
@@ -73,6 +74,9 @@ export async function saveMonitoringProfile(args: {
 }): Promise<MonitoringProfileView> {
   const db = getDb();
   const latest = await getLatestMonitoringProfile(args.workspaceId);
+  // Plan keyword cap. Profiles saved before plans existed are grandfathered: a save may keep
+  // (but not grow) the keyword count the workspace already has. Throws PlanLimitError.
+  await assertWithinCount(args.workspaceId, "keywords", 0, args.input.topics.length, latest?.topics.length ?? 0);
   const nextVersion = (latest?.version ?? 0) + 1;
 
   const material = await retrieveProductMaterial(

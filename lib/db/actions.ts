@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth/server";
 import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
 import { getDb } from "@/lib/db/client";
 import { document, lead, workspace } from "@/lib/db/schema";
+import { assertCanCreateProject } from "@/lib/plans/limits";
 import type { SourcePlatform } from "@/lib/db/schema";
 
 /**
@@ -20,6 +21,7 @@ export async function createWorkspaceForCurrentUser(name: string) {
 
   const existing = await getCurrentWorkspace();
   if (existing) return existing;
+  await assertCanCreateProject(String(session.user.id));
   const db = getDb();
   const [row] = await db
     .insert(workspace)
