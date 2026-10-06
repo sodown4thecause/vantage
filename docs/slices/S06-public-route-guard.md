@@ -14,12 +14,22 @@ Any unauthenticated, cost-bearing endpoint (first user: Radar scan) is protected
 - Test route `app/api/public/ping/route.ts` guarded, used only to prove the guard in tests/staging.
 
 ## Acceptance criteria
-- [ ] Tests: missing/invalid Turnstile, rate limit hit, visitor daily cap, budget exhausted (returns 429/503 with stable error codes), concurrent budget spend never exceeds the cap.
-- [ ] Error bodies leak nothing (see `test/error-disclosure-contract.test.ts`).
-- [ ] Documented env vars in `.env.example`.
+- [x] Tests: missing/invalid Turnstile, rate limit hit, visitor daily cap, budget exhausted (returns 429/503 with stable error codes), concurrent budget spend never exceeds the cap.
+- [x] Error bodies leak nothing (see `test/error-disclosure-contract.test.ts`).
+- [x] Documented env vars in `.env.example`.
 
 ## Out of scope
 The Radar scan itself (S21), CAPTCHA UI widget (S22 includes it).
 
 ## Gotchas
 Human H8: create a Turnstile widget in the Cloudflare dashboard; staging can use Cloudflare's published always-pass test keys.
+
+## Learned (implementation notes)
+- Migration `0012_broken_annihilus.sql` (additive: `budget_day`, `public_visitor`). Not applied to any database.
+- The `RADAR_LIMITER` binding is optional: read via `getCloudflareContext().env` and skipped when absent; the Neon per-visitor and budget checks work without it. `wrangler.jsonc` untouched (S02 owns the binding).
+- Turnstile: skipped when `TURNSTILE_SECRET_KEY` is unset outside production; in production a missing secret or `VISITOR_SALT` fails closed (`503 guard_unavailable`).
+- Both counters are single atomic `INSERT ... ON CONFLICT DO UPDATE ... WHERE` statements (neon-http has no interactive transactions). The visitor count is incremented before the budget is reserved, so a budget rejection still consumes one visitor scan (conservative).
+- Stable error codes: `turnstile_required`/`turnstile_failed` (403), `rate_limited`/`visitor_limit` (429), `budget_exhausted`/`guard_unavailable` (503).
+- `reconcilePublicSpend(requestRef, estimate)` sums `cost_event` by `request_ref`; S21 must record costs with that `requestRef`.
+- Tests emulate the two upserts in memory (the mock cannot prove Postgres atomicity; it asserts the SQL is a single guarded statement). Verify on staging Neon once H1 lands.
+- Open gates: H8 Turnstile keys; S02 rate-limit binding (`RADAR_LIMITER`); apply migration 0012.
