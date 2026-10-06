@@ -122,7 +122,7 @@ Size: S = under a day, M = 1 to 3 days, L = 3 to 5 days of agent work. "Idea" re
 | [S50](S50-mcp-server.md) | MCP server on the Worker | 4 | L | S21 | none | [ ] |
 | [S51](S51-cli-and-skill-package.md) | `npx vantage init`, plugin and skill files | 4 | L | S50,S52 | none | [ ] |
 | [S52](S52-monitor-pack-library.md) | Public Monitor Pack library + CI validation | 4 | M | S20 | none | [ ] |
-| [S60](S60-switch-rescue-kit.md) | Switch Rescue manual test kit | gtm | S | none | H9 | [ ] |
+| [S60](S60-switch-rescue-kit.md) | Switch Rescue manual test kit | gtm | S | none | H9 | [~] |
 | [S61](S61-launch-checklist.md) | Launch checklist and venue-rules check | gtm | S | S16,S21,S30 | H9 | [ ] |
 
 ## 7. Decisions already made (do not re-litigate inside a slice)

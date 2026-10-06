@@ -19,3 +19,8 @@ Three completed rescues, two activations, two founders paying. Stop and rethink 
 
 ## Human gate (H9)
 All outreach is performed by the owner personally, from their own accounts, in their own words.
+
+## Learned
+- Kit added 6 Oct: `docs/gtm/switch-rescue.md`, `docs/gtm/switch-rescue-tracking.csv`, `scripts/gtm/summarize.ts` (+ `test/gtm-summarize.test.ts`). Gates: 3 rescues, 2 activations, 2 paying; only rescued rows count toward activation and payment.
+- Owner still has to review the offer paragraph, confirm the real keyword-export column names (S15), and do all outreach personally (H9).
+- Running `pnpm test` in the main checkout also picks up `.claude/worktrees/**` copies while agents are active; use `pnpm vitest run --exclude '.claude/**'`.
