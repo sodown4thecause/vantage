@@ -14,10 +14,17 @@ The owner can pause or block any source type globally in two clicks, and users s
 - **Audit:** `source_switch_log(id, source_key, from_state, to_state, reason, changed_by, changed_at)` appended on every change (migration).
 
 ## Acceptance criteria
-- [ ] Non-admin gets 404 on API and page; admin can flip a switch; log row written.
-- [ ] A switched-off source type produces no provider call (test with a fake collector) and appears as paused in Settings → Sources.
-- [ ] Tick result for paused sources has no `error` key (test in `test/cron-tick.test.ts` style).
-- [ ] Tests for `isAdmin` parsing (whitespace, empty, missing env).
+- [x] Non-admin gets 404 on API and page; admin can flip a switch; log row written.
+- [x] A switched-off source type produces no provider call (test with a fake collector) and appears as paused in Settings → Sources.
+- [x] Tick result for paused sources has no `error` key (test in `test/cron-tick.test.ts` style).
+- [x] Tests for `isAdmin` parsing (whitespace, empty, missing env).
 
 ## Out of scope
 Automatic circuit breaking (a later improvement), per-workspace switches.
+
+## Learned
+- Migration 0012 (`source_switch_log`) is additive; apply to Neon branches is a human step. Set `VANTAGE_ADMIN_USER_IDS` as a Worker secret/var before the admin page is usable (until then everyone gets 404).
+- `setSourceSwitch` now reads the previous state and appends a log row; neon-http has no transaction, so the upsert and log insert are two statements (a failure between them loses only the audit row).
+- Paused display is derived in `listWorkspaceSources` (`displayCoverage: "paused_global"`, `pausedLabel`); `source.health` is never written by the switch.
+- `lib/sources/keys.ts` lists switchable keys; add new `SourceType` values there too (slice README step 8).
+- Scan only selects hn/rss/substack today, so the "source paused" skip appears for those until S11/S13/S14 widen the list.

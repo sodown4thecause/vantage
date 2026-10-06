@@ -15,6 +15,7 @@ export const redditCollector: Collector = {
       typeof ctx.config.query === "string" ? ctx.config.query : undefined;
     const limit = Number(ctx.config.limit ?? ctx.config.first ?? 20);
     const { posts, meta, cursor } = await fetchRedditPostsWithMeta({
+      ctx: { workspaceId: ctx.workspaceId, sourceKey: "reddit" },
       query,
       limit,
       cursor: ctx.cursor ?? undefined,

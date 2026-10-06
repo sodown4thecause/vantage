@@ -1,11 +1,13 @@
 import {
   boolean,
+  date,
   index,
   integer,
   jsonb,
   numeric,
   pgEnum,
   pgTable,
+  primaryKey,
   real,
   text,
   timestamp,
@@ -464,6 +466,19 @@ export const sourceSwitch = pgTable("source_switch", {
   changedBy: text("changed_by"),
 });
 
+/** Append-only audit trail of every source_switch change. */
+export const sourceSwitchLog = pgTable("source_switch_log", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sourceKey: text("source_key").notNull(),
+  fromState: text("from_state").$type<SourceSwitchState>().notNull(),
+  toState: text("to_state").$type<SourceSwitchState>().notNull(),
+  reason: text("reason").notNull().default(""),
+  changedBy: text("changed_by"),
+  changedAt: timestamp("changed_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 /** Editable provider prices so the calculator and ledger need no deploy to change. */
 export const providerPrice = pgTable(
   "provider_price",
@@ -522,6 +537,27 @@ export const costEvent = pgTable(
   ],
 );
 
+/** Daily rollup of cost_event: what each source/provider/action cost per UTC day. */
+export const costDaily = pgTable(
+  "cost_daily",
+  {
+    day: date("day").notNull(),
+    sourceKey: text("source_key").notNull(),
+    provider: text("provider").notNull(),
+    action: text("action").notNull(),
+    calls: integer("calls").notNull().default(0),
+    costUsd: numeric("cost_usd", { precision: 12, scale: 6 })
+      .notNull()
+      .default("0"),
+    failed: integer("failed").notNull().default(0),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.day, table.sourceKey, table.provider, table.action],
+    }),
+  ],
+);
+
 /** Public, workspace-independent posts (e.g. the shared Reddit sweep). */
 export const sharedPost = pgTable(
   "shared_post",
@@ -572,6 +608,64 @@ export const sharedSweepRun = pgTable("shared_sweep_run", {
   state: text("state").$type<SweepState>().notNull().default("running"),
 });
 
+/**
+ * Public endpoint guard (S06). `budget_day` is the global daily dollar budget
+ * for unauthenticated, cost-bearing routes; `public_visitor` counts scans per
+ * salted visitor hash per day (raw IPs are never stored).
+ */
+export const budgetDay = pgTable("budget_day", {
+  day: date("day").primaryKey(),
+  spentUsd: numeric("spent_usd", { precision: 12, scale: 6 })
+    .notNull()
+    .default("0"),
+  capUsd: numeric("cap_usd", { precision: 12, scale: 6 }).notNull(),
+});
+
+export const publicVisitor = pgTable(
+  "public_visitor",
+  {
+    visitorHash: text("visitor_hash").notNull(),
+    day: date("day").notNull(),
+    scans: integer("scans").notNull().default(0),
+  },
+  (table) => [primaryKey({ columns: [table.visitorHash, table.day] })],
+);
+
 export type SourceSwitchRow = typeof sourceSwitch.$inferSelect;
 export type CostEventInsert = typeof costEvent.$inferInsert;
 export type SharedPostInsert = typeof sharedPost.$inferInsert;
+
+
+/**
+ * S05 plans and entitlements. Limits are data (edit with SQL, no deploy).
+ * `workspace.plan` selects the row set; a missing key falls back to the `free` plan.
+ */
+export const planLimit = pgTable(
+  "plan_limit",
+  {
+    plan: text("plan").notNull(),
+    key: text("key").notNull(),
+    value: integer("value").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.plan, table.key] })],
+);
+
+/**
+ * Metered usage. `period` is the UTC day for per-day counters (scored_leads) and the
+ * first UTC day of the month for per-month counters (deep_searches).
+ */
+export const workspaceUsage = pgTable(
+  "workspace_usage",
+  {
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    period: date("period", { mode: "string" }).notNull(),
+    scoredLeads: integer("scored_leads").notNull().default(0),
+    deepSearches: integer("deep_searches").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.workspaceId, table.period] })],
+);

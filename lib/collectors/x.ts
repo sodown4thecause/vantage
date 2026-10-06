@@ -26,6 +26,7 @@ export const xCollector: Collector = {
         : undefined;
 
     const { posts, meta, cursor } = await fetchXPostsWithMeta({
+      ctx: { workspaceId: ctx.workspaceId, sourceKey: "x" },
       query,
       limit,
       cursor: ctx.cursor ?? undefined,
