@@ -14,7 +14,7 @@ export function SafeLink({
   children: React.ReactNode;
 }) {
   const safe = safeHttpUrl(href);
-  if (!safe) return <span>{children}</span>;
+  if (!safe) return <span className={className}>{children}</span>;
   return (
     <a href={safe} className={className} target="_blank" rel="noopener noreferrer">
       {children}
