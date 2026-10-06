@@ -17,16 +17,16 @@ export type PriceSeed = {
  * Re-check against the provider pricing pages before quoting publicly.
  */
 export const DEFAULT_PRICES: PriceSeed[] = [
-  { provider: "tinyfish", action: "agent_step", unitCostUsd: 0.016, unit: "step", notes: "TinyFish Agent per step; Reddit shared sweep ~ $23/month (competitor review 2026-10-06)" },
-  { provider: "tinyfish", action: "search", unitCostUsd: 0, unit: "request", notes: "TinyFish Search is free (tinyfish.ai pricing, 2026-10-06)" },
-  { provider: "tinyfish", action: "fetch", unitCostUsd: 0, unit: "request", notes: "TinyFish Fetch is free (tinyfish.ai pricing, 2026-10-06)" },
-  { provider: "scavio", action: "reddit_search", unitCostUsd: 0.004, unit: "request", notes: "Scavio Reddit search ~ $0.004/request (approx, 2026-10-06)" },
-  { provider: "scavio", action: "x_search", unitCostUsd: 0.004, unit: "request", notes: "Assumed same as Scavio Reddit (~ $0.004); confirm with Scavio pricing" },
-  { provider: "scavio", action: "youtube_comments", unitCostUsd: 0.004, unit: "request", notes: "Assumed same as Scavio Reddit (~ $0.004); confirm with Scavio pricing" },
-  { provider: "grok", action: "x_search_post", unitCostUsd: 0.005, unit: "post", notes: "xAI x_search per-post fee $0.005 (82% of a 25-post scan ~ $0.15), plus model call" },
-  { provider: "grok", action: "score_post", unitCostUsd: 0.0005, unit: "post", notes: "AI scoring with grok-4.3 ~ $0.0005/post (2026-10-06)" },
-  { provider: "scrapecreators", action: "request", unitCostUsd: 0.0019, unit: "request", notes: "ScrapeCreators $0.0019/request (LinkedIn/Instagram/Facebook), 2026-10-06" },
-  { provider: "browser_run", action: "browser_hour", unitCostUsd: 0.09, unit: "hour", notes: "Cloudflare Browser Run $0.09/hour after 10 free hours/month; use X-Browser-Ms-Used" },
+  { provider: "tinyfish", action: "agent_step", unitCostUsd: 0.016, unit: "step", notes: "TinyFish Agent per step. Source: competitor review 2026-10-06; pricing page URL unverified; checked 2026-10-06" },
+  { provider: "tinyfish", action: "search", unitCostUsd: 0, unit: "request", notes: "TinyFish Search free. Source: competitor review 2026-10-06; pricing page URL unverified; checked 2026-10-06" },
+  { provider: "tinyfish", action: "fetch", unitCostUsd: 0, unit: "request", notes: "TinyFish Fetch free. Source: competitor review 2026-10-06; pricing page URL unverified; checked 2026-10-06" },
+  { provider: "scavio", action: "reddit_search", unitCostUsd: 0.004, unit: "request", notes: "Scavio Reddit search ~ $0.004/request (approx). Source: competitor review 2026-10-06; pricing page URL unverified; checked 2026-10-06" },
+  { provider: "scavio", action: "x_search", unitCostUsd: 0.004, unit: "request", notes: "UNVERIFIED ASSUMPTION: set equal to Scavio Reddit (~ $0.004); no source found, confirm with Scavio pricing before relying on it" },
+  { provider: "scavio", action: "youtube_comments", unitCostUsd: 0.004, unit: "request", notes: "UNVERIFIED ASSUMPTION: set equal to Scavio Reddit (~ $0.004); no source found, confirm with Scavio pricing before relying on it" },
+  { provider: "grok", action: "x_search_post", unitCostUsd: 0.005, unit: "post", notes: "xAI x_search per-post fee $0.005 (82% of a 25-post scan ~ $0.15), plus model call. Source: competitor review 2026-10-06; see https://docs.x.ai (exact page unverified); checked 2026-10-06" },
+  { provider: "grok", action: "score_post", unitCostUsd: 0.0005, unit: "post", notes: "AI scoring with grok-4.3 ~ $0.0005/post. Source: competitor review 2026-10-06; see https://docs.x.ai (exact page unverified); checked 2026-10-06" },
+  { provider: "scrapecreators", action: "request", unitCostUsd: 0.0019, unit: "request", notes: "ScrapeCreators $0.0019/request (LinkedIn/Instagram/Facebook). Source: competitor review 2026-10-06; pricing page URL unverified; checked 2026-10-06" },
+  { provider: "browser_run", action: "browser_hour", unitCostUsd: 0.09, unit: "hour", notes: "Cloudflare Browser Run $0.09/hour after 10 free hours/month; use X-Browser-Ms-Used. Source: https://developers.cloudflare.com/browser-rendering/pricing/ ; checked 2026-10-06" },
 ];
 
 const CACHE_TTL_MS = 60_000;

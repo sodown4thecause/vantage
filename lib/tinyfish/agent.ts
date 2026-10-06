@@ -43,6 +43,8 @@ export async function runTinyFishStructuredAgent(
       provider: "tinyfish",
       action: "agent_step",
       units: (r) => Math.max(1, r.num_of_steps ?? 1),
+      // A FAILED run is returned, not thrown: record it ok=false (zero cost).
+      isFailure: (r) => r.status !== "COMPLETED" || Boolean(r.error),
     },
     () => client.agent.run(params),
   );

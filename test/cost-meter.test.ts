@@ -84,6 +84,15 @@ describe("withCost", () => {
     expect(state.recorded[0]).toMatchObject({ ok: false, chargedOnFailure: true });
   });
 
+  it("records a returned-but-failed result (isFailure) as ok=false and returns it", async () => {
+    const out = await withCost(
+      { sourceKey: "reddit", provider: "tinyfish", action: "agent_step", isFailure: (r: { status: string }) => r.status !== "COMPLETED" },
+      async () => ({ status: "FAILED" }),
+    );
+    expect(out).toEqual({ status: "FAILED" });
+    expect(state.recorded[0]).toMatchObject({ ok: false });
+  });
+
   it("still returns the provider result when the ledger is down", async () => {
     state.ledgerDown = true;
     await expect(

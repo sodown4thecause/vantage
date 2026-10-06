@@ -86,6 +86,15 @@ describe("cost wiring: one cost_event per provider call", () => {
     expect(mocks.recorded[0]).toMatchObject({ action: "agent_step", ok: false });
   });
 
+  it("TinyFish agent FAILED response is recorded ok=false at the call site and still throws", async () => {
+    mocks.agentRun.mockResolvedValue({ status: "FAILED", error: { message: "blocked" }, num_of_steps: 3 });
+    await expect(
+      runTinyFishStructuredAgent({ url: "https://example.com", goal: "g", outputSchema: {}, ctx }),
+    ).rejects.toThrow("blocked");
+    expect(mocks.recorded).toHaveLength(1);
+    expect(mocks.recorded[0]).toMatchObject({ action: "agent_step", ok: false });
+  });
+
   it("TinyFish search records one zero-cost call", async () => {
     mocks.searchQuery.mockResolvedValue({ results: [] });
     await tinyFishSearch("q", { ctx });

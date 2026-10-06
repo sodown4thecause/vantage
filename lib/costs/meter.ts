@@ -12,6 +12,8 @@ export type WithCostMeta<T> = {
   workspaceId?: string | null;
   /** Billable units from the result; defaults to 1. */
   units?: (result: T) => number;
+  /** Classify a returned (not thrown) result as a failed call: recorded ok=false. */
+  isFailure?: (result: T) => boolean;
   billableTo?: CostBillable;
   chargedOnFailure?: boolean;
 };
@@ -38,7 +40,13 @@ export async function withCost<T>(
   } catch {
     units = 1;
   }
-  await safeRecord(meta, { ok: true, units });
+  let failed = false;
+  try {
+    failed = meta.isFailure ? meta.isFailure(result) : false;
+  } catch {
+    failed = false;
+  }
+  await safeRecord(meta, { ok: !failed, units });
   return result;
 }
 

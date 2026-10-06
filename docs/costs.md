@@ -34,6 +34,29 @@ HN, RSS, Substack, GitHub, Stack Overflow, YouTube Data API (`fetchViaYouTubeApi
 
 `provider_price` is seeded by a human, per Neon branch: `DATABASE_URL=... pnpm tsx scripts/seed-prices.ts` (idempotent; skips existing provider/action rows). Each row's `notes` cites its source and date. Prices are from the 6 Oct 2026 competitor review; the Scavio X/YouTube prices are assumptions equal to Scavio Reddit. Re-check before quoting publicly. To change a price, insert a new row with a later `effective_from`; never update history.
 
+## UNVERIFIED prices
+
+The Scavio `x_search` and `youtube_comments` prices ($0.004) are an unverified assumption copied from Scavio Reddit; no source was found. Other seed notes carry "pricing page URL unverified" where the exact page is not known. Confirm before quoting publicly.
+
+## Manual verification of the rollup (run on staging after applying 0012)
+
+The rollup SQL is unit-tested only against a mock. The statement uses UTC day boundaries (`day::timestamp AT TIME ZONE 'UTC'`) and its `ON CONFLICT (day, source_key, provider, action)` matches the `cost_daily` primary key. To check it on a staging branch (human step, never production first):
+
+```sql
+-- 1. a throwaway event
+INSERT INTO cost_event (source_key, provider, action, units, unit_cost_usd, cost_usd, ok)
+VALUES ('verify', 'tinyfish', 'search', 1, 0, 0, true), ('verify', 'tinyfish', 'search', 1, 0, 0, false);
+-- 2. run the rollup twice (via the cron tick, or paste the statement from lib/costs/rollup.ts with today's date)
+-- 3. expect exactly one row: calls = 2, failed = 1, same after the second run
+SELECT * FROM cost_daily WHERE source_key = 'verify';
+-- 4. compare with the raw table
+SELECT count(*), count(*) FILTER (WHERE NOT ok) FROM cost_event
+WHERE source_key = 'verify' AND ts >= current_date::timestamp AT TIME ZONE 'UTC';
+-- 5. clean up
+DELETE FROM cost_daily WHERE source_key = 'verify';
+DELETE FROM cost_event WHERE source_key = 'verify';
+```
+
 ## Migration
 
 `drizzle/0012_ambitious_rocket_raccoon.sql` adds `cost_daily` only. Applying it to Neon is a human step (`pnpm db:migrate`).
