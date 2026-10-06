@@ -24,7 +24,7 @@ import {
   type Opportunity,
   type DocumentRecord,
 } from "@/lib/db/schema";
-import { consume } from "@/lib/plans/limits";
+import { consume, release } from "@/lib/plans/limits";
 import { resolveLearningConfig } from "@/lib/learning/config";
 import { formatLearningReasons, rankWithPreferences } from "@/lib/learning/rank";
 import { getActivePreferenceModel } from "@/lib/learning/repository";
@@ -253,24 +253,32 @@ export async function buildOpportunities(opts: {
         .returning({ id: opportunity.id });
       opportunityId = updated[0]?.id ?? existing[0].id;
     } else {
-      const inserted = await db
-        .insert(opportunity)
-        .values({
-          workspaceId: opts.workspaceId,
-          status,
-          title,
-          summary,
-          whyItMatters,
-          whyNow,
-          recommendedAction: action,
-          confidence: features.modelConfidence,
-          urgency: features.timing,
-          score,
-          coverage: coverageLabel,
-          features,
-          clusterKey,
-        })
-        .returning({ id: opportunity.id });
+      let inserted: Array<{ id: string }>;
+      try {
+        inserted = await db
+          .insert(opportunity)
+          .values({
+            workspaceId: opts.workspaceId,
+            status,
+            title,
+            summary,
+            whyItMatters,
+            whyNow,
+            recommendedAction: action,
+            confidence: features.modelConfidence,
+            urgency: features.timing,
+            score,
+            coverage: coverageLabel,
+            features,
+            clusterKey,
+          })
+          .returning({ id: opportunity.id });
+      } catch (err) {
+        // The new lead was never created, so do not charge the daily quota for it (this also covers a
+        // concurrent build winning the unique cluster constraint).
+        await release(opts.workspaceId, "scored_leads_per_day", 1);
+        throw err;
+      }
       opportunityId = inserted[0]!.id;
     }
 

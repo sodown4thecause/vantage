@@ -147,6 +147,11 @@ export async function guardPublicRequest(
     if (rowsOf(visitor).length === 0) return fail(429, "visitor_limit");
 
     if (!(await reservePublicBudget(opts.costEstimateUsd, { day }))) {
+      // The visitor did nothing wrong when the shared budget is spent, so give the allowance back.
+      await getDb().execute(sql`
+        update public_visitor set scans = greatest(scans - 1, 0)
+        where visitor_hash = ${visitorHash} and day = ${day}::date
+      `);
       return fail(503, "budget_exhausted");
     }
     return {

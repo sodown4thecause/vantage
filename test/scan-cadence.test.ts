@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
+  cadenceWhere: undefined as unknown,
   plan: "free",
   lastPolled: new Date(),
   touched: [] as unknown[],
@@ -13,7 +14,7 @@ vi.mock("@/lib/db/client", () => ({
       from: (table: unknown) => {
         const name = (table as { [k: symbol]: unknown })[Symbol.for("drizzle:Name")];
         const rows = () => (name === "workspace" ? [{ plan: state.plan }] : name === "source" && fields && "last" in fields ? [{ last: state.lastPolled }] : []);
-        return { where: () => Object.assign(Promise.resolve(rows()), { limit: async () => rows() }) };
+        return { where: (w: unknown) => { if (name === "source" && fields && "last" in fields) state.cadenceWhere = w; return Object.assign(Promise.resolve(rows()), { limit: async () => rows() }); } };
       },
     }),
     update: () => ({ set: () => ({ where: async (w: unknown) => { state.touched.push(w); } }) }),
@@ -24,6 +25,8 @@ vi.mock("@/lib/collectors/registry", () => ({ collectorsByType: {} }));
 vi.mock("@/lib/collectors/run", () => ({ runCollector: vi.fn() }));
 vi.mock("@/lib/profile/repository", () => ({ getLatestMonitoringProfile: async () => null }));
 vi.mock("@/lib/opportunities/run", () => ({ buildOpportunities: vi.fn() }));
+
+import { PgDialect } from "drizzle-orm/pg-core";
 
 import { scanWorkspace } from "@/lib/cron/scan";
 
@@ -50,4 +53,13 @@ it("scans a Pro workspace polled 4 hours ago but not a Free one", async () => {
 it("never enforces cadence for manual scans", async () => {
   await scanWorkspace("ws", undefined, {});
   expect(state.leased).toBe(1);
+});
+
+it("measures cadence only against sources the scheduled scan can run", async () => {
+  await scanWorkspace("ws", undefined, { enforceCadence: true });
+  const { sql: text, params } = new PgDialect().sqlToQuery(state.cadenceWhere as Parameters<PgDialect["sqlToQuery"]>[0]);
+  expect(text).toContain('"lane"');
+  expect(text).toContain('"health"');
+  expect(text).toContain('"type" in');
+  expect(params).toEqual(expect.arrayContaining(["free", "paused", "hn", "rss", "substack"]));
 });

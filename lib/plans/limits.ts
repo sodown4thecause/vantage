@@ -150,6 +150,29 @@ export async function consume(
   return { ...current, allowed: false, consumed: 0 };
 }
 
+/**
+ * Gives back units taken by `consume()` when the work they paid for did not happen.
+ * Never drops usage below zero. Failures are logged, not thrown, so cleanup cannot mask the original error.
+ */
+export async function release(
+  workspaceId: string,
+  key: MeteredKey,
+  n = 1,
+  now: Date = new Date(),
+): Promise<void> {
+  const meta = METERED[key];
+  if (!meta) throw new Error(`Unknown metered key: ${String(key)}`);
+  const col = sql.raw(`"${meta.column}"`);
+  try {
+    await getDb().execute(sql`
+      update "workspace_usage"
+      set ${col} = greatest(${col} - ${n}::int, 0), "updated_at" = now()
+      where "workspace_id" = ${workspaceId}::uuid and "period" = ${usagePeriod(key, now)}::date`);
+  } catch (err) {
+    console.error("[plans/limits] release failed", { key, error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
 const LIMIT_LABELS: Record<LimitKey, string> = {
   projects: "projects",
   keywords: "keywords",

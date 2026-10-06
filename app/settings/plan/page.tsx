@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 
 import { PageHead, Shell } from "@/components/shell";
 import { eq } from "drizzle-orm";
@@ -70,11 +69,8 @@ export default async function PlanUsagePage({
         Scheduled scans run every {view.limits.scan_interval_hours} hours on this plan.
         {view.limits.reply_briefs > 0 ? "" : " Reply Briefs and 3-hourly alerts are part of Pro."}
       </p>
-      {/* /pricing ships with S43/S40; this link 404s until then, so do not release to production users before it lands. */}
       {view.plan === "free" ? (
-        <Link href="/pricing" className="inline-block rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-50 dark:text-zinc-950">
-          Upgrade
-        </Link>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">Pro upgrades open soon.</p>
       ) : null}
     </Shell>
   );

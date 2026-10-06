@@ -52,6 +52,12 @@ vi.mock("@/lib/db/client", () => {
           state.visitors.set(key, n + 1);
           return { rows: [{ scans: n + 1 }] };
         }
+        if (text.includes("update public_visitor")) {
+          const key = `${params[0]}|${params[1]}`;
+          const n = state.visitors.get(key);
+          if (n !== undefined) state.visitors.set(key, Math.max(0, n - 1));
+          return { rows: [] };
+        }
         return { rows: [] };
       },
     }),
@@ -99,6 +105,13 @@ afterEach(() => {
 });
 
 describe("guardPublicRequest", () => {
+  it("gives the visitor's allowance back when the shared budget rejects the request", async () => {
+    vi.stubEnv("PUBLIC_DAILY_BUDGET_USD", "0.5");
+    const res = await guardPublicRequest(req(), opts);
+    expect(res).toEqual({ ok: false, status: 503, code: "budget_exhausted" });
+    expect([...state.visitors.values()]).toEqual([0]);
+  });
+
   it("allows a request and returns a hashed visitor, never the raw IP", async () => {
     const res = await guardPublicRequest(req(), opts);
     expect(res.ok).toBe(true);

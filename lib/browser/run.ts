@@ -98,16 +98,20 @@ async function defaultGetBinding(): Promise<BrowserBinding | undefined> {
   }
 }
 
-/** Latest provider_price row for the action, else the default hourly price. */
-async function defaultGetUnitCost(action: string): Promise<number> {
+/** Browser Run is billed per browser hour whatever the quick action, so every action uses the one seeded hourly price. */
+const PRICE_PROVIDER = "browser_run";
+const PRICE_ACTION = "browser_hour";
+
+/** Latest provider_price row for browser hours, else the default hourly price. */
+async function defaultGetUnitCost(): Promise<number> {
   try {
     const [row] = await getDb()
       .select({ unitCostUsd: providerPrice.unitCostUsd })
       .from(providerPrice)
       .where(
         and(
-          eq(providerPrice.provider, BROWSER_RUN_PROVIDER),
-          eq(providerPrice.action, action),
+          eq(providerPrice.provider, PRICE_PROVIDER),
+          eq(providerPrice.action, PRICE_ACTION),
           lte(providerPrice.effectiveFrom, new Date()),
         ),
       )
