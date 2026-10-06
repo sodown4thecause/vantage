@@ -27,7 +27,8 @@ export function isMeteredKey(key: LimitKey): key is MeteredKey {
 }
 
 export function normalizePlan(plan: unknown): PlanId {
-  return (PLAN_IDS as readonly string[]).includes(String(plan)) ? (plan as PlanId) : "free";
+  const found = PLAN_IDS.find((id) => id === plan);
+  return found ?? "free";
 }
 
 /** UTC usage period: the day for per-day counters, the first of the month for per-month counters. */
@@ -214,8 +215,14 @@ export async function assertWithinCount(
 
 /** A user may own up to the highest `projects` limit among their workspaces' plans. */
 export async function assertCanCreateProject(ownerUserId: string): Promise<void> {
-  const owned = await getDb().select({ plan: workspace.plan }).from(workspace).where(eq(workspace.ownerUserId, ownerUserId));
+  // One row per distinct plan (at most a handful), not one per workspace.
+  const owned = await getDb()
+    .select({ plan: workspace.plan, n: sql<number>`count(*)::int` })
+    .from(workspace)
+    .where(eq(workspace.ownerUserId, ownerUserId))
+    .groupBy(workspace.plan);
   const rows = Array.isArray(owned) ? owned : [];
+  const ownedCount = rows.reduce((sum, row) => sum + Number(row.n), 0);
   const plans = rows.length ? rows.map((row) => normalizePlan(row.plan)) : (["free"] as PlanId[]);
   let best = 0;
   let bestPlan: PlanId = "free";
@@ -223,7 +230,7 @@ export async function assertCanCreateProject(ownerUserId: string): Promise<void>
     const limit = (await getLimits(plan)).projects;
     if (limit >= best) { best = limit; bestPlan = plan; }
   }
-  if (!checkCountLimit(best, rows.length).allowed) {
+  if (!checkCountLimit(best, ownedCount).allowed) {
     throw new PlanLimitError("projects", best, limitMessage(bestPlan, "projects", best));
   }
 }

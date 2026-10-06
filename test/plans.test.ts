@@ -26,7 +26,16 @@ vi.mock("@/lib/db/client", () => ({
           return [{ value: state.usageValue }];
         };
         const chain = Object.assign(Promise.resolve(rows()), {
-          where: () => Object.assign(Promise.resolve(rows()), { limit: async () => rows() }),
+          where: () =>
+            Object.assign(Promise.resolve(rows()), {
+              limit: async () => rows(),
+              // assertCanCreateProject groups owned workspaces by plan: one row per plan with its count.
+              groupBy: async () => {
+                const counts = new Map<string, number>();
+                for (const row of state.workspaceRows) counts.set(row.plan, (counts.get(row.plan) ?? 0) + 1);
+                return [...counts].map(([plan, n]) => ({ plan, n }));
+              },
+            }),
         });
         return chain;
       },
@@ -53,6 +62,7 @@ import {
   evaluateLimit,
   isScanDue,
   mergeLimits,
+  normalizePlan,
   usagePeriod,
 } from "@/lib/plans/limits";
 import { DEFAULT_LIMITS, LIMIT_KEYS, PlanLimitError } from "@/lib/plans/types";
@@ -201,5 +211,15 @@ describe("atomic consume", () => {
   it("rejects non-positive amounts", async () => {
     await expect(consume("ws", "scored_leads_per_day", 0)).rejects.toThrow();
     expect(state.executed).toHaveLength(0);
+  });
+});
+
+describe("normalizePlan", () => {
+  it("returns a real plan id for plan strings and free for everything else", () => {
+    expect(normalizePlan("pro")).toBe("pro");
+    expect(normalizePlan("free")).toBe("free");
+    for (const bad of [undefined, null, 5, "enterprise", {}, ["pro"], { toString: () => "pro" }]) {
+      expect(normalizePlan(bad)).toBe("free");
+    }
   });
 });
