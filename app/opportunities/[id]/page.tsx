@@ -138,11 +138,13 @@ export default async function OpportunityDetailPage({
               What people said ({detail.evidence.length})
             </h2>
             <ul className="mt-4 space-y-6">
-              {detail.evidence.map((e) => (
+              {detail.evidence.map((e) => {
+                const href = safeHttpUrl(e.urlCanonical);
+                return (
                 <li key={e.documentId} className="space-y-2 border-l-2 border-signal pl-4">
-                  {safeHttpUrl(e.urlCanonical) ? (
+                  {href ? (
                     <a
-                      href={safeHttpUrl(e.urlCanonical)!}
+                      href={href}
                       className="link font-semibold leading-snug"
                       target="_blank"
                       rel="noreferrer"
@@ -160,7 +162,8 @@ export default async function OpportunityDetailPage({
                     {e.contentMd.length > 500 ? "…" : ""}
                   </p>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           </section>
         </aside>

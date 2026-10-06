@@ -222,8 +222,9 @@ export async function buildOpportunities(opts: {
 
     // A new lead counts against the plan's daily scored-lead cap. Existing leads keep
     // refreshing so a capped workspace never loses what it already has.
+    const spendAt = new Date();
     if (!existing[0]) {
-      const spend = await consume(opts.workspaceId, "scored_leads_per_day", 1);
+      const spend = await consume(opts.workspaceId, "scored_leads_per_day", 1, spendAt);
       if (!spend.allowed) {
         budgetLimited += 1;
         continue;
@@ -276,7 +277,7 @@ export async function buildOpportunities(opts: {
       } catch (err) {
         // The new lead was never created, so do not charge the daily quota for it (this also covers a
         // concurrent build winning the unique cluster constraint).
-        await release(opts.workspaceId, "scored_leads_per_day", 1);
+        await release(opts.workspaceId, "scored_leads_per_day", 1, spendAt);
         throw err;
       }
       opportunityId = inserted[0]!.id;

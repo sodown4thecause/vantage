@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getAdminUserId } from "@/lib/auth/admin";
-import { sourceSwitchStateValues, type SourceSwitchState } from "@/lib/db/schema";
-import { isSourceSwitchKey } from "@/lib/sources/keys";
+import { isSourceSwitchKey, isSourceSwitchState } from "@/lib/sources/keys";
 import { listSourceSwitches, setSourceSwitch } from "@/lib/sources/switch";
 
 const notFound = () => NextResponse.json({ error: "not found" }, { status: 404 });
@@ -23,21 +22,19 @@ export async function PUT(req: Request) {
   const adminId = await getAdminUserId();
   if (!adminId) return notFound();
   try {
-    const body = (await req.json().catch(() => ({}))) as {
-      sourceKey?: unknown;
-      state?: unknown;
-      reason?: unknown;
-    };
+    const raw: unknown = await req.json().catch(() => null);
+    const body: { sourceKey?: unknown; state?: unknown; reason?: unknown } =
+      typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
     if (!isSourceSwitchKey(body.sourceKey)) {
       return NextResponse.json({ error: "unknown sourceKey" }, { status: 400 });
     }
-    if (!(sourceSwitchStateValues as readonly unknown[]).includes(body.state)) {
+    if (!isSourceSwitchState(body.state)) {
       return NextResponse.json({ error: "invalid state" }, { status: 400 });
     }
     const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 500) : "";
     await setSourceSwitch({
       sourceKey: body.sourceKey,
-      state: body.state as SourceSwitchState,
+      state: body.state,
       reason,
       changedBy: adminId,
     });

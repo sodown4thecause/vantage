@@ -4,18 +4,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireAdmin } from "@/lib/auth/admin";
-import { sourceSwitchStateValues, type SourceSwitchState } from "@/lib/db/schema";
-import { isSourceSwitchKey } from "@/lib/sources/keys";
+import { isSourceSwitchKey, isSourceSwitchState } from "@/lib/sources/keys";
 import { setSourceSwitch } from "@/lib/sources/switch";
 
 export async function updateSwitch(form: FormData): Promise<void> {
   const adminId = await requireAdmin();
   const sourceKey = form.get("sourceKey");
   const state = form.get("state");
-  if (
-    !isSourceSwitchKey(sourceKey) ||
-    !(sourceSwitchStateValues as readonly unknown[]).includes(state)
-  ) {
+  if (!isSourceSwitchKey(sourceKey) || !isSourceSwitchState(state)) {
     redirect("/admin/switches?status=invalid");
   }
   const reason = String(form.get("reason") ?? "").trim().slice(0, 500);
@@ -23,7 +19,7 @@ export async function updateSwitch(form: FormData): Promise<void> {
   try {
     await setSourceSwitch({
       sourceKey,
-      state: state as SourceSwitchState,
+      state,
       reason,
       changedBy: adminId,
     });

@@ -52,6 +52,17 @@ beforeEach(() => {
   vi.stubEnv("VANTAGE_ADMIN_USER_IDS", "admin-1, admin-2");
 });
 
+describe("PUT body validation", () => {
+  it("answers 400, not 500, for JSON null, arrays and primitives", async () => {
+    state.userId = "admin-1";
+    for (const body of [null, [], "text", 42]) {
+      const res = await put(body);
+      expect(res.status).toBe(400);
+    }
+    expect(state.batches).toHaveLength(0);
+  });
+});
+
 describe("admin id parsing", () => {
   it("trims whitespace and drops empties", () => {
     expect(parseAdminIds(" a , b,, ,c ")).toEqual(["a", "b", "c"]);

@@ -1,4 +1,5 @@
 import type { SourceType } from "@/lib/collectors/types";
+import { sourceSwitchStateValues, type SourceSwitchState } from "@/lib/db/schema";
 
 /** Every collector source type that can carry a global switch. Keep in step with `SourceType`. */
 const SOURCE_TYPE_KEYS = [
@@ -22,4 +23,8 @@ export type SourceSwitchKey = (typeof SOURCE_SWITCH_KEYS)[number];
 
 export function isSourceSwitchKey(value: unknown): value is SourceSwitchKey {
   return typeof value === "string" && (SOURCE_SWITCH_KEYS as readonly string[]).includes(value);
+}
+
+export function isSourceSwitchState(value: unknown): value is SourceSwitchState {
+  return (sourceSwitchStateValues as readonly unknown[]).includes(value);
 }
