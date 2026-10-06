@@ -30,3 +30,5 @@ Crawling jobs (`/crawl`) and full Puppeteer sessions; add only if a later slice 
 - `getUnitCost` did not exist; the helper queries `provider_price` directly with a 0.09 fallback.
 - `quickAction` returns a Response with the REST `{success, result}` envelope; screenshot is raw bytes.
 - Not verified against a live binding (S02 adds it).
+
+- **Follow-up (re-review, 6 Oct):** `lib/browser/run.ts` rounds the per-second price to 6 dp, so a price other than the $0.09/h default records ~1-2% low and any price under ~$0.0018/h records $0. Store hours + the hourly price (or compute `cost_usd` directly) instead. A timeout records only the 20 s wait while the remote call may keep billing.

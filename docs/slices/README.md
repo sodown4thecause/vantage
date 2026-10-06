@@ -93,11 +93,11 @@ Size: S = under a day, M = 1 to 3 days, L = 3 to 5 days of agent work. "Idea" re
 | [S00](S00-staging-live.md) | Staging live end to end | base | S | none | H1 | [ ] |
 | [S01](S01-production-and-rollback.md) | Production promotion, rollback, CI deploy | base | M | S00 | H2 | [ ] |
 | [S02](S02-cloudflare-resources.md) | Queues, R2, rate-limit, Browser, Workflow bindings | base | S | S00 | H3 | [ ] |
-| [S03](S03-cost-ledger-wiring.md) | Wire cost ledger into every provider + rollups | 5 | M | none | none | [x] merged |
-| [S04](S04-source-switch-admin.md) | Source switch admin + paused-state UI | 1 | S | none | none | [x] (PR open) |
-| [S05](S05-plans-and-entitlements.md) | Plans and entitlement enforcement | 5 | M | none | none | [ ] |
-| [S06](S06-public-route-guard.md) | Public endpoint guard (rate limit, Turnstile, budget) | 2 | M | none | H8 | [ ] |
-| [S07](S07-browser-run-helper.md) | Browser Run helper with cost + SSRF guard | 2 | S | none | none | [ ] |
+| [S03](S03-cost-ledger-wiring.md) | Wire cost ledger into every provider + rollups | 5 | M | none | none | [x] merged to plan branch (6 Oct) |
+| [S04](S04-source-switch-admin.md) | Source switch admin + paused-state UI | 1 | S | none | none | [x] merged to plan branch (6 Oct) |
+| [S05](S05-plans-and-entitlements.md) | Plans and entitlement enforcement | 5 | M | none | none | [x] merged to plan branch (6 Oct) |
+| [S06](S06-public-route-guard.md) | Public endpoint guard (rate limit, Turnstile, budget) | 2 | M | none | H8 | [x] merged to plan branch (6 Oct) |
+| [S07](S07-browser-run-helper.md) | Browser Run helper with cost + SSRF guard | 2 | S | none | none | [x] merged to plan branch (6 Oct) |
 | [S10](S10-tinyfish-reddit-spike.md) | TinyFish-on-Reddit spike | 1 | S | none | H4 | [ ] |
 | [S11](S11-reddit-shared-sweep.md) | Reddit provider chain + shared sweep | 1 | L | S02,S03,S04 | none | [ ] |
 | [S12](S12-reddit-search-and-deep.md) | Reddit keyword search + deep search quota | 1 | M | S10,S11 | none | [ ] |
@@ -123,7 +123,7 @@ Size: S = under a day, M = 1 to 3 days, L = 3 to 5 days of agent work. "Idea" re
 | [S50](S50-mcp-server.md) | MCP server on the Worker | 4 | L | S21 | none | [ ] |
 | [S51](S51-cli-and-skill-package.md) | `npx vantage init`, plugin and skill files | 4 | L | S50,S52 | none | [ ] |
 | [S52](S52-monitor-pack-library.md) | Public Monitor Pack library + CI validation | 4 | M | S20 | none | [ ] |
-| [S60](S60-switch-rescue-kit.md) | Switch Rescue manual test kit | gtm | S | none | H9 | [~] |
+| [S60](S60-switch-rescue-kit.md) | Switch Rescue manual test kit | gtm | S | none | H9 | [x] merged to plan branch (offer wording needs owner sign-off) |
 | [S61](S61-launch-checklist.md) | Launch checklist and venue-rules check | gtm | S | S16,S21,S30 | H9 | [ ] |
 
 ## 7. Decisions already made (do not re-litigate inside a slice)

@@ -26,3 +26,5 @@ All outreach is performed by the owner personally, from their own accounts, in t
 - Running `pnpm test` in the main checkout also picks up `.claude/worktrees/**` copies while agents are active; use `pnpm vitest run --exclude '.claude/**'`.
 
 - Review of 6 Oct (REVIEW.md): the first draft of the offer overclaimed (open-source, Reddit/GitHub/Stack Overflow, $5 Pro). The doc now lists facts to cover only if true on the day, and the summary script rejects ambiguous rows.
+
+- **Follow-up (re-review, 6 Oct):** the `rescued_on` check is format-only, so an impossible date like `2026-13-45` is accepted; validate it as a real calendar date.
