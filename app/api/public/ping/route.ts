@@ -4,8 +4,9 @@ import { guardPublicRequest } from "@/lib/public/guard";
 
 /** Guarded no-cost route used only to prove the public guard in tests/staging. */
 export async function POST(req: Request) {
-  // Test-only and fail closed: off unless ENABLE_PUBLIC_PING is "true", and never reachable in production.
-  if (process.env.NODE_ENV === "production" || process.env.ENABLE_PUBLIC_PING !== "true") {
+  // Test-only and fail closed: 404 unless ENABLE_PUBLIC_PING is exactly "true". NODE_ENV cannot be the gate
+  // because staging is also a production Next build; set the flag only on staging and in tests, never in production.
+  if (process.env.ENABLE_PUBLIC_PING !== "true") {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
   const guard = await guardPublicRequest(req, {

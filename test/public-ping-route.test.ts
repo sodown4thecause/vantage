@@ -22,10 +22,12 @@ describe("POST /api/public/ping", () => {
     expect(await res.json()).toEqual({ error: "guard_unavailable" });
   });
 
-  it("is a 404 in production", async () => {
+  it("works on a production build when the flag is set (staging) and stays 404 without it", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    const res = await POST(new Request("https://vantage.test/api/public/ping", { method: "POST" }));
-    expect(res.status).toBe(404);
-    vi.unstubAllEnvs();
+    const on = await POST(new Request("https://vantage.test/api/public/ping", { method: "POST" }));
+    expect(on.status).toBe(503); // reaches the guard (mocked to reject)
+    vi.stubEnv("ENABLE_PUBLIC_PING", "");
+    const off = await POST(new Request("https://vantage.test/api/public/ping", { method: "POST" }));
+    expect(off.status).toBe(404);
   });
 });
