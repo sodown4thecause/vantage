@@ -36,6 +36,17 @@ vi.mock("@/lib/db/client", () => ({
   }),
 }));
 
+const switchState = vi.hoisted(() => ({
+  decision: { enabled: true, state: "on", reason: "" } as {
+    enabled: boolean;
+    state: string;
+    reason: string;
+  },
+}));
+vi.mock("@/lib/sources/switch", () => ({
+  getSourceSwitch: async () => switchState.decision,
+}));
+
 import { runCollector } from "@/lib/collectors/run";
 import type { Collector } from "@/lib/collectors/types";
 
@@ -64,6 +75,7 @@ beforeEach(() => {
   state.insertOutcomes = [];
   state.updates = [];
   state.insertValues = [];
+  switchState.decision = { enabled: true, state: "on", reason: "" };
   vi.restoreAllMocks();
 });
 
@@ -76,6 +88,15 @@ describe("runCollector", () => {
     vi.unstubAllEnvs();
     expect(run).not.toHaveBeenCalled();
     expect(result.receipt?.coverage).toBe("budget_limited");
+  });
+  it("does not invoke a collector whose global switch is off", async () => {
+    switchState.decision = { enabled: false, state: "paused", reason: "Reddit paused" };
+    const run = vi.fn(async () => ({ documents: [document] }));
+    const result = await runCollector({ collector: { name: "hn", run }, workspaceId: "workspace-1", sourceId: "source-1" });
+    expect(run).not.toHaveBeenCalled();
+    expect(result.switchedOff).toEqual({ state: "paused", reason: "Reddit paused" });
+    expect(result.error).toBeUndefined();
+    expect(state.updates).toHaveLength(0);
   });
   it("does not invoke a paused source", async () => {
     state.row = { ...sourceRow, health: "paused" };

@@ -78,6 +78,13 @@
       "when": 1791245525023,
       "tag": "0010_brown_hydra",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791297553172,
+      "tag": "0011_stormy_scarecrow",
+      "breakpoints": true
     }
   ]
 }
