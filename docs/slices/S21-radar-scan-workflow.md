@@ -28,3 +28,8 @@ UI (S22), account handoff (S23), MCP (S50).
 
 ## Gotchas
 Workflows steps must return JSON-serializable values and be idempotent. Keep the bundle size check (CI) in mind: lazy-import heavy modules.
+
+## Follow-ups from the S06 and S07 reviews (6 Oct 2026)
+- **Refund on failure:** `guardPublicRequest` (S06) returns a `reservation {day, estimateUsd}`. The scan code must call `refundPublicSpend(reservation)` when a scan fails or is served from cache, and `settlePublicSpend`/`reconcilePublicSpend(requestRef, reservation)` with the real cost on success. Record every `cost_event` with `requestRef = scanId` so reconcile can sum it.
+- **Prune old rows:** `pruneOldPublicRows()` exists but nothing calls it; call it from the cron tick (14-day default).
+- **Browser Run from a Workflow:** S07's helper must be given an explicit binding/env when called outside a request (Workflow steps and queue consumers have no OpenNext request context).

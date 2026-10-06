@@ -52,8 +52,13 @@ export default async function SourcesCoveragePage({
       ) : (
         <ul className="space-y-3" data-testid="sources-list">
           {sources.map((s) => {
-            const coverage = s.health === "paused" ? "paused" : s.coverage ?? "awaiting_scan";
-            const reason = s.lastRun?.reason ?? "No scan receipt yet.";
+            const coverage =
+              s.displayCoverage === "paused_global"
+                ? "paused_global"
+                : s.health === "paused"
+                  ? "paused"
+                  : s.coverage ?? "awaiting_scan";
+            const reason = s.pausedLabel ?? s.lastRun?.reason ?? "No scan receipt yet.";
             const resultCount = s.lastRun?.resultCount;
             return (
               <li
@@ -75,7 +80,7 @@ export default async function SourcesCoveragePage({
                     className={badgeClass(coverage)}
                     data-testid="source-coverage"
                   >
-                    {coverage}
+                    {coverage === "paused_global" ? "paused" : coverage}
                   </span>
                 </div>
                 <dl className="mt-3 grid gap-2 text-xs text-zinc-600 dark:text-zinc-400 sm:grid-cols-2">
@@ -153,6 +158,7 @@ function badgeClass(coverage: string): string {
       return `${base} bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-100`;
     case "access_pending":
     case "paused":
+    case "paused_global":
       return `${base} bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-100`;
     case "blocked":
     case "failed":

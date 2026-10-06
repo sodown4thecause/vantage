@@ -1,9 +1,77 @@
 {
-  "id": "0dfc504b-2e10-4dc4-afe7-25a558f77ce5",
+  "id": "e10c73bb-f864-4d33-b60f-d4515749b1f9",
   "prevId": "61c1805a-59ab-4d5e-8b9d-be3a2058238c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
+    "public.cost_daily": {
+      "name": "cost_daily",
+      "schema": "",
+      "columns": {
+        "day": {
+          "name": "day",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_key": {
+          "name": "source_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "calls": {
+          "name": "calls",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "cost_usd": {
+          "name": "cost_usd",
+          "type": "numeric(12, 6)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "failed": {
+          "name": "failed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "cost_daily_day_source_key_provider_action_pk": {
+          "name": "cost_daily_day_source_key_provider_action_pk",
+          "columns": [
+            "day",
+            "source_key",
+            "provider",
+            "action"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.cost_event": {
       "name": "cost_event",
       "schema": "",
@@ -1053,45 +1121,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.plan_limit": {
-      "name": "plan_limit",
-      "schema": "",
-      "columns": {
-        "plan": {
-          "name": "plan",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "value": {
-          "name": "value",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "plan_limit_plan_key_pk": {
-          "name": "plan_limit_plan_key_pk",
-          "columns": [
-            "plan",
-            "key"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.provider_price": {
       "name": "provider_price",
       "schema": "",
@@ -1776,74 +1805,6 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.workspace_usage": {
-      "name": "workspace_usage",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "period": {
-          "name": "period",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "scored_leads": {
-          "name": "scored_leads",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "deep_searches": {
-          "name": "deep_searches",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "workspace_usage_workspace_id_workspace_id_fk": {
-          "name": "workspace_usage_workspace_id_workspace_id_fk",
-          "tableFrom": "workspace_usage",
-          "tableTo": "workspace",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "workspace_usage_workspace_id_period_pk": {
-          "name": "workspace_usage_workspace_id_period_pk",
-          "columns": [
-            "workspace_id",
-            "period"
-          ]
-        }
-      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

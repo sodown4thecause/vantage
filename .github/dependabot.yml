@@ -1,0 +1,29 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Australia/Sydney
+    open-pull-requests-limit: 5
+    groups:
+      next-react:
+        patterns: ["next", "eslint-config-next", "react", "react-dom", "@types/react", "@types/react-dom"]
+      cloudflare:
+        patterns: ["wrangler", "@opennextjs/cloudflare"]
+      drizzle:
+        patterns: ["drizzle-orm", "drizzle-kit"]
+      dev-tooling:
+        dependency-type: development
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Australia/Sydney
+    groups:
+      actions:
+        patterns: ["*"]

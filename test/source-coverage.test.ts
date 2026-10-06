@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyCollectorCoverage,
   documentsAreFixtureOnly,
+  pausedGlobalLabel,
   readLastRunReceipt,
   withLastRunReceipt,
 } from "../lib/collectors/coverage";
@@ -126,5 +127,11 @@ describe("collector registry contract", () => {
         "failed",
       ]),
     );
+  });
+});
+
+describe("paused_global display", () => {
+  it("labels with the operator reason", () => {
+    expect(pausedGlobalLabel("Reddit API closed")).toBe("Paused by operator: Reddit API closed");
   });
 });

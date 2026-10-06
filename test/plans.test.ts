@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -103,7 +103,13 @@ describe("limit evaluation", () => {
   });
 
   it("keeps the code defaults identical to the migration seed", () => {
-    const sqlText = readFileSync(resolve(process.cwd(), "drizzle/0012_flowery_salo.sql"), "utf8");
+    // Find the migration by content, so renumbering it (merge order) cannot break this test.
+    const dir = resolve(process.cwd(), "drizzle");
+    const file = readdirSync(dir).find(
+      (name) => name.endsWith(".sql") && readFileSync(resolve(dir, name), "utf8").includes('INSERT INTO "plan_limit"'),
+    );
+    expect(file).toBeDefined();
+    const sqlText = readFileSync(resolve(dir, file as string), "utf8");
     const seeded = [...sqlText.matchAll(/\('(\w+)', '(\w+)', (\d+)\)/g)].map((m) => [m[1], m[2], Number(m[3])] as const);
     expect(seeded).toHaveLength(2 * LIMIT_KEYS.length);
     for (const [plan, key, value] of seeded) {
