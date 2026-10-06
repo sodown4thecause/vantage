@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { safeHttpUrl } from "@/lib/http/safe-url";
 
 type Draft = {
   id: string;
@@ -226,7 +227,7 @@ export function DraftPanel({
             <ul className="mt-1 space-y-1 text-xs">
               {draft.citations.map((c) => (
                 <li key={c.url}>
-                  <a href={c.url} className="underline" target="_blank" rel="noreferrer">
+                  <a href={safeHttpUrl(c.url) ?? undefined} className="underline" target="_blank" rel="noreferrer">
                     {c.label}
                   </a>
                 </li>

@@ -123,6 +123,8 @@ export async function consume(
 ): Promise<ConsumeResult> {
   if (!Number.isInteger(n) || n < 1) throw new Error("consume amount must be a positive integer");
   const meta = METERED[key];
+  // sql.raw below takes its column name only from the fixed METERED map.
+  if (!meta) throw new Error(`Unknown metered key: ${String(key)}`);
   const col = sql.raw(`"${meta.column}"`);
   const qualified = sql.raw(`"workspace_usage"."${meta.column}"`);
   const period = usagePeriod(key, now);

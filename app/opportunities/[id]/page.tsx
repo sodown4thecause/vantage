@@ -3,6 +3,7 @@ import Link from "next/link";
 import { authorizeWorkspace } from "@/lib/auth/workspace";
 import { getOpportunityDetail } from "@/lib/opportunities/run";
 
+import { safeHttpUrl } from "@/lib/http/safe-url";
 import { Glyph } from "@/components/glyph";
 import { Shell } from "@/components/shell";
 
@@ -139,14 +140,18 @@ export default async function OpportunityDetailPage({
             <ul className="mt-4 space-y-6">
               {detail.evidence.map((e) => (
                 <li key={e.documentId} className="space-y-2 border-l-2 border-signal pl-4">
-                  <a
-                    href={e.urlCanonical}
-                    className="link font-semibold leading-snug"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {e.title || e.urlCanonical}
-                  </a>
+                  {safeHttpUrl(e.urlCanonical) ? (
+                    <a
+                      href={safeHttpUrl(e.urlCanonical)!}
+                      className="link font-semibold leading-snug"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {e.title || e.urlCanonical}
+                    </a>
+                  ) : (
+                    <span className="font-semibold leading-snug">{e.title || "Source link unavailable"}</span>
+                  )}
                   <p className="text-sm text-ridge">
                     {[e.platform, e.provider, e.postedAt].filter(Boolean).join(", ")}
                   </p>
