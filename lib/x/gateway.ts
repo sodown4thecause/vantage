@@ -7,7 +7,6 @@ import type { XPost } from "@/lib/x/client";
 // Verified 7 Oct 2026; native Gateway x_search acquisition has no verified contract.
 const MODELS: Record<string, { input: number; output: number }> = {
   "spacexai/grok-4.7": { input: 2, output: 6 },
-  "spacexai/grok-4.6": { input: 2, output: 6 },
 };
 const MAX_OUTPUT_TOKENS = 2048;
 

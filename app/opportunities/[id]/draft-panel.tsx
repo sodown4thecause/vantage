@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SafeLink } from "@/components/safe-link";
 import type { ContributionReview } from "@/lib/drafting/generate";
 import { contributionRule } from "@/lib/drafting/rules";
@@ -22,7 +22,7 @@ export function DraftPanel({
 }: {
   workspaceId: string;
   opportunityId: string;
-  conversations: Array<{ documentId: string; title: string | null; urlCanonical: string; platform: string }>;
+  conversations: Array<{ documentId: string; title: string | null; urlCanonical: string; platform: string; discoveryOnly?: boolean }>;
 }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [edited, setEdited] = useState("");
@@ -32,12 +32,28 @@ export function DraftPanel({
   const [target, setTarget] = useState(conversations[0]?.documentId ?? "");
   const [rulesReviewed, setRulesReviewed] = useState(false);
   const [factsReviewed, setFactsReviewed] = useState(false);
+  const requestRevision = useRef(0);
   const selected = conversations.find(c => c.documentId === target);
   const rule = contributionRule(selected?.platform ?? "", selected?.urlCanonical ?? "");
+  const researchOnly = selected?.discoveryOnly === true || rule.aiText === "prohibited";
   const kind = draft?.quality?.kind;
+  const draftMatchesTarget = Boolean(selected && draft?.quality?.targetDocumentId === target);
+
+  function changeTarget(documentId: string) {
+    requestRevision.current += 1;
+    setTarget(documentId);
+    setDraft(null);
+    setEdited("");
+    setCopied(false);
+    setRulesReviewed(false);
+    setFactsReviewed(false);
+    setError(null);
+    setBusy(false);
+  }
 
   useEffect(() => {
     let cancelled = false;
+    const revision = ++requestRevision.current;
     (async () => {
       const res = await fetch(
         `/api/drafts?workspaceId=${encodeURIComponent(workspaceId)}&opportunityId=${encodeURIComponent(opportunityId)}`,
@@ -46,7 +62,8 @@ export function DraftPanel({
         draft?: Draft | null;
         error?: string;
       };
-      if (cancelled) return;
+      if (cancelled || revision !== requestRevision.current) return;
+      setBusy(false);
       if (!res.ok) {
         setError(data.error ?? "Failed to load draft");
         return;
@@ -54,15 +71,26 @@ export function DraftPanel({
       if (data.draft) {
         setDraft(data.draft);
         setEdited(data.draft.editedText);
+        setCopied(false);
+        setRulesReviewed(false);
+        setFactsReviewed(false);
         if (data.draft.quality?.targetDocumentId) setTarget(data.draft.quality.targetDocumentId);
       }
-    })().catch(() => { if (!cancelled) setError("Draft could not be loaded. Try again."); });
+    })().catch(() => {
+      if (!cancelled && revision === requestRevision.current) {
+        setError("Draft could not be loaded. Try again.");
+        setBusy(false);
+      }
+    });
     return () => {
       cancelled = true;
+      requestRevision.current += 1;
     };
   }, [workspaceId, opportunityId]);
 
   async function createDraft() {
+    if (!selected) return;
+    const revision = ++requestRevision.current;
     setBusy(true);
     setError(null);
     try {
@@ -81,6 +109,7 @@ export function DraftPanel({
         draft?: Draft;
         error?: string;
       };
+      if (revision !== requestRevision.current) return;
       if (!res.ok || !data.draft) {
         setError(data.error ?? "Create failed");
         return;
@@ -89,13 +118,16 @@ export function DraftPanel({
       setEdited(data.draft.editedText);
       setFactsReviewed(false);
       setCopied(false);
+    } catch {
+      if (revision === requestRevision.current) setError("Contribution could not be prepared. Please try again.");
     } finally {
-      setBusy(false);
+      if (revision === requestRevision.current) setBusy(false);
     }
   }
 
   async function saveEdit() {
-    if (!draft) return;
+    if (!draft || !draftMatchesTarget) return;
+    const revision = ++requestRevision.current;
     setBusy(true);
     setError(null);
     try {
@@ -113,19 +145,23 @@ export function DraftPanel({
         draft?: Draft;
         error?: string;
       };
+      if (revision !== requestRevision.current) return;
       if (!res.ok || !data.draft) {
         setError(data.error ?? "Save failed");
         return;
       }
       setDraft(data.draft);
       setEdited(data.draft.editedText);
+    } catch {
+      if (revision === requestRevision.current) setError("Edits could not be saved. Please try again.");
     } finally {
-      setBusy(false);
+      if (revision === requestRevision.current) setBusy(false);
     }
   }
 
   async function approveAndCopy() {
-    if (!draft) return;
+    if (!draft || !draftMatchesTarget) return;
+    const revision = ++requestRevision.current;
     setBusy(true);
     setError(null);
     setCopied(false);
@@ -144,7 +180,8 @@ export function DraftPanel({
         draft?: Draft;
         error?: string;
       };
-      if (!saveRes.ok || !saved.draft) {
+      if (revision !== requestRevision.current) return;
+      if (!saveRes.ok || !saved.draft || saved.draft.quality?.targetDocumentId !== target) {
         setError(saved.error ?? "Save failed");
         return;
       }
@@ -163,21 +200,24 @@ export function DraftPanel({
         draft?: Draft;
         error?: string;
       };
-      if (!res.ok || !data.draft) {
+      if (revision !== requestRevision.current) return;
+      if (!res.ok || !data.draft || data.draft.quality?.targetDocumentId !== target) {
         setError(data.error ?? "Approve failed");
         return;
       }
       setDraft(data.draft);
       setEdited(data.draft.editedText);
       await navigator.clipboard.writeText(data.draft.editedText);
-      setCopied(true);
+      if (revision === requestRevision.current) setCopied(true);
+    } catch {
+      if (revision === requestRevision.current) setError("Handoff could not be completed. Check clipboard access and try again.");
     } finally {
-      setBusy(false);
+      if (revision === requestRevision.current) setBusy(false);
     }
   }
 
   function openConversation() {
-    if (!draft?.approvedAt) {
+    if (!draftMatchesTarget || !draft?.approvedAt) {
       setError("Approve & copy before opening the conversation handoff.");
       return;
     }
@@ -192,27 +232,28 @@ export function DraftPanel({
   return (
     <section className="space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">Contribution draft</h2>
+        <h2 className="text-sm font-semibold">{researchOnly ? "Research brief" : "Contribution draft"}</h2>
         {(
           <button
             type="button"
             disabled={busy || !selected}
-            onClick={() => void createDraft().catch(() => setError("Contribution could not be prepared. Please try again."))}
+            onClick={() => void createDraft()}
             className="rounded-full bg-zinc-950 px-3 py-1.5 text-xs font-medium text-white dark:bg-zinc-50 dark:text-zinc-950"
           >
-            {rule.aiText === "prohibited" ? "Build research brief" : draft ? "Regenerate contribution" : "Generate contribution"}
+            {researchOnly ? "Build research brief" : draft ? "Regenerate contribution" : "Generate contribution"}
           </button>
         )}
       </div>
 
       <div className="space-y-2">
-        <label htmlFor="draft-conversation" className="block text-xs font-medium">Conversation to contribute to</label>
-        <select id="draft-conversation" value={target} disabled={busy} onChange={e => { setTarget(e.target.value); setRulesReviewed(false); }} className="w-full rounded border p-2 text-sm">
-          {conversations.map(c => <option key={c.documentId} value={c.documentId}>{c.platform}: {c.title || c.urlCanonical}</option>)}
+        <label htmlFor="draft-conversation" className="block text-xs font-medium">Conversation or research source</label>
+        <select id="draft-conversation" value={target} disabled={busy} onChange={e => changeTarget(e.target.value)} className="w-full rounded border p-2 text-sm">
+          {conversations.map(c => <option key={c.documentId} value={c.documentId}>{c.discoveryOnly ? `Research source (${c.platform})` : c.platform}: {c.title || c.urlCanonical}</option>)}
         </select>
-        {rule.aiText === "prohibited" ? <p className="text-sm">{rule.venue} prohibits AI-written contributions. Research briefs are for reference.</p> :
+        {selected?.discoveryOnly ? <p className="text-sm">This is a research source. Read the original source before preparing a contribution.</p> :
+          rule.aiText === "prohibited" ? <p className="text-sm">{rule.venue} prohibits AI-written contributions. Research briefs are for reference.</p> :
           <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={rulesReviewed} onChange={e => setRulesReviewed(e.target.checked)} />I reviewed the current community rules and AI assistance is permitted here.</label>}
-        {selected && <SafeLink href={rule.url || selected.urlCanonical} className="text-xs underline">{rule.url ? "Community policy" : "Open the thread to review its rules"}</SafeLink>}
+        {selected && <SafeLink href={selected.discoveryOnly ? selected.urlCanonical : rule.url || selected.urlCanonical} className="text-xs underline">{selected.discoveryOnly ? "Open research source" : rule.url ? "Community policy" : "Open the thread to review its rules"}</SafeLink>}
       </div>
 
       {error ? (
@@ -250,7 +291,12 @@ export function DraftPanel({
             />
           </div>
           {!!draft.quality?.claims.length && <details className="text-xs"><summary className="cursor-pointer font-medium">Evidence for claims ({draft.quality.claims.length})</summary>
-            <ul className="mt-2 space-y-3">{draft.quality.claims.map((claim, i) => <li key={i}><p>{claim.sentence}</p><blockquote className="mt-1 border-l-2 pl-2">“{claim.quote}”</blockquote></li>)}</ul>
+            <ul className="mt-2 space-y-3">{draft.quality.claims.map((claim, i) => {
+              const citation = draft.citations.find(c => c.documentId === claim.documentId);
+              return <li key={i}><p>{claim.sentence}</p><blockquote className="mt-1 border-l-2 pl-2">“{claim.quote}”</blockquote>
+                {citation && <SafeLink href={citation.url} className="mt-1 inline-block underline">Open evidence</SafeLink>}
+              </li>;
+            })}</ul>
           </details>}
           {draft.flags.length > 0 ? (
             <ul className="text-xs text-amber-800 dark:text-amber-200">
@@ -277,27 +323,27 @@ export function DraftPanel({
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={busy || kind !== "draft"}
-              onClick={() => void saveEdit().catch(() => setError("Edits could not be saved. Please try again."))}
+              disabled={busy || !draftMatchesTarget || kind !== "draft"}
+              onClick={() => void saveEdit()}
               className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium"
             >
               Save edits
             </button>
             <button
               type="button"
-              disabled={busy || !kind || kind === "abstain" || (kind === "draft" && (!factsReviewed || !rulesReviewed || target !== draft.quality?.targetDocumentId))}
-              onClick={() => void approveAndCopy().catch(() => setError("Handoff could not be completed. Check clipboard access and try again."))}
+              disabled={busy || !draftMatchesTarget || !kind || kind === "abstain" || (kind === "draft" && (!factsReviewed || !rulesReviewed))}
+              onClick={() => void approveAndCopy()}
               className="rounded-full bg-zinc-950 px-3 py-1.5 text-xs font-medium text-white dark:bg-zinc-50 dark:text-zinc-950"
             >
               {kind === "brief" ? "Copy research brief" : "Approve & copy draft"}
             </button>
             <button
               type="button"
-              disabled={busy || !draft.approvedAt}
+              disabled={busy || !draftMatchesTarget || !draft.approvedAt}
               onClick={openConversation}
               className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium disabled:opacity-50"
             >
-              Open conversation
+              {selected?.discoveryOnly ? "Open research source" : "Open conversation"}
             </button>
           </div>
           {copied ? (

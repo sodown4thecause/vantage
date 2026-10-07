@@ -44,8 +44,10 @@ describe("paid developer discovery", () => {
   });
 
   it("returns empty Alexandria data honestly and rejects failed dataset execution", async () => {
-    vi.stubGlobal("fetch", async () => Response.json({ success: true, data: { alexandria: [{ provider: "firecrawl-developer-index", capability: "search", data: { success: true, results: [] } }] } }));
-    expect((await alexandriaCollector.run(ctx)).documents).toEqual([]);
+    vi.stubGlobal("fetch", async () => Response.json({ success: true, data: { alexandria: [{ provider: "firecrawl-developer-index", capability: "search", data: { success: true, results: [], partial: true } }] } }));
+    const empty = await alexandriaCollector.run(ctx);
+    expect(empty.documents).toEqual([]);
+    expect(empty.partial).toBe(true);
     vi.stubGlobal("fetch", async () => Response.json({ success: true, data: { alexandria: [{ provider: "firecrawl-developer-index", capability: "search", data: { success: false, error: "provider denied" } }] } }));
     await expect(alexandriaCollector.run(ctx)).rejects.toThrow(/failed|denied/i);
   });
@@ -57,6 +59,28 @@ describe("paid developer discovery", () => {
     expect(result.documents).toHaveLength(1);
     expect(result.documents[0]).toMatchObject({ platform: "github", postedAt: new Date("2026-10-01T00:00:00Z"), metadata: { dataset: "github-com/repositories/issues", discoveryOnly: false } });
     expect(mocks.paid.mock.calls[0]?.[0]).toMatchObject({ estimateUsd: 0.005 });
+  });
+
+  it("stops Alexandria before another paid call when its first page fills the run result cap", async () => {
+    const request = vi.fn(async () => Response.json({ success: true, data: { creditsCost: 5, alexandria: [{ provider: "github-com", capability: "repositories/issues", data: { has_next: true, issues: Array.from({ length: 10 }, (_, i) => ({ id: i + 1, source_url: `https://github.com/acme/agent/issues/${i + 1}`, body: `Question ${i + 1}` })) } }] } }));
+    vi.stubGlobal("fetch", request);
+    const result = await alexandriaCollector.run({ ...ctx, config: { provider: "github-com", capability: "repositories/issues", repo: "acme/agent", maxResults: 10, maxPages: 2 } });
+    expect(result.documents).toHaveLength(10);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(mocks.paid).toHaveBeenCalledTimes(1);
+  });
+
+  it("caps combined Alexandria pages without changing the pagination page size", async () => {
+    const options: Record<string, unknown>[] = [];
+    vi.stubGlobal("fetch", async (_input: string, init?: RequestInit) => {
+      options.push(JSON.parse(init?.body as string).alexandria[0].options);
+      const ids = options.length === 1 ? [1, 2] : [3, 4, 5];
+      return Response.json({ success: true, data: { creditsCost: 5, alexandria: [{ provider: "github-com", capability: "repositories/issues", data: { has_next: true, issues: ids.map(id => ({ id, source_url: `https://github.com/acme/agent/issues/${id}`, body: `Question ${id}` })) } }] } });
+    });
+    const result = await alexandriaCollector.run({ ...ctx, config: { provider: "github-com", capability: "repositories/issues", repo: "acme/agent", maxResults: 3, maxPages: 2 } });
+    expect(options).toMatchObject([{ page: 1, per_page: 3 }, { page: 2, per_page: 3 }]);
+    expect(result.documents.map(doc => doc.metadata?.externalId)).toEqual([1, 2, 3]);
+    expect(mocks.paid).toHaveBeenCalledTimes(2);
   });
 
   it("rejects arbitrary repository URLs before dataset execution", async () => {
@@ -83,7 +107,9 @@ describe("paid developer discovery", () => {
 
   it("does not invent LinkedIn posts on empty results or bypass the paid gate", async () => {
     const request = vi.fn(async () => Response.json({ organic_results: [] })); vi.stubGlobal("fetch", request);
-    expect((await linkedinCollector.run(ctx)).documents).toEqual([]);
+    const empty = await linkedinCollector.run(ctx);
+    expect(empty.documents).toEqual([]);
+    expect(empty.partial).toBe(true);
     mocks.paid.mockRejectedValue(new Error("Budget denied"));
     await expect(linkedinCollector.run(ctx)).rejects.toThrow("Budget denied");
     expect(request).toHaveBeenCalledTimes(1);

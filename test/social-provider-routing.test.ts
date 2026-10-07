@@ -86,6 +86,21 @@ describe("Reddit provider routing", () => {
     expect(paidCall).not.toHaveBeenCalled();
   });
 
+  it("reports missing Reddit publication dates as partial coverage without inventing recency", async () => {
+    vi.stubEnv("TINYFISH_API_KEY", "test-key");
+    search.mockResolvedValue([{ url: redditUrl, title: "Tooling question", snippet: "Indexed excerpt", position: 1 }]);
+    fetchPages.mockResolvedValue([{ url: redditUrl, text: "Literal public page text", highlights: [] }]);
+    const result = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: {} });
+    expect(result).toMatchObject({ partial: true, coverageReason: expect.stringMatching(/publication date.*recency/i),
+      documents: [{ postedAt: null, metadata: { publicationDateMissing: true, partial: true } }] });
+    expect(paidCall).not.toHaveBeenCalled();
+
+    search.mockResolvedValue([]);
+    const empty = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: {} });
+    expect(empty).toMatchObject({ documents: [], partial: false });
+    expect(empty.coverageReason).toBeUndefined();
+  });
+
   it("does not escalate successful empty search", async () => {
     vi.stubEnv("TINYFISH_API_KEY", "test-key"); vi.stubEnv("SCAVIO_API_KEY", "test-key");
     vi.stubEnv("VANTAGE_DEMO_FIXTURES", "true"); search.mockResolvedValue([]);
@@ -100,6 +115,8 @@ describe("Reddit provider routing", () => {
     const result = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1",
       config: { subreddit: "LocalLLaMA", limit: 1 } });
     expect(result.documents[0]?.metadata).toMatchObject({ provider: "tinyfish_agent", mocked: false });
+    expect(result).toMatchObject({ partial: false,
+      documents: [{ postedAt: new Date(timestamp), metadata: { publicationDateMissing: false, partial: false } }] });
     expect((result.documents[0]?.metadata as { topComments: unknown[] }).topComments).toHaveLength(5);
     expect(agentRun).toHaveBeenCalledWith(expect.objectContaining({ url: "https://www.reddit.com/r/LocalLLaMA/new/",
       agent_config: { mode: "strict", max_steps: 12, max_duration_seconds: 60 } }), expect.anything());
@@ -175,13 +192,32 @@ describe("X provider routing", () => {
     expect(paidCall).toHaveBeenCalledWith(expect.objectContaining({ provider: "scavio", action: "x_search" }), expect.any(Function));
   });
 
-  it("drops posts without real IDs, canonical URLs or valid timestamps", async () => {
+  it.each([
+    { data: { results: [xRow] }, next_cursor: "top-next", expected: "top-next", count: 1 },
+    { data: { results: [xRow], cursor: "nested-next" }, next_cursor: "top-next", expected: "nested-next", count: 1 },
+    { data: { results: [] }, cursor: "top-empty-next", expected: "top-empty-next", count: 0 },
+  ])("preserves top-level X pagination when nested data has no cursor", async ({ data, expected, count, ...top }) => {
+    vi.stubEnv("SCAVIO_API_KEY", "test-key");
+    xSearch.mockResolvedValue({ data, ...top });
+    const result = await fetchXPostsWithMeta({ ctx: context });
+    expect(result.cursor).toBe(expected);
+    expect(result.posts).toHaveLength(count);
+  });
+
+  it("reports nonempty all-filtered X results as provider-shape failure", async () => {
     vi.stubEnv("SCAVIO_API_KEY", "test-key");
     xSearch.mockResolvedValue({ results: [{ ...xRow, created_at: undefined }, { ...xRow, created_at: "yesterday" },
       { ...xRow, url: "https://x.com/builder", id: "made-up" },
       { ...xRow, url: "https://x.com.evil.test/builder/status/1234567890123456789" }, { ...xRow, id: "777" }] });
-    expect((await fetchXPostsWithMeta({ ctx: context })).posts).toEqual([]);
+    await expect(fetchXPostsWithMeta({ ctx: context })).rejects.toThrow(/response shape invalid/i);
   });
+
+  it.each([{ data: { timeline: ["not a post"] } }, { results: [null] }, { results: [[]] }])(
+    "reports malformed nonempty X arrays instead of successful empty results", async payload => {
+      vi.stubEnv("SCAVIO_API_KEY", "test-key");
+      xSearch.mockResolvedValue(payload);
+      await expect(fetchXPostsWithMeta({ ctx: context })).rejects.toThrow(/response shape invalid/i);
+    });
 
   it("reads the documented data.timeline lane with canonical URLs derived only from supplied IDs and handles", async () => {
     vi.stubEnv("SCAVIO_API_KEY", "test-key");

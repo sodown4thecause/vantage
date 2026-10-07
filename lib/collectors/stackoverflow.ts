@@ -14,7 +14,7 @@ async function apiPage<T>(ctx: CollectorContext, url: URL, action: string): Prom
   url.searchParams.set("site", "stackoverflow"); url.searchParams.set("filter", "withbody");
   url.searchParams.set("order", "desc"); url.searchParams.set("pagesize", "30");
   return withCost({ sourceKey: ctx.sourceId, workspaceId: ctx.workspaceId, provider: "stackexchange", action }, async () => {
-    const { response, text } = await fetchPublicText(url.toString(), { signal: ctx.signal, cache: "no-store" }, 1_000_000);
+    const { response, text } = await fetchPublicText(url.toString(), { signal: ctx.signal, cache: "no-store" }, 1_000_000, fetch, 30_000);
     if (!response.ok) throw new Error(`Stack Exchange API request failed (${response.status})`);
     const data = JSON.parse(text) as Page<T>;
     if (data?.error_id) throw new Error(`Stack Exchange API error ${data.error_id}`);
@@ -28,27 +28,38 @@ export const stackOverflowCollector: Collector = {
   name: "stackoverflow",
   async run(ctx) {
     ctx.signal?.throwIfAborted();
-    const until = Math.floor(Date.now() / 1000);
-    let state: { since?: number; backoffUntil?: number } = {};
+    const now = Math.floor(Date.now() / 1000);
+    let state: { since?: number; until?: number; nextPage?: number; backoffUntil?: number } = {};
     try { const value = JSON.parse(ctx.cursor ?? "{}"); if (value && typeof value === "object") state = value; } catch { /* Legacy numeric cursor is accepted below. */ }
-    if (typeof state.backoffUntil === "number" && state.backoffUntil > until) throw new Error(`Stack Overflow API rate limit backoff until ${state.backoffUntil}`);
-    const since = Number(state.since ?? ctx.cursor) || until - 72 * 3600;
+    const since = Number(state.since ?? ctx.cursor) || now - 72 * 3600;
+    const until = state.until ?? now;
+    let nextPage = state.nextPage ?? 1;
+    if (!Number.isSafeInteger(since) || since < 0 || !Number.isSafeInteger(until) || until < since || until > now || !Number.isSafeInteger(nextPage) || nextPage < 1 || nextPage > Number.MAX_SAFE_INTEGER - 2) throw new Error("Invalid Stack Overflow pagination cursor");
     const query = typeof ctx.config.query === "string" ? ctx.config.query.trim() : "agent evaluation";
     if (!query || query.length > 500) throw new Error("Stack Overflow requires a query of 1-500 characters");
+    if (typeof state.backoffUntil === "number" && state.backoffUntil > now) return {
+      documents: [], partial: true, coverageReason: `Stack Overflow API backoff until ${state.backoffUntil}`,
+      nextState: { cursor: ctx.cursor },
+    };
     const maxPages = Math.min(2, Math.max(1, Math.floor(Number(ctx.config.maxPages) || 1)));
     const questions = new Map<number, Question>();
     let backoffUntil = 0;
     let quotaRemaining: number | undefined;
-    for (let page = 1; page <= maxPages; page++) {
+    let hasMore = false;
+    // Keep the window fixed until its final page; the cap bounds each run's work.
+    for (let count = 0; count < maxPages; count++) {
+      const page = nextPage;
       const url = new URL("https://api.stackexchange.com/2.3/search/advanced");
       url.searchParams.set("q", query); url.searchParams.set("sort", "activity"); url.searchParams.set("page", String(page));
       url.searchParams.set("min", String(since)); url.searchParams.set("max", String(until));
       if (typeof ctx.config.tagged === "string") url.searchParams.set("tagged", ctx.config.tagged.slice(0, 200));
       const data = await apiPage<Question>(ctx, url, "search_questions");
       for (const item of data.items) if (item && Number.isSafeInteger(item.question_id) && item.question_id > 0) questions.set(item.question_id, item);
+      hasMore = data.has_more === true;
+      nextPage = page + 1;
       quotaRemaining = data.quota_remaining;
       if (Number.isFinite(data.backoff) && Number(data.backoff) > 0) backoffUntil = Math.floor(Date.now() / 1000) + Math.ceil(Number(data.backoff));
-      if (backoffUntil || quotaRemaining === 0 || !data.has_more || !data.items.length) break;
+      if (backoffUntil || quotaRemaining === 0 || !hasMore || !data.items.length) break;
     }
 
     const replies = new Map<number, Array<{ id: string; text: string; url: string; author: string | null }>>();
@@ -76,14 +87,18 @@ export const stackOverflowCollector: Collector = {
       const title = typeof question.title === "string" ? question.title : "";
       const contentMd = typeof question.body === "string" && question.body.trim() ? question.body : title;
       if (!contentMd) continue;
+      const answerCount = Number.isSafeInteger(question.answer_count) && Number(question.answer_count) >= 0 ? Number(question.answer_count) : 0;
+      const topReplies = replies.get(question.question_id) ?? [];
       documents.push({ workspaceId: ctx.workspaceId, sourceId: ctx.sourceId, platform: "stackoverflow", urlCanonical,
-        title: title || null, contentMd, contentHash: contentHash("stackoverflow", urlCanonical, contentMd),
+        title: title || null, contentMd, contentHash: contentHash("stackoverflow", urlCanonical, JSON.stringify({ contentMd, answerCount, topReplies })),
         postedAt: parseValidDate(typeof question.creation_date === "number" ? question.creation_date * 1000 : null),
         authorRef: typeof question.owner?.display_name === "string" ? question.owner.display_name : null,
         rawSnapshotRef: `stackoverflow:question:${question.question_id}`, metadata: { provider: "stackexchange", questionId: question.question_id,
-          tags: Array.isArray(question.tags) ? question.tags.slice(0, 10) : [], answerCount: question.answer_count ?? 0,
-          topReplies: replies.get(question.question_id) ?? [], threadContext: contentMd, rulesUrl: "https://stackoverflow.com/help/ai-policy" } });
+          tags: Array.isArray(question.tags) ? question.tags.slice(0, 10) : [], answerCount,
+          topReplies, threadContext: contentMd, rulesUrl: "https://stackoverflow.com/help/ai-policy" } });
     }
-    return { documents, nextState: { cursor: JSON.stringify({ since: until, backoffUntil }) } };
+    return { documents, partial: hasMore,
+      coverageReason: hasMore ? `Stack Overflow search window incomplete${backoffUntil ? "; API backoff" : quotaRemaining === 0 ? "; API quota exhausted" : ""}; resume at page ${nextPage}` : undefined,
+      nextState: { cursor: JSON.stringify(hasMore ? { since, until, nextPage, backoffUntil } : { since: until, backoffUntil }) } };
   },
 };

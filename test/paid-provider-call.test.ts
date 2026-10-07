@@ -56,6 +56,15 @@ describe("paid provider reservations", () => {
     expect(mocks.execute).toHaveBeenCalledTimes(2);
   });
 
+  it("rejects a settlement that no longer matches its reserved row", async () => {
+    mocks.execute.mockResolvedValueOnce([{ day: "2026-10-07" }]).mockResolvedValueOnce([]);
+    const work = vi.fn(async () => ({ value: "result", costUsd: 0.04 }));
+    await expect(runPaidCall(meta, work)).rejects.toBeInstanceOf(PaidCallDeniedError);
+    expect(work).toHaveBeenCalledOnce();
+    expect(mocks.record).toHaveBeenCalledWith(expect.objectContaining({ unitCostUsd: 0.04, ok: true }));
+    expect(mocks.execute).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps the reservation and records an estimate on an ambiguous provider failure", async () => {
     await expect(runPaidCall(meta, async () => { throw new Error("timeout"); })).rejects.toThrow("timeout");
     expect(mocks.execute).toHaveBeenCalledTimes(2);

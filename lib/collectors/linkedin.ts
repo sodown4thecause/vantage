@@ -45,6 +45,6 @@ export const linkedinCollector: Collector = {
       }
       if (!data.pagination?.next || !data.organic_results!.length) break;
     }
-    return { documents: [...documents.values()] };
+    return { documents: [...documents.values()], partial: true, coverageReason: "Public indexed snippets; conversation coverage is incomplete." };
   },
 };

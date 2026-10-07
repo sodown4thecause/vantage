@@ -8,7 +8,7 @@ export function contributionRule(platform: string, destination: string): {
     return { venue: "Hacker News", aiText: "prohibited", url: "https://news.ycombinator.com/newsguidelines.html" };
   }
   if (platform === "stackoverflow" || host === "stackoverflow.com" || host.endsWith(".stackoverflow.com")) {
-    return { venue: "Stack Overflow", aiText: "prohibited", url: "https://stackoverflow.com/help/gen-ai-policy" };
+    return { venue: "Stack Overflow", aiText: "prohibited", url: "https://stackoverflow.com/help/ai-policy" };
   }
   return { venue: platform || "Community", aiText: "unknown", url: null };
 }

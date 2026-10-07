@@ -20,6 +20,9 @@ export type CollectorContext = {
 
 export type CollectorResult = {
   documents: NewDocument[];
+  /** Incomplete upstream coverage, including a deferred scan with no matches. */
+  partial?: boolean;
+  coverageReason?: string;
   /**
    * Conditional-GET / pagination state to write back onto `source`.
    * Omitted properties and explicit `undefined` preserve the stored value;

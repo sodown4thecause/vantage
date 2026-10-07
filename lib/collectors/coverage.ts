@@ -78,6 +78,8 @@ export function classifyCollectorCoverage(input: {
   inserted: number;
   skipped: number;
   error?: string | null;
+  partial?: boolean;
+  coverageReason?: string;
 }): Omit<SourceRunReceipt, "ranAt"> {
   const resultCount = input.documents.length;
   const provider = providerFromDocuments(input.documents);
@@ -141,6 +143,10 @@ export function classifyCollectorCoverage(input: {
     };
   }
 
+  if (input.partial || input.documents.some(doc => doc.metadata?.partial === true)) {
+    return { coverage: "degraded", health: "degraded", reason: input.coverageReason || "Partial indexed or dataset coverage. Read the original source before acting.", inserted: input.inserted, skipped: input.skipped, resultCount, provider };
+  }
+
   if (resultCount === 0) {
     return {
       coverage: "healthy",
@@ -151,10 +157,6 @@ export function classifyCollectorCoverage(input: {
       resultCount,
       provider,
     };
-  }
-
-  if (input.documents.some(doc => doc.metadata?.partial === true)) {
-    return { coverage: "degraded", health: "degraded", reason: "Partial indexed or dataset coverage. Read the original source before acting.", inserted: input.inserted, skipped: input.skipped, resultCount, provider };
   }
 
   return {

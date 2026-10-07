@@ -8,7 +8,10 @@ vi.mock("@/lib/providers/paid-call", async original => ({ ...await original<type
 import { generateContribution } from "@/lib/drafting/contribution";
 const input: DraftInput = { productDescription: "tool", targetCustomer: "AI developers", productMaterialText: "", opportunityTitle: "Evaluate a coding agent", opportunitySummary: "Need a repeatable evaluation", recommendedAction: "Contribute a method",
   evidence: [{ documentId: "e1", title: "Question", urlCanonical: "https://github.com/example/tool/issues/1", platform: "github", contentMd: "Need a reproducible local evaluation with hidden tests." }] };
-const candidate = { decision: "draft", text: "Use a reproducible local evaluation with hidden tests. Keep the test set separate from the agent context.", angle: "Prevent leakage", gap: "Hidden test isolation", claims: [{ sentence: "Use a reproducible local evaluation with hidden tests.", documentId: "e1", quote: "reproducible local evaluation with hidden tests" }] };
+const candidate = { decision: "draft", text: "Use a reproducible local evaluation with hidden tests. Keep hidden tests separate from the local evaluation context.", angle: "Prevent leakage", gap: "Hidden test isolation", claims: [
+  { sentence: "Use a reproducible local evaluation with hidden tests.", documentId: "e1", quote: "reproducible local evaluation with hidden tests" },
+  { sentence: "Keep hidden tests separate from the local evaluation context.", documentId: "e1", quote: "local evaluation with hidden tests" },
+] };
 const response = (content: unknown) => ({ response: { ok: true }, text: JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 1000, completion_tokens: 100, prompt_tokens_details: { cached_tokens: 100 } } }) });
 beforeEach(() => {
   vi.stubEnv("AI_GATEWAY_API_KEY", "test-key"); vi.stubEnv("INCO_API_KEY", "test-key");
@@ -43,6 +46,20 @@ it("avoids the premium call when cheap triage abstains", async () => {
 });
 it("records paid usage before rejecting an invented citation", async () => {
   mocks.http.mockImplementation(async (_url, init) => { mocks.calls.push({ model: JSON.parse(init.body).model, cost: undefined }); return response({ ...candidate, claims: [{ ...candidate.claims[0], documentId: "foreign" }] }); });
-  expect((await generateContribution(input, { workspaceId: "ws", rulesReviewed: true })).quality?.kind).toBe("brief");
+  const result = await generateContribution(input, { workspaceId: "ws", rulesReviewed: true });
+  expect(result.quality?.kind).toBe("brief");
+  expect(result.quality?.notes).toContain("Claim references unknown evidence.");
   expect(mocks.calls[0].cost).toBeCloseTo(0.003);
+});
+it("explains HTTP availability failures without exposing provider details", async () => {
+  mocks.http.mockResolvedValue({ response: { ok: false, status: 503 }, text: "private provider token" });
+  const result = await generateContribution(input, { workspaceId: "ws", rulesReviewed: true });
+  expect(result.originalText).toContain("HTTP 503");
+  expect(result.originalText).not.toContain("private provider token");
+});
+it("keeps arbitrary provider exceptions private", async () => {
+  mocks.http.mockRejectedValue(new Error("private provider token"));
+  const result = await generateContribution(input, { workspaceId: "ws", rulesReviewed: true });
+  expect(result.quality?.kind).toBe("brief");
+  expect(result.originalText).not.toContain("private provider token");
 });

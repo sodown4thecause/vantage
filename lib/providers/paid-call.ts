@@ -58,9 +58,11 @@ export async function runPaidCall<T>(meta: {
   // ponytail: serialize paid calls per UTC day; a durable token blocks unsafe spending after settlement failures.
   const settle = async (cost: number) => {
     try {
-      await db.execute(sql`update provider_budget_day
+      const settled = rowsOf(await db.execute(sql`update provider_budget_day
         set spent_usd = greatest(0, spent_usd + ${(roundUsd(cost) - estimate).toFixed(6)}::numeric), reservation_ref = null
-        where day = ${day}::date and reservation_ref = ${reservationRef}`);
+        where day = ${day}::date and reservation_ref = ${reservationRef}
+        returning day`));
+      if (settled.length !== 1) throw new Error("Provider reservation was not settled.");
     } catch { throw new PaidCallDeniedError("budget_exhausted", "Provider cost reconciliation is pending; further paid calls are blocked."); }
   };
   let result: { value: T; costUsd?: number };

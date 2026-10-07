@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { authorizeWorkspace } from "@/lib/auth/workspace";
+import { ContributionValidationError } from "@/lib/drafting/contribution";
 import {
+  DraftInputError,
   approveDraftForHandoff,
   createDraftForOpportunity,
   getLatestDraft,
@@ -101,19 +103,15 @@ export async function POST(req: Request) {
           { status: 400 },
         );
       }
-      try {
-        const draft = await approveDraftForHandoff({ workspaceId, draftId, rulesReviewed: body.rulesReviewed === true, factsReviewed: body.factsReviewed === true });
-        return NextResponse.json({ draft });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return NextResponse.json({ error: message }, { status: 400 });
-      }
+      const draft = await approveDraftForHandoff({ workspaceId, draftId, rulesReviewed: body.rulesReviewed === true, factsReviewed: body.factsReviewed === true });
+      return NextResponse.json({ draft });
     }
 
     return NextResponse.json({ error: "unknown action" }, { status: 400 });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error("[drafts POST]", message);
+    if (err instanceof DraftInputError || err instanceof ContributionValidationError) return NextResponse.json({ error: message }, { status: 400 });
+    console.error("[drafts POST] request failed");
     return NextResponse.json({ error: "draft request failed" }, { status: 500 });
   }
 }

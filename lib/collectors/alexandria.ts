@@ -30,11 +30,17 @@ export const alexandriaCollector: Collector = {
 
     const documents = new Map<string, NewDocument>();
     const maxPages = request.provider === "github-com" ? Math.min(2, Math.max(1, Math.floor(Number(ctx.config.maxPages) || 1))) : 1;
-    for (let page = 1; page <= maxPages; page++) {
+    let remaining = limit;
+    let partial = request.provider === "firecrawl-developer-index";
+    for (let page = 1; page <= maxPages && remaining > 0; page++) {
       ctx.signal?.throwIfAborted();
       if (request.provider === "github-com") request = { ...request, options: { ...request.options, page } };
       const result = await runAlexandria(request, context, ctx.signal);
-      for (const record of result.records.slice(0, limit)) {
+      partial ||= result.partial;
+      const records = result.records.slice(0, remaining);
+      remaining -= records.length;
+      if (result.hasNext && (remaining === 0 || page === maxPages)) partial = true;
+      for (const record of records) {
         const rawUrl = request.provider === "github-com" ? record.source_url : record.url;
         if (typeof rawUrl !== "string" || !isPublicHttpUrl(rawUrl) || record.is_pull_request === true) continue;
         const url = new URL(rawUrl); url.hash = "";
@@ -56,6 +62,6 @@ export const alexandriaCollector: Collector = {
       }
       if (!result.hasNext || !result.records.length) break;
     }
-    return { documents: [...documents.values()] };
+    return { documents: [...documents.values()], partial, coverageReason: partial ? "Partial dataset coverage. Read the original conversation before acting." : undefined };
   },
 };

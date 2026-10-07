@@ -26,6 +26,8 @@ export const redditCollector: Collector = {
     });
 
     const documents: NewDocument[] = posts.map((p) => {
+      const postedAt = parseValidDate(p.createdAt);
+      const publicationDateMissing = postedAt === null;
       const body = [
         p.subreddit ? `r/${p.subreddit}` : null,
         p.author ? `u/${p.author}` : null,
@@ -43,7 +45,7 @@ export const redditCollector: Collector = {
         platform: "reddit",
         authorRef: p.author ?? null,
         title: p.title,
-        postedAt: parseValidDate(p.createdAt),
+        postedAt,
         contentMd: body,
         contentHash: contentHash("reddit", p.url, body),
         rawSnapshotRef: `reddit:${p.id}`,
@@ -55,13 +57,20 @@ export const redditCollector: Collector = {
           mocked: meta.provider === "fixture",
           contentKind: p.contentKind,
           discoveryOnly: p.contentKind === "preview",
+          publicationDateMissing,
+          partial: publicationDateMissing,
           topComments: p.topComments,
         },
       };
     });
 
+    const missingPublicationDates = documents.filter(document => document.postedAt === null).length;
     return {
       documents,
+      partial: missingPublicationDates > 0,
+      coverageReason: missingPublicationDates
+        ? `${missingPublicationDates} Reddit post(s) have no supplied publication date; recency is unverified.`
+        : undefined,
       nextState: {
         cursor: cursor === undefined ? new Date().toISOString() : cursor,
       },

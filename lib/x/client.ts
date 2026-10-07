@@ -21,6 +21,7 @@ type XOptions = {
   searchType?: "Top" | "Latest" | "People" | "Photos" | "Videos";
   ctx?: CostContext; signal?: AbortSignal;
 };
+const X_PROVIDER_SHAPE_ERROR = "X provider unavailable: response shape invalid";
 
 function postLink(value: string): { url: string; id: string; author: string } | undefined {
   try {
@@ -90,11 +91,20 @@ export async function fetchXPostsWithMeta(opts: XOptions = {}): Promise<{
       const nested = value.data;
       const data = nested && typeof nested === "object" && !Array.isArray(nested) ? nested as Record<string, unknown> : undefined;
       const keys = ["results", "tweets", "posts", "items", "timeline", "data"];
-      if (!Array.isArray(value) && !keys.some(key => Array.isArray((data ?? value)[key]))) throw new Error("Scavio provider unavailable");
-      return { value: { posts: mapPosts(asRecordArray(data ?? value, keys), limit),
-        cursor: stringField(data ?? value, "next_cursor", "cursor") ?? null } };
+      const rawRows = Array.isArray(value) ? value : keys.map(key => (data ?? value)[key]).find(Array.isArray);
+      if (!rawRows || rawRows.some(row => !row || typeof row !== "object" || Array.isArray(row))) {
+        throw new Error(X_PROVIDER_SHAPE_ERROR);
+      }
+      const posts = mapPosts(asRecordArray(rawRows), limit);
+      if (rawRows.length && !posts.length) throw new Error(X_PROVIDER_SHAPE_ERROR);
+      return { value: { posts,
+        cursor: stringField(data ?? value, "next_cursor", "cursor") ?? stringField(value, "next_cursor", "cursor") ?? null } };
     });
-  } catch (error) { terminalFailure(error, opts.signal); throw new Error("X provider unavailable"); }
+  } catch (error) {
+    terminalFailure(error, opts.signal);
+    if (error instanceof Error && error.message === X_PROVIDER_SHAPE_ERROR) throw error;
+    throw new Error("X provider unavailable");
+  }
   const { posts, cursor } = acquired;
   const meta: XFetchMeta = { provider: "scavio" };
   if (!posts.length || process.env.X_GATEWAY_EXPERIMENT_ENABLED !== "true") return { posts, meta, cursor };

@@ -46,6 +46,26 @@ export type ContributionReview = {
   notes: string[];
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Stored JSON must match the versioned shape before the editor or handoff uses it. */
+export function parseContributionReview(value: unknown): ContributionReview | null {
+  if (!isRecord(value) || value.version !== 1 ||
+      !["draft", "brief", "abstain"].includes(typeof value.kind === "string" ? value.kind : "") ||
+      (value.model !== null && typeof value.model !== "string") ||
+      typeof value.targetDocumentId !== "string" || !value.targetDocumentId.trim() ||
+      typeof value.rulesReviewed !== "boolean" || typeof value.angle !== "string" ||
+      !isRecord(value.gap) || typeof value.gap.existingReplyCount !== "number" ||
+      !Number.isInteger(value.gap.existingReplyCount) || value.gap.existingReplyCount < 0 ||
+      typeof value.gap.note !== "string" ||
+      !Array.isArray(value.claims) || !value.claims.every(claim => isRecord(claim) &&
+        typeof claim.sentence === "string" && typeof claim.documentId === "string" && typeof claim.quote === "string") ||
+      !Array.isArray(value.notes) || !value.notes.every(note => typeof note === "string")) return null;
+  return value as ContributionReview;
+}
+
 const UNSUPPORTED_CLAIM_RE =
   /\b(guaranteed|always|#1|number one|never fails|best in the world|cures?|instant results)\b/i;
 

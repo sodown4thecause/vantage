@@ -109,7 +109,7 @@ export default async function SourcesCoveragePage({
                     <dd data-testid="source-reason">{reason}</dd>
                   </div>
                 </dl>
-                <SourceScanButton workspaceId={workspaceId} sourceId={s.id} />
+                {s.collectorRegistered && <SourceScanButton workspaceId={workspaceId} sourceId={s.id} />}
               </li>
             );
           })}

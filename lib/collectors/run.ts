@@ -82,6 +82,9 @@ export async function runCollector(
   let skipped = 0;
   try {
     input.signal?.throwIfAborted();
+    if (process.env.NODE_ENV === "production" && ["producthunt", "youtube"].includes(row.type)) {
+      throw new Error("Access pending: this legacy collector needs a verified metered production adapter.");
+    }
     if (process.env.NODE_ENV === "production" &&
         !(row.lane === "free" && ["hn", "rss", "substack", "github", "stackoverflow"].includes(row.type)) &&
         !(row.type === "reddit" && row.lane === "byok") &&
@@ -112,6 +115,8 @@ export async function runCollector(
 
     const classified = classifyCollectorCoverage({
       documents: result.documents,
+      partial: result.partial,
+      coverageReason: result.coverageReason,
       inserted,
       skipped,
     });

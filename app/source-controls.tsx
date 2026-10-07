@@ -27,8 +27,10 @@ export function FeedForm({ workspaceId }: { workspaceId: string }) {
 }
 
 export function CommunitySourceForm({ workspaceId }: { workspaceId: string }) {
-  const [state, action, pending] = useActionState(addCommunitySource.bind(null, workspaceId), {});
   const [selected, setSelected] = useState(COMMUNITY_SOURCE_CATALOG[0]!.id);
+  const [state, action, pending] = useActionState(async (_previous: { catalogId?: string; error?: string; message?: string }, form: FormData) => ({
+    ...await addCommunitySource(workspaceId, {}, form), catalogId: String(form.get("catalogId") ?? ""),
+  }), { catalogId: "" });
   const entry = COMMUNITY_SOURCE_CATALOG.find(e => e.id === selected)!;
   return <form action={action} className="space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
     <label htmlFor="community-source" className="block text-sm font-medium">Developer community sources</label>
@@ -38,8 +40,8 @@ export function CommunitySourceForm({ workspaceId }: { workspaceId: string }) {
     <p className="text-sm">{entry.description}</p>
     <SafeLink href={entry.rulesUrl} className="text-xs underline">Source guidelines</SafeLink>
     <button disabled={pending} className="ml-3 rounded bg-zinc-900 px-4 py-2 text-sm text-white disabled:opacity-60">{pending ? "Adding…" : "Add source"}</button>
-    {state.error && <p role="alert" className="text-sm text-red-600">{state.error}</p>}
-    {state.message && <p role="status" className="text-sm">{state.message}</p>}
+    {state.catalogId === selected && state.error && <p role="alert" className="text-sm text-red-600">{state.error}</p>}
+    {state.catalogId === selected && state.message && <p role="status" className="text-sm">{state.message}</p>}
   </form>;
 }
 

@@ -92,8 +92,9 @@ describe("experimental Grok significance on retrieved X posts", () => {
     expect(bills[0]?.costUsd).toBeUndefined();
   });
 
-  it.each(["xai/grok-4.7", "__proto__", "toString"])("rejects unverified model %s before billing or sending data", async model => {
+  it.each(["spacexai/grok-4.6", "xai/grok-4.7", "__proto__", "toString"])("rejects unverified model %s before billing or sending data", async model => {
     vi.stubEnv("X_GATEWAY_MODEL", model);
+    network.mockResolvedValue(response([]));
     await expect(analyzeXPostSignificance([post], { ctx: context })).rejects.toThrow(/model/i);
     expect(network).not.toHaveBeenCalled(); expect(paidCall).not.toHaveBeenCalled();
   });
