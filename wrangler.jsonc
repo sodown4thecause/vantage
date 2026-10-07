@@ -14,6 +14,13 @@
 			"service": "dontkillmyvibe"
 		}
 	],
+	"workflows": [
+		{
+			"name": "radar-scan",
+			"binding": "RADAR_SCAN",
+			"class_name": "RadarScanWorkflow"
+		}
+	],
 	"triggers": {
 		"crons": []
 	},
@@ -21,11 +28,13 @@
 		"staging": {
 			"name": "vantage-staging",
 			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "vantage-staging" }],
+			"workflows": [{ "name": "radar-scan", "binding": "RADAR_SCAN", "class_name": "RadarScanWorkflow" }],
 			"triggers": { "crons": ["0 */3 * * *"] }
 		},
 		"production": {
 			"name": "dontkillmyvibe",
 			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "dontkillmyvibe" }],
+			"workflows": [{ "name": "radar-scan", "binding": "RADAR_SCAN", "class_name": "RadarScanWorkflow" }],
 			"triggers": { "crons": [] }
 		}
 	},

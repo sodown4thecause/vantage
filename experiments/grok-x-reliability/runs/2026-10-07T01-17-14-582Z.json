@@ -1,0 +1,138 @@
+{
+  "runId": "2026-10-07T01-17-14-582Z",
+  "startedAt": "2026-10-07T01:17:14.582Z",
+  "topic": "free AI GTM signal buzz tool",
+  "model": "spacexai/grok-4.7",
+  "endpoint": "ai-gateway",
+  "request": {
+    "endpoint": "ai-gateway",
+    "model": "spacexai/grok-4.7",
+    "topic": "free AI GTM signal buzz tool",
+    "fromDate": "2026-09-30",
+    "body": {
+      "model": "spacexai/grok-4.7",
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Search X/Twitter for conversations about: \"free AI GTM signal buzz tool\". Find real posts from the last 7 days. Return a short summary, then a list of the posts you found. For each post give the author handle, the post text, the url, and the posted date if you can see it."
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "type": "x_search",
+          "x_search": {
+            "from_date": "2026-09-30"
+          }
+        }
+      ]
+    }
+  },
+  "response": {
+    "text": "Searching X/Twitter for posts about \"free AI GTM signal buzz tool\" from the last 7 days.\n\nUsing x_keyword_search and x_semantic_search to find relevant posts from the last 7 days. I'll apply date filters to each tool and compile the requested summary with author handles, post text, URLs, and dates.\n\nNo posts from the last 7 days match the exact phrase “free AI GTM signal buzz tool.” Closest activity is general AI GTM chatter: buying-signal workflows, Apollo’s new AI GTM system, and Clay/outbound stack talk. Nothing names a free “signal buzz” GTM product.\n\n**Closest posts**\n\n- **@agarwal_live** — Tue, 06 Oct 2026  \n  https://x.com/agarwal_live/status/2107598465236963616  \n  i genuinely think in this entire ai GTM gold rush - the shovel sellers like email infrastructure providers, all the tool stack for email enrichment, data providers are gonna get loaded while service providers would firefight for those $2k retainers\n\n- **@guikyoki** — Tue, 06 Oct 2026  \n  https://x.com/guikyoki/status/2107544016506007858  \n  Everyone needs an AI GTM brain nowadays  \n  (quoting their own post: “Stop paying $167/mo to find out who is hiring… Your agent can now run the whole outbound chain: hiring signal, buyer, verified email, send… One key. 3,000+ GTM tools. Pay per call.”)\n\n- **@myosin_xyz** — Tue, 06 Oct 2026  \n  https://x.com/myosin_xyz/status/2107511295498940629  \n  We built @SlipRobotics an AI GTM system that can act on a buying signal within minutes. That used to take days of manual research. So far, we've put 4,000+ enriched contacts at 129 target companies in their CRM. Want to scale your GTM efforts? Talk to us, or to @ollyjjones.\n\n- **@Satyarth** — Tue, 06 Oct 2026  \n  https://x.com/Satyarth/status/2107534123438899510  \n  Usage is the strongest buying signal you own. An MQL raises a hand; a PQL clears the activation milestone paying customers always clear. Pick the milestone with sales and route PQLs to a seller within days. No free product, no PQL. #ProductLedGrowth #B2BSales\n\n- **@praveenshahi13** — Tue, 06 Oct 2026  \n  https://x.com/praveenshahi13/status/2107502133860004350  \n  Met GTM and RevOps folks and foudners solving GTM demand gen problems with their solutions at the @clay club event with @heyreach_io . It was insightful event. One key thing i understand is just how much of AI GTM is still starting and so much of space for new folks to learn.\n\n- **@cxtodaynews** — Tue, 06 Oct 2026  \n  https://x.com/cxtodaynews/status/2107477567213040112  \n  Revenue Tool: Apollo Launches AI GTM System to Unify Revenue Workflows. Apollo has unveiled an AI go-to-market system that unifies customer data, opportunity intelligence and sales-and-marketing execution. Its new tools help revenue teams build workflows in natural language, prioritize buyer signals and coordinate personalized outreach…\n\n- **@Gsandec** — Fri, 02 Oct 2026  \n  https://x.com/Gsandec/status/2105970033973481676  \n  The strongest GTM signal here is the gap between demo behavior and real work. If distribution only reaches people who already speak AI, the feedback optimizes the demo instead of the job users need done.\n\n- **@DanniChenGTM** — Fri, 02 Oct 2026  \n  https://x.com/DanniChenGTM/status/2105909928573759907  \n  One SEO tactic more AI startups should steal: keyword sniping. A new model / AI term starts blowing up? You have 24 hours. Ship: “[X] alternative” / “[X] vs [your product]” / “how to use [X] for ___” / a free tool around [X]. Don’t wait for Ahrefs to tell you there’s search volume. If it’s trending on X, people are about to Google it. Get there first.\n\n- **@Uprising_AI** — Thu, 01 Oct 2026  \n  https://x.com/Uprising_AI/status/2105637352638972272  \n  “Buying signal” has become one of those GTM phrases that means almost nothing. Here's a simpler hierarchy.",
+    "citations": [],
+    "posts": [
+      {
+        "id": "2107598465236963616",
+        "url": "https://x.com/agarwal_live/status/2107598465236963616",
+        "author": "agarwal_live",
+        "text": "i genuinely think in this entire ai GTM gold rush - the shovel sellers like email infrastructure providers, all the tool stack for email enrichment, data providers are gonna get loaded while service providers would firefight for those $2k retainers",
+        "postedAt": "2026-10-05T13:00:00.000Z"
+      },
+      {
+        "id": "2107544016506007858",
+        "url": "https://x.com/guikyoki/status/2107544016506007858",
+        "author": "guikyoki",
+        "text": "Everyone needs an AI GTM brain nowadays (quoting their own post: “Stop paying $167/mo to find out who is hiring… Your agent can now run the whole outbound chain: hiring signal, buyer, verified email, send… One key. 3,000+ GTM tools. Pay per call.”)",
+        "postedAt": "2026-10-05T13:00:00.000Z"
+      },
+      {
+        "id": "2107511295498940629",
+        "url": "https://x.com/myosin_xyz/status/2107511295498940629",
+        "author": "myosin_xyz",
+        "text": "We built @SlipRobotics an AI GTM system that can act on a buying signal within minutes. That used to take days of manual research. So far, we've put 4,000+ enriched contacts at 129 target companies in their CRM. Want to scale your GTM efforts? Talk to us, or to @ollyjjones.",
+        "postedAt": "2026-10-05T13:00:00.000Z"
+      },
+      {
+        "id": "2107534123438899510",
+        "url": "https://x.com/Satyarth/status/2107534123438899510",
+        "author": "Satyarth",
+        "text": "Usage is the strongest buying signal you own. An MQL raises a hand; a PQL clears the activation milestone paying customers always clear. Pick the milestone with sales and route PQLs to a seller within days. No free product, no PQL. #ProductLedGrowth #B2BSales",
+        "postedAt": "2026-10-05T13:00:00.000Z"
+      },
+      {
+        "id": "2107502133860004350",
+        "url": "https://x.com/praveenshahi13/status/2107502133860004350",
+        "author": "praveenshahi13",
+        "text": "Met GTM and RevOps folks and foudners solving GTM demand gen problems with their solutions at the @clay club event with @heyreach_io . It was insightful event. One key thing i understand is just how much of AI GTM is still starting and so much of space for new folks to learn.",
+        "postedAt": "2026-10-05T13:00:00.000Z"
+      },
+      {
+        "id": "2107477567213040112",
+        "url": "https://x.com/cxtodaynews/status/2107477567213040112",
+        "author": "cxtodaynews",
+        "text": "Revenue Tool: Apollo Launches AI GTM System to Unify Revenue Workflows. Apollo has unveiled an AI go-to-market system that unifies customer data, opportunity intelligence and sales-and-marketing execution. Its new tools help revenue teams build workflows in natural language, prioritize buyer signals and coordinate personalized outreach…",
+        "postedAt": "2026-10-05T13:00:00.000Z"
+      },
+      {
+        "id": "2105970033973481676",
+        "url": "https://x.com/Gsandec/status/2105970033973481676",
+        "author": "Gsandec",
+        "text": "The strongest GTM signal here is the gap between demo behavior and real work. If distribution only reaches people who already speak AI, the feedback optimizes the demo instead of the job users need done.",
+        "postedAt": "2026-10-01T14:00:00.000Z"
+      },
+      {
+        "id": "2105909928573759907",
+        "url": "https://x.com/DanniChenGTM/status/2105909928573759907",
+        "author": "DanniChenGTM",
+        "text": "One SEO tactic more AI startups should steal: keyword sniping. A new model / AI term starts blowing up? You have 24 hours. Ship: “[X] alternative” / “[X] vs [your product]” / “how to use [X] for ___” / a free tool around [X]. Don’t wait for Ahrefs to tell you there’s search volume. If it’s trending on X, people are about to Google it. Get there first.",
+        "postedAt": "2026-10-01T14:00:00.000Z"
+      },
+      {
+        "id": "2105637352638972272",
+        "url": "https://x.com/Uprising_AI/status/2105637352638972272",
+        "author": "Uprising_AI",
+        "text": "“Buying signal” has become one of those GTM phrases that means almost nothing. Here's a simpler hierarchy.",
+        "postedAt": "2026-09-30T14:00:00.000Z"
+      }
+    ],
+    "usage": {
+      "inputTokens": 76591,
+      "outputTokens": 3020,
+      "cachedInputTokens": 56832,
+      "totalTokens": 79611,
+      "raw": {
+        "input_tokens": 76591,
+        "output_tokens": 3020,
+        "total_tokens": 79611,
+        "input_tokens_details": {
+          "cached_tokens": 56832
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 1403
+        }
+      }
+    },
+    "costUsd": 0.199718,
+    "cost": {
+      "usd": 0.199718,
+      "longContext": false,
+      "pricing": {
+        "inputPerMillion": 2,
+        "inputPerMillionLongContext": 4,
+        "outputPerMillion": 6,
+        "outputPerMillionLongContext": 12,
+        "cachedInputReadPerMillion": 0.5,
+        "cachedInputReadPerMillionLongContext": 1,
+        "longContextThreshold": 200000,
+        "contextWindow": 500000
+      }
+    }
+  },
+  "status": "ok",
+  "error": null
+}

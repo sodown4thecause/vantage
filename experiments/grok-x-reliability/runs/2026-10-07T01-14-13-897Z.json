@@ -1,0 +1,131 @@
+{
+  "runId": "2026-10-07T01-14-13-897Z",
+  "startedAt": "2026-10-07T01:14:13.897Z",
+  "topic": "free AI GTM signal buzz tool",
+  "model": "spacexai/grok-4.7",
+  "endpoint": "ai-gateway",
+  "request": {
+    "endpoint": "ai-gateway",
+    "model": "spacexai/grok-4.7",
+    "topic": "free AI GTM signal buzz tool",
+    "fromDate": "2026-09-30",
+    "body": {
+      "model": "spacexai/grok-4.7",
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Search X/Twitter for conversations about: \"free AI GTM signal buzz tool\". Find real posts from the last 7 days. Return a short summary, then a list of the posts you found. For each post give the author handle, the post text, the url, and the posted date if you can see it."
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "type": "x_search",
+          "x_search": {
+            "from_date": "2026-09-30"
+          }
+        }
+      ]
+    }
+  },
+  "response": {
+    "text": "Searching X/Twitter for posts about \"free AI GTM signal buzz tool\" from the last 7 days.\n\nUsing keyword and semantic search tools to find posts from the last 7 days. I'll apply a date filter and return the author handle, text, URL, and posted date for each result.\n\nNo posts from the last 7 days match the exact phrase **“free AI GTM signal buzz tool.”** Keyword and semantic searches on X turned up nothing under that name.\n\nWhat did show up is a small cluster of posts about **AI go-to-market systems and buying signals** (roughly Oct 1–7, 2026). None of them describe a free product by that name. Closest related posts:\n\n1. **@myosin_xyz** — Tue, 06 Oct 2026  \n   We built @SlipRobotics an AI GTM system that can act on a buying signal within minutes. That used to take days of manual research. So far, we've put 4,000+ enriched contacts at 129 target companies in their CRM. Want to scale your GTM efforts? Talk to us, or to @ollyjjones.  \n   https://x.com/myosin_xyz/status/2107511295498940629  \n   [[1]](https://x.com/myosin_xyz/status/2107511295498940629)\n\n2. **@SeamlessAI** — Tue, 06 Oct 2026  \n   How many of the leads on your list are actually ready to buy? If you're not sure, you're probably wasting time. Our new buyer intent tool surfaces the prospects showing real buying signals right now… Comment SEAMLESS and we'll send you a link to try Seamless for FREE Today.  \n   https://x.com/SeamlessAI/status/2107470949201129833  \n   [[2]](https://x.com/SeamlessAI/status/2107470949201129833)\n\n3. **@Uprising_AI** — Tue, 06 Oct 2026  \n   Production GTM agents need an audit trail: signal detected → data retrieved → reasoning / rule → tool called → action executed → outcome  \n   https://x.com/Uprising_AI/status/2107509438143930368  \n   [[3]](https://x.com/Uprising_AI/status/2107509438143930368)\n\n4. **@henryhund** — Tue, 06 Oct 2026  \n   Some favorite recent AI GTM builds: Company context + SEO agents; Nightly signal scraping (job boards, targeted roles); Lead outreach manager; Weekly ICP and creator research; Personal context layer; Agents trained on my fav books.  \n   https://x.com/henryhund/status/2107440484595662945  \n   [[4]](https://x.com/henryhund/status/2107440484595662945)\n\n5. **@ZenithYeAI** — Mon, 05 Oct 2026  \n   Ami is AiSDR's GTM agent: it finds prospects, researches them, writes the email and LinkedIn outreach, and follows buying signals. Solo is $250/mo, month-to-month and self-serve…  \n   https://x.com/ZenithYeAI/status/2107047801653981612  \n   [[5]](https://x.com/ZenithYeAI/status/2107047801653981612)\n\n6. **@Gsandec** — Fri, 02 Oct 2026  \n   The strongest GTM signal here is the gap between demo behavior and real work. If distribution only reaches people who already speak AI, the feedback optimizes the demo instead of the job users need done.  \n   https://x.com/Gsandec/status/2105970033973481676  \n   [[6]](https://x.com/Gsandec/status/2105970033973481676)\n\n7. **@darnocks** — Thu, 01 Oct 2026  \n   A client of ours sells into companies expanding into a country right now. He builds a list of them for as little as $1 (in like 20 mins) with the buying signal + the full decision committee + emails and LinkedIns. Dead simple GTM workflow.  \n   https://x.com/darnocks/status/2105568278596735403  \n   [[7]](https://x.com/darnocks/status/2105568278596735403)\n\n8. **@Uprising_AI** — Thu, 01 Oct 2026  \n   “Buying signal” has become one of those GTM phrases that means almost nothing. Here's a simpler hierarchy.  \n   https://x.com/Uprising_AI/status/2105637352638972272  \n   [[8]](https://x.com/Uprising_AI/status/2105637352638972272)\n\nA few other hits on “buzz tool” were unrelated (trading-prop “AI Market Buzz,” stock “market buzz” accounts). If you have a product URL, handle, or alternate name, a tighter search is possible.",
+    "citations": [],
+    "posts": [
+      {
+        "id": "2107511295498940629",
+        "url": "https://x.com/myosin_xyz/status/2107511295498940629",
+        "author": "myosin_xyz",
+        "text": "",
+        "postedAt": null
+      },
+      {
+        "id": "2107470949201129833",
+        "url": "https://x.com/SeamlessAI/status/2107470949201129833",
+        "author": "SeamlessAI",
+        "text": "",
+        "postedAt": null
+      },
+      {
+        "id": "2107509438143930368",
+        "url": "https://x.com/Uprising_AI/status/2107509438143930368",
+        "author": "Uprising_AI",
+        "text": "",
+        "postedAt": null
+      },
+      {
+        "id": "2107440484595662945",
+        "url": "https://x.com/henryhund/status/2107440484595662945",
+        "author": "henryhund",
+        "text": "",
+        "postedAt": null
+      },
+      {
+        "id": "2107047801653981612",
+        "url": "https://x.com/ZenithYeAI/status/2107047801653981612",
+        "author": "ZenithYeAI",
+        "text": "",
+        "postedAt": null
+      },
+      {
+        "id": "2105970033973481676",
+        "url": "https://x.com/Gsandec/status/2105970033973481676",
+        "author": "Gsandec",
+        "text": "",
+        "postedAt": null
+      },
+      {
+        "id": "2105568278596735403",
+        "url": "https://x.com/darnocks/status/2105568278596735403",
+        "author": "darnocks",
+        "text": "",
+        "postedAt": null
+      },
+      {
+        "id": "2105637352638972272",
+        "url": "https://x.com/Uprising_AI/status/2105637352638972272",
+        "author": "Uprising_AI",
+        "text": "",
+        "postedAt": null
+      }
+    ],
+    "usage": {
+      "inputTokens": 71790,
+      "outputTokens": 3447,
+      "cachedInputTokens": 34432,
+      "totalTokens": 75237,
+      "raw": {
+        "input_tokens": 71790,
+        "output_tokens": 3447,
+        "total_tokens": 75237,
+        "input_tokens_details": {
+          "cached_tokens": 34432
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 1860
+        }
+      }
+    },
+    "costUsd": 0.18147800000000003,
+    "cost": {
+      "usd": 0.18147800000000003,
+      "longContext": false,
+      "pricing": {
+        "inputPerMillion": 2,
+        "inputPerMillionLongContext": 4,
+        "outputPerMillion": 6,
+        "outputPerMillionLongContext": 12,
+        "cachedInputReadPerMillion": 0.5,
+        "cachedInputReadPerMillionLongContext": 1,
+        "longContextThreshold": 200000,
+        "contextWindow": 500000
+      }
+    }
+  },
+  "status": "ok",
+  "error": null
+}

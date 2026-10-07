@@ -21,6 +21,13 @@
 
 import openNextWorker from "./.open-next/worker.js";
 
+// Cloudflare requires each Workflow class to be exported from the Worker entry
+// module. `@opennextjs/cloudflare` emits only `fetch`, so we re-export the class
+// here. This is the one deliberate exception to the "no app imports in this
+// file" rule below: a Workflow class cannot be reached any other way. Wrangler
+// resolves and bundles the TypeScript module via the `@/*` tsconfig path.
+export { RadarScanWorkflow } from "./lib/workflows/radar-scan.ts";
+
 const TICK_PATH = "/api/cron/tick";
 
 const worker = {

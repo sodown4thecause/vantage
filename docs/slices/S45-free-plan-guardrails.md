@@ -14,3 +14,38 @@ The $5 plan stays profitable: the signup report is capped by a daily dollar budg
 ## Acceptance criteria
 - [ ] Tests: budget exhausted path, idle pause and resume, reminder sent once, not sent for cancelled subs.
 - [ ] Admin view shows free-user average cost vs the $0.21 typical / $0.38 heavy model.
+
+## Free basic scan: precise definition (7 Oct 2026, login-first)
+
+The lead magnet is a **free basic scan inside a free, signed-in workspace**. It is the
+single allowed cost-bearing action for a free account and is bounded on every axis.
+The authoritative constants live in `lib/lead-magnet/definition.ts`; this section is
+the human-readable copy of the same numbers.
+
+| Dimension | Bound | Where enforced |
+|---|---|---|
+| Sources | FREE lane only: `hn`, `rss`, `substack` | `FREE_SCAN_SOURCE_TYPES`; production guard in `lib/collectors/run.ts` already blocks every other type/lane |
+| Sources per scan | 8 | `FREE_SCAN_LIMITS.maxSourcesPerScan` in `runFreeScanSteps` |
+| Documents scored | 50 most recent | `FREE_SCAN_LIMITS.maxDocuments` passed to `buildOpportunities` |
+| Per user (workspace) / day | 1 scan, atomic | `claimFreeScan` upsert on `lead_magnet_scan(workspace_id, day)` |
+| Global daily budget | `PUBLIC_DAILY_BUDGET_USD` (default 5), shared `budget_day` row | `reserveFreeScanBudget` — the S06 guard table |
+| Cost estimate reserved per scan | $0.05 | `FREE_SCAN_ESTIMATE_USD` |
+
+Paid sources (Grok X, Reddit deep, ScrapeCreators) are **not** part of the free basic
+scan; they are credit-metered and opt-in. The free scan reuses the existing pipeline:
+`runCollector` per source → `buildOpportunities` → `listOpportunityQueue`, wired through
+`app/api/lead-magnet/run/route.ts` and the `runFreeFirstScan` server action. Stateful
+endpoints stay behind `authorizeWorkspace`.
+
+Outcomes are states, never errors: `per_user_limit` and `budget_exhausted` render as
+"queued for tomorrow"; `no_sources` asks the user to save their profile first.
+
+### Learned (free basic scan implementation)
+- New table `lead_magnet_scan(workspace_id, day, scans, updated_at)` (migration generated
+  with `pnpm db:generate`); the cap is a single guarded `INSERT ... ON CONFLICT` so
+  concurrent submissions on neon-http cannot both pass.
+- The S45 `budget_key` dimension on `budget_day` is **not** in this slice; the free scan
+  deliberately shares the single S06 daily budget until that migration lands. Follow-up:
+  give the free scan its own `budget_key` when S45's budget-dimension migration merges.
+- Tests: `test/lead-magnet-scan.test.ts` (cap, budget exhaustion, release/refund,
+  run orchestration) and `test/lead-magnet-route.test.ts` (auth + route contract).

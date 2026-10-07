@@ -30,7 +30,7 @@ export default async function OnboardingPage({
 
   return (
     <Shell workspaceId={workspaceId} active="profile">
-      <PageHead title={"Monitoring profile"} lede={"Describe your product once. Vantage stores a versioned profile used by ranking and drafting. If the product URL cannot be fetched, mark it inaccessible and paste material manually."} />
+      <PageHead title={"Monitoring profile"} lede={"Describe your AI or dev tool once. Vantage stores a versioned profile used by ranking and drafting, then your free basic scan reads Hacker News, RSS and Substack for people asking for what you build. If the product URL cannot be fetched, mark it inaccessible and paste material manually."} />
       <OnboardingForm workspaceId={workspaceId} />
       <nav className="mt-8 flex gap-4 text-sm">
         <Link href={`/queue?workspaceId=${encodeURIComponent(workspaceId)}`} className="underline">Opportunity queue</Link>

@@ -1,0 +1,8 @@
+# Local secrets for the TinyFish Agent reliability experiment. Never commit.
+.env.local
+.env
+*.local
+
+# Generated output. Only runs/.gitkeep is tracked.
+runs/*.json
+runs/*.log

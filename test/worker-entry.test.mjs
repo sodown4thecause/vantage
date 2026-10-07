@@ -7,7 +7,9 @@ mock.method(console, "error", () => {});
 // Run the real wrapper without requiring a generated OpenNext bundle.
 const source = readFileSync(new URL("../worker-entry.mjs", import.meta.url), "utf8")
   .replace('import openNextWorker from "./.open-next/worker.js";',
-    'const openNextWorker = { fetch: () => new Response("app") };');
+    'const openNextWorker = { fetch: () => new Response("app") };')
+  .replace('export { RadarScanWorkflow } from "./lib/workflows/radar-scan.ts";',
+    'const RadarScanWorkflow = class {};');
 const { default: worker } = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
 const controller = { scheduledTime: 0, cron: "0 */3 * * *" };
 const env = (body = { ok: true, collectorResults: [], opportunityResults: [] }) => ({

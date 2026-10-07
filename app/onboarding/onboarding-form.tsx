@@ -7,10 +7,19 @@ import type {
   FieldErrors,
   MonitoringProfileView,
 } from "@/lib/profile/types";
+import type { FreeScanResult } from "@/lib/lead-magnet/run";
 
 type Props = {
   workspaceId: string;
 };
+
+type FreeScanState =
+  | { phase: "idle" }
+  | { phase: "saving" }
+  | { phase: "scanning" }
+  | { phase: "done"; result: Extract<FreeScanResult, { ok: true }> }
+  | { phase: "queued"; message: string }
+  | { phase: "error"; message: string };
 
 type FormState = {
   productUrl: string;
@@ -65,6 +74,7 @@ export function OnboardingForm({ workspaceId }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const [freeScan, setFreeScan] = useState<FreeScanState>({ phase: "idle" });
 
   useEffect(() => {
     let cancelled = false;
@@ -181,6 +191,60 @@ export function OnboardingForm({ workspaceId }: Props) {
       setSaving(false);
     }
   }
+
+  async function onRunFreeScan() {
+    setError(null);
+    setSavedMessage(null);
+    setFieldErrors({});
+    setFreeScan({ phase: "saving" });
+
+    try {
+      const saveRes = await fetch("/api/profile", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const saveData = (await saveRes.json().catch(() => ({}))) as {
+        profile?: MonitoringProfileView;
+        error?: string;
+        fieldErrors?: FieldErrors;
+      };
+      if (!saveRes.ok) {
+        if (saveData.fieldErrors) setFieldErrors(saveData.fieldErrors);
+        setFreeScan({ phase: "error", message: saveData.error ?? "Save failed." });
+        return;
+      }
+      if (saveData.profile) {
+        setProfile(saveData.profile);
+        setForm(profileToForm(saveData.profile));
+      }
+
+      setFreeScan({ phase: "scanning" });
+      const scanRes = await fetch("/api/lead-magnet/run", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ workspaceId }),
+      });
+      const scanData = (await scanRes.json().catch(() => ({}))) as FreeScanResult | { error?: string };
+
+      if (!scanRes.ok || !("ok" in scanData) || !scanData.ok) {
+        const message =
+          "message" in scanData && typeof scanData.message === "string"
+            ? scanData.message
+            : ("error" in scanData && typeof scanData.error === "string"
+              ? scanData.error
+              : "The free scan could not be completed.");
+        const queued = "reason" in scanData && (scanData.reason === "per_user_limit" || scanData.reason === "budget_exhausted");
+        setFreeScan(queued ? { phase: "queued", message } : { phase: "error", message });
+        return;
+      }
+      setFreeScan({ phase: "done", result: scanData });
+    } catch {
+      setFreeScan({ phase: "error", message: "The free scan could not be completed." });
+    }
+  }
+
+  const scanBusy = freeScan.phase === "saving" || freeScan.phase === "scanning";
 
   if (loading) {
     return (
@@ -358,7 +422,134 @@ export function OnboardingForm({ workspaceId }: Props) {
       >
         {saving ? "Saving…" : "Save monitoring profile"}
       </button>
+
+      <FreeScanCta
+        busy={scanBusy}
+        disabled={saving}
+        state={freeScan}
+        onRun={onRunFreeScan}
+      />
+
+      {freeScan.phase === "done" ? (
+        <FreeScanResults workspaceId={workspaceId} result={freeScan.result} />
+      ) : null}
     </form>
+  );
+}
+
+function FreeScanCta({
+  busy,
+  disabled,
+  state,
+  onRun,
+}: {
+  busy: boolean;
+  disabled: boolean;
+  state: FreeScanState;
+  onRun: () => void;
+}) {
+  const label = busy
+    ? state.phase === "saving"
+      ? "Saving profile…"
+      : "Running your free basic scan…"
+    : "Run my free first scan";
+  return (
+    <div className="space-y-2 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
+      <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+        Free basic scan
+      </p>
+      <p className="text-xs text-zinc-500">
+        Saves your profile, provisions sources, then scans Hacker News, RSS and
+        Substack once. One scan per day on the free plan.
+      </p>
+      <button
+        type="button"
+        onClick={onRun}
+        disabled={busy || disabled}
+        className="inline-flex h-11 items-center justify-center rounded-full bg-emerald-700 px-6 text-sm font-medium text-white hover:bg-emerald-600 disabled:opacity-60"
+        data-testid="run-free-scan"
+      >
+        {label}
+      </button>
+      {busy ? (
+        <p role="status" className="text-xs text-zinc-500" data-testid="free-scan-progress">
+          {state.phase === "saving"
+            ? "Saving profile and provisioning sources…"
+            : "Collecting free sources, then ranking opportunities…"}
+        </p>
+      ) : null}
+      {state.phase === "queued" ? (
+        <p role="status" className="text-sm text-amber-700 dark:text-amber-300" data-testid="free-scan-queued">
+          {state.message}
+        </p>
+      ) : null}
+      {state.phase === "error" ? (
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400" data-testid="free-scan-error">
+          {state.message}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function FreeScanResults({
+  workspaceId,
+  result,
+}: {
+  workspaceId: string;
+  result: Extract<FreeScanResult, { ok: true }>;
+}) {
+  const queueHref = `/queue?workspaceId=${encodeURIComponent(workspaceId)}`;
+  return (
+    <section className="space-y-4 border-t border-zinc-200 pt-6 dark:border-zinc-800" data-testid="free-scan-results">
+      <div className="space-y-1">
+        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+          {result.label}
+        </h2>
+        <p role="status" className="text-sm text-zinc-600 dark:text-zinc-300">
+          {result.message}
+        </p>
+        <p className="text-xs text-zinc-500" data-testid="free-scan-sources">
+          Sources used: {result.sourcesUsed.length ? result.sourcesUsed.join(", ") : "none"}
+        </p>
+      </div>
+
+      {result.cards.length === 0 ? (
+        <div className="rounded-lg border border-zinc-200 px-4 py-3 text-sm text-zinc-600 dark:border-zinc-800 dark:text-zinc-300" data-testid="free-scan-empty">
+          No strong opportunities yet — we&apos;ll keep watching and refresh your
+          queue.{" "}
+          <Link href={queueHref} className="link">
+            Open the queue
+          </Link>
+          .
+        </div>
+      ) : (
+        <>
+          <ol className="space-y-3" data-testid="free-scan-cards">
+            {result.cards.slice(0, 5).map((card) => (
+              <li key={card.id} className="rounded-lg border border-zinc-200 px-4 py-3 dark:border-zinc-800">
+                <Link
+                  href={`/opportunities/${card.id}?workspaceId=${encodeURIComponent(workspaceId)}`}
+                  className="link block text-base font-semibold leading-snug"
+                >
+                  {card.title}
+                </Link>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Score {card.score.toFixed(2)} · Confidence {card.confidence.toFixed(2)} ·{" "}
+                  {card.evidenceCount} {card.evidenceCount === 1 ? "post" : "posts"}
+                </p>
+              </li>
+            ))}
+          </ol>
+          <Link
+            href={queueHref}
+            className="inline-block rounded bg-zinc-900 px-4 py-2 text-sm text-white"
+          >
+            Open the full queue
+          </Link>
+        </>
+      )}
+    </section>
   );
 }
 

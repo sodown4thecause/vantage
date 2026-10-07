@@ -669,3 +669,26 @@ export const workspaceUsage = pgTable(
   },
   (table) => [primaryKey({ columns: [table.workspaceId, table.period] })],
 );
+
+/**
+ * Per-workspace daily counter for the free basic scan lead magnet
+ * (login-first decision, 7 Oct 2026). One row per workspace per UTC day;
+ * the atomic upsert in `lib/lead-magnet/repository.ts` refuses to push
+ * `scans` past the configured per-user cap.
+ */
+export const leadMagnetScan = pgTable(
+  "lead_magnet_scan",
+  {
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    day: date("day", { mode: "string" }).notNull(),
+    scans: integer("scans").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.workspaceId, table.day] })],
+);
+
+export type LeadMagnetScanRow = typeof leadMagnetScan.$inferSelect;

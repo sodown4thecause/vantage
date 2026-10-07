@@ -1,0 +1,5 @@
+{
+  "//": "Scopes ESM resolution to this experiment so tsx loads @tiny-fish/sdk's `import`-only export. No dependencies: scripts run via the repo-root tsx.",
+  "type": "module",
+  "private": true
+}

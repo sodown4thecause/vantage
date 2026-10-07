@@ -1,0 +1,152 @@
+{
+  "runId": "2026-10-07T01-17-55-210Z",
+  "startedAt": "2026-10-07T01:17:55.210Z",
+  "topic": "free AI GTM signal buzz tool",
+  "model": "spacexai/grok-4.7",
+  "endpoint": "ai-gateway",
+  "request": {
+    "endpoint": "ai-gateway",
+    "model": "spacexai/grok-4.7",
+    "topic": "free AI GTM signal buzz tool",
+    "fromDate": "2026-09-30",
+    "body": {
+      "model": "spacexai/grok-4.7",
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Search X/Twitter for conversations about: \"free AI GTM signal buzz tool\". Find real posts from the last 7 days. Return a short summary, then a list of the posts you found. For each post give the author handle, the post text, the url, and the posted date if you can see it."
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "type": "x_search",
+          "x_search": {
+            "from_date": "2026-09-30"
+          }
+        }
+      ]
+    }
+  },
+  "response": {
+    "text": "Searching X/Twitter for recent posts about \"free AI GTM signal buzz tool\".\n\nGTM likely stands for Go-To-Market. I'll use keyword and semantic search tools to find posts from the last 7 days.\n\nNo posts from the last 7 days use the exact phrase “free AI GTM signal buzz tool.” Nearby talk is about AI go-to-market systems that catch buying signals (hiring, job posts, social intent) and free or cheap ways to act on them—agents, social listening, and DIY “buzz” workflows—not one named product.\n\nClosest real posts:\n\n1. **@myosin_xyz** — Tue, 06 Oct 2026  \n   We built @SlipRobotics an AI GTM system that can act on a buying signal within minutes. That used to take days of manual research. So far, we've put 4,000+ enriched contacts at 129 target companies in their CRM. Want to scale your GTM efforts? Talk to us, or to @ollyjjones.  \n   https://x.com/myosin_xyz/status/2107511295498940629\n\n2. **@guikyoki** — Tue, 06 Oct 2026  \n   Everyone needs an AI GTM brain nowadays  \n   (quoting their earlier post: “Stop paying $167/mo to find out who is hiring. Your agent can now run the whole outbound chain: hiring signal, buyer, verified email, send… One key. 3,000+ GTM tools. Pay per call.”)  \n   https://x.com/guikyoki/status/2107544016506007858\n\n3. **@s4yonnara** — Tue, 06 Oct 2026  \n   SpaceXAI just showed the AI team that's quietly replacing hours of GTM work. And they gave away the entire system for free. 55 minutes of their real Grok Bot workflows: … 31:55 - find buying signals their sales tools miss …  \n   https://x.com/s4yonnara/status/2107516227790766322\n\n4. **@flow_intent** — Tue, 06 Oct 2026  \n   Been using Scavio as the search layer for my GTM social listening tool for AI devs. One API to pull from Reddit, YouTube, TikTok, Google and a bunch more, so I'm not stitching together a dozen scrapers.  \n   https://x.com/flow_intent/status/2107589457356759380\n\n5. **@henryhund** — Tue, 06 Oct 2026  \n   Some favorite recent AI GTM builds: - Company context + SEO agents - Nightly signal scraping (job boards, targeted roles) - Lead outreach manager - Weekly ICP and creator research …  \n   https://x.com/henryhund/status/2107440484595662945\n\n6. **@cxtodaynews** — Tue, 06 Oct 2026  \n   Revenue Tool: Apollo Launches AI GTM System to Unify Revenue Workflows … Its new tools help revenue teams build workflows in natural language, prioritize buyer signals and coordinate personalized outreach …  \n   https://x.com/cxtodaynews/status/2107477567213040112\n\n7. **@SeamlessAI** — Tue, 06 Oct 2026  \n   How many of the leads on your list are actually ready to buy? … Our new buyer intent tool surfaces the prospects showing real buying signals right now … Comment SEAMLESS and we'll send you a link to try Seamless for FREE Today.  \n   https://x.com/SeamlessAI/status/2107470949201129833\n\n8. **@nabil_haouam** — Mon, 05 Oct 2026  \n   Best free buying signal to use is a company's job posts. you gotta check what sentences are they using in the job post tells you more than any intent score.  \n   https://x.com/nabil_haouam/status/2107210730386894978\n\n9. **@researchmavenco** — Mon, 05 Oct 2026  \n   FAQ: how do you track a buying signal? Start with job postings connected to your service, free.  \n   https://x.com/researchmavenco/status/2107108691740692628\n\n10. **@agarwal_live** — Tue, 06 Oct 2026  \n    i genuinely think in this entire ai GTM gold rush - the shovel sellers like email infrastructure providers, all the tool stack for email enrichment, data providers are gonna get loaded while service providers would firefight for those $2k retainers  \n    https://x.com/agarwal_live/status/2107598465236963616\n\n11. **@principles0618** — Wed, 30 Sep 2026 (edge of the window)  \n    My GTM system finally taking shape. Sometimes less is more. Buzz agent creating the drafts for new warm leads scraped from socials of firms showing interest for legal intake services - drafts the emails in Apple Mail and all it takes is reviewing the drafts.  \n    https://x.com/principles0618/status/2105127049069228499",
+    "citations": [],
+    "posts": [
+      {
+        "id": "2107511295498940629",
+        "url": "https://x.com/myosin_xyz/status/2107511295498940629",
+        "author": "myosin_xyz",
+        "text": "Searching X/Twitter for recent posts about \"free AI GTM signal buzz tool\". GTM likely stands for Go-To-Market. I'll use keyword and semantic search tools to find posts from the last 7 days. No posts from the last 7 days use the exact phrase “free AI GTM signal buzz tool.” Nearby talk is about AI go-to-market systems that catch buying signals (hiring, job posts, social intent) and free or cheap ways to act on them—agents, social listening, and DIY “buzz” workflows—not one named product. Closest real posts: 1. **@myosin_xyz** — Tue, 06 Oct 2026 We built @SlipRobotics an AI GTM system that can act on a buying signal within minutes. That used to take days of manual research. So far, we've put 4,000+ enriched contacts at 129 target companies in their CRM. Want to scale your GTM efforts? Talk to us, or to @ollyjjones. 2. **@guikyoki** — Tue, 06 Oct 2026 Everyone needs an AI GTM brain nowadays (quoting their earlier post: “Stop paying $167/mo to find out who is hiring. Your agent can now run the whole outbound chain: hiring signal, buyer, verified email, send… One key. 3,000+ GTM tools. Pay per call.”) https://x.com/guikyoki/status/2107544016506007858 3. **@s4yonnara** — Tue, 06 Oct 2026 SpaceXAI just showed the AI team that's quietly replacing hours of GTM work. And they gave away the entire system for free. 55 minutes of their real Grok Bot workflows: … 31:55 - find buying signals their sales tools miss … https://x.com/s4yonnara/status/2107516227790766322 4. **@flow_intent** — Tue, 06 Oct 2026 Been using Scavio as the search layer for my GTM social listening tool for AI devs. One API to pull from Reddit, YouTube, TikTok, Google and a bunch more, so I'm not stitching together a dozen scrapers. https://x.com/flow_intent/status/2107589457356759380 5. **@henryhund** — Tue, 06 Oct 2026 Some favorite recent AI GTM builds: - Company context + SEO agents - Nightly signal scraping (job boards, targeted roles) - Lead outreach manager - Weekly ICP and creator research … https://x.com/henryhund/status/2107440484595662945 6. **@cxtodaynews** — Tue, 06 Oct 2026 Revenue Tool: Apollo Launches AI GTM System to Unify Revenue Workflows … Its new tools help revenue teams build workflows in natural language, prioritize buyer signals and coordinate personalized outreach … https://x.com/cxtodaynews/status/2107477567213040112 7. **@SeamlessAI** — Tue, 06 Oct 2026 How many of the leads on your list are actually ready to buy? … Our new buyer intent tool surfaces the prospects showing real buying signals right now … Comment SEAMLESS and we'll send you a link to try Seamless for FREE Today. https://x.com/SeamlessAI/status/2107470949201129833 8. **@nabil_haouam** — Mon, 05 Oct 2026 Best free buying signal to use is a company's job posts. you gotta check what sentences are they using in the job post tells you more than any intent score. https://x.com/nabil_haouam/status/2107210730386894978 9. **@researchmavenco** — Mon, 05 Oct 2026 FAQ: how do you track a buying signal? Start with job postings connected to your service, free. https://x.com/researchmavenco/status/2107108691740692628 10. **@agarwal_live** — Tue, 06 Oct 2026 i genuinely think in this entire ai GTM gold rush - the shovel sellers like email infrastructure providers, all the tool stack for email enrichment, data providers are gonna get loaded while service providers would firefight for those $2k retainers https://x.com/agarwal_live/status/2107598465236963616 11. **@principles0618** — Wed, 30 Sep 2026 (edge of the window) My GTM system finally taking shape. Sometimes less is more. Buzz agent creating the drafts for new warm leads scraped from socials of firms showing interest for legal intake services - drafts the emails in Apple Mail and all it takes is reviewing the drafts. https://x.com/principles0618/status/2105127049069228499",
+        "postedAt": "2026-10-05T13:00:00.000Z"
+      },
+      {
+        "id": "2107544016506007858",
+        "url": "https://x.com/guikyoki/status/2107544016506007858",
+        "author": "guikyoki",
+        "text": "",
+        "postedAt": null
+      },
+      {
+        "id": "2107516227790766322",
+        "url": "https://x.com/s4yonnara/status/2107516227790766322",
+        "author": "s4yonnara",
+        "text": "",
+        "postedAt": null
+      },
+      {
+        "id": "2107589457356759380",
+        "url": "https://x.com/flow_intent/status/2107589457356759380",
+        "author": "flow_intent",
+        "text": "",
+        "postedAt": null
+      },
+      {
+        "id": "2107440484595662945",
+        "url": "https://x.com/henryhund/status/2107440484595662945",
+        "author": "henryhund",
+        "text": "",
+        "postedAt": null
+      },
+      {
+        "id": "2107477567213040112",
+        "url": "https://x.com/cxtodaynews/status/2107477567213040112",
+        "author": "cxtodaynews",
+        "text": "",
+        "postedAt": null
+      },
+      {
+        "id": "2107470949201129833",
+        "url": "https://x.com/SeamlessAI/status/2107470949201129833",
+        "author": "SeamlessAI",
+        "text": "",
+        "postedAt": null
+      },
+      {
+        "id": "2107210730386894978",
+        "url": "https://x.com/nabil_haouam/status/2107210730386894978",
+        "author": "nabil_haouam",
+        "text": "",
+        "postedAt": null
+      },
+      {
+        "id": "2107108691740692628",
+        "url": "https://x.com/researchmavenco/status/2107108691740692628",
+        "author": "researchmavenco",
+        "text": "",
+        "postedAt": null
+      },
+      {
+        "id": "2107598465236963616",
+        "url": "https://x.com/agarwal_live/status/2107598465236963616",
+        "author": "agarwal_live",
+        "text": "",
+        "postedAt": null
+      },
+      {
+        "id": "2105127049069228499",
+        "url": "https://x.com/principles0618/status/2105127049069228499",
+        "author": "principles0618",
+        "text": "",
+        "postedAt": null
+      }
+    ],
+    "usage": {
+      "inputTokens": 80808,
+      "outputTokens": 3342,
+      "cachedInputTokens": 48512,
+      "totalTokens": 84150,
+      "raw": {
+        "input_tokens": 80808,
+        "output_tokens": 3342,
+        "total_tokens": 84150,
+        "input_tokens_details": {
+          "cached_tokens": 48512
+        },
+        "output_tokens_details": {
+          "reasoning_tokens": 1754
+        }
+      }
+    },
+    "costUsd": 0.205924,
+    "cost": {
+      "usd": 0.205924,
+      "longContext": false,
+      "pricing": {
+        "inputPerMillion": 2,
+        "inputPerMillionLongContext": 4,
+        "outputPerMillion": 6,
+        "outputPerMillionLongContext": 12,
+        "cachedInputReadPerMillion": 0.5,
+        "cachedInputReadPerMillionLongContext": 1,
+        "longContextThreshold": 200000,
+        "contextWindow": 500000
+      }
+    }
+  },
+  "status": "ok",
+  "error": null
+}

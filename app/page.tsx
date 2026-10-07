@@ -54,23 +54,34 @@ export default async function Home() {
               <button className="btn">Create workspace</button>
             </form>
           ) : (
-            <div className="flex flex-wrap gap-3">
-              <Link href="/auth/sign-up" className="btn">
-                Create a free account
-              </Link>
-              <Link href="/auth/sign-in" className="btn btn-quiet">
-                Sign in
-              </Link>
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-3">
+                <Link href="/auth/sign-up" className="btn">
+                  Create a free account
+                </Link>
+                <Link href="/auth/sign-in" className="btn btn-quiet">
+                  Sign in
+                </Link>
+              </div>
+              <p className="max-w-[44ch] text-sm text-ridge">
+                Every scan runs inside a free account. Create one and run your
+                free basic scan — capped, on cheap sources, no card required.
+              </p>
             </div>
           )}
         </section>
 
-        <aside aria-label="Example opportunity" className="space-y-5">
+        <aside aria-label="Example opportunity (static sample)" className="space-y-5">
           <div className="mx-auto w-full max-w-[22rem]">
             <Glyph features={example} size={352} labels animate />
           </div>
           <div className="space-y-2 border-t border-contour pt-4">
-            <p className="text-sm text-ridge">Example opportunity</p>
+            <p className="text-sm font-semibold uppercase tracking-wide text-ridge">
+              Example content
+            </p>
+            <p className="text-sm text-ridge">
+              A static sample of what a signed-in queue looks like — not a live scan.
+            </p>
             <p className="text-xl font-semibold leading-snug tracking-tight">
               Founder asks for a cheaper way to track brand mentions in AI answers
             </p>

@@ -1,0 +1,4 @@
+# Local secrets for the Grok X reliability experiment. Never commit.
+.env.local
+.env
+*.local
