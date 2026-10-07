@@ -25,6 +25,7 @@ Valid review findings that were deliberately not fixed in PR #34 (each needs a m
 - `budget_day`: a `budget_key` column and a composite primary key `(day, budget_key)` (S45). This replaces a primary key, an exception to the additive-only migration rule; acceptable because the table is a short-lived counter.
 - `monitor_pack`: `claim_token_hash`, `claim_expires_at` (S23).
 - `radar_scan`: `cache_key`, `source_status`, `indexable` (S21, S22).
+- `workspace`: `signup_source` for signup attribution (S23, S46).
 
 ## Superseded by the 7 Oct login-first decision
 - `lib/public/guard.ts` visitor counter is incremented before the budget reservation and refunded in a separate write on budget rejection (not atomic). Only matters if an anonymous cost-bearing route returns; then make it one atomic statement.

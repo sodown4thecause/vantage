@@ -13,7 +13,7 @@ A switcher pastes or uploads their old keyword list and gets a Monitor Pack in u
 
 ## Acceptance criteria
 - [ ] Parser tests with representative fixtures for each tool, including malformed lines, unicode, 5,000-keyword input (performance < 200 ms), and over-limit input rejected with a clear message.
-- [ ] Limits: saving a pack is bounded only by the S20 pack limits (25 queries, 25 negative keywords, 20 communities). The S05 `keywords` limit (Free 5, Pro 25) caps the **queries applied to the workspace profile** (`applyPackToWorkspace`, which maps `queries[]` to profile `topics`): the apply step lets the user pick up to the plan limit and shows a visible "x more keywords on Pro" notice for the rest; the unapplied queries stay in the saved pack.
+- [ ] Limits: saving a pack is bounded only by the S20 pack limits (25 queries, 25 negative keywords, 20 communities). The S05 `keywords` limit (Free 5, Pro 25) caps the **queries applied to the workspace profile** (`applyPackToWorkspace`, which maps `queries[]` to profile `topics`): saving stores all queries; applying applies the first N allowed by the plan limit (the user may reorder or pick which N) and shows a visible "x more keywords on a paid plan / with credits" notice for the rest, never silently dropping stored queries; the unapplied queries stay in the saved pack (same behavior as S20 `applyPackToWorkspace`).
 - [ ] Anonymous round trip: import, sign up, return to `/import` and the pending pack is restored and saved.
 - [ ] No keyword content logged.
 

@@ -9,7 +9,7 @@
 | Area | State |
 |---|---|
 | Cloudflare | Account `eb1a55a5…`. Worker `dontkillmyvibe` (production, exists), `vantage-staging` (deployed today at `https://vantage-staging.liam-wilson1990.workers.dev`). Cron triggers are **off** in both (`crons: []`). |
-| Staging secrets | `CRON_SECRET`, `NEON_AUTH_COOKIE_SECRET`, `NEON_AUTH_BASE_URL` set. **`DATABASE_URL` is not set on the Worker yet** (human step, slice S00). |
+| Staging secrets | `CRON_SECRET`, `NEON_AUTH_COOKIE_SECRET`, `NEON_AUTH_BASE_URL` and `DATABASE_URL` set on `vantage-staging` (H1 done 6 Oct). `/api/cron/tick` returns 200 (slice S00). |
 | Neon | Project `vantage` (`super-river-31229994`). Branches: `main` (production) and `staging` (`br-quiet-pine-b7ukjr3b`, child of main). Staging has 12 migrations (0000 to 0011) and Neon Auth works there (test sign-up succeeded). `main` has 11 migrations (0011 not applied). |
 | Code | Next.js 16 on OpenNext/Cloudflare, Drizzle over neon-http, Neon Auth. Phase 1 foundations committed on the PR branch (not yet on the default branch): `cost_event`, `provider_price`, `source_switch`, `shared_post`, `shared_sweep_run`, `lib/costs/ledger.ts`, `lib/sources/switch.ts`, switch check in `runCollector`. 135 tests pass. |
 | Known gaps | No GitHub collector; scheduled scan only runs `hn`/`rss`/`substack`; `runCollector` blocks every non-free lane and any type outside hn/rss/substack in production (see "free pilot" guard, `lib/collectors/run.ts`); no Stripe/credits; no public pages; no MCP/CLI. |
