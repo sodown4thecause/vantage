@@ -36,7 +36,7 @@ export const linkedinCollector: Collector = {
     // Scavio 0.16's LinkedIn searchPosts is retired; Google supplies public indexed snippets.
     for (let page = 0; page < maxPages && documents.size < limit; page++) {
       ctx.signal?.throwIfAborted();
-      const value = await runPaidCall({ context: { workspaceId: ctx.workspaceId, sourceKey: ctx.sourceId }, provider: "scavio", action: "linkedin_indexed_search", estimateUsd: unitCost, signal: ctx.signal }, async () => {
+      const data = await runPaidCall<IndexedPage>({ context: { workspaceId: ctx.workspaceId, sourceKey: ctx.sourceId }, provider: "scavio", action: "linkedin_indexed_search", estimateUsd: unitCost, signal: ctx.signal }, async () => {
         const { response, text } = await fetchPublicText("https://api.scavio.dev/api/v2/google", { method: "POST", signal: ctx.signal, headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ query: `site:linkedin.com/posts/ ${query}`, start: page * 10, include_html: false, resolve_ai_overview: false }), cache: "no-store" }, 512_000, fetch, 30_000);
         if (!response.ok) throw new Error(`Scavio indexed LinkedIn request failed (${response.status})`);
         let value: unknown;
@@ -46,11 +46,14 @@ export const linkedinCollector: Collector = {
         if (credits !== undefined && (typeof credits !== "number" || !Number.isFinite(credits) || credits < 0)) throw invalidResponse();
         const costUsd = credits === undefined ? undefined : credits * unitCost;
         if (costUsd !== undefined && !Number.isFinite(costUsd)) throw invalidResponse();
-        ctx.signal?.throwIfAborted();
-        return { value, costUsd };
+        // Preserve known credits while marking unusable responses as failed retrievals.
+        try {
+          ctx.signal?.throwIfAborted();
+          return { value: readPage(value), costUsd };
+        } catch (error) {
+          return { error: error instanceof Error ? error : invalidResponse(), costUsd };
+        }
       });
-      // Account valid returned credits before rejecting downstream result shapes.
-      const data = readPage(value);
       for (const item of data.organic_results.slice(0, 10)) {
         if (!item || typeof item.link !== "string" || !isPublicHttpUrl(item.link)) continue;
         const url = new URL(item.link);

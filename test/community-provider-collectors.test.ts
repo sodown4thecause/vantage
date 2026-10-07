@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ paid: vi.fn(), costs: [] as Array<number | undefined> }));
+const mocks = vi.hoisted(() => ({ paid: vi.fn(), costs: [] as Array<number | undefined>, outcomes: [] as boolean[] }));
 vi.mock("@/lib/providers/paid-call", () => ({ runPaidCall: mocks.paid }));
 
 import { alexandriaCollector } from "@/lib/collectors/alexandria";
@@ -11,9 +11,12 @@ const ctx = { workspaceId: "workspace", sourceId: "source", config: { query: "ag
 beforeEach(() => {
   mocks.paid.mockReset();
   mocks.costs = [];
+  mocks.outcomes = [];
   mocks.paid.mockImplementation(async (_options, work) => {
     const result = await work();
     mocks.costs.push(result.costUsd);
+    mocks.outcomes.push(result.error === undefined);
+    if (result.error !== undefined) throw result.error;
     return result.value;
   });
   vi.stubEnv("FIRECRAWL_API_KEY", "test-key");
@@ -183,12 +186,14 @@ describe("paid developer discovery", () => {
   });
 
   it.each([
+    { organic_results: [], success: false, credits_used: 3 },
     { organic_results: "not an array", credits_used: 3 },
     { organic_results: [{ link: "https://www.linkedin.com/posts/builder_agent-activity-1234567890123456789-AbCd", title: { text: "Agent" } }], credits_used: 3 },
-  ])("returns real credits to the paid gate before rejecting downstream results: %j", async value => {
+  ])("records failed retrieval with real credits before rejecting downstream results: %j", async value => {
     vi.stubGlobal("fetch", async () => Response.json(value));
     await expect(linkedinCollector.run(ctx)).rejects.toThrow(/^Invalid Scavio indexed search response\.$/);
     expect(mocks.costs).toEqual([0.012]);
+    expect(mocks.outcomes).toEqual([false]);
   });
 
   it("supports omitted optional fields and relative date text without inventing publication dates", async () => {

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   date,
@@ -348,7 +349,16 @@ export const opportunityDraft = pgTable("opportunity_draft", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
-});
+}, (table) => [
+  index("opportunity_draft_scope_target_created_idx").on(
+    table.workspaceId, table.opportunityId,
+    sql`(${table.quality}->>'targetDocumentId')`, table.createdAt.desc(),
+  ),
+  // Supports the legacy fallback and existing global newest-draft lookup.
+  index("opportunity_draft_scope_created_idx").on(
+    table.workspaceId, table.opportunityId, table.createdAt.desc(),
+  ),
+]);
 
 export type Opportunity = typeof opportunity.$inferSelect;
 export type NewOpportunity = typeof opportunity.$inferInsert;

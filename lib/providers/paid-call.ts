@@ -14,10 +14,13 @@ export function isPaidCallDenied(error: unknown): error is PaidCallDeniedError {
   return error instanceof PaidCallDeniedError;
 }
 
+type PaidResult<T> = { value: T; costUsd?: number; error?: never }
+  | { error: Error; costUsd?: number; value?: never };
+
 /** One reservation and ledger row per outbound paid attempt; ambiguous failures stay charged. */
 export async function runPaidCall<T>(meta: {
   context: CostContext; provider: string; action: string; estimateUsd: number; signal?: AbortSignal;
-}, work: () => Promise<{ value: T; costUsd?: number }>): Promise<T> {
+}, work: () => Promise<PaidResult<T>>): Promise<T> {
   meta.signal?.throwIfAborted();
   if (process.env.VANTAGE_PAID_PROVIDERS_ENABLED !== "true") {
     throw new PaidCallDeniedError("provider_disabled", "Paid providers are disabled.");
@@ -65,7 +68,7 @@ export async function runPaidCall<T>(meta: {
       if (settled.length !== 1) throw new Error("Provider reservation was not settled.");
     } catch { throw new PaidCallDeniedError("budget_exhausted", "Provider cost reconciliation is pending; further paid calls are blocked."); }
   };
-  let result: { value: T; costUsd?: number };
+  let result: PaidResult<T>;
   let started = false;
   try {
     meta.signal?.throwIfAborted();
@@ -82,7 +85,8 @@ export async function runPaidCall<T>(meta: {
     await settle(estimate);
     throw new Error("Provider returned invalid cost.");
   }
-  if (!(await record(cost, true))) throw new PaidCallDeniedError("access_pending", "Provider cost recording is pending; further paid calls are blocked.");
+  if (!(await record(cost, result.error === undefined))) throw new PaidCallDeniedError("access_pending", "Provider cost recording is pending; further paid calls are blocked.");
   await settle(cost);
+  if (result.error !== undefined) throw result.error;
   return result.value;
 }

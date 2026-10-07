@@ -56,6 +56,36 @@ describe("paid provider reservations", () => {
     expect(mocks.execute).toHaveBeenCalledTimes(2);
   });
 
+  it.each([0.25, 0])("settles known failed retrieval cost %s and rethrows its error", async costUsd => {
+    const error = new Error("Unusable provider response");
+    await expect(runPaidCall<string>(meta, async () => ({ error, costUsd }))).rejects.toBe(error);
+    expect(mocks.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      unitCostUsd: costUsd, ok: false, chargedOnFailure: true,
+    }));
+    expect(mocks.execute).toHaveBeenCalledTimes(2);
+    const settlement = new PgDialect().sqlToQuery(mocks.execute.mock.calls[1][0]);
+    expect(settlement.sql).toContain("reservation_ref = null");
+    expect(settlement.params).toContain((costUsd - meta.estimateUsd).toFixed(6));
+  });
+
+  it("retains the reservation if known failed retrieval usage cannot be recorded", async () => {
+    mocks.record.mockResolvedValue(false);
+    await expect(runPaidCall<string>(meta, async () => ({
+      error: new Error("Unusable provider response"), costUsd: 0.25,
+    }))).rejects.toBeInstanceOf(PaidCallDeniedError);
+    expect(mocks.record).toHaveBeenCalledWith(expect.objectContaining({ unitCostUsd: 0.25, ok: false }));
+    expect(mocks.execute).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed if known failed retrieval settlement loses its reservation", async () => {
+    mocks.execute.mockResolvedValueOnce([{ day: "2026-10-07" }]).mockResolvedValueOnce([]);
+    await expect(runPaidCall<string>(meta, async () => ({
+      error: new Error("Unusable provider response"), costUsd: 0.25,
+    }))).rejects.toBeInstanceOf(PaidCallDeniedError);
+    expect(mocks.record).toHaveBeenCalledWith(expect.objectContaining({ unitCostUsd: 0.25, ok: false }));
+    expect(mocks.execute).toHaveBeenCalledTimes(2);
+  });
+
   it("rejects a settlement that no longer matches its reserved row", async () => {
     mocks.execute.mockResolvedValueOnce([{ day: "2026-10-07" }]).mockResolvedValueOnce([]);
     const work = vi.fn(async () => ({ value: "result", costUsd: 0.04 }));
