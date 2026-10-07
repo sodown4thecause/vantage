@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 /** Absolute origin for sitemap entries. Set NEXT_PUBLIC_SITE_URL per environment. */
 function siteUrl(): string {
-  return (process.env.NEXT_PUBLIC_SITE_URL || "https://dontkillmyvibe.liam-wilson1990.workers.dev").replace(/\/+$/, "");
+  return (process.env.NEXT_PUBLIC_SITE_URL || "https://contextfor.dev").replace(/\/+$/, "");
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
