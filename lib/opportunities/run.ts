@@ -24,6 +24,7 @@ import {
   type Opportunity,
   type DocumentRecord,
 } from "@/lib/db/schema";
+import { consume, release } from "@/lib/plans/limits";
 import { resolveLearningConfig } from "@/lib/learning/config";
 import { formatLearningReasons, rankWithPreferences } from "@/lib/learning/rank";
 import { getActivePreferenceModel } from "@/lib/learning/repository";
@@ -167,6 +168,8 @@ export async function buildOpportunities(opts: {
     .where(and(eq(opportunity.workspaceId, opts.workspaceId),
       clusters.size ? notInArray(opportunity.clusterKey, [...clusters.keys()]) : undefined));
   let upserted = 0;
+  let budgetLimited = 0;
+  let leadCapReached = false;
 
   for (const [clusterKey, docs] of clusters) {
     opts.signal?.throwIfAborted();
@@ -218,6 +221,23 @@ export async function buildOpportunities(opts: {
       )
       .limit(1);
 
+    // A new lead counts against the plan's daily scored-lead cap. Existing leads keep
+    // refreshing so a capped workspace never loses what it already has.
+    const spendAt = new Date();
+    if (!existing[0]) {
+      // Once the cap says no it cannot rise during this scan, so skip the queries for later new clusters.
+      if (leadCapReached) {
+        budgetLimited += 1;
+        continue;
+      }
+      const spend = await consume(opts.workspaceId, "scored_leads_per_day", 1, spendAt);
+      if (!spend.allowed) {
+        leadCapReached = true;
+        budgetLimited += 1;
+        continue;
+      }
+    }
+
     let opportunityId: string;
     const now = new Date();
     if (existing[0]) {
@@ -241,24 +261,32 @@ export async function buildOpportunities(opts: {
         .returning({ id: opportunity.id });
       opportunityId = updated[0]?.id ?? existing[0].id;
     } else {
-      const inserted = await db
-        .insert(opportunity)
-        .values({
-          workspaceId: opts.workspaceId,
-          status,
-          title,
-          summary,
-          whyItMatters,
-          whyNow,
-          recommendedAction: action,
-          confidence: features.modelConfidence,
-          urgency: features.timing,
-          score,
-          coverage: coverageLabel,
-          features,
-          clusterKey,
-        })
-        .returning({ id: opportunity.id });
+      let inserted: Array<{ id: string }>;
+      try {
+        inserted = await db
+          .insert(opportunity)
+          .values({
+            workspaceId: opts.workspaceId,
+            status,
+            title,
+            summary,
+            whyItMatters,
+            whyNow,
+            recommendedAction: action,
+            confidence: features.modelConfidence,
+            urgency: features.timing,
+            score,
+            coverage: coverageLabel,
+            features,
+            clusterKey,
+          })
+          .returning({ id: opportunity.id });
+      } catch (err) {
+        // The new lead was never created, so do not charge the daily quota for it (this also covers a
+        // concurrent build winning the unique cluster constraint).
+        await release(opts.workspaceId, "scored_leads_per_day", 1, spendAt);
+        throw err;
+      }
       opportunityId = inserted[0]!.id;
     }
 
@@ -292,6 +320,7 @@ export async function buildOpportunities(opts: {
     clusters: clusters.size,
     upserted,
     top,
+    ...(budgetLimited > 0 ? { coverage: "budget_limited" as const, budgetLimited } : {}),
   };
 }
 

@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { SafeLink } from "@/components/safe-link";
+import { Shell } from "@/components/shell";
 import { authorizeWorkspace } from "@/lib/auth/workspace";
 import { listReviewQueue } from "@/lib/pipeline/run";
 
@@ -14,16 +16,18 @@ export default async function ReviewPage({
 
   if (!workspaceId) {
     return (
-      <main className="mx-auto max-w-3xl space-y-4 p-8">
+      <Shell>
+        <div className="space-y-4">
         <h1 className="text-2xl font-semibold">Review queue</h1>
         <p className="text-zinc-600">
           Pass <code className="rounded bg-zinc-100 px-1">?workspaceId=…</code>{" "}
           to load leads.
         </p>
-        <Link href="/" className="text-sm underline">
+        <Link href="/" className="link">
           Home
         </Link>
-      </main>
+        </div>
+      </Shell>
     );
   }
 
@@ -45,17 +49,10 @@ export default async function ReviewPage({
   }
 
   return (
-    <main className="mx-auto max-w-4xl space-y-6 p-8">
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <p className="text-sm uppercase tracking-wide text-zinc-500">
-            Workspace {workspaceId}
-          </p>
-          <h1 className="text-2xl font-semibold">Review queue</h1>
-        </div>
-        <Link href="/" className="text-sm underline">
-          Home
-        </Link>
+    <Shell workspaceId={workspaceId} wide>
+      <div className="mb-8">
+        <h1 className="display text-4xl">Review queue</h1>
+        <p className="text-sm text-ridge">Workspace {workspaceId}</p>
       </div>
 
       {error ? (
@@ -84,17 +81,12 @@ export default async function ReviewPage({
               <span>score {l.score}</span>
               <span>conf {l.confidence}</span>
               <span>{d.platform}</span>
-              <span className="uppercase">{l.status}</span>
+              <span>{l.status}</span>
             </div>
             <h2 className="mt-2 text-lg font-medium">
-              <a
-                href={d.urlCanonical}
-                target="_blank"
-                rel="noreferrer"
-                className="hover:underline"
-              >
+              <SafeLink href={d.urlCanonical} className="hover:underline">
                 {d.title || d.urlCanonical}
-              </a>
+              </SafeLink>
             </h2>
             <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
               {l.reason}
@@ -105,6 +97,6 @@ export default async function ReviewPage({
           </li>
         ))}
       </ul>
-    </main>
+    </Shell>
   );
 }

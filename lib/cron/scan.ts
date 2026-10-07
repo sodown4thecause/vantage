@@ -3,12 +3,47 @@ import { mapWithConcurrency } from "@/lib/async/map-with-concurrency";
 import { collectorsByType } from "@/lib/collectors/registry";
 import { runCollector } from "@/lib/collectors/run";
 import { getDb } from "@/lib/db/client";
-import { source } from "@/lib/db/schema";
+import { source, workspace } from "@/lib/db/schema";
+import { getLimits, getWorkspacePlan, isScanDue } from "@/lib/plans/limits";
 import { buildOpportunities } from "@/lib/opportunities/run";
 import { getLatestMonitoringProfile } from "@/lib/profile/repository";
 import { withWorkspaceScanLease } from "@/lib/cron/lease";
 
-export async function scanWorkspace(workspaceId: string, deadline?: AbortSignal) {
+/** Source types a scheduled scan actually runs; cadence is measured against these only. */
+const SCHEDULED_SOURCE_TYPES = ["hn", "rss", "substack"] as const;
+
+/**
+ * Scheduled scans honour the plan's `scan_interval_hours` (Free: daily, Pro: 3 hours).
+ * Returns the skip reason when the workspace is not due yet, otherwise null.
+ */
+async function scanNotDueReason(workspaceId: string, now = new Date()): Promise<string | null> {
+  const plan = await getWorkspacePlan(workspaceId);
+  const { scan_interval_hours: intervalHours } = await getLimits(plan);
+  const rows = await getDb()
+    .select({ last: sql<Date | string | null>`max(${source.lastPolledAt})` })
+    .from(source)
+    .where(
+      and(
+        eq(source.workspaceId, workspaceId),
+        eq(source.lane, "free"),
+        ne(source.health, "paused"),
+        inArray(source.type, [...SCHEDULED_SOURCE_TYPES]),
+      ),
+    );
+  const raw = Array.isArray(rows) ? rows[0]?.last : null;
+  const last = raw ? new Date(raw) : null;
+  return isScanDue(last, now, intervalHours) ? null : `${plan} plan scans at most every ${intervalHours} hours`;
+}
+
+export async function scanWorkspace(workspaceId: string, deadline?: AbortSignal, options: { enforceCadence?: boolean } = {}) {
+  if (options.enforceCadence) {
+    const reason = await scanNotDueReason(workspaceId);
+    if (reason) {
+      // Move the workspace to the back of the tick rotation so not-due workspaces cannot starve due ones.
+      await getDb().update(workspace).set({ updatedAt: new Date() }).where(eq(workspace.id, workspaceId));
+      return { collectorResults: [], opportunityResults: [{ workspaceId, skipped: true, reason }] };
+    }
+  }
   return withWorkspaceScanLease(workspaceId, async (leaseSignal) => {
     const signal = deadline ? AbortSignal.any([deadline, leaseSignal]) : leaseSignal;
     const opportunityResults = [];
@@ -20,7 +55,7 @@ export async function scanWorkspace(workspaceId: string, deadline?: AbortSignal)
     const sources = await db
       .select()
       .from(source)
-      .where(and(eq(source.workspaceId, workspaceId), eq(source.lane, "free"), ne(source.health, "paused"), inArray(source.type, ["hn", "rss", "substack"])))
+      .where(and(eq(source.workspaceId, workspaceId), eq(source.lane, "free"), ne(source.health, "paused"), inArray(source.type, [...SCHEDULED_SOURCE_TYPES])))
       .orderBy(sql`${source.lastPolledAt} asc nulls first`, source.id).limit(9);
 
     if (sources.length > 8) collectorResults.push({ workspaceId, skipped: true, reason: "Additional eligible sources deferred to the next scan." });
@@ -46,6 +81,15 @@ export async function scanWorkspace(workspaceId: string, deadline?: AbortSignal)
             sourceId: src.id,
             signal,
           });
+          if (result.switchedOff) {
+            return {
+              workspaceId: workspaceId,
+              sourceId: src.id,
+              type: src.type,
+              skipped: true,
+              reason: "source paused",
+            };
+          }
           const { error, ...publicResult } = result;
           return {
             workspaceId: workspaceId,

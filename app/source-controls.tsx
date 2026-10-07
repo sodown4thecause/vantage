@@ -6,7 +6,7 @@ import { addFeed, scanNow } from "@/lib/sources/actions";
 export function ScanButton({ workspaceId }: { workspaceId: string }) {
   const [state, action, pending] = useActionState(scanNow.bind(null, workspaceId), {});
   return <div>
-    <form action={action}><button disabled={pending} className="rounded bg-zinc-900 px-4 py-2 text-white disabled:opacity-60">{pending ? "Scanning…" : "Scan now"}</button></form>
+    <form action={action}><button disabled={pending} className="btn disabled:opacity-60">{pending ? "Scanning…" : "Scan now"}</button></form>
     {state.error && <p role="alert" className="mt-2 text-sm text-red-600">{state.error}</p>}
     {state.message && <p role="status" className="mt-2 text-sm">{state.message}</p>}
   </div>;

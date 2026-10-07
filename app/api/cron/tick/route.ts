@@ -1,6 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
+import { rollupRecent } from "@/lib/costs/rollup";
 import { scanWorkspace } from "@/lib/cron/scan";
 import { isCronAuthorized } from "@/lib/cron/authorize";
 import { getDb } from "@/lib/db/client";
@@ -43,7 +44,7 @@ export async function GET(req: Request) {
         continue;
       }
       try {
-        const result = await scanWorkspace(ws.id, deadline);
+        const result = await scanWorkspace(ws.id, deadline, { enforceCadence: !workspaceId });
         collectorResults.push(...result.collectorResults);
         opportunityResults.push(...result.opportunityResults);
       } catch (error) {
@@ -52,6 +53,9 @@ export async function GET(req: Request) {
         opportunityResults.push(busy ? { workspaceId: ws.id, skipped: true, reason: "scan already running" } : { workspaceId: ws.id, error: "workspace scan failed" });
       }
     }
+
+    // Best effort: cost rollups must never fail the tick (rollupRecent swallows errors).
+    await rollupRecent();
 
     return NextResponse.json({
       ok: ![...collectorResults, ...opportunityResults].some((result) => "error" in result),

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
 import { listOpportunityQueue } from "@/lib/opportunities/run";
 import { ScanButton } from "@/app/source-controls";
+import { Glyph } from "@/components/glyph";
+import { PageHead, Shell } from "@/components/shell";
 
 export default async function OpportunityQueuePage({
   searchParams,
@@ -18,8 +20,8 @@ export default async function OpportunityQueuePage({
   const authorization = await authorizeWorkspace(workspaceId);
   if (!authorization.ok) {
     return (
-      <Shell>
-        <p className="text-sm text-red-600" role="alert">
+      <Shell workspaceId={workspaceId} active="queue">
+        <p className="text-stop" role="alert">
           Unable to load this opportunity queue.
         </p>
       </Shell>
@@ -29,85 +31,73 @@ export default async function OpportunityQueuePage({
   const cards = await listOpportunityQueue({ workspaceId, limit: 5 });
 
   return (
-    <Shell>
-      <div className="space-y-2">
-        <p className="text-sm font-medium uppercase tracking-wide text-zinc-500">
-          Slice 3 · Queue
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Opportunity Queue
-        </h1>
-        <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-          At most five evidence-backed opportunities. Empty is a valid state.
-          New scans refresh the queue automatically.
-        </p>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-4 text-sm">
-        <ScanButton workspaceId={workspaceId} />
-        <Link href={`/settings/sources?workspaceId=${encodeURIComponent(workspaceId)}`} className="underline">Sources &amp; Coverage</Link>
-        <Link href={`/onboarding?workspaceId=${encodeURIComponent(workspaceId)}`} className="underline">Edit monitoring profile</Link>
+    <Shell workspaceId={workspaceId} active="queue" wide>
+      <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+        <PageHead
+          title="Today's opportunities"
+          lede="Up to five conversations worth joining, each backed by posts you can read."
+        />
+        <div className="mb-8">
+          <ScanButton workspaceId={workspaceId} />
+        </div>
       </div>
 
       {cards.length === 0 ? (
-        <p className="text-sm text-zinc-500" data-testid="queue-empty">
-          No strong opportunities right now.
-        </p>
+        <div className="max-w-xl space-y-2 border-t border-contour pt-6" data-testid="queue-empty">
+          <p className="text-xl font-semibold tracking-tight">Nothing strong right now.</p>
+          <p className="text-ridge">
+            Scan your sources again, or{" "}
+            <Link href={`/onboarding?workspaceId=${encodeURIComponent(workspaceId)}`} className="link">
+              refine your monitoring profile
+            </Link>{" "}
+            so Vantage knows what to look for.
+          </p>
+        </div>
       ) : (
-        <ul className="space-y-3" data-testid="queue-list">
+        <ol className="border-t border-contour" data-testid="queue-list">
           {cards.map((c) => (
             <li
               key={c.id}
-              className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800"
+              className="grid gap-x-8 gap-y-4 border-b border-contour py-8 sm:grid-cols-[7rem_1fr]"
             >
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
+              <div className="flex flex-col items-start gap-1">
+                <Glyph features={c.features} size={112} />
+                <p className="text-sm text-ridge">
+                  Score <span className="font-bold text-ink">{c.score.toFixed(2)}</span>
+                </p>
+              </div>
+              <div className="min-w-0 space-y-3">
+                <div className="space-y-1.5">
                   <Link
                     href={`/opportunities/${c.id}?workspaceId=${encodeURIComponent(workspaceId)}`}
-                    className="font-medium text-zinc-950 underline-offset-2 hover:underline dark:text-zinc-50"
+                    className="link block text-2xl font-semibold leading-tight tracking-tight"
                   >
                     {c.title}
                   </Link>
-                  <p className="mt-1 text-xs text-zinc-500">
-                    {c.status} · score {c.score.toFixed(2)} · {c.evidenceCount}{" "}
-                    evidence · conf {c.confidence.toFixed(2)}
-                  </p>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ridge">
+                    <span className="rounded-full px-2.5 py-0.5 font-medium capitalize text-ink shadow-[inset_0_0_0_1px_var(--contour)]">
+                      {c.status}
+                    </span>
+                    <span>{c.evidenceCount} {c.evidenceCount === 1 ? "post" : "posts"} as evidence</span>
+                    <span>Confidence {c.confidence.toFixed(2)}</span>
+                  </div>
                 </div>
-                <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs capitalize dark:bg-zinc-900">
-                  {c.status}
-                </span>
+                <p className="max-w-[64ch] text-[1.0625rem] leading-snug">{c.whyItMatters}</p>
+                <dl className="grid max-w-[64ch] gap-x-6 gap-y-2 text-[0.9375rem] sm:grid-cols-2">
+                  <div>
+                    <dt className="font-semibold">Why now</dt>
+                    <dd className="text-ridge">{c.whyNow}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold">Next step</dt>
+                    <dd className="text-ridge">{c.recommendedAction}</dd>
+                  </div>
+                </dl>
               </div>
-              <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">
-                {c.whyItMatters}
-              </p>
-              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                <span className="font-medium">Why now:</span> {c.whyNow}
-              </p>
-              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                <span className="font-medium">Next:</span>{" "}
-                {c.recommendedAction}
-              </p>
-              <p className="mt-2 text-xs text-zinc-500">
-                fit {c.features.fit.toFixed(2)} · intent{" "}
-                {c.features.intent.toFixed(2)} · evidence{" "}
-                {c.features.evidence.toFixed(2)} · momentum{" "}
-                {c.features.momentum.toFixed(2)} · timing{" "}
-                {c.features.timing.toFixed(2)}
-              </p>
             </li>
           ))}
-        </ul>
+        </ol>
       )}
     </Shell>
-  );
-}
-
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex flex-1 flex-col items-center bg-zinc-50 px-6 py-16 font-sans dark:bg-black">
-      <main className="w-full max-w-2xl space-y-8 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        {children}
-      </main>
-    </div>
   );
 }

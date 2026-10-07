@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 
+import { PageHead, Shell } from "@/components/shell";
+
 import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
 
 import { OnboardingForm } from "./onboarding-form";
@@ -18,7 +20,7 @@ export default async function OnboardingPage({
   const authorization = await authorizeWorkspace(workspaceId);
   if (!authorization.ok) {
     return (
-      <Shell>
+      <Shell workspaceId={workspaceId} active="profile">
         <p className="text-sm text-red-600 dark:text-red-400" role="alert">
           Unable to load onboarding for this workspace.
         </p>
@@ -27,35 +29,13 @@ export default async function OnboardingPage({
   }
 
   return (
-    <Shell>
-      <div className="space-y-2">
-        <p className="text-sm font-medium uppercase tracking-wide text-zinc-500">
-          Slice 1 · Onboarding
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
-          Monitoring profile
-        </h1>
-        <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-          Describe your product once. Vantage stores a versioned profile used by
-          ranking and drafting. If the product URL cannot be fetched, mark it
-          inaccessible and paste material manually.
-        </p>
-      </div>
+    <Shell workspaceId={workspaceId} active="profile">
+      <PageHead title={"Monitoring profile"} lede={"Describe your product once. Vantage stores a versioned profile used by ranking and drafting. If the product URL cannot be fetched, mark it inaccessible and paste material manually."} />
       <OnboardingForm workspaceId={workspaceId} />
-      <nav className="flex gap-4 text-sm">
+      <nav className="mt-8 flex gap-4 text-sm">
         <Link href={`/queue?workspaceId=${encodeURIComponent(workspaceId)}`} className="underline">Opportunity queue</Link>
         <Link href={`/settings/sources?workspaceId=${encodeURIComponent(workspaceId)}`} className="underline">Sources &amp; Coverage</Link>
       </nav>
     </Shell>
-  );
-}
-
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex flex-1 flex-col items-center bg-zinc-50 px-6 py-16 font-sans dark:bg-black">
-      <main className="w-full max-w-2xl space-y-8 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        {children}
-      </main>
-    </div>
   );
 }

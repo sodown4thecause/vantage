@@ -12,6 +12,7 @@ import type {
 } from "@/lib/collectors/types";
 import { getDb } from "@/lib/db/client";
 import { document, source } from "@/lib/db/schema";
+import { getSourceSwitch } from "@/lib/sources/switch";
 
 export type RunCollectorInput = {
   collector: Collector;
@@ -28,6 +29,8 @@ export type RunCollectorOutput = {
   nextState?: CollectorResult["nextState"];
   receipt?: SourceRunReceipt;
   error?: string;
+  /** Set when a global source switch stopped the run; nothing was fetched. */
+  switchedOff?: { state: string; reason: string };
 };
 
 /**
@@ -62,6 +65,17 @@ export async function runCollector(
 
   if (row.health === "paused") {
     return { sourceId: row.id, collector: input.collector.name, inserted: 0, skipped: 0 };
+  }
+
+  const switchDecision = await getSourceSwitch(row.type);
+  if (!switchDecision.enabled) {
+    return {
+      sourceId: row.id,
+      collector: input.collector.name,
+      inserted: 0,
+      skipped: 0,
+      switchedOff: { state: switchDecision.state, reason: switchDecision.reason },
+    };
   }
 
   let inserted = 0;

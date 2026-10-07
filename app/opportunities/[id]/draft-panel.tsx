@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { SafeLink } from "@/components/safe-link";
 
 type Draft = {
   id: string;
@@ -226,9 +227,9 @@ export function DraftPanel({
             <ul className="mt-1 space-y-1 text-xs">
               {draft.citations.map((c) => (
                 <li key={c.url}>
-                  <a href={c.url} className="underline" target="_blank" rel="noreferrer">
+                  <SafeLink href={c.url} className="underline">
                     {c.label}
-                  </a>
+                  </SafeLink>
                 </li>
               ))}
             </ul>

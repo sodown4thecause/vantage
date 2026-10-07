@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 
+import { PageHead, Shell } from "@/components/shell";
+
 import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
 import { listWorkspaceSources } from "@/lib/sources/list";
 import { FeedForm } from "@/app/source-controls";
@@ -18,7 +20,7 @@ export default async function SourcesCoveragePage({
   const authorization = await authorizeWorkspace(workspaceId);
   if (!authorization.ok) {
     return (
-      <Shell>
+      <Shell workspaceId={workspaceId} active="sources">
         <p className="text-sm text-red-600 dark:text-red-400" role="alert">
           Unable to load sources for this workspace.
         </p>
@@ -29,19 +31,8 @@ export default async function SourcesCoveragePage({
   const sources = await listWorkspaceSources(workspaceId);
 
   return (
-    <Shell>
-      <div className="space-y-2">
-        <p className="text-sm font-medium uppercase tracking-wide text-zinc-500">
-          Settings · secondary
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
-          Sources &amp; Coverage
-        </h1>
-        <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-          Last scan, coverage status, result counts, and provider provenance.
-          Fixture-only runs are marked degraded — never as healthy live coverage.
-        </p>
-      </div>
+    <Shell workspaceId={workspaceId} active="sources">
+      <PageHead title={"Sources & Coverage"} lede={"Last scan, coverage status, result counts, and provider provenance. Fixture-only runs are marked degraded, never as healthy live coverage."} />
 
       <FeedForm workspaceId={workspaceId} />
 
@@ -52,8 +43,13 @@ export default async function SourcesCoveragePage({
       ) : (
         <ul className="space-y-3" data-testid="sources-list">
           {sources.map((s) => {
-            const coverage = s.health === "paused" ? "paused" : s.coverage ?? "awaiting_scan";
-            const reason = s.lastRun?.reason ?? "No scan receipt yet.";
+            const coverage =
+              s.displayCoverage === "paused_global"
+                ? "paused_global"
+                : s.health === "paused"
+                  ? "paused"
+                  : s.coverage ?? "awaiting_scan";
+            const reason = s.pausedLabel ?? s.lastRun?.reason ?? "No scan receipt yet.";
             const resultCount = s.lastRun?.resultCount;
             return (
               <li
@@ -75,7 +71,7 @@ export default async function SourcesCoveragePage({
                     className={badgeClass(coverage)}
                     data-testid="source-coverage"
                   >
-                    {coverage}
+                    {coverage === "paused_global" ? "paused" : coverage}
                   </span>
                 </div>
                 <dl className="mt-3 grid gap-2 text-xs text-zinc-600 dark:text-zinc-400 sm:grid-cols-2">
@@ -126,6 +122,12 @@ export default async function SourcesCoveragePage({
           Onboarding
         </Link>
         <Link
+          href={`/settings/plan?workspaceId=${encodeURIComponent(workspaceId)}`}
+          className="font-medium text-zinc-900 underline dark:text-zinc-50"
+        >
+          Plan &amp; usage
+        </Link>
+        <Link
           href={`/review?workspaceId=${encodeURIComponent(workspaceId)}`}
           className="font-medium text-zinc-900 underline dark:text-zinc-50"
         >
@@ -147,6 +149,7 @@ function badgeClass(coverage: string): string {
       return `${base} bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-100`;
     case "access_pending":
     case "paused":
+    case "paused_global":
       return `${base} bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-100`;
     case "blocked":
     case "failed":
@@ -155,14 +158,4 @@ function badgeClass(coverage: string): string {
     default:
       return `${base} bg-zinc-100 text-zinc-800 dark:bg-zinc-900 dark:text-zinc-200`;
   }
-}
-
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex flex-1 flex-col items-center bg-zinc-50 px-6 py-16 font-sans dark:bg-black">
-      <main className="w-full max-w-2xl space-y-8 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        {children}
-      </main>
-    </div>
-  );
 }

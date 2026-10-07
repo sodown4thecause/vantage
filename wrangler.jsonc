@@ -21,7 +21,7 @@
 		"staging": {
 			"name": "vantage-staging",
 			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "vantage-staging" }],
-			"triggers": { "crons": [] }
+			"triggers": { "crons": ["0 */3 * * *"] }
 		},
 		"production": {
 			"name": "dontkillmyvibe",

@@ -1,10 +1,13 @@
 import {
   boolean,
+  date,
+  index,
   integer,
   jsonb,
   numeric,
   pgEnum,
   pgTable,
+  primaryKey,
   real,
   text,
   timestamp,
@@ -15,7 +18,7 @@ import {
 /**
  * M1 subset of the Vantage data model (§9).
  * Deferred to later milestones: identity, draft, interaction,
- * competitor_change, cost_event, monitor_pack.
+ * competitor_change, monitor_pack.
  */
 
 export const sourceTypeEnum = pgEnum("source_type", [
@@ -443,3 +446,226 @@ export const workspacePreferenceModel = pgTable(
 export type WorkspacePreferenceModel = typeof workspacePreferenceModel.$inferSelect;
 export type NewWorkspacePreferenceModel = typeof workspacePreferenceModel.$inferInsert;
 
+
+/**
+ * Phase 1 foundations (docs/superpowers/plans/2026-10-06-five-changes-on-cloudflare.md §4).
+ * Cost ledger, per-source kill switches and cross-workspace shared posts.
+ */
+
+export const sourceSwitchStateValues = ["on", "paused", "blocked"] as const;
+export type SourceSwitchState = (typeof sourceSwitchStateValues)[number];
+
+/** Global on/off per source key (a `source.type` such as "reddit"). No row means "on". */
+export const sourceSwitch = pgTable("source_switch", {
+  sourceKey: text("source_key").primaryKey(),
+  state: text("state").$type<SourceSwitchState>().notNull().default("on"),
+  reason: text("reason").notNull().default(""),
+  changedAt: timestamp("changed_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  changedBy: text("changed_by"),
+});
+
+/** Append-only audit trail of every source_switch change. */
+export const sourceSwitchLog = pgTable("source_switch_log", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sourceKey: text("source_key").notNull(),
+  fromState: text("from_state").$type<SourceSwitchState>().notNull(),
+  toState: text("to_state").$type<SourceSwitchState>().notNull(),
+  reason: text("reason").notNull().default(""),
+  changedBy: text("changed_by"),
+  changedAt: timestamp("changed_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+/** Editable provider prices so the calculator and ledger need no deploy to change. */
+export const providerPrice = pgTable(
+  "provider_price",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    provider: text("provider").notNull(),
+    action: text("action").notNull(),
+    unitCostUsd: numeric("unit_cost_usd", { precision: 12, scale: 6 }).notNull(),
+    unit: text("unit").notNull().default("request"),
+    effectiveFrom: timestamp("effective_from", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    notes: text("notes").notNull().default(""),
+  },
+  (table) => [
+    uniqueIndex("provider_price_uidx").on(
+      table.provider,
+      table.action,
+      table.effectiveFrom,
+    ),
+  ],
+);
+
+export const costBillableValues = ["platform", "workspace_credits"] as const;
+export type CostBillable = (typeof costBillableValues)[number];
+
+/** One row per outbound provider call. Feeds budgets, credits and the public ledger. */
+export const costEvent = pgTable(
+  "cost_event",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    ts: timestamp("ts", { withTimezone: true }).defaultNow().notNull(),
+    workspaceId: uuid("workspace_id").references(() => workspace.id, {
+      onDelete: "set null",
+    }),
+    sourceKey: text("source_key").notNull(),
+    provider: text("provider").notNull(),
+    action: text("action").notNull(),
+    units: numeric("units", { precision: 14, scale: 4 }).notNull().default("1"),
+    unitCostUsd: numeric("unit_cost_usd", { precision: 12, scale: 6 })
+      .notNull()
+      .default("0"),
+    costUsd: numeric("cost_usd", { precision: 12, scale: 6 })
+      .notNull()
+      .default("0"),
+    billableTo: text("billable_to")
+      .$type<CostBillable>()
+      .notNull()
+      .default("platform"),
+    requestRef: text("request_ref"),
+    ok: boolean("ok").notNull().default(true),
+  },
+  (table) => [
+    index("cost_event_ts_idx").on(table.ts),
+    index("cost_event_workspace_ts_idx").on(table.workspaceId, table.ts),
+  ],
+);
+
+/** Daily rollup of cost_event: what each source/provider/action cost per UTC day. */
+export const costDaily = pgTable(
+  "cost_daily",
+  {
+    day: date("day").notNull(),
+    sourceKey: text("source_key").notNull(),
+    provider: text("provider").notNull(),
+    action: text("action").notNull(),
+    calls: integer("calls").notNull().default(0),
+    costUsd: numeric("cost_usd", { precision: 12, scale: 6 })
+      .notNull()
+      .default("0"),
+    failed: integer("failed").notNull().default(0),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.day, table.sourceKey, table.provider, table.action],
+    }),
+  ],
+);
+
+/** Public, workspace-independent posts (e.g. the shared Reddit sweep). */
+export const sharedPost = pgTable(
+  "shared_post",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    platform: text("platform").$type<SourcePlatform>().notNull(),
+    externalId: text("external_id").notNull(),
+    url: text("url").notNull(),
+    author: text("author"),
+    community: text("community"),
+    title: text("title"),
+    body: text("body").notNull().default(""),
+    postedAt: timestamp("posted_at", { withTimezone: true }),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    contentHash: text("content_hash").notNull(),
+    provider: text("provider").notNull(),
+  },
+  (table) => [
+    uniqueIndex("shared_post_platform_external_uidx").on(
+      table.platform,
+      table.externalId,
+    ),
+    index("shared_post_community_posted_idx").on(
+      table.platform,
+      table.community,
+      table.postedAt,
+    ),
+  ],
+);
+
+export const sweepStateValues = ["running", "ok", "partial", "failed"] as const;
+export type SweepState = (typeof sweepStateValues)[number];
+
+export const sharedSweepRun = pgTable("shared_sweep_run", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  platform: text("platform").$type<SourcePlatform>().notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  communitiesOk: integer("communities_ok").notNull().default(0),
+  communitiesFailed: integer("communities_failed").notNull().default(0),
+  costUsd: numeric("cost_usd", { precision: 12, scale: 6 })
+    .notNull()
+    .default("0"),
+  state: text("state").$type<SweepState>().notNull().default("running"),
+});
+
+/**
+ * Public endpoint guard (S06). `budget_day` is the global daily dollar budget
+ * for unauthenticated, cost-bearing routes; `public_visitor` counts scans per
+ * salted visitor hash per day (raw IPs are never stored).
+ */
+export const budgetDay = pgTable("budget_day", {
+  day: date("day").primaryKey(),
+  spentUsd: numeric("spent_usd", { precision: 12, scale: 6 })
+    .notNull()
+    .default("0"),
+  capUsd: numeric("cap_usd", { precision: 12, scale: 6 }).notNull(),
+});
+
+export const publicVisitor = pgTable(
+  "public_visitor",
+  {
+    visitorHash: text("visitor_hash").notNull(),
+    day: date("day").notNull(),
+    scans: integer("scans").notNull().default(0),
+  },
+  (table) => [primaryKey({ columns: [table.visitorHash, table.day] })],
+);
+
+export type SourceSwitchRow = typeof sourceSwitch.$inferSelect;
+export type CostEventInsert = typeof costEvent.$inferInsert;
+export type SharedPostInsert = typeof sharedPost.$inferInsert;
+
+
+/**
+ * S05 plans and entitlements. Limits are data (edit with SQL, no deploy).
+ * `workspace.plan` selects the row set; a missing key falls back to the `free` plan.
+ */
+export const planLimit = pgTable(
+  "plan_limit",
+  {
+    plan: text("plan").notNull(),
+    key: text("key").notNull(),
+    value: integer("value").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.plan, table.key] })],
+);
+
+/**
+ * Metered usage. `period` is the UTC day for per-day counters (scored_leads) and the
+ * first UTC day of the month for per-month counters (deep_searches).
+ */
+export const workspaceUsage = pgTable(
+  "workspace_usage",
+  {
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    period: date("period", { mode: "string" }).notNull(),
+    scoredLeads: integer("scored_leads").notNull().default(0),
+    deepSearches: integer("deep_searches").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.workspaceId, table.period] })],
+);
