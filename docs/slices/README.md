@@ -131,7 +131,7 @@ Size: S = under a day, M = 1 to 3 days, L = 3 to 5 days of agent work. "Idea" re
 
 - Reddit stays in the free plan through TinyFish, with a fallback chain and its own switch.
 - X runs through Grok `x_search`; LinkedIn, Facebook and Instagram through ScrapeCreators first, Scavio as fallback. All are credit-metered, never bundled.
-- Price: Free $0, Pro $5/month ($48/year), credits at provider cost + 15%. If fewer than 1 in 20 free users pay after 90 days, raise Pro to $7 for new customers only.
+- Price (superseded 7 Oct, see `DECISION-2026-10-07-login-first-usage-billing.md`): everyone logs in; free basic scan as the lead magnet; no subscription; credits at actual provider cost + 20%.
 - Vantage never writes or posts for the user. HN and any venue that bans AI text gets a brief only, never a draft. r/SaaS is not a launch venue.
 - Neon is the system of record. No Hyperdrive unless interactive transactions become necessary.
 

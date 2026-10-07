@@ -1,5 +1,7 @@
 # S06 — Public endpoint guard (rate limit, Turnstile, daily dollar budget)
 
+> **Amended 7 Oct 2026** by `DECISION-2026-10-07-login-first-usage-billing.md`: Anonymous scans are no longer on the product path; login-first.
+
 **Track:** Foundations · **Wave:** 1 · **Size:** M · **Owner:** agent + human (H8) · **Depends on:** S02 (rate-limit binding; can stub with a Neon-backed limiter first) · **Unblocks:** S21
 
 ## Outcome

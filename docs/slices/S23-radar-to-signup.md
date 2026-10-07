@@ -1,5 +1,7 @@
 # S23 — Radar to account handoff
 
+> **Amended 7 Oct 2026** by `DECISION-2026-10-07-login-first-usage-billing.md`: Anonymous scan flow replaced by sample result then sign-up; free basic scan starts after first login.
+
 **Track:** Radar (Idea 2) · **Wave:** 4 · **Size:** S · **Owner:** agent · **Depends on:** S21 · **Unblocks:** S46
 
 ## Outcome

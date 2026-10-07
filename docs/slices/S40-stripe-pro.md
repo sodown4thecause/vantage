@@ -1,5 +1,7 @@
 # S40 — Stripe Pro subscription, portal and webhooks
 
+> **Amended 7 Oct 2026** by `DECISION-2026-10-07-login-first-usage-billing.md`: Stripe is used for one-time credit top-ups only; the Pro subscription is dropped.
+
 **Track:** Pricing (Idea 5) · **Wave:** 2 · **Size:** L · **Owner:** agent + human (H7) · **Depends on:** none · **Unblocks:** S41, S45, S46
 
 ## Outcome
