@@ -1,0 +1,20 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../layouts/Base.astro';
+
+const posts = (await getCollection('posts', (p) => !p.data.draft)).sort(
+  (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
+);
+---
+<Base title="Vantage Blog" description="Insights and playbooks from the Vantage team on staying ahead of the field.">
+  <h1>Blog</h1>
+  <ul>
+    {posts.map((p) => (
+      <li>
+        <a href={`/posts/${p.id}/`}>{p.data.title}</a>
+        <time datetime={p.data.pubDate.toISOString()}>{p.data.pubDate.toISOString().slice(0, 10)}</time>
+        <p>{p.data.description}</p>
+      </li>
+    ))}
+  </ul>
+</Base>
