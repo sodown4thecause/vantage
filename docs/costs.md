@@ -26,6 +26,8 @@ Every outbound paid or metered provider call writes one `cost_event` row via `wi
 | scrapecreators | `request` | 0.0019 | S42 |
 | browser_run | `browser_hour` | 0.09 per hour (use `X-Browser-Ms-Used`) | S07 |
 
+Note: for Browser Run the `provider_price` key is `browser_run` / `browser_hour` (the helper looks up exactly that), while the `cost_event` rows it writes use `provider = cloudflare_browser_run`, `source_key = browser_run`; reprice by inserting a new `browser_run` / `browser_hour` row.
+
 ## Not metered (free quotas, $0)
 
 HN, RSS, Substack, GitHub, Stack Overflow, YouTube Data API (`fetchViaYouTubeApi`, quota only), Product Hunt GraphQL API (`fetchViaProductHuntApi`, quota only). These make plain `fetch` calls with no per-call price.

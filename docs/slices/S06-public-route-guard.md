@@ -25,12 +25,12 @@ The Radar scan itself (S21), CAPTCHA UI widget (S22 includes it).
 Human H8: create a Turnstile widget in the Cloudflare dashboard; staging can use Cloudflare's published always-pass test keys.
 
 ## Learned (implementation notes)
-- Migration `0012_broken_annihilus.sql` (additive: `budget_day`, `public_visitor`). Not applied to any database.
+- Migration `0014_rapid_scourge.sql` (additive: `budget_day`, `public_visitor`; `0012_ambitious_rocket_raccoon.sql` is S03's `cost_daily`). Not applied to any database.
 - The `RADAR_LIMITER` binding is optional: read via `getCloudflareContext().env` and skipped when absent; the Neon per-visitor and budget checks work without it. `wrangler.jsonc` untouched (S02 owns the binding).
-- Turnstile: skipped when `TURNSTILE_SECRET_KEY` is unset outside production; in production a missing secret or `VISITOR_SALT` fails closed (`503 guard_unavailable`).
+- Turnstile: with `TURNSTILE_SECRET_KEY` unset the guard fails closed (`503 guard_unavailable`) unless it is not production **and** `TURNSTILE_DEV_BYPASS=true`, in which case the check is skipped. Staging is a production build, so staging needs either Cloudflare's always-pass test keys as `TURNSTILE_SECRET_KEY` (the Gotchas route) or no bypass at all. A missing `VISITOR_SALT` in production also fails closed.
 - Both counters are single atomic `INSERT ... ON CONFLICT DO UPDATE ... WHERE` statements (neon-http has no interactive transactions). The visitor count is incremented before the budget is reserved, so a budget rejection still consumes one visitor scan (conservative).
 - Stable error codes: `turnstile_required`/`turnstile_failed` (403), `rate_limited`/`visitor_limit` (429), `budget_exhausted`/`guard_unavailable` (503).
 - `reconcilePublicSpend(requestRef, estimate)` sums `cost_event` by `request_ref`; S21 must record costs with that `requestRef`.
 - Tests emulate the two upserts in memory (the mock cannot prove Postgres atomicity; it asserts the SQL is a single guarded statement). Verify on staging Neon once H1 lands.
-- Open gates: H8 Turnstile keys; S02 rate-limit binding (`RADAR_LIMITER`); apply migration 0012.
+- Open gates: H8 Turnstile keys; S02 rate-limit binding (`RADAR_LIMITER`); apply migration 0014.
 - Review follow-ups: `guardPublicRequest` returns `reservation: {day, estimateUsd}`; use `settlePublicSpend`/`refundPublicSpend`/`reconcilePublicSpend` with it (pinned to the reserved day, so midnight is safe). Call `refundPublicSpend` when a scan fails. Turnstile bypass now needs `TURNSTILE_DEV_BYPASS=true` and is ignored in production; siteverify has a 5s timeout; production trusts only `cf-connecting-ip` (else 400 `client_unidentified`); the ping route 404s unless `ENABLE_PUBLIC_PING=true` (set on staging and in tests only; `NODE_ENV` cannot gate it because staging is also a production build). `pruneOldPublicRows()` exists but is not scheduled yet.

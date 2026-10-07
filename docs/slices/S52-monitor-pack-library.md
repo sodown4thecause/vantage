@@ -7,7 +7,7 @@ Each niche (vector databases, AI agents, observability, DevOps, self-hosted anal
 
 ## Scope
 - Repo directory `packs/<slug>.yaml` using the S20 schema (+ `title`, `description`, `tags`, `contributors`); seed 10 packs.
-- CI check (`scripts/validate-packs.ts`, run in `pnpm test` and CircleCI): schema validation, duplicate slugs, banned content (URLs shortener list, promotional claims), limits.
+- CI check (`scripts/validate-packs.ts`, run in `pnpm test` and as a step of the GitHub Actions workflow `.github/workflows/ci.yml`): schema validation, duplicate slugs, banned content (URLs shortener list, promotional claims), limits.
 - Sync job: on deploy (or `pnpm packs:sync`) upserts public packs into `monitor_pack` (visibility `public`, slug unique).
 - Pages: `/packs` (grid, tags, search), `/packs/[slug]` (spec, recent public threads from `shared_post`/Radar-style scan, contributors from git history if available at build time, "Use this pack" → S23 flow, "Fork" → creates a private copy). Each pack page is an SEO landing page ("Find people looking for a vector database").
 - `CONTRIBUTING-PACKS.md`.

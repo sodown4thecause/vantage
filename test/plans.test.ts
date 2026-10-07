@@ -169,7 +169,7 @@ describe("project limit", () => {
     state.workspaceRows = [{ plan: "free" }];
     const error = await assertCanCreateProject("user").catch((e) => e);
     expect(error).toBeInstanceOf(PlanLimitError);
-    expect(error.message).toBe("Your Free plan allows 1 projects. Upgrade for more.");
+    expect(error.message).toBe("Your Free plan allows 1 project. Upgrade for more.");
   });
 
   it("lets a Pro user own three projects", async () => {

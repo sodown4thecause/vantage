@@ -30,7 +30,7 @@ export default async function Home() {
       <div className="grid items-center gap-x-14 gap-y-12 lg:grid-cols-[1.15fr_1fr]">
         <section className="space-y-7">
           <h1 className="display text-5xl sm:text-6xl lg:text-7xl">
-            Five conversations worth joining, every day.
+            Up to five conversations worth joining, every day.
           </h1>
           <p className="max-w-[48ch] text-lg leading-snug text-ridge">
             Vantage reads Reddit, Hacker News, X and more for people asking for

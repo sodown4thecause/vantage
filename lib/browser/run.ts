@@ -1,8 +1,5 @@
-import { and, desc, eq, lte } from "drizzle-orm";
-
 import { recordCost, roundUsd } from "@/lib/costs/ledger";
-import { getDb } from "@/lib/db/client";
-import { providerPrice } from "@/lib/db/schema";
+import { getUnitCost } from "@/lib/costs/prices";
 import { isPublicHttpUrl } from "@/lib/http/public-fetch";
 import { getSourceSwitch } from "@/lib/sources/switch";
 
@@ -108,26 +105,9 @@ async function defaultGetBinding(): Promise<BrowserBinding | undefined> {
 const PRICE_PROVIDER = "browser_run";
 const PRICE_ACTION = "browser_hour";
 
-/** Latest provider_price row for browser hours, else the default hourly price. */
-async function defaultGetUnitCost(): Promise<number> {
-  try {
-    const [row] = await getDb()
-      .select({ unitCostUsd: providerPrice.unitCostUsd })
-      .from(providerPrice)
-      .where(
-        and(
-          eq(providerPrice.provider, PRICE_PROVIDER),
-          eq(providerPrice.action, PRICE_ACTION),
-          lte(providerPrice.effectiveFrom, new Date()),
-        ),
-      )
-      .orderBy(desc(providerPrice.effectiveFrom))
-      .limit(1);
-    const price = row ? Number(row.unitCostUsd) : NaN;
-    return Number.isFinite(price) && price >= 0 ? price : DEFAULT_BROWSER_HOUR_USD;
-  } catch {
-    return DEFAULT_BROWSER_HOUR_USD;
-  }
+/** Cached provider_price lookup for browser hours; getUnitCost falls back to the seeded default price. */
+function defaultGetUnitCost(): Promise<number> {
+  return getUnitCost(PRICE_PROVIDER, PRICE_ACTION);
 }
 
 function resolveDeps(opts: BrowserRunOptions): BrowserRunDeps {

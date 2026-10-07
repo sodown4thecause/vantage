@@ -14,7 +14,14 @@ export default async function SourceSwitchesPage({
 }) {
   await requireAdmin();
   const { status, key: savedKey } = await searchParams;
-  const rows = new Map((await listSourceSwitches()).map((row) => [row.sourceKey, row]));
+  let loadError = false;
+  let rows = new Map<string, Awaited<ReturnType<typeof listSourceSwitches>>[number]>();
+  try {
+    rows = new Map((await listSourceSwitches()).map((row) => [row.sourceKey, row]));
+  } catch (err) {
+    console.error("[admin/switches] failed to load switches", { error: err instanceof Error ? err.name : "unknown" });
+    loadError = true;
+  }
 
   return (
     <Shell>
@@ -26,6 +33,11 @@ export default async function SourceSwitchesPage({
           Pause or block a source type for every workspace. Users see
           &ldquo;Paused by operator&rdquo; with your reason.
         </p>
+        {loadError && (
+          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+            Switches could not be loaded. Showing defaults; do not save until this is resolved.
+          </p>
+        )}
         {status === "saved" && isSourceSwitchKey(savedKey) && (
           <p role="status" className="text-sm text-emerald-700 dark:text-emerald-400">
             Saved {savedKey}.
@@ -59,6 +71,7 @@ export default async function SourceSwitchesPage({
                   <input type="hidden" name="sourceKey" value={key} />
                   <select
                     name="state"
+                    aria-label={`State for ${key}`}
                     defaultValue={state}
                     className="rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
                   >

@@ -3,7 +3,7 @@
 Every pull request (slice, fix, or docs) goes through this process **before merge**. The author never reviews their own PR; a separate reviewer agent (or person) applies the lenses that match what the diff touches. A green CI run is necessary but not sufficient.
 
 ## 1. Gates, in order
-1. **Automated:** CircleCI `verify` and `workers-build` green (lint, typecheck, tests, migration drift, Worker bundle under 10 MB, dry-run deploy with no secrets). Reviewers also re-run `pnpm lint && pnpm typecheck && pnpm test && node --test test/worker-entry.test.mjs` on the PR head when CI is not available.
+1. **Automated:** GitHub Actions (`.github/workflows/ci.yml`) `verify` and `workers-build` green (lint, typecheck, tests, migration drift, Worker bundle under 10 MB, dry-run deploy with no secrets). Reviewers also re-run `pnpm lint && pnpm typecheck && pnpm test && node --test test/worker-entry.test.mjs` on the PR head when CI is not available.
 2. **Specialized review:** the lenses below, chosen by the files changed (table in section 2).
 3. **Slice contract:** acceptance criteria in the slice file are evidenced in the PR description; "Learned" notes added.
 4. **Merge:** no open blocker or major finding; migration numbers checked against the base branch at merge time; human gates listed in the PR and not silently skipped.
@@ -21,7 +21,7 @@ Every pull request (slice, fix, or docs) goes through this process **before merg
 | **L7 Slice contract and docs** | always | Scope matches the slice file (nothing extra, nothing missing); acceptance criteria evidenced; out-of-scope items not smuggled in; docs and `.env.example` updated; human gates stated. |
 
 ## 3. Reviewer output format
-One review comment per PR, ending with the Claude Code attribution footer. Structure:
+One review comment per PR, ending with an attribution footer only when an AI agent wrote the review (the agent's own standard footer); a review written by a person carries no AI footer. Structure:
 
 ```
 Verdict: APPROVE | APPROVE WITH NITS | CHANGES REQUESTED

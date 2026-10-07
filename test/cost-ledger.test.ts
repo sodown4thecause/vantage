@@ -45,6 +45,8 @@ describe("computeCost", () => {
 
   it("avoids float drift", () => {
     expect(roundUsd(0.1 * 3)).toBe(0.3);
+    expect(roundUsd(0.9375 * 0.000008)).toBe(0.000008); // exact half-micro tie rounds up despite float noise
+    expect(computeCost({ sourceKey: "x", provider: "p", action: "a", units: 1.23456, unitCostUsd: 1 }).units).toBe("1.2346");
     expect(computeCost({ sourceKey: "x", provider: "xai", action: "post", units: 25, unitCostUsd: 0.005 }).costUsd).toBe("0.125000");
   });
 

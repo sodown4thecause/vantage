@@ -15,7 +15,7 @@ Every outbound paid or metered call writes a `cost_event`, prices come from `pro
 ## Interfaces
 ```ts
 withCost<T>(meta: {sourceKey: string; provider: string; action: string; workspaceId?: string|null;
-  units?: (r: T) => number; billableTo?: "platform"|"workspace_credits"; chargedOnFailure?: boolean},
+  units?: (r: T) => number; isFailure?: (r: T) => boolean; billableTo?: "platform"|"workspace_credits"; chargedOnFailure?: boolean},   // isFailure classifies a returned (not thrown) result as failed: recorded ok=false
   fn: () => Promise<T>): Promise<T>
 ```
 

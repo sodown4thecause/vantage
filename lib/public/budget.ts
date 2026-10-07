@@ -57,7 +57,8 @@ export async function reservePublicBudget(
 }
 
 async function adjustSpend(day: string, deltaUsd: number): Promise<void> {
-  const delta = roundUsd(deltaUsd).toFixed(6);
+  // Round the magnitude so refunds and charges round the same way (ties away from zero).
+  const delta = (Math.sign(deltaUsd) * roundUsd(Math.abs(deltaUsd))).toFixed(6);
   await getDb().execute(sql`
     update budget_day
     set spent_usd = greatest(0, spent_usd + ${delta}::numeric)

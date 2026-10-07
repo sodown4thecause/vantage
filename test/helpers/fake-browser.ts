@@ -25,7 +25,8 @@ export function createFakeBrowser(opts: FakeBrowserOptions = {}) {
       const headers = new Headers();
       if (opts.ms !== undefined) headers.set("X-Browser-Ms-Used", String(opts.ms));
       const body = opts.raw ?? JSON.stringify({ success: true, result: opts.result });
-      return new Response(body as BodyInit, { status: opts.status ?? 200, headers });
+      const bodyForbidden = [204, 205, 304].includes(opts.status ?? 200);
+      return new Response(bodyForbidden ? null : (body as BodyInit), { status: opts.status ?? 200, headers });
     },
   };
   return { binding, calls };

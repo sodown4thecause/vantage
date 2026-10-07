@@ -49,10 +49,15 @@ describe("summarize", () => {
   });
 
   it("rejects a rescued_on that is not a date, so 'no' or 'pending' cannot count as a rescue", () => {
-    for (const bad of ["no", "n/a", "-", "pending", "11/03/2026"]) {
+    for (const bad of ["no", "n/a", "-", "pending", "11/03/2026", "2026-13-45", "2026-02-30"]) {
       const csv = [HEADER, `a,x,y,2026-11-01,${bad},yes,yes,10,0,`].join("\n");
       expect(() => parseRescueCsv(csv)).toThrow(/rescued_on must be YYYY-MM-DD/);
     }
+  });
+
+  it("rejects an impossible contacted_on and rows whose cell count differs from the header", () => {
+    expect(() => parseRescueCsv([HEADER, "a,x,y,2026-13-45,,no,no,1,0,"].join("\n"))).toThrow(/contacted_on must be YYYY-MM-DD/);
+    expect(() => parseRescueCsv([HEADER, "a,x,y,2026-11-01,2026-11-02,yes,no,1,0,follow up, then call"].join("\n"))).toThrow(/11 cells but the header has 10/);
   });
 
   it("rejects empty and duplicate ids", () => {

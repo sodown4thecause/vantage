@@ -10,11 +10,11 @@ Pro and Free users can run X scans and LinkedIn/Facebook/Instagram checks, payin
 - **Source types:** `linkedin`, `facebook`, `instagram` added (README section 2 item 8); `x` already exists (replace the Scavio-first path with Grok-first, keep Scavio fallback).
 - **Flow:** every run = `quote()` → show price → `reserve()` → run → `settle()` (S41); never run without a hold. Production guard in `lib/collectors/run.ts` allows paid lane only with a hold.
 - **Switches:** separate switches `x`, `linkedin`, `facebook`, `instagram` (S04); none bundled "unlimited".
-- **UI:** "Run X scan (about 17 credits)" buttons with live balance; Pro includes the sources via credits only.
+- **UI:** "Run X scan (about 18 credits)" buttons with live balance; Pro includes the sources via credits only.
 - Weekly X pulse (shared, `~$14/month` for all users): `lib/x/pulse.ts` run by cron, stored as `shared_post` rows, shown to Free users.
 
 ## Acceptance criteria
-- [ ] Tests: quote accuracy vs fixtures (25-post X scan about 17 credits; ScrapeCreators 0.22 credits), post cap enforced, hold released on provider failure, switch off blocks.
+- [ ] Tests: quote accuracy vs fixtures using S41 rounding `ceil(providerUsd * 1.15 * 100)`, min 1: a 25-post X scan at about $0.15 quotes 18 credits; one ScrapeCreators request ($0.0019) quotes 1 credit (the minimum), and a 10-request check ($0.019) quotes 3 credits, so quote ScrapeCreators actions per batch of requests, not per request, post cap enforced, hold released on provider failure, switch off blocks.
 - [ ] Staging run with real keys costs recorded; margin >= 6% verified per action (record numbers in PR).
 - [ ] Every source shows its own paused/blocked state.
 

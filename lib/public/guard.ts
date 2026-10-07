@@ -53,8 +53,9 @@ async function getRateLimiter(): Promise<RateLimitBinding | null> {
   } catch (err) {
     // Expected locally (no Cloudflare context); logged so a broken binding in
     // production is visible rather than silently unenforced.
+    // Only the error class is logged: exception text can embed connection details.
     console.warn("[public/guard] rate-limit binding unavailable", {
-      error: err instanceof Error ? err.message : String(err),
+      error: err instanceof Error ? err.name : "unknown",
     });
     return null;
   }
@@ -166,7 +167,7 @@ export async function guardPublicRequest(
     };
   } catch (err) {
     console.error("[public/guard] failed", {
-      error: err instanceof Error ? err.message : String(err),
+      error: err instanceof Error ? err.name : "unknown",
     });
     return fail(503, "guard_unavailable");
   }

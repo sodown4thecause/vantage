@@ -23,8 +23,8 @@ The owner can pause or block any source type globally in two clicks, and users s
 Automatic circuit breaking (a later improvement), per-workspace switches.
 
 ## Learned
-- Migration 0012 (`source_switch_log`) is additive; apply to Neon branches is a human step. Set `VANTAGE_ADMIN_USER_IDS` as a Worker secret/var before the admin page is usable (until then everyone gets 404).
-- `setSourceSwitch` now reads the previous state and appends a log row; neon-http has no transaction, so the upsert and log insert are two statements (a failure between them loses only the audit row).
+- Migration 0013 (`source_switch_log`) is additive; apply to Neon branches is a human step. Set `VANTAGE_ADMIN_USER_IDS` as a Worker secret/var before the admin page is usable (until then everyone gets 404).
+- `setSourceSwitch` reads the previous state, then writes the audit insert and the upsert in one `db.batch` (a single implicit transaction over neon-http); a failed batch commits neither statement.
 - Paused display is derived in `listWorkspaceSources` (`displayCoverage: "paused_global"`, `pausedLabel`); `source.health` is never written by the switch.
 - `lib/sources/keys.ts` lists switchable keys; add new `SourceType` values there too (slice README step 8).
 - Scan only selects hn/rss/substack today, so the "source paused" skip appears for those until S11/S13/S14 widen the list.

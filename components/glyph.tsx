@@ -54,7 +54,7 @@ export function Glyph({
       height={size}
       role="img"
       aria-label={`Score breakdown: ${summary}`}
-      className="shrink-0 overflow-visible"
+      className="h-auto max-w-full shrink-0 overflow-visible"
     >
       <polygon points={ring(R, c, c)} fill="var(--sheet)" stroke="var(--contour)" strokeWidth="1.5" />
       <polygon points={ring(R / 2, c, c)} fill="none" stroke="var(--contour)" strokeWidth="1" strokeDasharray="3 4" />

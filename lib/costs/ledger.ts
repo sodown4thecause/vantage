@@ -28,11 +28,14 @@ const USD_SCALE = 1_000_000;
 
 /** Round to 6 decimal places, matching numeric(12,6), without float drift in the output. */
 export function roundUsd(value: number): number {
-  return Math.round(value * USD_SCALE) / USD_SCALE;
+  // toPrecision(15) strips float noise so exact half-micro ties (7.499999999999999 vs 7.5) round up.
+  return Math.round(Number((value * USD_SCALE).toPrecision(15))) / USD_SCALE;
 }
 
 export function computeCost(input: CostInput): CostRow {
-  const units = input.units ?? 1;
+  const rawUnits = input.units ?? 1;
+  // Quantize to cost_event.units (numeric(14,4)) so units * unit_cost_usd reproduces the stored total.
+  const units = Number.isFinite(rawUnits) ? Math.round(rawUnits * 10_000) / 10_000 : rawUnits;
   if (!Number.isFinite(units) || units < 0) {
     throw new Error("units must be a non-negative number");
   }

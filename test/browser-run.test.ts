@@ -316,7 +316,8 @@ describe("single entry point", () => {
         if (statSync(full).isDirectory()) walk(full);
         else if (/\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$/.test(name) && !name.endsWith(".d.ts")) {
           const rel = relative(root, full);
-          if (rel === "lib/browser/run.ts" || rel.startsWith("test/")) continue;
+          const posixRel = rel.replaceAll("\\", "/");
+          if (posixRel === "lib/browser/run.ts" || posixRel.startsWith("test/")) continue;
           if (/quickAction|\bBROWSER\b/.test(readFileSync(full, "utf8"))) hits.push(rel);
         }
       }

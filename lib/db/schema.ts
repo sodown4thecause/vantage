@@ -18,7 +18,7 @@ import {
 /**
  * M1 subset of the Vantage data model (§9).
  * Deferred to later milestones: identity, draft, interaction,
- * competitor_change, cost_event, monitor_pack.
+ * competitor_change, monitor_pack.
  */
 
 export const sourceTypeEnum = pgEnum("source_type", [

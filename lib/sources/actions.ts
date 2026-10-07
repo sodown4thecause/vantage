@@ -26,7 +26,7 @@ export async function scanNow(workspaceId: string): Promise<SourceActionState> {
       return { error: "Some sources could not be scanned. Check Sources & Coverage." };
     }
     if (paused > 0 && paused === attempted.length) {
-      return { message: "All of your sources are paused by the operator, so nothing was fetched. The opportunity queue was rebuilt from existing data." };
+      return { message: "All sources checked in this scan are paused by the operator, so nothing was fetched. The opportunity queue was rebuilt from existing data." };
     }
     if (paused > 0) {
       return { message: `Scan completed. ${paused} source${paused === 1 ? " is" : "s are"} paused by the operator and were skipped.` };

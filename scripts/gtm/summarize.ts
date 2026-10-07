@@ -65,6 +65,14 @@ export function parseCsv(text: string): string[][] {
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** True only for a real calendar date in YYYY-MM-DD form (rejects 2026-13-45 and 2026-02-30). */
+function isRealIsoDate(value: string): boolean {
+  if (!ISO_DATE.test(value)) return false;
+  const [y, m, d] = value.split("-").map(Number) as [number, number, number];
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+}
+
 function parseYesNo(value: string, field: string, rowLabel: string, problems: string[]): boolean {
   const v = value.trim().toLowerCase();
   if (v === "" || v === "no" || v === "n" || v === "false" || v === "0") return false;
@@ -118,15 +126,22 @@ export function parseRescueCsv(text: string): RescueRow[] {
     if (!id) problems.push(`${label}: id is empty`);
     else if (seen.has(id.toLowerCase())) problems.push(`${label}: duplicate id`);
     seen.add(id.toLowerCase());
+    if (row.length !== names.length) {
+      problems.push(`${label}: has ${row.length} cells but the header has ${names.length} (quote any field that contains a comma)`);
+    }
     const rescuedOn = get(row, idx.rescuedOn);
-    if (rescuedOn !== "" && !ISO_DATE.test(rescuedOn)) {
+    if (rescuedOn !== "" && !isRealIsoDate(rescuedOn)) {
       problems.push(`${label}: rescued_on must be YYYY-MM-DD or blank (got "${rescuedOn}")`);
+    }
+    const contactedOn = get(row, idx.contactedOn);
+    if (contactedOn !== "" && !isRealIsoDate(contactedOn)) {
+      problems.push(`${label}: contacted_on must be YYYY-MM-DD or blank (got "${contactedOn}")`);
     }
     return {
       id,
       sourceTool: get(row, idx.sourceTool),
-      contactedOn: get(row, idx.contactedOn),
-      rescuedOn: ISO_DATE.test(rescuedOn) ? rescuedOn : "",
+      contactedOn: isRealIsoDate(contactedOn) ? contactedOn : "",
+      rescuedOn: isRealIsoDate(rescuedOn) ? rescuedOn : "",
       activated: parseYesNo(get(row, idx.activated), "activated", label, problems),
       paying: parseYesNo(get(row, idx.paying), "paying", label, problems),
       founderMinutes: parseNumber(get(row, idx.founderMinutes), "founder_minutes", label, problems),

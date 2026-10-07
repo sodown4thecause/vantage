@@ -32,7 +32,7 @@ export default async function SourcesCoveragePage({
 
   return (
     <Shell workspaceId={workspaceId} active="sources">
-      <PageHead title={"Sources & Coverage"} lede={"Last scan, coverage status, result counts, and provider provenance. Fixture-only runs are marked degraded , never as healthy live coverage."} />
+      <PageHead title={"Sources & Coverage"} lede={"Last scan, coverage status, result counts, and provider provenance. Fixture-only runs are marked degraded, never as healthy live coverage."} />
 
       <FeedForm workspaceId={workspaceId} />
 

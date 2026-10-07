@@ -6,7 +6,7 @@
 `wrangler.jsonc` declares every Cloudflare resource the later slices need, per environment, and the Worker deploys with them.
 
 ## Scope
-- **Human (H3):** extend the Cloudflare token: Queues: Edit, Workflows: Edit, Browser Rendering: Edit, R2: Edit, and (if used) Account Analytics. Upgrade to Workers Paid.
+- **Human (H3):** first revoke or roll the two Cloudflare tokens that were pasted into chat on 6 Oct (see the README security note), then create a new least-privilege token with Workers Scripts: Edit (deploys), Queues: Edit, Workflows: Edit, Browser Rendering: Edit, R2: Edit, and (if used) Account Analytics. Do not extend the exposed tokens. Upgrade to Workers Paid. Agents read the token from the environment only.
 - Create (CLI or API): queues `vantage-sweep-jobs` + `vantage-sweep-dlq` (and `-staging` variants), R2 bucket `vantage-assets` (+ `-staging`).
 - `wrangler.jsonc` (both envs, with staging-suffixed names): `queues.producers/consumers` (consumer `max_batch_size: 10`, `max_retries: 2`, DLQ), `r2_buckets` binding `ASSETS_BUCKET`, `browser` binding `BROWSER` (`"remote": true` for dev), `ratelimits` binding `RADAR_LIMITER` (simple limit, e.g. 5 per 60s; confirm current syntax in Cloudflare docs before writing), `workflows` binding `RADAR_SCAN` (class implemented in S21; add the binding in S21 if the class does not exist yet).
 - `worker-entry.mjs`: export a `queue(batch, env)` handler that **re-enters the OpenNext bundle via `WORKER_SELF_REFERENCE`** (same pattern as `scheduled`), POSTing the batch to `/api/internal/queue` with `Authorization: Bearer ${CRON_SECRET}`. Add that route as a stub returning 200 for an empty batch. Add tests next to `test/worker-entry.test.mjs`.

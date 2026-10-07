@@ -1,6 +1,6 @@
 # S61 — Launch checklist and venue-rules check
 
-**Track:** Go-to-market · **Wave:** 5 · **Size:** S · **Owner:** human-led, agent prepares · **Depends on:** S16, S21, S30 (and S50/S51/S52 for the skill launch) · **Target:** early December 2026
+**Track:** Go-to-market · **Wave:** 5 · **Size:** S · **Owner:** human-led, agent prepares · **Depends on:** S16, S21, S30, S43 (and S50/S51/S52 for the skill launch) · **Target:** early December 2026
 
 ## Outcome
 A dated, venue-by-venue launch plan where every post respects the venue's rules.

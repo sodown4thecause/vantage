@@ -17,7 +17,7 @@ vi.mock("@/lib/db/client", () => ({
         return { where: (w: unknown) => { if (name === "source" && fields && "last" in fields) state.cadenceWhere = w; return Object.assign(Promise.resolve(rows()), { limit: async () => rows() }); } };
       },
     }),
-    update: () => ({ set: () => ({ where: async (w: unknown) => { state.touched.push(w); } }) }),
+    update: () => ({ set: (values: unknown) => ({ where: async () => { state.touched.push(values); } }) }),
   }),
 }));
 vi.mock("@/lib/cron/lease", () => ({ withWorkspaceScanLease: async () => { state.leased++; return { collectorResults: [], opportunityResults: [] }; } }));
@@ -37,6 +37,8 @@ it("skips many recently-scanned Free workspaces and moves each to the back of th
   for (let i = 0; i < 30; i++) results.push(await scanWorkspace(`ws-${i}`, undefined, { enforceCadence: true }));
   expect(results.every((r) => r.opportunityResults[0] && "skipped" in r.opportunityResults[0])).toBe(true);
   expect(state.touched).toHaveLength(30); // every skipped workspace is touched, so rotation advances
+  // The tick route orders by updatedAt, so that is the field that must be bumped.
+  expect(state.touched.every((v) => (v as { updatedAt?: unknown }).updatedAt instanceof Date)).toBe(true);
   expect(state.leased).toBe(0);
 });
 

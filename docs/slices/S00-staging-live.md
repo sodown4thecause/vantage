@@ -3,15 +3,15 @@
 **Track:** Platform · **Wave:** 0 · **Size:** S · **Owner:** human (H1) + agent · **Depends on:** none · **Unblocks:** everything
 
 ## Outcome
-A visitor can sign up on `https://vantage-staging.liam-wilson1990.workers.dev`, onboard, add an HN source, and see real documents and a ranked opportunity produced by the 3-hour cron, with no secret in the build.
+A visitor can sign up on `https://vantage-staging.liam-wilson1990.workers.dev`, onboard, get the HN source auto-provisioned by saving the profile, and see real documents and a ranked opportunity produced by the 3-hour cron, with no secret in the build.
 
 ## Current state
-Worker `vantage-staging` is deployed. Secrets set: `CRON_SECRET`, `NEON_AUTH_COOKIE_SECRET`, `NEON_AUTH_BASE_URL`. `/api/cron/tick` returns 500 with `DATABASE_URL is not set`. Neon Auth sign-up already works against the `staging` branch. Migration 0011 is applied on `staging`.
+Worker `vantage-staging` is deployed. Secrets set: `CRON_SECRET`, `NEON_AUTH_COOKIE_SECRET`, `NEON_AUTH_BASE_URL`, and `DATABASE_URL` (H1 done 6 Oct). `/api/cron/tick` returns 200. Neon Auth sign-up works against the `staging` branch. Migration 0011 is applied on `staging`.
 
 ## Steps
-1. **H1 (human):** set `DATABASE_URL` (pooled string of Neon branch `staging`) on `vantage-staging`: `wrangler secret put DATABASE_URL --env staging` or dashboard → Workers → vantage-staging → Settings → Variables and Secrets.
+1. **H1 (human, done 6 Oct; repeat only for a new Worker or branch):** set `DATABASE_URL` (pooled string of Neon branch `staging`) on `vantage-staging`: `wrangler secret put DATABASE_URL --env staging` or dashboard → Workers → vantage-staging → Settings → Variables and Secrets.
 2. Agent: rotate `CRON_SECRET` into a shell variable (never print it) and call `GET /api/cron/tick` with `Authorization: Bearer`. Expect 200 and `{ok:true}`.
-3. Agent: sign up a test user via `POST /api/auth/sign-up/email` (header `origin: <staging url>`), keep the cookie jar, complete onboarding (`/onboarding`, `app/api/profile/route.ts`), add an HN source (`app/api/sources/route.ts` or the Settings → Sources page), run `scanNow`, then query Neon (`mcp__Neon__run_sql`, branch `br-quiet-pine-b7ukjr3b`) to confirm `document` and `opportunity` rows.
+3. Agent: sign up a test user via `POST /api/auth/sign-up/email` (header `origin: <staging url>`), keep the cookie jar, complete onboarding (`/onboarding`, `app/api/profile/route.ts`; saving the profile auto-provisions the HN source via `provisionProfileSources`, and `app/api/sources/route.ts` is GET-only while Settings → Sources only adds RSS feeds, so do not add a source manually), run `scanNow`, then query Neon (`mcp__Neon__run_sql`, branch `br-quiet-pine-b7ukjr3b`) to confirm `document` and `opportunity` rows.
 4. Enable the staging cron only: in `wrangler.jsonc` set `env.staging.triggers.crons` to `["0 */3 * * *"]` (leave the top level and `env.production` as `[]`). Deploy staging. Watch `wrangler tail vantage-staging` for one scheduled run (`[cron] tick completed`).
 5. Delete the smoke-test user and its workspace (ask the owner first; destructive).
 

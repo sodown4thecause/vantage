@@ -98,13 +98,6 @@
     line-height: 1.55;
   }
 
-  /* Existing pages put dark: variants on the zinc ramp, which is already
-     theme-aware here; neutralise the ones that would double-invert. */
-  .dark\:bg-black,
-  .dark\:bg-zinc-950 {
-    background-color: transparent;
-  }
-
   :focus-visible {
     outline: 2px solid var(--signal);
     outline-offset: 2px;
@@ -132,19 +125,6 @@
   button:not(:disabled),
   [role="button"] {
     cursor: pointer;
-  }
-
-  /* Primary buttons in existing pages are "bg-zinc-900 text-white": make them signal. */
-  .bg-zinc-900.text-white,
-  .bg-zinc-900.text-white:where(.dark *) {
-    background: var(--signal);
-    color: var(--signal-ink);
-    border-radius: 0.375rem;
-    font-weight: 600;
-    transition: filter 120ms ease;
-  }
-  .bg-zinc-900.text-white:hover:not(:disabled) {
-    filter: brightness(1.08);
   }
 }
 
@@ -201,6 +181,45 @@
 .border-signal { border-color: var(--signal); }
 .border-contour { border-color: var(--contour); }
 :focus-visible { outline-color: var(--signal); }
+
+/* These overrides sit outside @layer so they beat Tailwind's layered utilities. */
+
+/* Primary buttons in existing pages are "bg-zinc-900|950 text-white": make them signal. */
+.bg-zinc-900.text-white,
+.bg-zinc-950.text-white {
+  background: var(--signal);
+  color: var(--signal-ink);
+  border-radius: 0.375rem;
+  font-weight: 600;
+  transition: filter 120ms ease;
+}
+.bg-zinc-900.text-white:hover:not(:disabled),
+.bg-zinc-950.text-white:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+/* Existing pages put dark: variants on the zinc ramp, which is already
+   theme-aware here (dark ink is light, dark sheet is dark); neutralise the
+   ones that would double-invert. */
+@media (prefers-color-scheme: dark) {
+  .dark\:bg-black,
+  .dark\:bg-zinc-950 {
+    background-color: transparent;
+  }
+  .dark\:bg-zinc-900 {
+    background-color: var(--sheet);
+  }
+  .dark\:text-zinc-50,
+  .dark\:text-zinc-100,
+  .dark\:text-zinc-200,
+  .dark\:text-zinc-300 {
+    color: var(--ink);
+  }
+  .dark\:border-zinc-700,
+  .dark\:border-zinc-800 {
+    border-color: var(--contour);
+  }
+}
 
 /* The one orchestrated moment: the score glyph draws itself in on load. */
 @keyframes glyph-in {

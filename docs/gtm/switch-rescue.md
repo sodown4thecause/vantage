@@ -13,6 +13,8 @@ Source: Astra's report and the 6 Oct 2026 competitor review (dates below are as 
 
 If fewer than 3 rescues are completed by 14 Nov, stop building acquisition features and revisit the offer.
 
+**Enrollment closes 7 Nov.** A rescue completed after 7 Nov cannot have a full first week by the 14 Nov decision, so it counts toward the rescues gate but its `activated` value is *pending*, not a failure: when deciding, evaluate the activation gate only over rescues with `rescued_on` on or before 7 Nov, and note pending ones in `notes` (the summary script counts all unactivated rescues as not activated, so read its output with this in mind). If you want a full week of observation for late rescues, move the decision date instead of counting them as failures.
+
 ## Who to approach (public signals only)
 Only people who **publicly** said they are losing a tool or asked for an alternative:
 - posts/comments asking for a "GummySearch alternative" or "F5Bot alternative", or complaining that Reddit RSS is ending;
@@ -55,7 +57,7 @@ Copy `docs/gtm/switch-rescue-tracking.csv` and fill one row per person. Columns:
 | `provider_cost_usd` | from the cost ledger for their workspace |
 | `notes` | what broke, which keyword syntax could not be imported, what they asked for |
 
-**No names, handles, emails or links in any column** (`id` is a label you choose, and each id must be unique; log follow-ups in `notes`). Summarize with `pnpm tsx scripts/gtm/summarize.ts docs/gtm/switch-rescue-tracking.csv` (prints gate status, founder time and cost per rescue). The script rejects the sheet and lists every problem (empty or duplicate ids, a `rescued_on` that is not a date, `activated`/`paying` values other than yes/no, minutes or cost that are not numbers) instead of guessing.
+**No names, handles, emails or links in any column** (`id` is a label you choose, and each id must be unique; log follow-ups in `notes`). Summarize with `pnpm tsx scripts/gtm/summarize.ts docs/gtm/switch-rescue-tracking.csv` (prints gate status, founder time and cost per rescue). The script rejects the sheet and lists every problem for: empty or duplicate ids, a `rescued_on` that does not match `YYYY-MM-DD`, `activated`/`paying` values other than yes/no (it also accepts y/n, true/false and 1/0), and negative or non-numeric minutes/cost. It does **not** reject these, so fill them in deliberately: blank `activated`/`paying` count as no, blank `founder_minutes`/`provider_cost_usd` count as 0 (which understates time and cost), and a date that matches the format but does not exist (for example 2026-02-31) is accepted.
 
 ## No-spam checklist (tick before each message)
 - [ ] They publicly asked or complained about this exact problem.

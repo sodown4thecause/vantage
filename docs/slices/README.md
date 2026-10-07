@@ -51,6 +51,7 @@
 | H8 | S06 | Cloudflare Turnstile site/secret keys and `VISITOR_SALT` |
 | H9 | S60, S61 | Outreach to Switch Rescue users; the Show HN post is **written by the owner** (HN bans AI-written text) |
 | H10 | all | Owner decisions flagged "Decision" inside slices |
+| H11 | S04 | `VANTAGE_ADMIN_USER_IDS` (comma-separated Neon Auth user ids) set as a Worker secret/var on staging and production; until then every user gets 404 on `/admin/switches` |
 
 Security note: two Cloudflare tokens were pasted into chat on 6 Oct. The owner must delete/roll them. Agents must read credentials from environment variables only, never from chat, and never write them to disk.
 
@@ -68,7 +69,7 @@ Security note: two Cloudflare tokens were pasted into chat on 6 Oct. The owner m
 Rules: Neon is the only source of truth; one deployed bundle (reuse the `WORKER_SELF_REFERENCE` pattern in `worker-entry.mjs`); every paid call writes a `cost_event`; every source has a switch.
 
 ### Browser Run (Cloudflare Browser Rendering) usage rules
-Use Quick Actions (`env.BROWSER.quickAction("markdown" | "content" | "json" | "screenshot" | "links" | "crawl", {...})`) for: reading a product/docs site, competitor page watching, rules-page re-checks, OG screenshots. Needs `compatibility_date` >= 2026-03-24 (current is 2026-10-05) and `"remote": true` for local dev. Cost: Workers Paid includes 10 browser-hours a month, then $0.09/hour; the `X-Browser-Ms-Used` response header gives per-call time to record. **Never use it for Reddit, LinkedIn, Facebook, Instagram or X** (bot-identifying crawler, robots.txt, platform terms). Never fetch non-public URLs (use `isPublicHttpUrl` from `lib/http/public-fetch.ts`).
+Use the helpers in `lib/browser/run.ts` (`browserMarkdown`, `browserJson`, `browserScreenshot`, `browserLinks`) for reading a product/docs site, competitor page watching, rules-page re-checks and OG screenshots; never call `env.BROWSER` or `quickAction` directly, because the helpers carry the URL/SSRF check, the `browser_run` source switch, timeout, size cap and `cost_event` recording. Outside an OpenNext request (Workflows, queue consumers, cron) pass `binding` or `env` in the options. Needs `compatibility_date` >= 2026-03-24 (current is 2026-10-05) and `"remote": true` for local dev. Cost: Workers Paid includes 10 browser-hours a month, then $0.09/hour; the `X-Browser-Ms-Used` response header gives per-call time to record. **Never use it for Reddit, LinkedIn, Facebook, Instagram, X or Twitter** (bot-identifying crawler, robots.txt, platform terms). Never fetch non-public URLs (use `isPublicHttpUrl` from `lib/http/public-fetch.ts`).
 
 ### Cost facts used across slices (from the competitor review, 6 Oct 2026; re-check before quoting publicly)
 HN/GitHub/Stack Overflow/RSS/YouTube/Product Hunt: $0 (quotas). Reddit keyword search via TinyFish Search+Fetch: $0. Reddit shared sweep (TinyFish Agent): about $23/month for all users. Reddit deep search: about $0.19/run. X scan of 25 posts via Grok x_search: about $0.15 (82% is the per-post fee). LinkedIn/Instagram/Facebook via ScrapeCreators: $0.0019/request. AI scoring: about $0.0005/post. Stripe international card: 3.5% + A$0.30. Plans: Free $0 (Reddit included), Pro $5/month or $48/year, credits from $5 = provider cost + 15% (1 credit = 1 cent).
@@ -94,7 +95,7 @@ Size: S = under a day, M = 1 to 3 days, L = 3 to 5 days of agent work. "Idea" re
 | [S01](S01-production-and-rollback.md) | Production promotion, rollback, CI deploy | base | M | S00 | H2 | [ ] |
 | [S02](S02-cloudflare-resources.md) | Queues, R2, rate-limit, Browser, Workflow bindings | base | S | S00 | H3 | [ ] |
 | [S03](S03-cost-ledger-wiring.md) | Wire cost ledger into every provider + rollups | 5 | M | none | none | [x] merged to plan branch (6 Oct) |
-| [S04](S04-source-switch-admin.md) | Source switch admin + paused-state UI | 1 | S | none | none | [x] merged to plan branch (6 Oct) |
+| [S04](S04-source-switch-admin.md) | Source switch admin + paused-state UI | 1 | S | none | H11 | [x] merged to plan branch (6 Oct) |
 | [S05](S05-plans-and-entitlements.md) | Plans and entitlement enforcement | 5 | M | none | none | [x] merged to plan branch (6 Oct) |
 | [S06](S06-public-route-guard.md) | Public endpoint guard (rate limit, Turnstile, budget) | 2 | M | none | H8 | [x] merged to plan branch (6 Oct) |
 | [S07](S07-browser-run-helper.md) | Browser Run helper with cost + SSRF guard | 2 | S | none | none | [x] merged to plan branch (6 Oct) |
@@ -124,7 +125,7 @@ Size: S = under a day, M = 1 to 3 days, L = 3 to 5 days of agent work. "Idea" re
 | [S51](S51-cli-and-skill-package.md) | `npx vantage init`, plugin and skill files | 4 | L | S50,S52 | none | [ ] |
 | [S52](S52-monitor-pack-library.md) | Public Monitor Pack library + CI validation | 4 | M | S20 | none | [ ] |
 | [S60](S60-switch-rescue-kit.md) | Switch Rescue manual test kit | gtm | S | none | H9 | [x] merged to plan branch (offer wording needs owner sign-off) |
-| [S61](S61-launch-checklist.md) | Launch checklist and venue-rules check | gtm | S | S16,S21,S30 | H9 | [ ] |
+| [S61](S61-launch-checklist.md) | Launch checklist and venue-rules check | gtm | S | S16,S21,S30,S43 | H9 | [ ] |
 
 ## 7. Decisions already made (do not re-litigate inside a slice)
 

@@ -130,11 +130,12 @@ export async function consume(
   const col = sql.raw(`"${meta.column}"`);
   const qualified = sql.raw(`"workspace_usage"."${meta.column}"`);
   const period = usagePeriod(key, now);
-  const fallback = DEFAULT_LIMITS.free[key];
+  // Mirror getLimits(): a missing row falls back to the workspace plan's default, not always Free's.
+  const fallback = sql`case when (select "plan" from "workspace" where "id" = ${workspaceId}::uuid) = 'pro' then ${DEFAULT_LIMITS.pro[key]}::int else ${DEFAULT_LIMITS.free[key]}::int end`;
   const limitExpr = sql`coalesce(
     (select "value" from "plan_limit" where "plan" = (select "plan" from "workspace" where "id" = ${workspaceId}::uuid) and "key" = ${key}),
     (select "value" from "plan_limit" where "plan" = 'free' and "key" = ${key}),
-    ${fallback}::int)`;
+    ${fallback})`;
 
   const result = await getDb().execute(sql`
     insert into "workspace_usage" ("workspace_id", "period", ${col})
@@ -166,6 +167,8 @@ export async function release(
   n = 1,
   now: Date = new Date(),
 ): Promise<void> {
+  // A negative or fractional amount would add usage instead of giving it back.
+  if (!Number.isInteger(n) || n < 1) return;
   const meta = METERED[key];
   if (!meta) throw new Error(`Unknown metered key: ${String(key)}`);
   const col = sql.raw(`"${meta.column}"`);
@@ -191,10 +194,13 @@ const LIMIT_LABELS: Record<LimitKey, string> = {
   scan_interval_hours: "scan interval",
 };
 
+const SINGULAR_LABELS: Partial<Record<LimitKey, string>> = { projects: "project", keywords: "keyword", sources: "source" };
+
 export function limitMessage(plan: PlanId, key: LimitKey, limit: number): string {
   const name = plan === "pro" ? "Pro" : "Free";
   if (limit === 0) return `Your ${name} plan does not include ${LIMIT_LABELS[key]}. Upgrade to use it.`;
-  return `Your ${name} plan allows ${limit} ${LIMIT_LABELS[key]}. Upgrade for more.`;
+  const singular = limit === 1 && key in SINGULAR_LABELS ? SINGULAR_LABELS[key] : undefined;
+  return `Your ${name} plan allows ${limit} ${singular ?? LIMIT_LABELS[key]}. Upgrade for more.`;
 }
 
 /** Throws a PlanLimitError (a clear message, never a 500) if `current + adding` exceeds the plan limit. */

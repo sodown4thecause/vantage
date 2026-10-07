@@ -33,6 +33,14 @@ describe("release", () => {
     expect(sql).toContain("greatest(");
     expect(sql).toContain('"workspace_usage"');
     expect(params).toContain("2026-10-06");
+    // The requested amount is subtracted inside greatest(..., 0).
+    expect(sql).toMatch(/greatest\("scored_leads" - \$\d+::int, 0\)/);
+    expect(params).toContain(1);
+  });
+
+  it("ignores zero, negative and fractional amounts instead of adding usage", async () => {
+    for (const n of [0, -3, 1.5]) await release("11111111-1111-1111-1111-111111111111", "scored_leads_per_day", n);
+    expect(state.statements).toHaveLength(0);
   });
 
   it("does not throw when the database is down, so cleanup never hides the original error", async () => {
