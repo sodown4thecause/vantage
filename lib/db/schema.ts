@@ -781,3 +781,67 @@ export const destinationChange = pgTable(
 export type Destination = typeof destination.$inferSelect;
 export type NewDestination = typeof destination.$inferInsert;
 export type DestinationChange = typeof destinationChange.$inferSelect;
+
+/**
+ * S72 plays: a typed, recommended go-to-market action for an opportunity.
+ * Vantage only recommends; a human performs the action.
+ */
+export const playKindEnum = pgEnum("play_kind", [
+  "reply_brief",
+  "directory_submission",
+  "comparison_page",
+  "migration_guide",
+  "importer",
+  "integration",
+  "outreach",
+  "trial_offer",
+  "newsletter_pitch",
+]);
+
+export const playStatusEnum = pgEnum("play_status", [
+  "suggested",
+  "accepted",
+  "done",
+  "dismissed",
+]);
+
+export const playEffortEnum = pgEnum("play_effort", ["s", "m", "l"]);
+
+export const play = pgTable(
+  "play",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    opportunityId: uuid("opportunity_id").references(() => opportunity.id, {
+      onDelete: "cascade",
+    }),
+    /** Plain column for now: the `destination` table lands in S75, which adds the foreign key. */
+    destinationId: uuid("destination_id").references(() => destination.id, {
+      onDelete: "set null",
+    }),
+    kind: playKindEnum("kind").notNull(),
+    title: text("title").notNull(),
+    rationale: text("rationale").notNull().default(""),
+    evidence: jsonb("evidence")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    status: playStatusEnum("status").notNull().default("suggested"),
+    effortEstimate: playEffortEnum("effort_estimate").notNull().default("m"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    doneAt: timestamp("done_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("play_workspace_opportunity_idx").on(
+      table.workspaceId,
+      table.opportunityId,
+    ),
+  ],
+);
+
+export type Play = typeof play.$inferSelect;
+export type NewPlay = typeof play.$inferInsert;
