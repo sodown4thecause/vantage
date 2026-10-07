@@ -47,4 +47,7 @@ export type SourceType =
   | "producthunt"
   | "youtube"
   | "x"
+  | "github"
+  | "stackoverflow"
+  | "linkedin"
   | "other";

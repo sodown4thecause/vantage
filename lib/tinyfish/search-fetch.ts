@@ -27,9 +27,11 @@ export async function tinyFishSearch(
     page?: number;
     client?: TinyFish;
     ctx?: CostContext;
+    signal?: AbortSignal;
   },
 ): Promise<TinyFishSearchHit[]> {
-  const client = opts?.client ?? createTinyFishClient();
+  opts?.signal?.throwIfAborted();
+  const client = opts?.client ?? createTinyFishClient(undefined, opts?.signal);
   const ctx = opts?.ctx ?? { sourceKey: "tinyfish" };
   const response = await withCost(
     { sourceKey: ctx.sourceKey, workspaceId: ctx.workspaceId, provider: "tinyfish", action: "search" },
@@ -41,6 +43,7 @@ export async function tinyFishSearch(
         page: opts?.page,
       }),
   );
+  opts?.signal?.throwIfAborted();
   return (response.results ?? [])
     .map((r) => ({
       url: r.url,
@@ -58,15 +61,18 @@ export async function tinyFishFetchMarkdown(
     highlightQuery?: string;
     client?: TinyFish;
     ctx?: CostContext;
+    signal?: AbortSignal;
   },
 ): Promise<TinyFishFetchedPage[]> {
   if (urls.length === 0) return [];
-  const client = opts?.client ?? createTinyFishClient();
+  opts?.signal?.throwIfAborted();
+  const client = opts?.client ?? createTinyFishClient(undefined, opts?.signal);
   const ctx = opts?.ctx ?? { sourceKey: "tinyfish" };
   // SDK batches; keep requests small and stable.
   const batchSize = 10;
   const pages: TinyFishFetchedPage[] = [];
   for (let i = 0; i < urls.length; i += batchSize) {
+    opts?.signal?.throwIfAborted();
     const batch = urls.slice(i, i + batchSize);
     const response = await withCost(
       { sourceKey: ctx.sourceKey, workspaceId: ctx.workspaceId, provider: "tinyfish", action: "fetch" },
@@ -85,6 +91,7 @@ export async function tinyFishFetchMarkdown(
         : undefined,
         }),
     );
+    opts?.signal?.throwIfAborted();
 for (const row of response.results ?? []) {
       const text =
         typeof row.text === "string"

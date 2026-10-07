@@ -13,12 +13,16 @@ export const redditCollector: Collector = {
   async run(ctx: CollectorContext): Promise<CollectorResult> {
     const query =
       typeof ctx.config.query === "string" ? ctx.config.query : undefined;
+    const subreddit =
+      typeof ctx.config.subreddit === "string" ? ctx.config.subreddit : undefined;
     const limit = Number(ctx.config.limit ?? ctx.config.first ?? 20);
     const { posts, meta, cursor } = await fetchRedditPostsWithMeta({
       ctx: { workspaceId: ctx.workspaceId, sourceKey: "reddit" },
       query,
+      subreddit,
       limit,
       cursor: ctx.cursor ?? undefined,
+      signal: ctx.signal,
     });
 
     const documents: NewDocument[] = posts.map((p) => {
@@ -49,6 +53,9 @@ export const redditCollector: Collector = {
           numComments: p.numComments,
           provider: meta.provider,
           mocked: meta.provider === "fixture",
+          contentKind: p.contentKind,
+          discoveryOnly: p.contentKind === "preview",
+          topComments: p.topComments,
         },
       };
     });

@@ -13,5 +13,5 @@ export function createScavioClient(
   if (!key) {
     throw new Error("SCAVIO_API_KEY is not configured");
   }
-  return new Scavio({ apiKey: key });
+  return new Scavio({ apiKey: key, maxRetries: 0, timeout: 30_000 });
 }

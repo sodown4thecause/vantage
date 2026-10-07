@@ -16,12 +16,14 @@ export type DraftInput = {
   opportunityTitle: string;
   opportunitySummary: string;
   recommendedAction: string;
+  existingReplies?: string[];
   evidence: Array<{
     documentId: string;
     title: string | null;
     urlCanonical: string;
     contentMd: string;
     platform: string;
+    discoveryOnly?: boolean;
   }>;
 };
 
@@ -29,6 +31,19 @@ export type GeneratedDraft = {
   originalText: string;
   citations: DraftCitation[];
   flags: DraftFlag[];
+  quality?: ContributionReview;
+};
+
+export type ContributionReview = {
+  version: 1;
+  kind: "draft" | "brief" | "abstain";
+  model: string | null;
+  targetDocumentId: string;
+  rulesReviewed: boolean;
+  angle: string;
+  gap: { existingReplyCount: number; note: string };
+  claims: Array<{ sentence: string; documentId: string; quote: string }>;
+  notes: string[];
 };
 
 const UNSUPPORTED_CLAIM_RE =

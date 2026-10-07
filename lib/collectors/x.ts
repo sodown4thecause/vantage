@@ -31,6 +31,7 @@ export const xCollector: Collector = {
       limit,
       cursor: ctx.cursor ?? undefined,
       searchType,
+      signal: ctx.signal,
     });
 
     const documents: NewDocument[] = posts.map((p) => {
@@ -58,6 +59,10 @@ export const xCollector: Collector = {
           replyCount: p.replyCount,
           provider: meta.provider,
           mocked: meta.provider === "fixture",
+          gatewayMode: meta.gatewayMode,
+          gatewayStatus: meta.gatewayStatus,
+          significanceModel: meta.significanceModel,
+          significance: p.significance,
         },
       };
     });

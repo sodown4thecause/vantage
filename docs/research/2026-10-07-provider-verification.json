@@ -1,0 +1,81 @@
+{
+  "verifiedAt": "2026-10-07",
+  "gatewayModels": [
+    {
+      "id": "anthropic/claude-sonnet-5.5",
+      "verifiedAt": "2026-10-07",
+      "inputUsdPerMillion": 2,
+      "outputUsdPerMillion": 10
+    },
+    {
+      "id": "openai/gpt-6.1-sol",
+      "verifiedAt": "2026-10-07",
+      "inputUsdPerMillion": 2,
+      "outputUsdPerMillion": 10
+    },
+    {
+      "id": "spacexai/grok-4.7",
+      "verifiedAt": "2026-10-07",
+      "inputUsdPerMillion": 2,
+      "outputUsdPerMillion": 6
+    }
+  ],
+  "inco": {
+    "host": "https://api.inco.ai/v1",
+    "model": "deepseek-v4.1-flash",
+    "inputUsdPerMillion": 0.3,
+    "cachedInputUsdPerMillion": 0.006,
+    "outputUsdPerMillion": 1.2,
+    "source": "https://api.inco.ai/v1/models"
+  },
+  "alexandria": {
+    "provider": "firecrawl-developer-index",
+    "capability": "search",
+    "query": "AI coding agent developer tools reliability hallucination context debugging evaluation issues",
+    "retrievedRows": [
+      {
+        "title": "why ai coding tools make experienced developers 19 slower and how to fix it",
+        "url": "https://www.augmentcode.com/guides/why-ai-coding-tools-make-experienced-developers-19-slower-and-how-to-fix-it",
+        "preview": "## **TL;DR**\nTraditional AI coding tools created 19% productivity loss in METR's study because 4,000-8,000 token context windows force constant manual prompting and cognitive mode-switching that destr"
+      },
+      {
+        "title": "Context-Aware Development in Kiro: From Hallucination to Production",
+        "url": "https://tessl.io/blog/context-aware-development-in-kiro-from-hallucination-to-production",
+        "preview": "# Context-Aware Development in Kiro: From Hallucination to Production\nDiscover how Kiro's context-aware development with MCP servers and agent steering tackles AI coding hallucinations, enhancing code"
+      },
+      {
+        "title": "A Developer's Guide to Improving AI Code Reliability",
+        "url": "https://speedscale.com/blog/a-developers-guide-to-improving-ai-code-reliability/",
+        "preview": "# A Developer's Guide to Improving AI Code Reliability\n## **Why AI Code Reliability Matters**\n**Cost**: Does debugging AI-generated issues end up consuming more time than the initial coding speed gain"
+      },
+      {
+        "title": "debug parallel ai agents",
+        "url": "https://www.augmentcode.com/guides/debug-parallel-ai-agents",
+        "preview": "## **TL;DR**\n\nParallel AI agents produce emergent failures that no single agent's logs can explain, and 45% of developers already report that debugging AI-generated code is more time-consuming. Struct"
+      },
+      {
+        "title": "tabnine vs gemini cli",
+        "url": "https://www.augmentcode.com/tools/tabnine-vs-gemini-cli",
+        "preview": "### **Documented Reliability Issues**\n\nTesting confirmed several concerning reliability patterns documented in GitHub issues. These issues are more than edge cases; they indicate systemic challenges i"
+      }
+    ],
+    "creditsCost": 2
+  },
+  "tinyfish": {
+    "connectorFetchVerified": true,
+    "applicationKeyVerified": false,
+    "urls": [
+      "https://www.reddit.com/r/LocalLLaMA/new/",
+      "https://www.reddit.com/r/ClaudeAI/new/"
+    ]
+  },
+  "advisor": {
+    "model": "GPT-5.6 Sol",
+    "url": "https://chatgpt.com/c/6ac5f0d1-a1c8-83ec-b269-d80c2162a882",
+    "recommendation": "Policy before drafting, contribution-quality ledger, suppression of low-value engagement."
+  },
+  "policySources": [
+    "https://news.ycombinator.com/newsguidelines.html",
+    "https://stackoverflow.com/help/ai-policy"
+  ]
+}

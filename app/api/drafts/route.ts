@@ -68,6 +68,9 @@ export async function POST(req: Request) {
       const draft = await createDraftForOpportunity({
         workspaceId,
         opportunityId,
+        targetDocumentId: typeof body.targetDocumentId === "string" ? body.targetDocumentId : undefined,
+        rulesReviewed: body.rulesReviewed === true,
+        signal: req.signal,
       });
       return NextResponse.json({ draft }, { status: 201 });
     }
@@ -99,7 +102,7 @@ export async function POST(req: Request) {
         );
       }
       try {
-        const draft = await approveDraftForHandoff({ workspaceId, draftId });
+        const draft = await approveDraftForHandoff({ workspaceId, draftId, rulesReviewed: body.rulesReviewed === true, factsReviewed: body.factsReviewed === true });
         return NextResponse.json({ draft });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

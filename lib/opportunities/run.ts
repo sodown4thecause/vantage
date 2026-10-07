@@ -402,6 +402,13 @@ export async function getOpportunityDetail(opts: {
     urlCanonical: e.doc.urlCanonical,
     platform: e.doc.platform,
     contentMd: e.doc.contentMd,
+    discoveryOnly: e.doc.metadata?.discoveryOnly === true,
+    existingReplies: Array.isArray(e.doc.metadata?.topComments ?? e.doc.metadata?.topReplies)
+      ? ((e.doc.metadata?.topComments ?? e.doc.metadata?.topReplies) as unknown[]).slice(0, 10).flatMap((reply) => {
+        if (typeof reply === "string") return [reply.slice(0, 2_000)];
+        if (reply && typeof reply === "object" && typeof (reply as { text?: unknown }).text === "string") return [(reply as { text: string }).text.slice(0, 2_000)];
+        return [];
+      }) : undefined,
     postedAt: e.doc.postedAt ? e.doc.postedAt.toISOString() : null,
     provider:
       typeof e.doc.metadata?.provider === "string"

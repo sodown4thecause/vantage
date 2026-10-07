@@ -82,10 +82,11 @@ export async function runCollector(
   let skipped = 0;
   try {
     input.signal?.throwIfAborted();
-    // ponytail: free pilot only; add paid lanes after enforceable spend limits.
     if (process.env.NODE_ENV === "production" &&
-        (row.lane !== "free" || !["hn", "rss", "substack"].includes(row.type))) {
-      throw new Error("Budget limited: paid providers are disabled for the production pilot.");
+        !(row.lane === "free" && ["hn", "rss", "substack", "github", "stackoverflow"].includes(row.type)) &&
+        !(row.type === "reddit" && row.lane === "byok") &&
+        !(process.env.VANTAGE_PAID_PROVIDERS_ENABLED === "true" && ["reddit", "x", "web_search", "linkedin"].includes(row.type))) {
+      throw new Error("Budget limited: this provider requires an explicit paid-provider opt-in.");
     }
     const result: CollectorResult = await input.collector.run({
       workspaceId: input.workspaceId,

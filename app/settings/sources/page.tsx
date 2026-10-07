@@ -5,7 +5,7 @@ import { PageHead, Shell } from "@/components/shell";
 
 import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
 import { listWorkspaceSources } from "@/lib/sources/list";
-import { FeedForm } from "@/app/source-controls";
+import { CommunitySourceForm, FeedForm, SourceScanButton } from "@/app/source-controls";
 
 export default async function SourcesCoveragePage({
   searchParams,
@@ -35,6 +35,7 @@ export default async function SourcesCoveragePage({
       <PageHead title={"Sources & Coverage"} lede={"Last scan, coverage status, result counts, and provider provenance. Fixture-only runs are marked degraded, never as healthy live coverage."} />
 
       <FeedForm workspaceId={workspaceId} />
+      <CommunitySourceForm workspaceId={workspaceId} />
 
       {sources.length === 0 ? (
         <p className="text-sm text-zinc-500" data-testid="sources-empty">
@@ -108,6 +109,7 @@ export default async function SourcesCoveragePage({
                     <dd data-testid="source-reason">{reason}</dd>
                   </div>
                 </dl>
+                <SourceScanButton workspaceId={workspaceId} sourceId={s.id} />
               </li>
             );
           })}

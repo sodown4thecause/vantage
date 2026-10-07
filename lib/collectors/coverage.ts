@@ -153,6 +153,10 @@ export function classifyCollectorCoverage(input: {
     };
   }
 
+  if (input.documents.some(doc => doc.metadata?.partial === true)) {
+    return { coverage: "degraded", health: "degraded", reason: "Partial indexed or dataset coverage. Read the original source before acting.", inserted: input.inserted, skipped: input.skipped, resultCount, provider };
+  }
+
   return {
     coverage: "healthy",
     health: "healthy",

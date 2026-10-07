@@ -109,10 +109,12 @@ export async function saveMonitoringProfile(args: {
   return toProfileView(row);
 }
 
+export const PROFILE_SOURCE_NAME = "Profile: Hacker News";
+
 export async function provisionProfileSources(workspaceId: string, topics: string[]): Promise<void> {
   const config = { queries: topics.slice(0, 5), maxPages: 1, enrich: false };
   await getDb().insert(source).values({
-    workspaceId, name: "Profile: Hacker News", type: "hn", lane: "free", config,
+    workspaceId, name: PROFILE_SOURCE_NAME, type: "hn", lane: "free", config,
   }).onConflictDoUpdate({
     target: [source.workspaceId, source.name],
     set: { config: sql`${source.config} || ${JSON.stringify(config)}::jsonb`, updatedAt: new Date() },

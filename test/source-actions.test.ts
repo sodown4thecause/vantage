@@ -1,16 +1,23 @@
 import { beforeEach, expect, it, vi } from "vitest";
-const state = vi.hoisted(() => ({ allowed: true, dbCalls: 0, partial: false, writes: [] as Record<string, unknown>[], names: [] as Array<{ name: string }> }));
+const state = vi.hoisted(() => ({ allowed: true, dbCalls: 0, partial: false, writes: [] as Record<string, unknown>[], names: [] as Array<{ name: string }>, lease: Promise.resolve(), sourceLimit: 100 }));
 vi.mock("@/lib/auth/workspace", () => ({ authorizeWorkspace: async () => state.allowed ? { ok: true } : { ok: false, error: "forbidden" } }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/cron/scan", () => ({ scanWorkspace: async () => ({ collectorResults: state.partial ? [{ error: "collector failed" }] : [], opportunityResults: [] }) }));
+vi.mock("@/lib/cron/lease", () => ({ withWorkspaceScanLease: async (_workspaceId: string, work: (signal: AbortSignal) => Promise<unknown>) => {
+  const previous = state.lease; let release!: () => void;
+  state.lease = new Promise<void>(resolve => { release = resolve; });
+  await previous;
+  try { return await work(new AbortController().signal); } finally { release(); }
+} }));
+vi.mock("@/lib/plans/limits", async original => ({ ...await original<typeof import("@/lib/plans/limits")>(), assertWithinCount: async (_workspace: string, _key: string, count: number) => { if (count >= state.sourceLimit) throw new Error("Source limit reached"); } }));
 vi.mock("@/lib/db/client", () => ({ getDb: () => {
   state.dbCalls++;
   return { select: () => ({ from: () => ({ where: () => ({ limit: async () => state.names }) }) }),
-    insert: () => ({ values: (value: Record<string, unknown>) => ({ onConflictDoNothing: async () => { state.writes.push(value); } }) }),
+    insert: () => ({ values: (value: Record<string, unknown>) => ({ onConflictDoNothing: async () => { state.writes.push(value); state.names.push({ name: String(value.name) }); } }) }),
   };
 } }));
-import { addFeed, scanNow } from "@/lib/sources/actions";
-beforeEach(() => { state.allowed = true; state.dbCalls = 0; state.partial = false; state.writes = []; state.names = []; });
+import { addCommunitySource, addFeed, scanNow } from "@/lib/sources/actions";
+beforeEach(() => { state.allowed = true; state.dbCalls = 0; state.partial = false; state.writes = []; state.names = []; state.lease = Promise.resolve(); state.sourceLimit = 100; });
 it("returns correctable feed errors without querying another user's data", async () => {
   const form = new FormData(); form.set("feedUrl", "http://localhost/feed");
   expect(await addFeed("ws", {}, form)).toHaveProperty("error");
@@ -30,4 +37,32 @@ it("creates a free feed once and preserves existing source state on repeat submi
 it("returns partial scan failure for display instead of throwing", async () => {
   state.partial = true;
   expect(await scanNow("ws")).toEqual({ error: "Some sources could not be scanned. Check Sources & Coverage." });
+});
+it("installs an authorized catalog entry once and ignores supplied provider config", async () => {
+  const form = new FormData(); form.set("catalogId", "dev-ai"); form.set("config", "http://localhost/secret");
+  expect(await addCommunitySource("ws", {}, form)).toHaveProperty("message");
+  expect(state.writes[0]).toMatchObject({ workspaceId: "ws", type: "rss", lane: "free", config: { feedUrl: "https://dev.to/feed/tag/ai", catalogId: "dev-ai" } });
+  state.names = [{ name: String(state.writes[0].name) }]; await addCommunitySource("ws", {}, form);
+  expect(state.writes).toHaveLength(1);
+});
+it("rejects unauthorized or unknown catalog sources before a database call", async () => {
+  const form = new FormData(); form.set("catalogId", "unknown");
+  expect(await addCommunitySource("ws", {}, form)).toHaveProperty("error");
+  state.allowed = false; form.set("catalogId", "dev-ai");
+  expect(await addCommunitySource("ws", {}, form)).toHaveProperty("error");
+  expect(state.dbCalls).toBe(0);
+});
+it("serializes feed and catalog installation under one workspace lease", async () => {
+  state.sourceLimit = 8; state.names = [{ name: "Profile: Hacker News" }, ...Array.from({ length: 6 }, (_, i) => ({ name: `source-${i}` }))];
+  const catalog = new FormData(); catalog.set("catalogId", "dev-ai");
+  const feed = new FormData(); feed.set("feedUrl", "https://example.com/feed");
+  const results = await Promise.all([addCommunitySource("ws", {}, catalog), addFeed("ws", {}, feed)]);
+  expect(results.filter(result => result.message)).toHaveLength(1);
+  expect(state.writes).toHaveLength(1);
+});
+it("reserves the default onboarding source slot before the profile exists", async () => {
+  state.sourceLimit = 3; state.names = [{ name: "feed-1" }, { name: "feed-2" }];
+  const form = new FormData(); form.set("catalogId", "dev-ai");
+  expect(await addCommunitySource("ws", {}, form)).toHaveProperty("error");
+  expect(state.writes).toHaveLength(0);
 });

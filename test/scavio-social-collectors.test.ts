@@ -3,6 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const redditSearch = vi.fn();
 const xSearch = vi.fn();
 
+vi.mock("@/lib/providers/paid-call", () => ({
+  runPaidCall: async (_options: unknown, work: () => Promise<{ value: unknown }>) => (await work()).value,
+  isPaidCallDenied: () => false,
+}));
+
 vi.mock("scavio", () => {
   class Scavio {
     reddit = { search: redditSearch };
@@ -23,6 +28,10 @@ beforeEach(() => {
   xSearch.mockReset();
   process.env = { ...ORIGINAL_ENV };
   delete process.env.SCAVIO_API_KEY;
+  delete process.env.TINYFISH_API_KEY;
+  delete process.env.AI_GATEWAY_API_KEY;
+  delete process.env.X_GATEWAY_EXPERIMENT_ENABLED;
+  delete process.env.VANTAGE_DEMO_FIXTURES;
 });
 
 afterEach(() => {
@@ -64,7 +73,8 @@ describe("Reddit Scavio client", () => {
     );
   });
 
-  it("falls back to fixtures without key", async () => {
+  it("uses fixtures only with explicit demo opt-in", async () => {
+    process.env.VANTAGE_DEMO_FIXTURES = "true";
     const { posts, meta } = await fetchRedditPostsWithMeta({ limit: 1 });
     expect(meta.provider).toBe("fixture");
     expect(posts.length).toBe(1);
@@ -81,6 +91,8 @@ describe("X Scavio client", () => {
             id: "123",
             text: "Looking for Brandwatch alternatives",
             username: "builder",
+            url: "https://x.com/builder/status/123",
+            created_at: "2026-10-06T12:00:00Z",
             like_count: 5,
           },
         ],
@@ -140,6 +152,8 @@ describe("social collectors", () => {
           id: "99",
           text: "shipping social listening",
           author: "ops",
+          url: "https://x.com/ops/status/99",
+          created_at: "2026-10-06T12:00:00Z",
         },
       ],
     });
