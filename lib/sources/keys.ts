@@ -11,6 +11,9 @@ const SOURCE_TYPE_KEYS = [
   "producthunt",
   "youtube",
   "x",
+  "github",
+  "stackoverflow",
+  "linkedin",
   "other",
 ] as const satisfies readonly SourceType[];
 

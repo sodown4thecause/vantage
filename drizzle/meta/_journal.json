@@ -117,15 +117,22 @@
     {
       "idx": 16,
       "version": "7",
-      "when": 1791365930400,
-      "tag": "0016_sturdy_colossus",
+      "when": 1791360026949,
+      "tag": "0016_community_gtm_phase",
       "breakpoints": true
     },
     {
       "idx": 17,
       "version": "7",
-      "when": 1791368852776,
-      "tag": "0017_fair_natasha_romanoff",
+      "when": 1791373238489,
+      "tag": "0017_community_draft_lookup",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791384142301,
+      "tag": "0018_perfect_sabretooth",
       "breakpoints": true
     }
   ]

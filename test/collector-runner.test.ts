@@ -80,6 +80,11 @@ beforeEach(() => {
 });
 
 describe("runCollector", () => {
+  it("persists incomplete coverage even when the scan returns no matching documents", async () => {
+    const result = await runCollector({ collector: { name: "hn", run: async () => ({ documents: [], partial: true, coverageReason: "Remaining pages are deferred." }) }, workspaceId: "workspace-1", sourceId: "source-1" });
+    expect(result.receipt).toMatchObject({ coverage: "degraded", reason: "Remaining pages are deferred." });
+    expect(state.updates.at(-1)).toHaveProperty("health", "degraded");
+  });
   it("blocks paid providers in production before any external call", async () => {
     vi.stubEnv("NODE_ENV", "production");
     state.row = { ...sourceRow, type: "reddit", lane: "paid" };

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   date,
@@ -31,6 +32,9 @@ export const sourceTypeEnum = pgEnum("source_type", [
   "producthunt",
   "youtube",
   "x",
+  "github",
+  "stackoverflow",
+  "linkedin",
 ]);
 
 export const sourcePlatformValues = [
@@ -41,6 +45,9 @@ export const sourcePlatformValues = [
   "youtube",
   "reddit",
   "x",
+  "github",
+  "stackoverflow",
+  "linkedin",
 ] as const;
 export type SourcePlatform = (typeof sourcePlatformValues)[number];
 
@@ -334,6 +341,7 @@ export const opportunityDraft = pgTable("opportunity_draft", {
     .$type<Array<{ claim: string; reason: string }>>()
     .notNull()
     .default([]),
+  quality: jsonb("quality").$type<Record<string, unknown>>(),
   approvedAt: timestamp("approved_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
@@ -341,7 +349,16 @@ export const opportunityDraft = pgTable("opportunity_draft", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
-});
+}, (table) => [
+  index("opportunity_draft_scope_target_created_idx").on(
+    table.workspaceId, table.opportunityId,
+    sql`(${table.quality}->>'targetDocumentId')`, table.createdAt.desc(),
+  ),
+  // Supports the legacy fallback and existing global newest-draft lookup.
+  index("opportunity_draft_scope_created_idx").on(
+    table.workspaceId, table.opportunityId, table.createdAt.desc(),
+  ),
+]);
 
 export type Opportunity = typeof opportunity.$inferSelect;
 export type NewOpportunity = typeof opportunity.$inferInsert;
@@ -619,6 +636,14 @@ export const budgetDay = pgTable("budget_day", {
     .notNull()
     .default("0"),
   capUsd: numeric("cap_usd", { precision: 12, scale: 6 }).notNull(),
+});
+
+/** Paid authenticated calls have a separate cap from anonymous public scans. */
+export const providerBudgetDay = pgTable("provider_budget_day", {
+  day: date("day").primaryKey(),
+  spentUsd: numeric("spent_usd", { precision: 12, scale: 6 }).notNull().default("0"),
+  capUsd: numeric("cap_usd", { precision: 12, scale: 6 }).notNull(),
+  reservationRef: text("reservation_ref"),
 });
 
 export const publicVisitor = pgTable(

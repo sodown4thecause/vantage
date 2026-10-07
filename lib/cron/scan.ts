@@ -10,7 +10,7 @@ import { getLatestMonitoringProfile } from "@/lib/profile/repository";
 import { withWorkspaceScanLease } from "@/lib/cron/lease";
 
 /** Source types a scheduled scan actually runs; cadence is measured against these only. */
-const SCHEDULED_SOURCE_TYPES = ["hn", "rss", "substack"] as const;
+const SCHEDULED_SOURCE_TYPES = ["hn", "rss", "substack", "github", "stackoverflow"] as const;
 
 /**
  * Scheduled scans honour the plan's `scan_interval_hours` (Free: daily, Pro: 3 hours).

@@ -111,7 +111,7 @@ export default async function OpportunityDetailPage({
           </section>
 
           <PlaysPanel workspaceId={workspaceId} opportunityId={detail.id} />
-          <DraftPanel workspaceId={workspaceId} opportunityId={detail.id} />
+          <DraftPanel workspaceId={workspaceId} opportunityId={detail.id} conversations={detail.evidence.map(({ documentId, title, urlCanonical, platform, discoveryOnly }) => ({ documentId, title, urlCanonical, platform, discoveryOnly }))} />
           <FeedbackPanel workspaceId={workspaceId} opportunityId={detail.id} />
         </div>
 

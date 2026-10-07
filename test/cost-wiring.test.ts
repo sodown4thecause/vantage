@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { CostInput } from "@/lib/costs/ledger";
 
 const mocks = vi.hoisted(() => ({
-  recorded: [] as Array<Record<string, unknown>>,
+  recorded: [] as CostInput[],
+  execute: vi.fn(),
   agentRun: vi.fn(),
   searchQuery: vi.fn(),
   getContents: vi.fn(),
@@ -10,14 +12,16 @@ const mocks = vi.hoisted(() => ({
   youtubeComments: vi.fn(),
 }));
 
-vi.mock("@/lib/costs/ledger", () => ({
-  recordCost: async (input: Record<string, unknown>) => {
+vi.mock("@/lib/costs/ledger", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/costs/ledger")>(),
+  recordCost: async (input: CostInput) => {
     mocks.recorded.push(input);
     return true;
   },
 }));
 vi.mock("@/lib/db/client", () => ({
   getDb: () => ({
+    execute: mocks.execute,
     select: () => ({
       from: () => ({ where: () => ({ orderBy: () => ({ limit: async () => [] }) }) }),
     }),
@@ -41,6 +45,7 @@ vi.mock("scavio", () => {
 });
 
 import { clearPriceCache } from "@/lib/costs/prices";
+import { computeCost } from "@/lib/costs/ledger";
 import { redditCollector } from "@/lib/collectors/reddit";
 import { runTinyFishStructuredAgent } from "@/lib/tinyfish/agent";
 import { tinyFishFetchMarkdown, tinyFishSearch } from "@/lib/tinyfish/search-fetch";
@@ -51,20 +56,28 @@ import { fetchProductHuntPostsWithMeta } from "@/lib/producthunt/client";
 
 const ORIGINAL_ENV = { ...process.env };
 const ctx = { workspaceId: "ws-1", sourceKey: "src-key" };
+const redditRow = { id: "abc", title: "Tooling question", body: "Literal public thread",
+  url: "https://www.reddit.com/r/LocalLLaMA/comments/abc/tooling/" };
 
 beforeEach(() => {
   mocks.recorded = [];
-  for (const m of [mocks.agentRun, mocks.searchQuery, mocks.getContents, mocks.redditSearch, mocks.xSearch, mocks.youtubeComments]) m.mockReset();
+  for (const m of [mocks.execute, mocks.agentRun, mocks.searchQuery, mocks.getContents, mocks.redditSearch, mocks.xSearch, mocks.youtubeComments]) m.mockReset();
+  mocks.execute.mockResolvedValue([{ day: "2026-10-07" }]);
   clearPriceCache();
   process.env = { ...ORIGINAL_ENV };
   process.env.TINYFISH_API_KEY = "test-key";
   process.env.SCAVIO_API_KEY = "test-key";
+  process.env.VANTAGE_PAID_PROVIDERS_ENABLED = "true";
+  process.env.VANTAGE_PAID_DAILY_BUDGET_USD = "1";
+  process.env.VANTAGE_DEMO_FIXTURES = "";
+  process.env.X_GATEWAY_EXPERIMENT_ENABLED = "";
   delete process.env.YOUTUBE_API_KEY;
   delete process.env.PH_DEV_TOKEN;
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   process.env = { ...ORIGINAL_ENV };
   vi.restoreAllMocks();
 });
@@ -109,33 +122,79 @@ describe("cost wiring: one cost_event per provider call", () => {
   });
 
   it("Reddit via Scavio records one event at the Scavio price", async () => {
-    mocks.redditSearch.mockResolvedValue({ results: [{ id: "a", title: "t" }] });
+    delete process.env.TINYFISH_API_KEY;
+    mocks.redditSearch.mockResolvedValue({ results: [redditRow] });
     const out = await fetchRedditPostsWithMeta({ ctx });
     expect(out.meta.provider).toBe("scavio");
     expect(mocks.recorded).toHaveLength(1);
-    expect(mocks.recorded[0]).toMatchObject({ provider: "scavio", action: "reddit_search", unitCostUsd: 0.004, sourceKey: "src-key" });
+    expect(mocks.recorded[0]).toMatchObject({ provider: "scavio", action: "reddit_search", units: 1,
+      unitCostUsd: 0.004, sourceKey: "src-key", workspaceId: "ws-1", ok: true });
+    expect(mocks.execute).toHaveBeenCalledTimes(2);
+    expect(mocks.execute.mock.invocationCallOrder[0]).toBeLessThan(mocks.redditSearch.mock.invocationCallOrder[0]);
   });
 
   it("Reddit collector attributes the call to the workspace and source", async () => {
-    mocks.redditSearch.mockResolvedValue({ results: [{ id: "a", title: "t" }] });
+    delete process.env.TINYFISH_API_KEY;
+    mocks.redditSearch.mockResolvedValue({ results: [redditRow] });
     await redditCollector.run({ workspaceId: "ws-9", sourceId: "s-1", config: {} });
     expect(mocks.recorded).toHaveLength(1);
     expect(mocks.recorded[0]).toMatchObject({ sourceKey: "reddit", workspaceId: "ws-9" });
   });
 
-  it("Reddit provider failure is recorded and the fixture fallback still works", async () => {
-    mocks.redditSearch.mockRejectedValue(new Error("down"));
-    const out = await fetchRedditPostsWithMeta({ ctx });
-    expect(out.meta.provider).toBe("fixture");
+  it("Reddit provider failure stays charged and cannot silently become fixtures", async () => {
+    delete process.env.TINYFISH_API_KEY;
+    process.env.VANTAGE_DEMO_FIXTURES = "true";
+    mocks.redditSearch.mockRejectedValue(new Error("sk-live-secret"));
+    await expect(fetchRedditPostsWithMeta({ ctx })).rejects.toThrow("Reddit provider unavailable");
     expect(mocks.recorded).toHaveLength(1);
-    expect(mocks.recorded[0]).toMatchObject({ ok: false });
+    expect(mocks.recorded[0]).toMatchObject({ provider: "scavio", action: "reddit_search", unitCostUsd: 0.004,
+      sourceKey: "src-key", workspaceId: "ws-1", ok: false, chargedOnFailure: true });
+    expect(computeCost(mocks.recorded[0]).costUsd).toBe("0.004000");
+    expect(mocks.redditSearch).toHaveBeenCalledOnce();
+  });
+
+  it("Reddit records free discovery then exactly one reserved paid Agent attempt", async () => {
+    mocks.searchQuery.mockRejectedValue(new Error("Free discovery unavailable"));
+    mocks.agentRun.mockResolvedValue({ status: "COMPLETED", result: { posts: [redditRow] }, num_of_steps: 3 });
+    const out = await fetchRedditPostsWithMeta({ ctx });
+    expect(out.meta.provider).toBe("tinyfish_agent");
+    expect(mocks.recorded).toHaveLength(2);
+    expect(mocks.recorded[0]).toMatchObject({ provider: "tinyfish", action: "search", unitCostUsd: 0,
+      sourceKey: "src-key", workspaceId: "ws-1", ok: false });
+    expect(mocks.recorded[1]).toMatchObject({ provider: "tinyfish", action: "agent_step", units: 1,
+      unitCostUsd: 0.048, sourceKey: "src-key", workspaceId: "ws-1", ok: true });
+    expect(mocks.execute.mock.invocationCallOrder[0]).toBeLessThan(mocks.agentRun.mock.invocationCallOrder[0]);
+    expect(mocks.agentRun).toHaveBeenCalledOnce();
+    expect(mocks.redditSearch).not.toHaveBeenCalled();
+  });
+
+  it("explicit nonproduction demo fixtures require no provider call or ledger event", async () => {
+    delete process.env.TINYFISH_API_KEY;
+    delete process.env.SCAVIO_API_KEY;
+    vi.stubEnv("NODE_ENV", "test");
+    process.env.VANTAGE_DEMO_FIXTURES = "true";
+    expect((await fetchRedditPostsWithMeta({ ctx })).meta.provider).toBe("fixture");
+    expect(mocks.recorded).toHaveLength(0);
+    expect(mocks.execute).not.toHaveBeenCalled();
+    expect(mocks.redditSearch).not.toHaveBeenCalled();
   });
 
   it("X via Scavio records one event", async () => {
-    mocks.xSearch.mockResolvedValue({ results: [{ id: "1", text: "hello" }] });
+    mocks.xSearch.mockResolvedValue({ results: [{ id: "1234567890123456789", text: "Literal X post",
+      url: "https://x.com/builder/status/1234567890123456789", created_at: "2026-10-06T12:00:00.000Z" }] });
     await fetchXPostsWithMeta({ ctx });
     expect(mocks.recorded).toHaveLength(1);
-    expect(mocks.recorded[0]).toMatchObject({ provider: "scavio", action: "x_search", sourceKey: "src-key" });
+    expect(mocks.recorded[0]).toMatchObject({ provider: "scavio", action: "x_search", units: 1,
+      unitCostUsd: 0.004, sourceKey: "src-key", workspaceId: "ws-1", ok: true });
+    expect(mocks.execute).toHaveBeenCalledTimes(2);
+    expect(mocks.execute.mock.invocationCallOrder[0]).toBeLessThan(mocks.xSearch.mock.invocationCallOrder[0]);
+  });
+
+  it("budget reservation denial stops X before outbound work and billing", async () => {
+    mocks.execute.mockResolvedValue([]);
+    await expect(fetchXPostsWithMeta({ ctx })).rejects.toMatchObject({ code: "budget_exhausted" });
+    expect(mocks.xSearch).not.toHaveBeenCalled();
+    expect(mocks.recorded).toHaveLength(0);
   });
 
   it("YouTube via Scavio records one event per video", async () => {

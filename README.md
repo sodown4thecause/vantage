@@ -104,14 +104,29 @@ value builds green and then fails every login at runtime.
 
 ### Migrations are a deliberate manual step
 
-`pnpm db:migrate` is **not** chained into `pnpm deploy`. Every preview shares one
-production `DATABASE_URL`, so building migrations into the deploy step would let
-concurrent preview builds race each other against the same database. Apply them
-deliberately, after merge:
+`pnpm db:migrate` is **not** chained into `pnpm deploy`. Apply migrations to the
+verified staging database before accepting features that use the new schema.
+Run production migrations deliberately against the confirmed production target:
 
 ```bash
 DATABASE_URL="postgresql://…" pnpm db:migrate
 ```
+
+### Cloudflare branch previews
+
+`wrangler.jsonc` includes the [required `previews` block](https://developers.cloudflare.com/workers/previews/configuration/).
+Its [custom build command](https://developers.cloudflare.com/workers/wrangler/custom-builds/)
+runs `pnpm run cf:build` before Wrangler bundles the preview, so the dashboard's
+`pnpm run build` followed by `npx wrangler preview` produces `.open-next` assets.
+The package's `build` remains `next build`, avoiding a recursive build hook.
+Named staging and production configurations override the hook with an empty command,
+because CI already runs the explicit OpenNext build before their uploads. Build
+with `pnpm cf:build` before using raw Wrangler commands with those environments.
+
+Configure preview-specific test database and auth secrets in Previews Base before
+testing authenticated flows. The empty preview block copies no production bindings
+or routes. Preview service bindings call the target Worker's production deployment,
+so add only verified test services. Previews do not run cron. Builds never apply migrations.
 
 ### Deploy
 
@@ -121,7 +136,8 @@ pnpm deploy
 
 ### Cron
 
-`wrangler.jsonc` schedules `0 */3 * * *` (every 3 hours, UTC). The adapter emits
+The `staging` environment schedules `0 */3 * * *` (every 3 hours, UTC);
+top-level and production cron lists are empty. The adapter emits
 only a `fetch` handler, so `worker-entry.mjs` adds a `scheduled` handler that
 reaches the tick route through the `WORKER_SELF_REFERENCE` service binding with
 `Authorization: Bearer ${CRON_SECRET}`. This reuses the single deployed bundle and
