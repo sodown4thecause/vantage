@@ -60,6 +60,11 @@ describe("paid developer discovery", () => {
     await expect(alexandriaCollector.run(ctx)).rejects.toThrow(/failed|denied/i);
   });
 
+  it.each(["private provider body is not JSON", "null"])("sanitizes malformed Alexandria envelopes: %s", async body => {
+    vi.stubGlobal("fetch", async () => new Response(body));
+    await expect(alexandriaCollector.run(ctx)).rejects.toThrow(/^Invalid Firecrawl dataset response$/);
+  });
+
   it("bounds repository-issues pages and meters the verified five-credit contract", async () => {
     const request = vi.fn(async () => Response.json({ success: true, data: { creditsCost: 5, alexandria: [{ provider: "github-com", capability: "repositories/issues", data: { has_next: true, issues: [{ id: 42, number: 7, source_url: "https://github.com/acme/agent/issues/7", title: "Agent eval", body: "Compare runs", created_at: "2026-10-01T00:00:00Z" }] } }] } })); vi.stubGlobal("fetch", request);
     const result = await alexandriaCollector.run({ ...ctx, config: { provider: "github-com", capability: "repositories/issues", repo: "acme/agent", maxPages: 50 } });

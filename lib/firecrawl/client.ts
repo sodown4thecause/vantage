@@ -7,6 +7,8 @@ export type AlexandriaRequest =
   | { provider: "github-com"; capability: "repositories/issues"; options: { repo: string; page: number; per_page: number; state: "open" | "closed" | "all"; sort: "updated"; direction: "desc"; include_pull_requests: false; labels?: string[] } };
 
 export type AlexandriaPage = { records: Record<string, unknown>[]; partial: boolean; hasNext: boolean };
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
 
 export async function runAlexandria(request: AlexandriaRequest, context: CostContext, signal?: AbortSignal): Promise<AlexandriaPage> {
   signal?.throwIfAborted();
@@ -19,14 +21,19 @@ export async function runAlexandria(request: AlexandriaRequest, context: CostCon
   return runPaidCall({ context, provider: "firecrawl", action: `${request.provider}/${request.capability}`, estimateUsd: estimatedCredits * creditUsd, signal }, async () => {
     const { response, text } = await fetchPublicText("https://api.firecrawl.dev/v2/scrape", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ alexandria: [request] }), signal, cache: "no-store" }, 1_000_000, fetch, 30_000);
     if (!response.ok) throw new Error(`Firecrawl dataset request failed (${response.status})`);
-    const payload = JSON.parse(text) as { success?: boolean; data?: { creditsCost?: number; alexandria?: Array<{ provider?: string; capability?: string; creditsCost?: number; data?: { success?: boolean; partial?: boolean; has_next?: boolean; results?: Record<string, unknown>[]; issues?: Record<string, unknown>[] } }> } };
-    const result = Array.isArray(payload.data?.alexandria) ? payload.data.alexandria.find(item => item?.provider === request.provider && item.capability === request.capability) : undefined;
-    if (payload.success !== true || !result?.data || result.data.success === false) throw new Error("Firecrawl dataset execution failed or returned an invalid response");
-    const records = request.provider === "github-com" ? result.data.issues : result.data.results;
+    let payload: unknown;
+    try { payload = JSON.parse(text); } catch { throw new Error("Invalid Firecrawl dataset response"); }
+    if (!isRecord(payload)) throw new Error("Invalid Firecrawl dataset response");
+    const data = isRecord(payload.data) ? payload.data : undefined;
+    const result = Array.isArray(data?.alexandria) ? data.alexandria.find((item): item is Record<string, unknown> =>
+      isRecord(item) && item.provider === request.provider && item.capability === request.capability) : undefined;
+    const resultData = result && isRecord(result.data) ? result.data : undefined;
+    if (payload.success !== true || !resultData || resultData.success === false) throw new Error("Firecrawl dataset execution failed or returned an invalid response");
+    const records = request.provider === "github-com" ? resultData.issues : resultData.results;
     if (!Array.isArray(records)) throw new Error("Invalid Firecrawl dataset response records");
     signal?.throwIfAborted();
-    const credits = payload.data?.creditsCost ?? result.creditsCost;
-    return { value: { records: records.filter(item => item && typeof item === "object" && !Array.isArray(item)), partial: result.data.partial === true, hasNext: result.data.has_next === true },
+    const credits = data?.creditsCost ?? result?.creditsCost;
+    return { value: { records: records.filter(isRecord), partial: resultData.partial === true, hasNext: resultData.has_next === true },
       costUsd: typeof credits === "number" && Number.isFinite(credits) && credits >= 0 ? credits * creditUsd : undefined };
   });
 }

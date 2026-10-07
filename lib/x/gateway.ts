@@ -9,6 +9,8 @@ const MODELS: Record<string, { input: number; output: number }> = {
   "spacexai/grok-4.7": { input: 2, output: 6 },
 };
 const MAX_OUTPUT_TOKENS = 2048;
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
 
 /** Read-only model opinions about literal retrieved posts; never a source of tweet text. */
 export async function analyzeXPostSignificance(posts: XPost[], opts: {
@@ -40,10 +42,10 @@ export async function analyzeXPostSignificance(posts: XPost[], opts: {
     let payload: Record<string, unknown>;
     try {
       const parsed: unknown = JSON.parse(text);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
-      payload = parsed as Record<string, unknown>;
+      if (!isRecord(parsed)) throw new Error();
+      payload = parsed;
     } catch { throw new Error("Invalid Gateway significance response"); }
-    const usage = payload.usage && typeof payload.usage === "object" ? payload.usage as Record<string, unknown> : {};
+    const usage = isRecord(payload.usage) ? payload.usage : {};
     const inputTokens = usage.input_tokens;
     const outputTokens = usage.output_tokens;
     const costUsd = typeof inputTokens === "number" && Number.isFinite(inputTokens) && inputTokens >= 0
@@ -58,9 +60,9 @@ export async function analyzeXPostSignificance(posts: XPost[], opts: {
     if (payload.status !== "completed" || payload.error) throw new Error();
     const text = asRecordArray(payload, ["output"]).flatMap(item => asRecordArray(item, ["content"]))
       .filter(part => part.type === "output_text" && typeof part.text === "string").map(part => part.text).join("");
-    const parsed = JSON.parse(text) as Record<string, unknown>;
-    if (!Array.isArray(parsed.posts) || parsed.posts.some(row => !row || typeof row !== "object" || Array.isArray(row))) throw new Error();
-    rows = parsed.posts as Array<Record<string, unknown>>;
+    const parsed: unknown = JSON.parse(text);
+    if (!isRecord(parsed) || !Array.isArray(parsed.posts) || !parsed.posts.every(isRecord)) throw new Error();
+    rows = parsed.posts;
   } catch { throw new Error("Invalid Gateway significance response"); }
   const knownUrls = new Set(posts.map(post => post.url));
   const significance = new Map<string, { score: number; reason: string }>();
