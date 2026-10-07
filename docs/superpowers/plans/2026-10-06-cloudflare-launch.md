@@ -20,7 +20,7 @@ Pilot ceilings: three workspaces per scheduled tick, eight eligible sources per 
 
 Local verification: application tests, scheduled wrapper tests, lint, typecheck and migration generation pass. Next.js compiles and generates pages. Full OpenNext packaging cannot be confirmed locally: Windows rejects packaging symlinks and the WSL filesystem reports input/output errors. CI must pass the full Linux Worker build and staging dry run before merge.
 
-> **Update:** CI moved from CircleCI to GitHub Actions (`a960267`); CircleCI is no longer used. Code review is by Greptile (`.greptile/`).
+> **Update:** CI moved from CircleCI to GitHub Actions (`a960267`); CircleCI is no longer used. Code review is by cubic (`cubic.yaml`).
 
 **Tasks 6–7 remain ACCESS_PENDING.** The user chose existing Cloudflare and Neon resources. Cloudflare CLI is unauthenticated and the Neon console presents sign-in. No deployment, live migration, auth callback, real ingestion acceptance, custom hostname, schedule activation or rollback has been demonstrated. Authenticate, identify the existing account/project and staging targets, apply `0010_brown_hydra.sql` to staging, then follow the acceptance and promotion sequence below. Do not enable cron until staging passes.
 
