@@ -35,7 +35,7 @@ export default async function SourceSwitchesPage({
         </p>
         {loadError && (
           <p role="alert" className="text-sm text-red-600 dark:text-red-400">
-            Switches could not be loaded. Showing defaults; do not save until this is resolved.
+            Switches could not be loaded. Saving is disabled until they load; reload to retry.
           </p>
         )}
         {status === "saved" && isSourceSwitchKey(savedKey) && (
@@ -71,6 +71,7 @@ export default async function SourceSwitchesPage({
                   <input type="hidden" name="sourceKey" value={key} />
                   <select
                     name="state"
+                    disabled={loadError}
                     aria-label={`State for ${key}`}
                     defaultValue={state}
                     className="rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
@@ -83,6 +84,7 @@ export default async function SourceSwitchesPage({
                   </select>
                   <input
                     name="reason"
+                    disabled={loadError}
                     defaultValue={row?.reason ?? ""}
                     placeholder="Reason shown to users"
                     maxLength={500}
@@ -90,6 +92,7 @@ export default async function SourceSwitchesPage({
                   />
                   <button
                     type="submit"
+                    disabled={loadError}
                     className="rounded bg-zinc-900 px-3 py-1 text-sm font-medium text-white dark:bg-zinc-50 dark:text-zinc-900"
                   >
                     Save
