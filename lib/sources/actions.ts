@@ -18,6 +18,7 @@ import { buildOpportunities } from "@/lib/opportunities/run";
 import { PROFILE_SOURCE_NAME } from "@/lib/profile/repository";
 
 export type SourceActionState = { error?: string; message?: string };
+export type CommunitySourceActionState = SourceActionState & { catalogId: string };
 
 async function installSource(workspaceId: string, value: Pick<NewSource, "name" | "type" | "lane" | "config">, message: string): Promise<SourceActionState> {
   return withWorkspaceScanLease(workspaceId, async signal => {
@@ -34,18 +35,20 @@ async function installSource(workspaceId: string, value: Pick<NewSource, "name" 
   });
 }
 
-export async function addCommunitySource(workspaceId: string, _previous: SourceActionState, form: FormData): Promise<SourceActionState> {
+export async function addCommunitySource(workspaceId: string, _previous: SourceActionState, form: FormData): Promise<CommunitySourceActionState> {
   try {
     const authorization = await authorizeWorkspace(workspaceId);
-    if (!authorization.ok) return { error: "Unable to add sources for this workspace." };
-    const entry = COMMUNITY_SOURCE_CATALOG.find(e => e.id === form.get("catalogId"));
-    if (!entry) return { error: "Choose a source from the community catalog." };
+    const catalogId = String(form.get("catalogId") ?? "");
+    if (!authorization.ok) return { catalogId, error: "Unable to add sources for this workspace." };
+    const entry = COMMUNITY_SOURCE_CATALOG.find(e => e.id === catalogId);
+    if (!entry) return { catalogId, error: "Choose a source from the community catalog." };
     const name = `Community: ${entry.name}`;
-    return await installSource(workspaceId, { name, type: entry.type, lane: entry.lane,
+    return { ...await installSource(workspaceId, { name, type: entry.type, lane: entry.lane,
       config: { ...entry.config, catalogId: entry.id, rulesUrl: entry.rulesUrl } },
-      entry.lane === "free" ? "Source added. Run a scan to collect it." : "Source added. Configure provider access and run it individually.");
+      entry.lane === "free" ? "Source added. Run a scan to collect it." : "Source added. Configure provider access and run it individually."), catalogId };
   } catch (error) {
-    return { error: error instanceof PlanLimitError ? error.message : "Community source could not be added. Please try again." };
+    return { catalogId: String(form.get("catalogId") ?? ""),
+      error: error instanceof PlanLimitError ? error.message : "Community source could not be added. Please try again." };
   }
 }
 

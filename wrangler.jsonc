@@ -22,11 +22,13 @@
 	"env": {
 		"staging": {
 			"name": "vantage-staging",
+			"build": { "command": "" },
 			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "vantage-staging" }],
 			"triggers": { "crons": ["0 */3 * * *"] }
 		},
 		"production": {
 			"name": "dontkillmyvibe",
+			"build": { "command": "" },
 			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "dontkillmyvibe" }],
 			"triggers": { "crons": [] }
 		}

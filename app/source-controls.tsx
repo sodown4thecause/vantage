@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { addCommunitySource, addFeed, scanNow, scanSource } from "@/lib/sources/actions";
+import { addCommunitySource, addFeed, scanNow, scanSource, type CommunitySourceActionState } from "@/lib/sources/actions";
 import { COMMUNITY_SOURCE_CATALOG } from "@/lib/communities/catalog";
 import { SafeLink } from "@/components/safe-link";
 
@@ -28,9 +28,7 @@ export function FeedForm({ workspaceId }: { workspaceId: string }) {
 
 export function CommunitySourceForm({ workspaceId }: { workspaceId: string }) {
   const [selected, setSelected] = useState(COMMUNITY_SOURCE_CATALOG[0]!.id);
-  const [state, action, pending] = useActionState(async (_previous: { catalogId?: string; error?: string; message?: string }, form: FormData) => ({
-    ...await addCommunitySource(workspaceId, {}, form), catalogId: String(form.get("catalogId") ?? ""),
-  }), { catalogId: "" });
+  const [state, action, pending] = useActionState<CommunitySourceActionState, FormData>(addCommunitySource.bind(null, workspaceId), { catalogId: "" });
   const entry = COMMUNITY_SOURCE_CATALOG.find(e => e.id === selected)!;
   return <form action={action} className="space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
     <label htmlFor="community-source" className="block text-sm font-medium">Developer community sources</label>

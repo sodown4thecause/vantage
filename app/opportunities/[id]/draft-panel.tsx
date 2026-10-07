@@ -68,13 +68,12 @@ export function DraftPanel({
         setError(data.error ?? "Failed to load draft");
         return;
       }
-      if (data.draft) {
+      if (data.draft && data.draft.quality?.targetDocumentId === target) {
         setDraft(data.draft);
         setEdited(data.draft.editedText);
         setCopied(false);
         setRulesReviewed(false);
         setFactsReviewed(false);
-        if (data.draft.quality?.targetDocumentId) setTarget(data.draft.quality.targetDocumentId);
       }
     })().catch(() => {
       if (!cancelled && revision === requestRevision.current) {
@@ -86,7 +85,7 @@ export function DraftPanel({
       cancelled = true;
       requestRevision.current += 1;
     };
-  }, [workspaceId, opportunityId]);
+  }, [workspaceId, opportunityId, target]);
 
   async function createDraft() {
     if (!selected) return;

@@ -12,14 +12,16 @@ Validated on 7 October 2026 in the isolated `codex/community-gtm-phase` worktree
 | Scheduled Worker wrapper (`node --test test/worker-entry.test.mjs`) | 5 tests pass |
 | Migration generation (`drizzle-kit generate`) | No schema changes; migration and metadata match the checkout |
 | Next production build (`pnpm run build`) | Initial phase and first PR head pass, including the supplied Cloudflare build log |
-| Cloudflare bundle and staging upload dry run | First PR head passes both GitHub CI jobs; final head is checked again before merge |
+| Cloudflare bundle and staging upload dry run | PR head `9ea53eb` passes both GitHub CI jobs, with 455 application tests and five Worker tests; subsequent heads are checked again before merge |
 | Independent branch review | Findings addressed with regression coverage; final PR review is required before merge |
+
+The second review's focused run passes 73 tests across source actions, community providers and developer APIs. It reproduces and fixes changed-query cursors, shifting activity pages, malformed external response fields and final-page dataset truncation. Direct Server Actions preserve progressive enhancement, and selecting a previous target reloads its matching latest draft. A read-only call to the installed Wrangler configuration reader confirms that the top-level build hook remains enabled and both named environment overrides suppress it.
 
 Review checks use Node 22 in Ubuntu WSL, matching GitHub CI. The supplied Cloudflare log uses Node 24. Tests mock paid provider calls. Builds use non-secret CI placeholders, and the Linux source mirror is compared with changed application, test and migration files before validation.
 
 Review fixes have regression coverage: every complete proposed sentence needs a claim ledger entry, including advice and questions; abbreviations preserve sentence boundaries; malformed stored quality cannot bypass approval; approval checks the exact reviewed edit; unknown API failures cannot expose database messages; rate-limited collection preserves accepted evidence and resumable progress; incomplete empty results remain partial; ambiguous cost writes retain a durable reservation token; concurrent source additions share the workspace lease and reserve the onboarding source slot; source changes invalidate stale drafts and async responses. Quoted research briefs remain distinct from proposed comments.
 
-The supplied preview log confirms that Next compiled successfully before `wrangler preview` rejected a missing `previews` block. The configuration now has an empty preview block and a Wrangler custom build that runs `cf:build`, so the raw dashboard command can build the OpenNext Worker bundle. This was validated against the installed Wrangler/OpenNext contracts. A successful local Next build alone does not confirm preview upload or configured preview secrets.
+The supplied preview log confirms that Next compiled successfully before `wrangler preview` rejected a missing `previews` block. PR head `9ea53eb` subsequently passed the Cloudflare branch-preview build. The top-level custom `cf:build` hook supports raw dashboard preview commands; named staging and production configurations suppress it with an empty command because their CI workflows already build OpenNext explicitly. Installed Wrangler source confirms the environment overrides take precedence and skip the custom hook. Successful preview upload does not confirm configured runtime authentication or isolated test secrets.
 
 ## Provider evidence and activation
 

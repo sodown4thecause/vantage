@@ -116,9 +116,12 @@ DATABASE_URL="postgresql://…" pnpm db:migrate
 
 `wrangler.jsonc` includes the [required `previews` block](https://developers.cloudflare.com/workers/previews/configuration/).
 Its [custom build command](https://developers.cloudflare.com/workers/wrangler/custom-builds/)
-runs `pnpm run cf:build` before Wrangler bundles the Worker, so the dashboard's
+runs `pnpm run cf:build` before Wrangler bundles the preview, so the dashboard's
 `pnpm run build` followed by `npx wrangler preview` produces `.open-next` assets.
 The package's `build` remains `next build`, avoiding a recursive build hook.
+Named staging and production configurations override the hook with an empty command,
+because CI already runs the explicit OpenNext build before their uploads. Build
+with `pnpm cf:build` before using raw Wrangler commands with those environments.
 
 Configure preview-specific test database and auth secrets in Previews Base before
 testing authenticated flows. The empty preview block copies no production bindings

@@ -36,7 +36,7 @@ export const alexandriaCollector: Collector = {
       ctx.signal?.throwIfAborted();
       if (request.provider === "github-com") request = { ...request, options: { ...request.options, page } };
       const result = await runAlexandria(request, context, ctx.signal);
-      partial ||= result.partial;
+      partial ||= result.partial || result.records.length > remaining;
       const records = result.records.slice(0, remaining);
       remaining -= records.length;
       if (result.hasNext && (remaining === 0 || page === maxPages)) partial = true;

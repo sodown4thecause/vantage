@@ -8,31 +8,56 @@ import { fetchPublicText, isPublicHttpUrl } from "@/lib/http/public-fetch";
 type Issue = {
   id: number; number?: number; html_url?: string; title?: string; body?: string | null;
   created_at?: string; updated_at?: string; comments?: number;
-  user?: { login?: string }; labels?: Array<{ name?: string }>;
+  user?: { login?: string } | null; labels?: Array<{ name?: string }>;
 };
-type SearchResult = { page: { items: Issue[]; total_count?: number; incomplete_results?: boolean } } | { deferUntil: number };
+type SearchPage = { items: Issue[]; total_count?: number; incomplete_results?: boolean };
+type SearchResult = { page: SearchPage } | { deferUntil: number };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+function isIssue(value: unknown): value is Issue {
+  return isRecord(value) && isCount(value.id) && value.id > 0 &&
+    [value.html_url, value.title].every(field => field === undefined || typeof field === "string") &&
+    (value.body === undefined || value.body === null || typeof value.body === "string") &&
+    [value.created_at, value.updated_at].every(field => field === undefined || (typeof field === "string" && parseValidDate(field) !== null)) &&
+    (value.number === undefined || (isCount(value.number) && value.number > 0)) &&
+    (value.comments === undefined || isCount(value.comments)) &&
+    (value.user === undefined || value.user === null || (isRecord(value.user) && (value.user.login === undefined || typeof value.user.login === "string"))) &&
+    (value.labels === undefined || (Array.isArray(value.labels) && value.labels.every(label => isRecord(label) && (label.name === undefined || typeof label.name === "string"))));
+}
+function isSearchPage(value: unknown): value is SearchPage {
+  return isRecord(value) && Array.isArray(value.items) && value.items.every(isIssue) &&
+    (value.total_count === undefined || isCount(value.total_count)) &&
+    (value.incomplete_results === undefined || typeof value.incomplete_results === "boolean");
+}
 
 export const githubCollector: Collector = {
   name: "github",
   async run(ctx) {
     ctx.signal?.throwIfAborted();
     const configured = Array.isArray(ctx.config.queries) ? ctx.config.queries : [ctx.config.query ?? "AI coding"];
-    const queries = configured.filter((q): q is string => typeof q === "string" && Boolean(q.trim())).slice(0, 3);
+    const queries = configured.filter((q): q is string => typeof q === "string" && Boolean(q.trim())).map(query => query.trim()).slice(0, 3);
     if (!queries.length || queries.some(q => q.length > 500)) throw new Error("GitHub requires a query of 1-500 characters");
+    const queryKey = JSON.stringify(queries);
     const maxPages = Math.min(2, Math.max(1, Math.floor(Number(ctx.config.maxPages) || 1)));
     const now = Math.floor(Date.now() / 1000);
     const lookback = Math.min(168, Math.max(1, Number(ctx.config.lookbackHours) || 72));
     const cursor = Number(ctx.cursor);
-    let state: { since?: number; until?: number; queryIndex?: number; nextPage?: number; deferUntil?: number } = {};
+    let state: { since?: number; until?: number; queryIndex?: number; nextPage?: number; deferUntil?: number; queryKey?: string } = {};
     try { const value = JSON.parse(ctx.cursor ?? "{}"); if (value && typeof value === "object" && !Array.isArray(value)) state = value; } catch { /* Legacy numeric cursor is accepted below. */ }
-    const until = state.until ?? now;
-    const since = state.since ?? (Number.isFinite(cursor) && cursor > 0 && cursor <= now ? cursor : now - Math.ceil(lookback * 3600));
-    const firstQuery = state.queryIndex ?? 0;
-    const firstPage = state.nextPage ?? 1;
-    if (!Number.isSafeInteger(since) || since < 0 || !Number.isSafeInteger(until) || until < since || until > now || !Number.isSafeInteger(firstQuery) || firstQuery < 0 || firstQuery >= queries.length || !Number.isSafeInteger(firstPage) || firstPage < 1 || firstPage > 2 || (state.deferUntil !== undefined && (!Number.isSafeInteger(state.deferUntil) || state.deferUntil < 0))) throw new Error("Invalid GitHub pagination cursor");
+    const restart = state.queryKey !== undefined ? state.queryKey !== queryKey : state.queryIndex !== undefined || state.nextPage !== undefined;
+    const until = restart ? now : state.until ?? now;
+    const since = restart ? now - Math.ceil(lookback * 3600) : state.since ?? (Number.isFinite(cursor) && cursor > 0 && cursor <= now ? cursor : now - Math.ceil(lookback * 3600));
+    const firstQuery = restart ? 0 : state.queryIndex ?? 0;
+    const firstPage = restart ? 1 : state.nextPage ?? 1;
+    if (!Number.isSafeInteger(since) || since < 0 || !Number.isSafeInteger(until) || until < since || until > now || !Number.isSafeInteger(firstQuery) || firstQuery < 0 || firstQuery >= queries.length || !Number.isSafeInteger(firstPage) || firstPage < 1 || firstPage > 2 || (state.deferUntil !== undefined && (!Number.isSafeInteger(state.deferUntil) || state.deferUntil < 0)) || (state.queryKey !== undefined && typeof state.queryKey !== "string")) throw new Error("Invalid GitHub pagination cursor");
     if (state.deferUntil && state.deferUntil > now) return {
       documents: [], partial: true, coverageReason: `GitHub API rate limit; retry after ${state.deferUntil}`,
-      nextState: { cursor: ctx.cursor },
+      nextState: { cursor: restart ? JSON.stringify({ since, until, queryIndex: firstQuery, nextPage: firstPage, deferUntil: state.deferUntil, queryKey }) : ctx.cursor },
     };
     const issues = new Map<number, { issue: Issue; partial: boolean }>();
     let deferredCursor: string | undefined;
@@ -61,13 +86,14 @@ export const githubCollector: Collector = {
             return { deferUntil: deadlines.length ? Math.max(...deadlines) : observedAt + 60 };
           }
           if (!response.ok) throw new Error(`GitHub API request failed (${response.status})`);
-          const parsed = JSON.parse(text) as { items: Issue[]; total_count?: number; incomplete_results?: boolean };
-          if (!Array.isArray(parsed?.items)) throw new Error("Invalid GitHub issues response");
+          let parsed: unknown;
+          try { parsed = JSON.parse(text); } catch { throw new Error("Invalid GitHub issues response"); }
+          if (!isSearchPage(parsed)) throw new Error("Invalid GitHub issues response");
           return { page: parsed };
         });
         ctx.signal?.throwIfAborted();
         if ("deferUntil" in result) {
-          deferredCursor = JSON.stringify({ since, until, queryIndex, nextPage: page, deferUntil: result.deferUntil });
+          deferredCursor = JSON.stringify({ since, until, queryIndex, nextPage: page, deferUntil: result.deferUntil, queryKey });
           coverageReason = `GitHub API rate limit; retry after ${result.deferUntil}`;
           break search;
         }
@@ -99,6 +125,6 @@ export const githubCollector: Collector = {
     }
     return { documents, partial: deferredCursor !== undefined || upstreamPartial,
       coverageReason: coverageReason ?? (upstreamPartial ? "GitHub search returned a bounded or incomplete sample" : undefined),
-      nextState: { cursor: deferredCursor ?? String(until) } };
+      nextState: { cursor: deferredCursor ?? JSON.stringify({ since: until, queryKey }) } };
   },
 };

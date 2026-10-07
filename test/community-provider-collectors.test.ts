@@ -83,6 +83,25 @@ describe("paid developer discovery", () => {
     expect(mocks.paid).toHaveBeenCalledTimes(2);
   });
 
+  it("reports partial coverage when the final dataset page exceeds the remaining raw record cap", async () => {
+    const options: Record<string, unknown>[] = [];
+    vi.stubGlobal("fetch", async (_input: string, init?: RequestInit) => {
+      options.push(JSON.parse(init?.body as string).alexandria[0].options);
+      const firstPage = options.length === 1;
+      const ids = firstPage ? [1, 2, 3] : [4, 5];
+      return Response.json({ success: true, data: { creditsCost: 5, alexandria: [{ provider: "github-com", capability: "repositories/issues", data: {
+        partial: false, has_next: firstPage,
+        issues: ids.map(id => ({ id, source_url: `https://github.com/acme/agent/issues/${id}`, body: `Question ${id}` })),
+      } }] } });
+    });
+    const result = await alexandriaCollector.run({ ...ctx, config: { provider: "github-com", capability: "repositories/issues", repo: "acme/agent", maxResults: 4, maxPages: 2 } });
+    expect(options).toMatchObject([{ page: 1, per_page: 4 }, { page: 2, per_page: 4 }]);
+    expect(result.documents.map(doc => doc.metadata?.externalId)).toEqual([1, 2, 3, 4]);
+    expect(mocks.paid).toHaveBeenCalledTimes(2);
+    expect(result.partial).toBe(true);
+    expect(result.coverageReason).toMatch(/partial/i);
+  });
+
   it("rejects arbitrary repository URLs before dataset execution", async () => {
     const request = vi.fn(); vi.stubGlobal("fetch", request);
     await expect(alexandriaCollector.run({ ...ctx, config: { provider: "github-com", capability: "repositories/issues", repo: "http://127.0.0.1/private" } })).rejects.toThrow(/repo/i);
