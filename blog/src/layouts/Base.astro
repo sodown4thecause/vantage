@@ -1,4 +1,6 @@
 ---
+import { serializeJsonLd } from '../lib/json-ld';
+
 interface Props {
   title: string;
   description: string;
@@ -26,7 +28,7 @@ const ld = jsonLd ? (Array.isArray(jsonLd) ? jsonLd : [jsonLd]) : [];
     <meta property="og:type" content={type} />
     <meta property="og:url" content={canonical} />
     <meta name="twitter:card" content="summary" />
-    {ld.map((o) => <script type="application/ld+json" set:html={JSON.stringify(o)} />)}
+    {ld.map((o) => <script type="application/ld+json" set:html={serializeJsonLd(o)} />)}
     <style>
       :root { color-scheme: light dark; --max: 42rem; }
       body { font: 1.0625rem/1.65 system-ui, sans-serif; margin: 0; }

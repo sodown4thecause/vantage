@@ -2,10 +2,14 @@
   "name": "vantage-blog",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
-    "preview": "wrangler dev",
+    "preview": "astro build && wrangler dev",
+    "test": "node --test test/build.test.mjs",
     "deploy": "astro build && wrangler deploy"
   },
   "dependencies": {

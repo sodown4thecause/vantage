@@ -16,6 +16,8 @@ const eslintConfig = defineConfig([
     ".open-next/**",
     ".wrangler/**",
     "cloudflare-env.d.ts",
+    // Separate Astro project with its own tooling (see blog/README.md).
+    "blog/**",
   ]),
 ]);
 

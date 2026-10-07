@@ -1,11 +1,9 @@
 import rss from '@astrojs/rss';
-import { getCollection } from 'astro:content';
 import type { APIContext } from 'astro';
+import { getPublishedPosts, postPath } from '../lib/posts';
 
 export async function GET(context: APIContext) {
-  const posts = (await getCollection('posts', (p) => !p.data.draft)).sort(
-    (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
-  );
+  const posts = await getPublishedPosts();
   return rss({
     title: 'Vantage Blog',
     description: 'Insights and playbooks from the Vantage team.',
@@ -14,7 +12,7 @@ export async function GET(context: APIContext) {
       title: p.data.title,
       description: p.data.description,
       pubDate: p.data.pubDate,
-      link: `/posts/${p.id}/`,
+      link: postPath(p),
     })),
   });
 }
