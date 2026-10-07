@@ -1,11 +1,16 @@
 // ---------------------------------------------------------------------------
 // Pure write-policy decisions for the signal layer.
 //
-// These predicates encode the *ordering* rules that the SQL write paths enforce,
-// extracted so they can be unit-tested without a live Neon connection. Each
-// predicate mirrors exactly one SQL `where` clause in `src/db.ts`; keep the two
-// in lockstep (the smoke tests pin the SQL predicate and the pure predicate
-// against the same truth table).
+// These predicates are a SPECIFICATION and REGRESSION PIN, not the executed code
+// path. The production decision is made by SQL in `src/db.ts`
+// (`saveClassifications`); the predicate here encodes the same rule in TypeScript
+// so its truth table can be pinned by the smoke tests without a live Neon
+// connection. The two can therefore DRIFT: the tests below give confidence in the
+// INTENDED policy, but they do not exercise the SQL. The executed SQL predicate is
+// covered only by integration tests against a real database.
+//
+// Keep this in lockstep with the `where` clause named on each predicate. If the
+// SQL changes, update both the predicate and its tests.
 // ---------------------------------------------------------------------------
 
 /**
@@ -30,6 +35,10 @@ export interface ExistingClassification {
  * a no-op (first-writer-wins).
  *
  * Mirrors SQL: `where i.classified_at is null or i.classifier_version is distinct from v.version`.
+ *
+ * NOTE: this function is a SPECIFICATION/regression pin, not the executed code
+ * path (see module header). The SQL in `saveClassifications` is the real guard
+ * and is covered only by integration tests.
  */
 export function shouldWriteClassification(
   existing: ExistingClassification,
@@ -37,4 +46,26 @@ export function shouldWriteClassification(
 ): boolean {
   if (existing.classifiedAt === null) return true;
   return existing.version !== newVersion;
+}
+
+/**
+ * Decide whether a row needs to be LOADED for classification at `currentVersion`.
+ *
+ * This is the load-side complement of `shouldWriteClassification`: a row is
+ * selected when it has never been classified OR its stored version is stale
+ * relative to the current version. Because a written classification stamps the
+ * incoming version, the stale set converges after one pass — a just-bumped row
+ * stops matching on the next load.
+ *
+ * Like `shouldWriteClassification`, this is a SPECIFICATION/regression pin, not
+ * the executed code path. It mirrors the LOAD `where` clause in
+ * `saveClassifications`'s counterpart `loadUnclassifiedItems` (src/db.ts):
+ *   `where i.classified_at is null or i.classifier_version is distinct from <version>`
+ */
+export function shouldLoadForClassification(
+  existing: ExistingClassification,
+  currentVersion: string,
+): boolean {
+  if (existing.classifiedAt === null) return true;
+  return existing.version !== currentVersion;
 }

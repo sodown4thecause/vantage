@@ -3,8 +3,11 @@
 //
 // Flow (one `classify-batch` queue message):
 //   1. Guard: classifier disabled or no key => ack immediately, do nothing.
-//   2. Load ONLY the not-yet-classified subset of the requested ids. This is the
-//      idempotency guard: re-delivery finds nothing and re-bills nothing.
+//   2. Load the subset of the requested ids that still needs classifying at the
+//      current prompt version: never classified, or version-stale from a prompt/
+//      model bump. This is the idempotency guard: a re-delivery at the same
+//      version finds nothing and re-bills nothing, while a deliberate version
+//      bump re-classifies exactly the stale rows once.
 //   3. Chunk into batches of `batchSize`, cap at `maxItemsPerMessage`.
 //   4. For each batch: build the prompt, call the model with bounded concurrency,
 //      validate with zod. On malformed output, do ONE bounded repair re-ask for
@@ -103,7 +106,7 @@ export async function classifyBatch(
     return emptyOutcome("skipped-disabled");
   }
 
-  const rows = await loadUnclassifiedItems(env.DATABASE_URL, itemIds);
+  const rows = await loadUnclassifiedItems(env.DATABASE_URL, itemIds, CLASSIFIER_PROMPT_VERSION);
   if (rows.length === 0) {
     return emptyOutcome("skipped-empty");
   }

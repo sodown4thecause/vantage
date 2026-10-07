@@ -308,14 +308,21 @@ export async function recordJob(
 // Classification persistence.
 //
 // Idempotency is enforced at BOTH ends and is version-keyed:
-//   - LOAD  filters on `classified_at is null`, so a re-run never re-bills an
-//     already-classified row.
+//   - LOAD  selects rows that are unclassified (`classified_at is null`) OR
+//     version-stale (`classifier_version is distinct from <current version>`).
+//     A re-run at the same version finds nothing to do and re-bills nothing; a
+//     deliberate version bump re-selects exactly the stale rows once.
 //   - WRITE guards every row with `classified_at is null or classifier_version
 //     is distinct from v.version`, so a stale writer can never clobber a newer
 //     classification (first-writer-wins; a deliberate version bump overwrites).
 // `classifier_version` is stored so a prompt/model bump can deliberately mark
-// rows stale for re-classification. See `src/classify/write-policy.ts` for the
-// pure predicate that mirrors the guard, and README for the policy.
+// rows stale for re-classification. The LOAD predicate must therefore include
+// stale rows or the documented "re-classified on an explicit version bump"
+// policy would be unreachable. The two predicates converge after one pass: the
+// write stamps the incoming version, so a just-bumped row no longer matches
+// `classifier_version is distinct from <current version>` on the next load.
+// See `src/classify/write-policy.ts` for the pure predicate that mirrors the
+// WRITE guard, and README for the policy.
 // ---------------------------------------------------------------------------
 
 /** An item pulled from the DB and handed to the classifier. */
@@ -328,15 +335,20 @@ export interface ClassifierInputRow {
 }
 
 /**
- * Load only the not-yet-classified subset of the requested ids.
+ * Load the subset of the requested ids that still needs classifying at
+ * `currentVersion`: either never classified (`classified_at is null`) or
+ * version-stale (`classifier_version is distinct from currentVersion`).
  *
- * Returns rows in ascending id order. Already-classified ids (and unknown ids)
- * are silently omitted: this is the idempotency guard, so a re-delivered message
- * finds nothing to do and costs nothing.
+ * This is the idempotency guard: a re-delivered message at the same version
+ * finds nothing to do and costs nothing, while a deliberate version bump
+ * re-selects exactly the stale rows once. Returns rows in ascending id order.
+ * Already-classified ids at the current version (and unknown ids) are silently
+ * omitted.
  */
 export async function loadUnclassifiedItems(
   databaseUrl: string,
   itemIds: ReadonlyArray<number>,
+  currentVersion: string,
 ): Promise<ReadonlyArray<ClassifierInputRow>> {
   if (itemIds.length === 0) return [];
   const db = sql(databaseUrl);
@@ -344,7 +356,7 @@ export async function loadUnclassifiedItems(
     select id, source_name, title, summary, raw_content
     from items
     where id = any(${itemIds}::bigint[])
-      and classified_at is null
+      and (classified_at is null or classifier_version is distinct from ${currentVersion})
     order by id asc
   `;
   return rows.map((row) => ({
@@ -449,8 +461,10 @@ export async function saveClassifications(
  * so concurrent writers cannot lose each other's aliases, but that union is
  * expressed as the plain ordered form below rather than a correlated
  * `array_agg(distinct ...)` subquery, which was valid-looking but unverified on
- * Neon. Distinction is applied so the stored list is a set; ordering is the
- * array-constructor order, which is stable for a given input.
+ * Neon. `distinct` is applied so the stored list is a SET (membership is
+ * deterministic for a given set of inputs); the `array(select distinct ...)`
+ * ORDER is unspecified by Postgres and is NOT load-bearing here — alias
+ * filtering is on membership, not position.
  */
 export interface EntityWrite {
   readonly name: string;
@@ -624,6 +638,15 @@ export async function saveClusters(
 
   // 4) Clear stamps on items whose cluster is no longer live. Empty live-id list
   //    means EVERY stamped item is released (the window slid past every echo).
+  //
+  //    This step is NOT atomic with the concurrent stamp step (3) of another
+  //    in-flight message: two messages over overlapping windows can interleave so
+  //    a stamp is briefly cleared, or a just-cleared stamp is briefly re-set.
+  //    That is ACCEPTED — it is a transient, self-healing condition. Clustering
+  //    is an advisory, eventually-consistent hint: the next window recomputes
+  //    membership from current corroboration and converges. We do not take a lock
+  //    or wrap this in a transaction, because the cost of a momentary stale/absent
+  //    hint is far below the cost of serializing every classify message.
   const liveClusterIds = [...clusterIdByKey.values()];
   await db`
     update items

@@ -1,378 +1,327 @@
-# GTM Ingest — AI Developer Tools Market Monitor
+# vantage-ingest
 
-Foundational ingestion pipeline. Tracks the AI developer-tools market from
-RSS/Atom feeds and JSON APIs, normalizes everything into one schema, and stores
-deduplicated records in Neon Postgres.
+**An open-source GTM signal pipeline for the AI developer-tools market.**
 
-Runtime: **Cloudflare Workers** + **Cloudflare Queues** + **Neon Postgres**
-(serverless HTTP driver).
+Ingests many sources (feeds, community sites, package stats, filings), normalizes
+them into one schema, deduplicates, classifies them with a batched LLM, and stores
+the result in Postgres — so you can see what the market is launching, complaining
+about, and asking for, without paying incumbent-monitoring prices.
 
-```
-cron (*/5 min)                queue                     consumer
-┌────────────────┐   enqueue  ┌──────────────────┐  batch  ┌──────────────────────┐
-│ runPoller      │ ─────────▶ │ gtm-ingest-jobs  │ ──────▶ │ fetch → normalize →  │
-│ (enqueue only) │  per due   │  (+ DLQ)         │         │ dedup → write Neon   │
-└────────────────┘  source    └──────────────────┘         └──────────────────────┘
-```
+Runs on **Cloudflare Workers + Cron Triggers + Queues** with **Neon Postgres**.
 
-The cron handler **never** fetches upstream. It syncs the registry mirror and
-enqueues one message per due source. Fetching/parsing happens only in the queue
-consumer, so the fast trigger path stays fast and each source retries independently.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+> There is no test/build CI workflow yet, so no CI badge is shown. The only
+> workflow in the repo is the OpenCode PR-automation workflow. Add a
+> `typecheck` + `smoke` workflow (see [CONTRIBUTING.md](CONTRIBUTING.md)) and a
+> badge alongside it if you want CI status surfaced.
 
 ---
 
-## Layout
+## Why
+
+Go-to-market monitoring for developer tools is sold at enterprise prices. Most of
+the underlying work is public data: RSS feeds, community posts, package-download
+stats, SEC filings. This project is the open-source core of an affordable way to
+run that pipeline yourself — bring your own Neon database and an OpenAI-compatible
+inference key, deploy to Cloudflare, and own your data and your signal.
+
+The open-source core is **vantage-ingest**. A hosted, "affordable website" offering
+is planned alongside it for people who would rather not self-host; the code in this
+repository does not require it and stores nothing outside your own database.
+
+---
+
+## Features
+
+- **Sourced signal pipeline** — one registry of sources (RSS/Atom feeds, JSON APIs,
+  Google News, package stats, SEC EDGAR) that the cron trigger polls on per-source
+  intervals, with conditional GET (ETag / Last-Modified) so unchanged feeds cost no
+  work.
+- **Three-layer deduplication** — canonical URL normalization, an in-batch pass, and
+  Postgres unique constraints that make inserts idempotent.
+- **Batched LLM classification** — labels (`launch`, `complaint`, `feature_request`,
+  `funding`, `sentiment`, `chatter`, `noise`), a 0–1 relevance score, and raw entity
+  mentions, produced in bounded batches on a queue that is fully decoupled from
+  ingest.
+- **Deterministic entity resolution** — an alias map canonicalizes the mentions the
+  model suggests. The model never decides identity.
+- **Non-destructive cross-source clustering** — the same headline across two or more
+  distinct sources is surfaced as an advisory "multi-source echo" hint. Rows are never
+  deleted or merged.
+- **Extensible source registry** — add a competitor query, tag, or package by editing
+  one config file. No code changes.
+
+---
+
+## Architecture
+
+```
+        Cloudflare Cron (every 5 min)
+                 |
+                 v
+        +-----------------+     one message     +-----------------------+
+        |   runPoller     | ------------------> |  Queue: gtm-ingest-   |
+        |  (enqueue only) |    per due source   |  jobs  (+ DLQ)        |
+        +-----------------+                     +-----------+-----------+
+                                                            |
+                                                            v
+                                    +-------------------------------------------+
+                                    |  Consumer: fetch -> normalize -> dedup -> |
+                                    |  insert into Neon                         |
+                                    +---------------------+---------------------+
+                                                          |
+                                       (if classifier on) chunks of inserted ids
+                                                          |
+                                                          v
+                                            +-----------------------------+
+                                            |  Queue: gtm-classify-jobs   |
+                                            |  (+ DLQ)                    |
+                                            +--------------+--------------+
+                                                           |
+                                                           v
+                                    +-------------------------------------------+
+                                    |  Consumer: load unclassified -> chunk ->  |
+                                    |  LLM classify -> repair -> entities ->    |
+                                    |  persist -> cluster                       |
+                                    +---------------------+---------------------+
+                                                          |
+                                                          v
+                                                   +-------------+
+                                                   | Neon        |
+                                                   | Postgres    |
+                                                   +-------------+
+```
+
+The cron handler **never** fetches upstream. It syncs the registry mirror, selects
+which sources are due, and enqueues one message per due source. All fetching,
+parsing, and writing happens in the queue consumer, so the fast trigger path stays
+fast and each source retries independently. Classification runs on its own queue so
+LLM latency or cost can never affect ingestion.
+
+### Layout
 
 | Path | Purpose |
 |------|---------|
-| `wrangler.toml` | cron trigger, queue producer + consumer, DLQ, vars |
-| `src/types.ts` | shared trusted types + queue contract |
+| `wrangler.toml` | cron trigger, queue producers + consumers, DLQs, non-secret vars |
+| `src/types.ts` | shared trusted types + the queue contract + `Env` |
 | `src/registry/seed.ts` | the seed source registry (config, not code) |
-| `src/registry/index.ts` | parse/expand registry, fail-loud validation, `findSource` |
+| `src/registry/index.ts` | expand/validate the registry, `findSource` |
 | `src/poller.ts` | cron → due selection → `sendBatch` |
 | `src/consumer.ts` | queue handler: fetch → normalize → dedup → write |
-| `src/fetcher.ts` | conditional GET, per-source User-Agent, API key injection |
+| `src/fetcher.ts` | conditional GET, per-source User-Agent, API-key injection |
 | `src/normalizer.ts` | RSS/Atom/JSON → common shape, canonical URL + hashing |
-| `src/db.ts` | Neon serverless driver queries + idempotent inserts |
-| `src/index.ts` | Worker entry: scheduled + queue + small HTTP surface |
-| `migrations/0001_init.sql` | `sources`, `items`, `jobs` schema |
-| `migrations/0002_signal_layer.sql` | classification/entity/cluster schema |
-| `migrations/0003_signal_layer_fixes.sql` | `classification_status`, `clusters.inactive_since` |
+| `src/db.ts` | Neon serverless queries + idempotent inserts |
+| `src/index.ts` | Worker entry: `scheduled`, `queue`, and the small HTTP surface |
+| `src/classify/*` | batched classification: handler, prompt, schema, config, policy |
+| `src/entities/*` | alias map (entity resolution) + cross-source clustering |
+| `src/inco/client.ts` | OpenAI-compatible chat client |
+| `migrations/*.sql` | schema, applied in filename order |
 | `scripts/migrate.mjs` | apply migrations to Neon over HTTP |
-| `scripts/smoke.ts` | pure-logic tests (no network/DB); run with `npm run smoke` |
-
-> The signal-layer modules (`src/classify/*`, `src/entities/*`, `src/inco/*`) are
-> documented in the **Signal layer** section below.
+| `scripts/smoke.ts` | pure-logic tests (no network/DB) |
 
 ---
 
-## Deploy
+## Quick start (self-host)
+
+### Prerequisites
+
+- **Node.js 18+** (the toolchain uses `tsx` and `wrangler`).
+- A **Cloudflare account** with **Workers** and **Queues** enabled (Queues require
+  a paid plan).
+- A **Neon Postgres** database (or any Postgres reachable over the HTTP driver).
+- An **OpenAI-compatible inference endpoint** for the signal layer. The defaults
+  target `https://api.inco.ai/v1`; any compatible provider works by setting the model
+  ids and key.
+
+### 1. Install
 
 ```bash
 npm install
+```
 
-# 1) Create the queue + dead-letter queue (once per account)
+### 2. Create the queues (one-time, per account)
+
+```bash
 npx wrangler queues create gtm-ingest-jobs
 npx wrangler queues create gtm-ingest-jobs-dlq
+npx wrangler queues create gtm-classify-jobs
+npx wrangler queues create gtm-classify-jobs-dlq
+```
 
-# 2) Provide secrets
+### 3. Set secrets
+
+Secrets are never read from a committed file. Set each with `wrangler secret put`
+and paste the value at the prompt:
+
+```bash
 npx wrangler secret put DATABASE_URL          # Neon pooled conn string, sslmode=require
+npx wrangler secret put INCO_API_KEY          # inference key for the signal layer
 npx wrangler secret put MANUAL_TRIGGER_TOKEN  # bearer token for /trigger and /signals
-npx wrangler secret put EDGAR_USER_AGENT      # e.g. "GTM-Monitor/0.1 (you@example.com)"
+npx wrangler secret put EDGAR_USER_AGENT      # descriptive UA, e.g. "GTM-Monitor/0.1 (you@example.com)"
 npx wrangler secret put STACKEXCHANGE_KEY     # optional; raises quota 300/day -> 10k/day
-npx wrangler secret put INCO_API_KEY          # required for the signal layer (see "Signal layer")
+```
 
-# 3) Apply the schema
+`.env.example` lists every variable the code reads, with placeholder values and
+comments. It is a reference template, not a secrets file — do not put real keys in
+it.
+
+### 4. Apply the schema
+
+```bash
+# PowerShell
 $env:DATABASE_URL="postgres://..."; npm run migrate
 
-# 4) Ship it
+# bash
+DATABASE_URL="postgres://..." npm run migrate
+```
+
+### 5. Deploy
+
+```bash
 npm run deploy
 ```
 
-Run locally: `npm run dev` (cron and queues both simulate locally).
-
-Verify pure logic without any network/DB: `npm run smoke` (uses `tsx`).
-
-> **Types:** `tsconfig.json` relies on `@cloudflare/workers-types` and the hand-written
-> `Env` in `src/types.ts`. `npm run cf-typegen` (`wrangler types`) is available if you
-> want generated binding types, but the generated `worker-configuration.d.ts` is
-> intentionally **not** included in `tsconfig.json` — its `Env` would collide with the
-> authoritative hand-written one. Wire it in deliberately if you adopt it.
+Run locally with `npm run dev` (cron and queues are both simulated locally). Verify
+the pure logic with no network or database: `npm run smoke`.
 
 ---
 
-## Adding a source (no code changes)
+## Configuration
 
-Edit `src/registry/seed.ts`:
+### Sources
 
-- **Plain feed** — add an entry with `url`.
+Sources live in `src/registry/seed.ts` as configuration, not code. Edit the file:
+
+- **Plain feed** — add an entry with a `url`.
 - **Template** — add an entry with a `urlTemplate` containing `{tokens}` and an
   `expand` array of `{ token: value }` rows. Each row becomes one concrete source
-  with a stable id like `template-id:slug`. To add a competitor query, append to
-  the relevant array (`GOOGLE_NEWS_QUERIES`, `STACKOVERFLOW_TAGS`, `NPM_PACKAGES`, …).
+  with a stable id like `template-id:slug`. To add a competitor query, append to the
+  relevant array (`GOOGLE_NEWS_QUERIES`, `STACKOVERFLOW_TAGS`, `NPM_PACKAGES`, …).
 
-On the next cron tick the poller syncs the registry into the `sources` table
-(never clobbering etag/lastPolledAt) and starts polling new entries.
+On the next cron tick the poller syncs the registry into the `sources` table (without
+clobbering ETag or `lastPolledAt`) and starts polling new entries. The expansion is
+validated at parse time: an unknown placeholder, a duplicate id, or a malformed entry
+fails loudly rather than silently dropping a source.
 
----
+Inspect the live registry with `GET /sources`; check liveness with `GET /health`.
 
-## Testing one source manually
+### Classifier knobs
+
+| Var | Default | Meaning |
+|-----|---------|---------|
+| `CLASSIFIER_ENABLED` | `"true"` | Master switch. `"false"` disables all LLM work. |
+| `INCO_API_KEY` | — | Inference key. Secret; read only from `env.INCO_API_KEY`. |
+| `INCO_CLASSIFIER_MODEL` | `"deepseek-v4.1-flash"` | Classifier model id. |
+| `INCO_WRITER_MODEL` | `"kimi-k3"` | Writer model id (reserved seam; see Roadmap). |
+| `CLASSIFIER_BATCH_SIZE` | `15` | Items per LLM call. |
+| `CLASSIFIER_MAX_ITEMS_PER_MESSAGE` | `60` | Hard cap of items classified per queue message (cost guardrail). |
+| `CLASSIFIER_MAX_CONCURRENCY` | `2` | Max concurrent in-flight LLM calls per message. |
+
+Disable the signal layer entirely by setting `CLASSIFIER_ENABLED = "false"`. Ingest
+keeps running; no `classify-batch` messages are produced and no model is called.
+Non-secret vars live in `wrangler.toml` under `[vars]`; the model ids were verified
+against `GET https://api.inco.ai/v1/models` on 2026-10-07.
+
+### Manual triggers
+
+Poll a single source on demand:
 
 ```bash
 curl -X POST https://gtm-ingest.<subdomain>.workers.dev/trigger/google-news:ai-developer-tool \
   -H "Authorization: Bearer $MANUAL_TRIGGER_TOKEN"
 ```
 
-Response is the poll outcome (`status`, `itemCount`, `dedupedCount`, …). Inspect
-the registry with `GET /sources`, liveness with `GET /health`.
-
 Expansion ids are `template-id:slug`, e.g. `stackoverflow-tag:cursor`,
 `npm-downloads:langchain`, `google-news:ai-developer-tool`.
 
 ---
 
-## Known constraints baked in
+## Design principles
 
-| Source | Constraint | Implementation |
-|--------|-----------|----------------|
-| SourceForge | ≤ 1 req / feed / 30 min, serial | captured as the pattern for slow feeds; no bulk scraping |
-| SEC EDGAR | descriptive UA required, ≤ 10 req/sec | `EDGAR_USER_AGENT`; `RATE_EDGAR` policy |
-| Google News | poll no faster than ~15 min | `RATE_GOOGLE_NEWS`, 20-min interval |
-| Stack Exchange API | 300/day keyless, 10k/day with key | `STACKEXCHANGE_KEY` injected only when present |
-| Default | 20-min poll interval | `DEFAULT_POLL_INTERVAL_MINUTES` + per-source override |
+These are deliberate, load-bearing choices — not accidents. Each one exists to make a
+failure mode safe.
 
-**Explicitly not built:** G2/Capterra/GetApp/SoftwareAdvice scraping, Product Hunt
-GraphQL API (Atom feed used instead), SourceForge bulk scraping, and the Grok X
-scanner. (Classification, entity resolution, and cross-source clustering now
-exist — see **Signal layer** below.)
+**Non-destructive cluster hints, not merges.** Matching headlines on a title hash can
+over-merge (syndicated copy, wire repeats). So clustering never deletes or merges
+rows: each item keeps its own id, and a cluster is only formed when the same title
+hash appears across **two or more distinct sources**. Membership is recomputed over a
+sliding window, and stale stamps are cleared when a cluster stops being corroborated.
 
-**Grok/X seam:** `POST /signals/:sourceId` accepts an array of signals (or
-`{ items: [...] }`), enqueues an `ingest-signal` queue message, and runs them
-through the same normalizer + `items` table + dedup path. No schema change needed
-to add it later.
+**Version-keyed re-classification.** New items are always classified; already-classified
+items are re-classified only on an explicit version bump. The load step selects rows that
+are either never classified or **version-stale** (`classifier_version` differs from the
+current `CLASSIFIER_PROMPT_VERSION`), and the write guard is first-writer-wins at the same
+version — so a stale or re-delivered writer cannot clobber a newer result, while a
+deliberate `CLASSIFIER_PROMPT_VERSION` change re-classifies exactly the stale rows once.
+Because each write stamps the incoming version, the stale set drains after a single pass
+and does not re-bill on the next run. A `classification_status` column distinguishes a real
+classification from a parse-failure fallback, so failed rows can be swept and retried later.
 
-- **Seed the source first.** The Grok scanner MUST be seeded as a registry source
-  (an entry in `src/registry/seed.ts`) before `/signals` will accept its
-  `sourceId`. Signals posted to an unknown source are rejected with `404`, exactly
-  like an unknown poll target — the consumer also fails loud on unknown ids.
-- **Boundary contract.** Each posted item is parsed at the boundary; items missing
-  a non-empty `title` or `url` are dropped and counted. A request is capped at 50
-  signals, and accepted signals are chunked across multiple `Queue.send` calls so
-  each message stays under the 128 KB queue limit. The response reports
-  `{ accepted, rejected, enqueued }`.
+**Bounded LLM repair.** If the model's reply omits or mangles some indices, the handler
+makes exactly ONE repair call for the missing indices. A repair reply whose index set
+is not a clean subset of the ones requested is rejected wholesale — a misnumbered
+reply must never label the wrong row. Anything still missing falls back to a
+well-formed `unclassified`, never a half-written batch.
 
----
+**Classification never touches ingest.** It runs on a separate queue. If the
+inference provider is slow, down, or over budget, fetch → normalize → write keeps
+running uninterrupted.
 
-## Deduplication
-
-Three layers, from cheapest to most durable:
-
-1. **Canonicalization** (`canonicalizeUrl`) — scheme is forced to `https`, a
-   leading `www.` is dropped, percent-encoding is normalized, a trailing slash is
-   removed, and query params are sorted. Only the industry-standard tracking set
-   (`utm_*`, `fbclid`, `gclid`) is stripped globally; `ref`/`source` are
-   **per-source opt-in** (`stripParams` on a source) because they are meaningful
-   query keys on many sites.
-2. **In-batch dedup** (`dedupeBatch`) — duplicates are collapsed in application
-   code *before* the single `unnest` INSERT is built (keyed on `canonical_url`
-   first, then `title_hash`), then `ON CONFLICT DO NOTHING` is the DB backstop.
-   A single `unnest` INSERT is not guaranteed to catch two identical rows inside
-   the same statement, so the app-side pass closes that gap.
-3. **Cross-source dedup — DEFERRED.** The same article arriving via Google News,
-   a vendor blog, and Hacker News is *not* collapsed yet. The `global_title_hash`
-   column (sha-256 of the normalized title alone, source-unscoped, with a
-   non-unique index) now exists and is populated so the
-   **classification/entity-resolution phase** can join on it without an expensive
-   backfill. The per-source `title_hash` behavior is unchanged.
-
-`http:` is upgraded to `https:` as the pragmatic default (the vast majority of
-feeds serve https, and it collapses the common scheme-variant duplicate). A rare
-http-only host would canonicalize to a different scheme than its origin; exclude
-or special-case it at the registry layer if one appears.
+**Deterministic entity resolution.** The model only suggests raw mentions copied from
+the text. A versioned alias map in code canonicalizes them, so every merge is
+auditable and reproducible, and entity identity never depends on a model's judgment.
 
 ---
 
-## Signal layer
+## Roadmap
 
-The signal layer adds three advisory enrichments on top of ingest, all
-**decoupled from the fetch path** so LLM latency/cost can never fail ingest:
+Planned work, clearly separated from what already ships:
 
-1. **Batched LLM classification** (`src/classify/*`) — labels, entities,
-   relevance, and a short reason per item.
-2. **Entity resolution** (`src/entities/aliases.ts`) — deterministic
-   canonicalization of the raw mentions the model suggests.
-3. **Cross-source clustering** (`src/entities/cluster.ts`) — non-destructive
-   "multi-source echo" hints over a sliding window.
-
-### Layout
-
-| Path | Purpose |
-|------|---------|
-| `src/classify/handler.ts` | queue handler: load → chunk → classify → repair → persist → cluster |
-| `src/classify/schema.ts` | zod validation of untrusted model output (the boundary) |
-| `src/classify/prompt.ts` | prompt text + `CLASSIFIER_PROMPT_VERSION` |
-| `src/classify/batch.ts` | pure chunking / reconcile / repair-index validation |
-| `src/classify/config.ts` | parse `CLASSIFIER_*` env into a trusted config |
-| `src/classify/write-policy.ts` | pure mirror of the version-keyed write guard |
-| `src/entities/aliases.ts` | alias map + canonicalization (source of truth) |
-| `src/entities/cluster.ts` | pure grouping + membership lifecycle |
-| `src/inco/client.ts` | OpenAI-compatible chat client (`https://api.inco.ai/v1`) |
-| `migrations/0002_signal_layer.sql` | classification/entity/cluster schema |
-| `migrations/0003_signal_layer_fixes.sql` | `classification_status`, `clusters.inactive_since` |
-
-### How batched classification works
-
-Ingest inserts items, then enqueues one `classify-batch` message per chunk of
-inserted ids onto the **separate** `gtm-classify-jobs` queue (`wrangler.toml`).
-The consumer for that queue runs `classifyBatch(env, itemIds)`, which:
-
-1. **Guards**: if `CLASSIFIER_ENABLED=false` or `INCO_API_KEY` is absent, it
-   acks immediately and does no work (never an error — a config choice must not
-   retry).
-2. **Loads only unclassified ids** (`where classified_at is null`) — the
-   idempotency guard, so a re-delivered message costs nothing.
-3. **Chunks** the rows by `CLASSIFIER_BATCH_SIZE`, capped at
-   `CLASSIFIER_MAX_ITEMS_PER_MESSAGE` per message.
-4. For each batch, calls the model with `CLASSIFIER_MAX_CONCURRENCY` in flight,
-   validates the reply with zod, and — on missing/invalid indices — makes ONE
-   bounded **repair** call for just the missing indices. A repair reply whose
-   index set is not a clean subset of `{0..missing-1}` (an original-batch
-   position, a duplicate, or an extra) is rejected wholesale: a misnumbered reply
-   must never label the wrong row. Anything still missing falls back to a
-   well-formed `unclassified`.
-5. Canonicalizes + upserts entities and links them, then persists classifications
-   in one batched `UPDATE`.
-6. Recomputes cross-source clusters over the recent window.
-
-### Classification env vars
-
-| Var | Default | Meaning |
-|-----|---------|---------|
-| `CLASSIFIER_ENABLED` | `"true"` | Master switch. `"false"` disables all LLM work. |
-| `INCO_CLASSIFIER_MODEL` | `"deepseek-v4.1-flash"` | Classifier model id. |
-| `INCO_WRITER_MODEL` | `"kimi-k3"` | Writer model id (reserved seam, later phase). |
-| `CLASSIFIER_BATCH_SIZE` | `15` | Items per LLM call. |
-| `CLASSIFIER_MAX_ITEMS_PER_MESSAGE` | `60` | Hard cap of items classified per queue message (cost guardrail). |
-| `CLASSIFIER_MAX_CONCURRENCY` | `2` | Max concurrent in-flight LLM calls per message. |
-
-Non-secret vars live in `wrangler.toml` `[vars]`; the model ids were verified
-against `GET https://api.inco.ai/v1/models` on 2026-10-07.
-
-### Disabling and the API key
-
-- **Disable entirely**: set `CLASSIFIER_ENABLED = "false"` (in `wrangler.toml` or
-  as an env var). The consumer then produces no `classify-batch` messages at all,
-  and any in-flight message acks without calling the model.
-- **API key**: `INCO_API_KEY` is a **secret**, read **only** from
-  `env.INCO_API_KEY`. Set it with:
-
-  ```bash
-  npx wrangler secret put INCO_API_KEY
-  ```
-
-  It is placed only in the `authorization: Bearer …` request header; it is never
-  logged, never embedded in error messages, and never returned to callers (see
-  `src/inco/client.ts`).
-
-### Entity-resolution design
-
-- **The alias map is the source of truth.** `canonicalizeEntity` /
-  `canonicalizeEntities` (`src/entities/aliases.ts`) deterministically map a raw
-  mention (e.g. `claude-code`, `@anthropic`) to a canonical name. Resolution never
-  asks the model to decide identity.
-- **The LLM only suggests.** The classifier returns raw `entities` mentions copied
-  from the text; those are canonicalized in app code. The `entities.aliases` column
-  stores the raw variants that resolved to a canonical name, for audit/coverage.
-- **Deterministic write.** `upsertEntities` merges the app-computed alias set with
-  the stored set using `array(select distinct unnest(entities.aliases ||
-  excluded.aliases))` — a plain ordered form, chosen over a correlated
-  `array_agg(distinct …)` subquery for determinism and verifiability.
-
-### Cross-source clustering (non-destructive hint)
-
-- A cluster is **only** formed when the same `global_title_hash` appears across
-  **≥ 2 distinct source ids**; same-source repeats never cluster.
-- Clustering is a **hint**: rows are never deleted or merged, and each item keeps
-  its own id. `clusters` + `cluster_members` record the grouping and each member
-  item is stamped with `cluster_id`.
-- **Eventually consistent across a sliding window.** The candidate window is the
-  most recent 2000 items (`order by id desc limit 2000`). When a cluster stops
-  being emitted (its members slide out), persistence **clears** the stale
-  `cluster_id` on its members and marks the `clusters` row `inactive_since`; if it
-  re-forms, `inactive_since` is cleared. Clearing is scoped by *live cluster id*
-  (an item is unstamped exactly when its cluster is no longer corroborated),
-  bounded by the number of live clusters rather than the window size.
-
-### Version-keyed re-classification policy
-
-Classification is keyed on `classifier_version` (currently
-`CLASSIFIER_PROMPT_VERSION`):
-
-- **New items are always classified** (`classified_at is null`).
-- **Already-classified items are only re-classified on an explicit version bump.**
-  The write guard is
-  `classified_at is null OR classifier_version is distinct from <incoming version>`,
-  so a stale/re-delivered writer cannot clobber a newer classification
-  (first-writer-wins), while a deliberate version change overwrites. Versions are
-  treated as **opaque tokens**, not a linear order — `is distinct from` is
-  sufficient for this policy. Bump `CLASSIFIER_PROMPT_VERSION` (or clear
-  `classifier_version`) to mark rows stale.
-- `classification_status` records the OUTCOME (`classified` | `unclassified`) so a
-  transient parse-failure row can be re-attempted later without a full version
-  bump (its `classified_at` is still stamped, which prevents immediate re-billing).
-
-### Sweeping `unclassified` rows
-
-`classification_status` distinguishes a real result from a parse-failure fallback,
-so failed rows can be swept and re-attempted:
-
-```sql
--- Inspect
-select count(*) from items where classification_status = 'unclassified';
-
--- Reset failed rows so the next classify-batch re-attempts only those.
-update items
-set classified_at = null,
-    classification_status = null
-where classification_status = 'unclassified' and classifier_version = 'v1';
-```
-
-Then re-enqueue `classify-batch` messages for the reset ids (the handler loads
-`classified_at is null`). Reset is scoped to a single `classifier_version` so a
-recent failure is not re-billed against a version you are about to retire.
+- **Grok X scanner (planned).** A scanner that polls X (via Grok) on a four-hour
+  cycle and pushes signals through the existing ingest path. The pipeline already has
+  the seam for it: `POST /signals/:sourceId` accepts an array of signals and runs them
+  through the same normalizer, dedup, and `items` table. The scanner itself is not
+  built yet; the `/signals` endpoint only works for a source that is already seeded in
+  the registry.
+- **Human-in-the-loop earned-media drafting agent (planned).** A drafting agent that
+  uses Cloudflare's Agents SDK to turn strong signals into draft posts for review.
+  It is designed to be **human-in-the-loop and disclosed**: a draft is produced, a
+  human reviews it, and nothing is posted without explicit approval. It is not
+  automated astroturfing, and it will not post on its own.
+- **More sources (ongoing).** Additional feeds, APIs, and regions, added through the
+  registry.
 
 ---
 
-## Workers runtime limitations → design choices
+## Known constraints
 
-1. **No TCP sockets → Neon HTTP driver.** `pg` cannot run in a Worker. All DB
-   access goes through `@neondatabase/serverless`'s `neon()` HTTP function. The
-   304/short-poll path and batch inserts are single HTTP round-trips.
-2. **Cron has a limited execution budget.** So the trigger only syncs + enqueues;
-   fetching/parsing happens in the consumer where per-message retries and batch
-   concurrency scale independently.
-3. **`webcrypto` only.** Hashing uses `crypto.subtle` (no `node:crypto` hashing).
-4. **Queues require a paid plan.** `wrangler.toml` declares producer + consumer +
-   DLQ; local dev simulates both.
-5. **Sub-request limits per invocation.** Large source counts are chunked into
-   `sendBatch` calls of ≤ 100 messages, and each consumer message handles exactly
-   one source (one upstream fetch, one DB write).
-6. **No filesystem at runtime.** Migrations run from a script (`scripts/migrate.mjs`)
-   over the HTTP driver, not from inside the Worker.
+- **Cloudflare Queues require a paid plan.** `wrangler.toml` declares the producers,
+  consumers, and dead-letter queues; local dev simulates both sides.
+- **`pg` cannot run in a Worker.** All database access goes through
+  `@neondatabase/serverless`'s HTTP driver.
+- **No global per-host rate limiter yet.** Politeness is enforced by per-source poll
+  intervals and a per-source minimum interval. Because queue consumers run
+  concurrently, this is not a hard global cap on requests to a single host. Revisit at
+  roughly 100 sources or when many sources share one host.
+- **SSRF is a latent risk.** Source URLs come from the config registry, which is
+  treated as trusted operator input, and the fetcher does not restrict the destination
+  host. This is safe only while the registry is code-reviewed config. If the registry
+  ever becomes remotely editable, add a destination allow/deny policy first.
+- **Some seeded sources use placeholder values.** YouTube channel IDs and a few
+  registry entries expand from placeholders; replace them with real values to activate.
+  Until then they fetch and simply return no items.
+- **`DEFAULT_POLL_INTERVAL_MINUTES` is declared but not read.** Per-source intervals in
+  `src/registry/seed.ts` drive scheduling in practice; the global fallback is currently
+  inert.
 
-## Ambiguities flagged
+---
 
-- **SEC EDGAR full-text search** is documented as
-  `https://efts.sec.gov/LATEST/search-index?q=...`; the JSON response shape has
-  changed over time. The adapter reads `hits.hits[]._source` defensively and
-  falls back to an EDGAR search URL when no accession id is present. Verify the
-  live shape before relying on parsed fields.
-- **`rsshub` access method** is declared and handled as a feed, but no rsshub
-  instance is seeded (self-hosting was out of scope). Add a `url` under `rsshub`
-  to use it.
-- **YouTube / AlternativeTo** entries expand from placeholder values
-  (`UC-placeholder-*`). Replace with real channel ids / slugs to activate — until
-  then they will fetch and simply return no items.
-- **Per-host serial rate limiting** is enforced via per-source intervals and a
-  ≤10 req/sec EDGAR policy. Because queue consumers run concurrently, a truly
-  strict global host rate limiter would need a Durable Object; this pass relies on
-  interval spacing, which is sufficient at the seeded source count.
+## Contributing
 
-## Deliberate scope boundaries (and their trigger points)
+See [CONTRIBUTING.md](CONTRIBUTING.md). The project uses OpenCode for GitHub PR
+automation — mention `/oc` in a comment to invoke it.
 
-These are known, intentional gaps — not oversights. Each names the point at which
-it must be addressed:
+## License
 
-1. **No global per-host rate limiter / no Durable Object.** Politeness is enforced
-   by per-source `poll_interval_minutes` plus a per-source `minIntervalSeconds`
-   floor. Because queue consumers run concurrently, this is *not* a hard global
-   cap on requests to a single host. **Trigger:** revisit when the registry scales
-   past **~100 sources** or when many sources share one host — at that point add a
-   Durable Object (or equivalent coordination) that serializes per-host requests.
-2. **SSRF latent risk.** Source URLs come from the config registry, which is
-   treated as trusted operator input, and the fetcher does not restrict the
-   destination host/IP. This is safe only while the registry is code-reviewed
-   config. **Trigger:** the moment the registry becomes remotely editable (an
-   admin API/UI, a DB-driven source table, or accepting URLs from the Grok
-   scanner), add a destination allow/deny policy — block private/link-local
-   ranges and non-http(s) schemes, and validate redirect targets.
+[MIT](LICENSE) © 2026 sodown4thecause

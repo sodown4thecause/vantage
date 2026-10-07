@@ -27,6 +27,7 @@ import {
   currentClusterMemberIds,
   clusterLifecycle,
   shouldWriteClassification,
+  shouldLoadForClassification,
   isValidRepairIndexSet,
 } from "../src/index.ts";
 import type { IncoClient } from "../src/inco/client.ts";
@@ -547,6 +548,40 @@ check("parses atom entry", parseFeed(atom)[0]?.url === "https://example.com/e");
   check(
     "M1: stamped row with null version is writable",
     shouldWriteClassification({ classifiedAt: "2026-10-01T00:00:00Z", version: null }, "v1"),
+  );
+}
+
+// --- M1 (load side): version-stale rows ARE selected for re-classification ---
+{
+  // A never-classified row is always selected.
+  check(
+    "M1-load: null classified_at is selected",
+    shouldLoadForClassification({ classifiedAt: null, version: null }, "v1"),
+  );
+  // A row already at the current version is NOT reloaded (no re-billing).
+  check(
+    "M1-load: same-version row is skipped (no re-bill)",
+    !shouldLoadForClassification({ classifiedAt: "2026-10-01T00:00:00Z", version: "v1" }, "v1"),
+  );
+  // THE FIX: a version-stale row IS selected so a version bump triggers
+  // re-classification (the policy the README documents).
+  check(
+    "M1-load: version-stale row is selected for re-classification",
+    shouldLoadForClassification({ classifiedAt: "2026-10-01T00:00:00Z", version: "v1" }, "v2"),
+  );
+  // A stamped row with an unknown (null) stored version is selected.
+  check(
+    "M1-load: stamped row with null version is selected",
+    shouldLoadForClassification({ classifiedAt: "2026-10-01T00:00:00Z", version: null }, "v1"),
+  );
+
+  // Convergence: once a stale row is re-written at the new version, the next
+  // load no longer selects it — the stale set drains after one pass.
+  const stale = { classifiedAt: "2026-10-01T00:00:00Z", version: "v1" };
+  const rewritten = { classifiedAt: "2026-10-02T00:00:00Z", version: "v2" };
+  check(
+    "M1-load: stale row converges after one re-classify pass",
+    shouldLoadForClassification(stale, "v2") && !shouldLoadForClassification(rewritten, "v2"),
   );
 }
 

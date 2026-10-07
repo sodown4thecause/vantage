@@ -250,7 +250,7 @@ export {
   CLASSIFIER_PROMPT_VERSION,
 } from "./classify/prompt";
 export { getClassifierConfig, DEFAULT_CLASSIFIER_MODEL, DEFAULT_WRITER_MODEL } from "./classify/config";
-export { shouldWriteClassification } from "./classify/write-policy";
+export { shouldWriteClassification, shouldLoadForClassification } from "./classify/write-policy";
 export { classifyOneBatch } from "./classify/handler";
 export { canonicalizeEntity, canonicalizeEntities, normalizeMention } from "./entities/aliases";
 export { clusterByGlobalTitleHash, currentClusterMemberIds, clusterLifecycle } from "./entities/cluster";

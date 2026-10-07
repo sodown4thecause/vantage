@@ -19,7 +19,7 @@
 //     what to show; we only assert "these are likely the same story".
 //
 // This module is pure: it takes rows, returns grouping decisions. Persistence is
-// in `src/entities/resolve.ts` / `src/db.ts`.
+// in `src/db.ts` (`saveClusters`).
 // ---------------------------------------------------------------------------
 
 /** A row as far as clustering cares. */
@@ -112,6 +112,11 @@ export function clusterByGlobalTitleHash(
 // sources. Persistence must therefore reconcile the CURRENT membership against
 // what is stamped, not merely add to it. These helpers compute that delta purely,
 // so the decision is unit-testable without a database.
+//
+// NOTE: these helpers are a SPECIFICATION/regression pin, not the executed code
+// path. The production reconciliation is the set-based SQL in `src/db.ts`
+// (`saveClusters` steps 3–5); this module documents the intended delta so smoke
+// tests can pin it. The SQL itself is covered only by integration tests.
 // ---------------------------------------------------------------------------
 
 /** The set of item ids currently corroborated by any emitted cluster. */

@@ -9,8 +9,9 @@
 --                        reason, uncertain, model, version). jsonb so the shape
 --                        can evolve without new columns.
 --   classified_at      - idempotency marker; null = not yet classified. The
---                        classifier selects `where classified_at is null`, so a
---                        re-run never re-bills an already-classified row.
+--                        classifier selects `where classified_at is null` (or a
+--                        stale `classifier_version`), so a re-run at the same
+--                        version never re-bills an already-classified row.
 --   classifier_version - prompt/model version, so a bump can mark rows stale.
 --   cluster_id         - non-destructive cross-source echo hint (see clusters).
 -- ---------------------------------------------------------------------------
