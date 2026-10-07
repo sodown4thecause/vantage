@@ -26,6 +26,10 @@ Valid review findings that were deliberately not fixed in PR #34 (each needs a m
 - `monitor_pack`: `claim_token_hash`, `claim_expires_at` (S23).
 - `radar_scan`: `cache_key`, `source_status`, `indexable` (S21, S22).
 
+## Superseded by the 7 Oct login-first decision
+- `lib/public/guard.ts` visitor counter is incremented before the budget reservation and refunded in a separate write on budget rejection (not atomic). Only matters if an anonymous cost-bearing route returns; then make it one atomic statement.
+- Owner decisions 1 (Pro subscription currency now applies to credit top-ups only), 4 (anonymous MCP scans: resolved, MCP uses an account token) and the S43 plan-fee example changed; see `docs/slices/DECISION-2026-10-07-login-first-usage-billing.md`.
+
 ## Owner decisions
 1. **S40 price currency:** USD (recommended) or AUD for the $5/month and $48/year prices. Do not create Stripe prices until confirmed.
 2. **S51 local `vantage briefs`:** free locally (recommended), require a Pro login, or ship `scan` only. The spec says `scan` only until decided.
