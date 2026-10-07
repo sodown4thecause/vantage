@@ -28,7 +28,12 @@ export async function GET(req: Request) {
         { status: authorization.status },
       );
     }
-    const draft = await getLatestDraft({ workspaceId, opportunityId });
+    const targetDocumentId = url.searchParams.get("targetDocumentId")?.trim().toLowerCase();
+    if (targetDocumentId !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(targetDocumentId)) {
+      return NextResponse.json({ error: "targetDocumentId must be a UUID" }, { status: 400 });
+    }
+    const draft = await getLatestDraft({ workspaceId, opportunityId,
+      ...(targetDocumentId ? { targetDocumentId } : {}) });
     return NextResponse.json({ draft });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

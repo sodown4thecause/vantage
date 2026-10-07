@@ -1,9 +1,24 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
-const state = vi.hoisted(() => ({ row: {} as Record<string, unknown>, updates: [] as Record<string, unknown>[], platform: "github", content: "", duringReview: null as (() => Promise<void>) | null }));
+const state = vi.hoisted(() => ({ row: {} as Record<string, unknown>, readRows: null as Array<Record<string, unknown>> | null, updates: [] as Record<string, unknown>[], platform: "github", content: "", duringReview: null as (() => Promise<void>) | null }));
 vi.mock("@/lib/db/client", () => ({ getDb: () => ({
-  select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ ...state.row }], orderBy: () => ({ limit: async () => [{ ...state.row }] }) }) }) }),
+  select: () => ({ from: () => ({ where: (condition: SQL) => {
+    const query = new PgDialect().sqlToQuery(condition);
+    const rows = () => (state.readRows ?? [state.row]).filter(row => {
+      for (const [column, field] of [["id", "id"], ["workspace_id", "workspaceId"], ["opportunity_id", "opportunityId"]]) {
+        const parameter = query.sql.match(new RegExp(`"${column}"\\s*=\\s*\\$(\\d+)`));
+        if (parameter && row[field] !== query.params[Number(parameter[1]) - 1]) return false;
+      }
+      const target = query.sql.match(/->>\s*'targetDocumentId'\s*\)?\s*=\s*\$(\d+)/);
+      const quality = row.quality as { targetDocumentId?: string } | null;
+      if (target && quality?.targetDocumentId !== query.params[Number(target[1]) - 1]) return false;
+      if (/"quality"\s+is\s+null/i.test(query.sql) && row.quality !== null) return false;
+      return true;
+    }).map(row => ({ ...row }));
+    return { limit: async (count: number) => rows().slice(0, count),
+      orderBy: () => ({ limit: async (count: number) => rows().sort((a, b) => Number(b.createdAt) - Number(a.createdAt)).slice(0, count) }) };
+  } }) }),
   update: () => ({ set: (values: Record<string, unknown>) => ({ where: (condition: SQL) => ({ returning: async () => {
     const query = new PgDialect().sqlToQuery(condition);
     for (const [column, field] of [["id", "id"], ["workspace_id", "workspaceId"], ["edited_text", "editedText"], ["updated_at", "updatedAt"]]) {
@@ -24,11 +39,44 @@ vi.mock("@/lib/opportunities/run", () => ({ getOpportunityDetail: async () => {
 import { approveDraftForHandoff, getLatestDraft, updateDraftText } from "@/lib/drafting/repository";
 beforeEach(() => {
   const text = "Agent ABC supports local model evaluation. Keep the test set separate from the agent context.";
-  state.platform = "github"; state.content = text; state.updates = []; state.duringReview = null;
+  state.platform = "github"; state.content = text; state.readRows = null; state.updates = []; state.duringReview = null;
   state.row = { id: "d1", workspaceId: "ws", opportunityId: "op", originalText: text, editedText: text, citations: [], flags: [], approvedAt: null, createdAt: new Date("2026-10-07T00:00:00Z"), updatedAt: new Date("2026-10-07T00:00:00Z"),
     quality: { version: 1, kind: "draft", model: "model", targetDocumentId: "e1", rulesReviewed: true, angle: "Avoid leakage", gap: { existingReplyCount: 0, note: "Check hidden-test isolation" }, notes: [], claims: ["Agent ABC supports local model evaluation.", "Keep the test set separate from the agent context."].map(sentence => ({ sentence, documentId: "e1", quote: sentence })) } };
 });
 const opts = { workspaceId: "ws", draftId: "d1", factsReviewed: true, rulesReviewed: true };
+const targetA = "11111111-1111-4111-8111-111111111111";
+const targetB = "22222222-2222-4222-8222-222222222222";
+const savedDraft = (id: string, targetDocumentId: string | null, hour: number, scope = {}) => ({
+  ...state.row, id, createdAt: new Date(Date.UTC(2026, 9, 7, hour)), ...scope,
+  quality: targetDocumentId ? { ...(state.row.quality as object), targetDocumentId } : null,
+});
+it("returns the newest exact target before newer other-target or legacy drafts, within both scopes", async () => {
+  state.readRows = [savedDraft("a-old", targetA, 1), savedDraft("a-new", targetA, 2), savedDraft("b", targetB, 3),
+    savedDraft("legacy", null, 4), savedDraft("foreign-workspace", targetA, 5, { workspaceId: "other" }),
+    savedDraft("foreign-opportunity", targetA, 6, { opportunityId: "other" })];
+  expect(await getLatestDraft({ workspaceId: "ws", opportunityId: "op", targetDocumentId: targetA })).toMatchObject({
+    id: "a-new", quality: { targetDocumentId: targetA },
+  });
+});
+it("falls back only to a scoped legacy draft and keeps legacy approval blocked", async () => {
+  state.readRows = [savedDraft("b", targetB, 5), savedDraft("legacy", null, 2),
+    savedDraft("foreign-workspace", null, 6, { workspaceId: "other" }),
+    savedDraft("foreign-opportunity", null, 7, { opportunityId: "other" })];
+  expect(await getLatestDraft({ workspaceId: "ws", opportunityId: "op", targetDocumentId: targetA })).toMatchObject({
+    id: "legacy", quality: null, approvedAt: null,
+  });
+  await expect(approveDraftForHandoff({ ...opts, draftId: "legacy" })).rejects.toThrow(/Regenerate this draft/i);
+  expect(state.updates).toHaveLength(0);
+});
+it("does not substitute another target when no exact or legacy draft exists", async () => {
+  state.readRows = [savedDraft("b", targetB, 1)];
+  expect(await getLatestDraft({ workspaceId: "ws", opportunityId: "op", targetDocumentId: targetA })).toBeNull();
+});
+it("keeps omitted-target callers on the newest scoped opportunity draft", async () => {
+  state.readRows = [savedDraft("a", targetA, 1), savedDraft("b", targetB, 2),
+    savedDraft("foreign", targetA, 3, { workspaceId: "other" })];
+  expect(await getLatestDraft({ workspaceId: "ws", opportunityId: "op" })).toMatchObject({ id: "b" });
+});
 it("requires human facts and rules review and rechecks edited factual statements", async () => {
   await expect(approveDraftForHandoff({ ...opts, factsReviewed: false })).rejects.toThrow(/Review the facts/i);
   await expect(approveDraftForHandoff({ ...opts, rulesReviewed: false })).rejects.toThrow(/community's rules/i);

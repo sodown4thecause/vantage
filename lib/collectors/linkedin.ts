@@ -4,6 +4,22 @@ import type { NewDocument } from "@/lib/db/schema";
 import { fetchPublicText, isPublicHttpUrl } from "@/lib/http/public-fetch";
 import { runPaidCall } from "@/lib/providers/paid-call";
 
+type IndexedPage = {
+  organic_results: Array<{ title?: string; link?: string; snippet?: string; date?: string }>;
+  pagination?: { next?: string };
+};
+const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
+const invalidResponse = () => new Error("Invalid Scavio indexed search response.");
+
+function readPage(value: unknown): IndexedPage {
+  if (!isRecord(value) || (value.success !== undefined && typeof value.success !== "boolean") || value.success === false ||
+      !Array.isArray(value.organic_results) || !value.organic_results.every(item => isRecord(item) &&
+        ["title", "link", "snippet", "date"].every(field => item[field] === undefined || typeof item[field] === "string")) ||
+      (value.pagination !== undefined && (!isRecord(value.pagination) ||
+        (value.pagination.next !== undefined && typeof value.pagination.next !== "string")))) throw invalidResponse();
+  return value as IndexedPage;
+}
+
 export const linkedinCollector: Collector = {
   name: "linkedin",
   async run(ctx) {
@@ -20,15 +36,22 @@ export const linkedinCollector: Collector = {
     // Scavio 0.16's LinkedIn searchPosts is retired; Google supplies public indexed snippets.
     for (let page = 0; page < maxPages && documents.size < limit; page++) {
       ctx.signal?.throwIfAborted();
-      const data = await runPaidCall({ context: { workspaceId: ctx.workspaceId, sourceKey: ctx.sourceId }, provider: "scavio", action: "linkedin_indexed_search", estimateUsd: unitCost, signal: ctx.signal }, async () => {
+      const value = await runPaidCall({ context: { workspaceId: ctx.workspaceId, sourceKey: ctx.sourceId }, provider: "scavio", action: "linkedin_indexed_search", estimateUsd: unitCost, signal: ctx.signal }, async () => {
         const { response, text } = await fetchPublicText("https://api.scavio.dev/api/v2/google", { method: "POST", signal: ctx.signal, headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ query: `site:linkedin.com/posts/ ${query}`, start: page * 10, include_html: false, resolve_ai_overview: false }), cache: "no-store" }, 512_000, fetch, 30_000);
         if (!response.ok) throw new Error(`Scavio indexed LinkedIn request failed (${response.status})`);
-        const value = JSON.parse(text) as { organic_results?: Array<{ title?: string; link?: string; snippet?: string }>; pagination?: { next?: string }; credits_used?: number };
-        if (!Array.isArray(value?.organic_results)) throw new Error("Invalid Scavio indexed search response results");
+        let value: unknown;
+        try { value = JSON.parse(text); } catch { throw invalidResponse(); }
+        if (!isRecord(value)) throw invalidResponse();
+        const credits = value.credits_used;
+        if (credits !== undefined && (typeof credits !== "number" || !Number.isFinite(credits) || credits < 0)) throw invalidResponse();
+        const costUsd = credits === undefined ? undefined : credits * unitCost;
+        if (costUsd !== undefined && !Number.isFinite(costUsd)) throw invalidResponse();
         ctx.signal?.throwIfAborted();
-        return { value, costUsd: typeof value.credits_used === "number" && Number.isFinite(value.credits_used) && value.credits_used >= 0 ? value.credits_used * unitCost : undefined };
+        return { value, costUsd };
       });
-      for (const item of data.organic_results!.slice(0, 10)) {
+      // Account valid returned credits before rejecting downstream result shapes.
+      const data = readPage(value);
+      for (const item of data.organic_results.slice(0, 10)) {
         if (!item || typeof item.link !== "string" || !isPublicHttpUrl(item.link)) continue;
         const url = new URL(item.link);
         if (!["linkedin.com", "www.linkedin.com"].includes(url.hostname) || !(/^\/posts\/[^/]*activity-\d+[^/]*\/?$/.test(url.pathname) || /^\/feed\/update\/urn:li:activity:\d+\/?$/.test(url.pathname))) continue;
@@ -43,7 +66,7 @@ export const linkedinCollector: Collector = {
             threadContext: contentMd, topReplies: [], rulesUrl: "https://www.linkedin.com/legal/professional-community-policies" } });
         if (documents.size >= limit) break;
       }
-      if (!data.pagination?.next || !data.organic_results!.length) break;
+      if (!data.pagination?.next || !data.organic_results.length) break;
     }
     return { documents: [...documents.values()], partial: true, coverageReason: "Public indexed snippets; conversation coverage is incomplete." };
   },

@@ -272,7 +272,7 @@ describe("public developer collectors", () => {
   });
 
   it("resumes a bounded Stack Overflow activity range before advancing its watermark", async () => {
-    const clock = vi.spyOn(Date, "now").mockReturnValue(1_700_000_100_000);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_700_000_160_000);
     const urls: URL[] = [];
     const questions = Array.from({ length: 92 }, (_, i) => ({ question_id: 201 + i, link: `https://stackoverflow.com/questions/${201 + i}/evaluation`, body: `Evaluation question ${i}`, last_activity_date: 1_700_000_100 - i }));
     vi.stubGlobal("fetch", async (input: string) => {
@@ -288,17 +288,18 @@ describe("public developer collectors", () => {
     const second = await stackOverflowCollector.run({ ...ctx, cursor: first.nextState?.cursor, config: { ...ctx.config, maxPages: 2 } });
     expect(second.documents.map(doc => doc.metadata?.questionId)).toEqual(Array.from({ length: 34 }, (_, i) => 259 + i));
     expect(second.partial).not.toBe(true);
+    expect(JSON.parse(second.nextState?.cursor as string).since).toBe(1_700_000_000);
     expect(urls.slice(2).map(url => [url.searchParams.get("page"), url.searchParams.get("min"), url.searchParams.get("max")])).toEqual([["1", "1700000000", "1700000042"], ["1", "1700000000", "1700000013"]]);
     clock.mockReturnValue(1_700_000_800_000);
     await stackOverflowCollector.run({ ...ctx, cursor: second.nextState?.cursor });
-    expect([urls[4]?.searchParams.get("page"), urls[4]?.searchParams.get("min"), urls[4]?.searchParams.get("max")]).toEqual(["1", "1700000100", "1700000800"]);
+    expect([urls[4]?.searchParams.get("page"), urls[4]?.searchParams.get("min"), urls[4]?.searchParams.get("max")]).toEqual(["1", "1700000000", "1700000740"]);
   });
 
   it.each([
-    { reason: "backoff", backoff: 60, quota: 100, resumeAt: 1_700_000_161_000 },
+    { reason: "backoff", backoff: 60, quota: 100, resumeAt: 1_700_000_221_000 },
     { reason: "quota exhaustion", backoff: undefined, quota: 0, resumeAt: 1_700_086_500_000 },
   ])("resumes the same Stack Overflow activity boundary after $reason", async ({ backoff, quota, resumeAt }) => {
-    const clock = vi.spyOn(Date, "now").mockReturnValue(1_700_000_100_000);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_700_000_160_000);
     const urls: URL[] = [];
     vi.stubGlobal("fetch", async (input: string) => {
       const url = new URL(input); urls.push(url);
@@ -318,7 +319,7 @@ describe("public developer collectors", () => {
   });
 
   it("retains an incomplete Stack Overflow window after an empty non-final page", async () => {
-    vi.spyOn(Date, "now").mockReturnValue(1_700_000_100_000);
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_160_000);
     const urls: URL[] = [];
     vi.stubGlobal("fetch", async (input: string) => {
       const url = new URL(input); urls.push(url);
@@ -335,7 +336,7 @@ describe("public developer collectors", () => {
   });
 
   it("collects an unseen Stack Overflow question shifted forward after earlier questions leave the fixed window", async () => {
-    const clock = vi.spyOn(Date, "now").mockReturnValue(1_700_000_100_000);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_700_000_160_000);
     const questions = Array.from({ length: 31 }, (_, i) => ({ question_id: i + 1, link: `https://stackoverflow.com/questions/${i + 1}/evaluation`, body: `Question ${i + 1}`, creation_date: 1_699_000_000, last_activity_date: 1_700_000_100 - i }));
     const urls: URL[] = [];
     vi.stubGlobal("fetch", async (input: string) => { const url = new URL(input); urls.push(url); return activityPage(url, questions); });
@@ -348,11 +349,11 @@ describe("public developer collectors", () => {
     expect(second.documents[0]?.postedAt).toEqual(new Date(1_699_000_000_000));
     expect(second.partial).not.toBe(true);
     expect([urls[1]?.searchParams.get("page"), urls[1]?.searchParams.get("min"), urls[1]?.searchParams.get("max")]).toEqual(["1", "1700000000", "1700000071"]);
-    expect(JSON.parse(second.nextState?.cursor as string).since).toBe(1_700_000_100);
+    expect(JSON.parse(second.nextState?.cursor as string).since).toBe(1_700_000_000);
   });
 
   it("keeps a saturated Stack Overflow timestamp boundary partial without increasing the call cap", async () => {
-    vi.spyOn(Date, "now").mockReturnValue(1_700_000_100_000);
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_160_000);
     const questions = Array.from({ length: 31 }, (_, i) => ({ question_id: i + 1, link: `https://stackoverflow.com/questions/${i + 1}/evaluation`, body: `Question ${i + 1}`, last_activity_date: 1_700_000_050 }));
     let calls = 0;
     vi.stubGlobal("fetch", async (input: string) => { calls++; return activityPage(new URL(input), questions); });
@@ -369,7 +370,7 @@ describe("public developer collectors", () => {
   });
 
   it("retains the Stack Overflow activity boundary when a non-final page omits its timestamp", async () => {
-    vi.spyOn(Date, "now").mockReturnValue(1_700_000_100_000);
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_160_000);
     const urls: URL[] = [];
     vi.stubGlobal("fetch", async (input: string) => {
       const url = new URL(input); urls.push(url);
@@ -384,6 +385,75 @@ describe("public developer collectors", () => {
     const second = await stackOverflowCollector.run({ ...ctx, cursor: first.nextState?.cursor });
     expect(second.documents[0]?.metadata?.questionId).toBe(102);
     expect(urls.map(url => url.searchParams.get("page"))).toEqual(["1", "1"]);
+  });
+
+  it("recovers delayed-visible Stack Overflow activity that crossed a saved boundary inside the original window", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_700_000_500_000);
+    const questions = [
+      { question_id: 101, link: "https://stackoverflow.com/questions/101/agent", body: "Delayed activity", creation_date: 1_699_000_000, last_activity_date: 1_700_000_060 },
+      { question_id: 102, link: "https://stackoverflow.com/questions/102/agent", body: "Remaining lower-range question", creation_date: 1_699_000_000, last_activity_date: 1_700_000_050 },
+    ];
+    const cursor = JSON.stringify({ since: 1_700_000_000, until: 1_700_000_100, activityMax: 1_700_000_070, backoffUntil: 0 });
+    // The event at80 predates until100, but its cached60 value was visible during the earlier read.
+    questions[0]!.last_activity_date = 1_700_000_080;
+    const urls: URL[] = [];
+    vi.stubGlobal("fetch", async (input: string) => { const url = new URL(input); urls.push(url); return activityPage(url, questions); });
+    const tail = await stackOverflowCollector.run({ ...ctx, cursor });
+    expect(tail.documents.map(doc => doc.metadata?.questionId)).toEqual([102]);
+    expect([urls[0]?.searchParams.get("min"), urls[0]?.searchParams.get("max")]).toEqual(["1700000000", "1700000070"]);
+    clock.mockReturnValue(1_700_000_800_000);
+    const nextWindow = await stackOverflowCollector.run({ ...ctx, cursor: tail.nextState?.cursor });
+    expect(nextWindow.documents.map(doc => doc.metadata?.questionId)).toContain(101);
+    expect(nextWindow.documents.find(doc => doc.metadata?.questionId === 101)?.postedAt).toEqual(new Date(1_699_000_000_000));
+    expect([urls[1]?.searchParams.get("min"), urls[1]?.searchParams.get("max")]).toEqual(["1700000000", "1700000740"]);
+    expect(urls).toHaveLength(2);
+  });
+
+  it("settles new Stack Overflow windows and overlaps completed watermarks by five minutes", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_500_000);
+    const questions = [
+      { question_id: 101, link: "https://stackoverflow.com/questions/101/agent", body: "Settled question", last_activity_date: 1_700_000_400 },
+      { question_id: 102, link: "https://stackoverflow.com/questions/102/agent", body: "Still settling", last_activity_date: 1_700_000_480 },
+    ];
+    const urls: URL[] = [];
+    vi.stubGlobal("fetch", async (input: string) => { const url = new URL(input); urls.push(url); return activityPage(url, questions); });
+    const result = await stackOverflowCollector.run({ ...ctx, cursor: "1700000000" });
+    expect(result.documents.map(doc => doc.metadata?.questionId)).toEqual([101]);
+    expect(urls[0]?.searchParams.get("max")).toBe("1700000440");
+    expect(JSON.parse(result.nextState?.cursor as string).since).toBe(1_700_000_140);
+  });
+
+  it("captures delayed same-second Stack Overflow activity through the next inclusive window", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_700_000_160_000);
+    const questions = [{ question_id: 101, link: "https://stackoverflow.com/questions/101/agent", body: "First visible question", last_activity_date: 1_700_000_100 }];
+    const urls: URL[] = [];
+    vi.stubGlobal("fetch", async (input: string) => { const url = new URL(input); urls.push(url); return activityPage(url, questions); });
+    const first = await stackOverflowCollector.run({ ...ctx, cursor: "1700000100" });
+    expect(first.documents.map(doc => doc.metadata?.questionId)).toEqual([101]);
+    questions.push({ question_id: 102, link: "https://stackoverflow.com/questions/102/agent", body: "Later visible event in the same second", last_activity_date: 1_700_000_100 });
+    clock.mockReturnValue(1_700_000_220_000);
+    const second = await stackOverflowCollector.run({ ...ctx, cursor: first.nextState?.cursor });
+    expect(second.documents.map(doc => doc.metadata?.questionId)).toContain(102);
+    expect([urls[1]?.searchParams.get("min"), urls[1]?.searchParams.get("max")]).toEqual(["1700000100", "1700000160"]);
+    expect(urls).toHaveLength(2);
+  });
+
+  it.each(["1700000090", JSON.stringify({ since: 1_700_000_090, backoffUntil: 0 })])("waits safely for a recent legacy Stack Overflow watermark to settle", async cursor => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_700_000_100_000);
+    const questions = [{ question_id: 101, link: "https://stackoverflow.com/questions/101/agent", body: "Question", last_activity_date: 1_700_000_090 }];
+    const request = vi.fn(async (input: string) => activityPage(new URL(input), questions));
+    vi.stubGlobal("fetch", request);
+    const waiting = await stackOverflowCollector.run({ ...ctx, cursor });
+    expect(waiting.documents).toEqual([]);
+    expect(waiting.partial).toBe(true);
+    expect(waiting.coverageReason).toMatch(/settl/i);
+    expect(waiting.nextState?.cursor).toBe(cursor);
+    expect(request).not.toHaveBeenCalled();
+    expect(costs.events).toEqual([]);
+    clock.mockReturnValue(1_700_000_150_000);
+    const ready = await stackOverflowCollector.run({ ...ctx, cursor: waiting.nextState?.cursor });
+    expect(ready.documents.map(doc => doc.metadata?.questionId)).toEqual([101]);
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
   it("restarts a legacy Stack Overflow page-offset cursor at page one", async () => {

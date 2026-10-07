@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 
 import {
   assertCopyAllowed,
@@ -118,20 +118,23 @@ export async function createDraftForOpportunity(opts: {
 export async function getLatestDraft(opts: {
   workspaceId: string;
   opportunityId: string;
+  targetDocumentId?: string;
 }): Promise<DraftView | null> {
   const db = getDb();
-  const rows = await db
-    .select()
-    .from(opportunityDraft)
-    .where(
-      and(
-        eq(opportunityDraft.workspaceId, opts.workspaceId),
-        eq(opportunityDraft.opportunityId, opts.opportunityId),
-      ),
-    )
-    .orderBy(desc(opportunityDraft.createdAt))
-    .limit(1);
-  return rows[0] ? toView(rows[0]) : null;
+  const scope = and(
+    eq(opportunityDraft.workspaceId, opts.workspaceId),
+    eq(opportunityDraft.opportunityId, opts.opportunityId),
+  );
+  const conditions = opts.targetDocumentId ? [
+    and(scope, sql`${opportunityDraft.quality}->>'targetDocumentId' = ${opts.targetDocumentId}`),
+    and(scope, isNull(opportunityDraft.quality)),
+  ] : [scope];
+  for (const condition of conditions) {
+    const [row] = await db.select().from(opportunityDraft).where(condition)
+      .orderBy(desc(opportunityDraft.createdAt)).limit(1);
+    if (row) return toView(row);
+  }
+  return null;
 }
 
 export async function updateDraftText(opts: {

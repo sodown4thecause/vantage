@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ paid: vi.fn() }));
+const mocks = vi.hoisted(() => ({ paid: vi.fn(), costs: [] as Array<number | undefined> }));
 vi.mock("@/lib/providers/paid-call", () => ({ runPaidCall: mocks.paid }));
 
 import { alexandriaCollector } from "@/lib/collectors/alexandria";
@@ -10,7 +10,12 @@ import { COMMUNITY_SOURCE_CATALOG } from "@/lib/communities/catalog";
 const ctx = { workspaceId: "workspace", sourceId: "source", config: { query: "agent evaluation" } };
 beforeEach(() => {
   mocks.paid.mockReset();
-  mocks.paid.mockImplementation(async (_options, work) => (await work()).value);
+  mocks.costs = [];
+  mocks.paid.mockImplementation(async (_options, work) => {
+    const result = await work();
+    mocks.costs.push(result.costUsd);
+    return result.value;
+  });
   vi.stubEnv("FIRECRAWL_API_KEY", "test-key");
   vi.stubEnv("FIRECRAWL_CREDIT_USD", "0.001");
   vi.stubEnv("SCAVIO_API_KEY", "test-key");
@@ -132,6 +137,70 @@ describe("paid developer discovery", () => {
     mocks.paid.mockRejectedValue(new Error("Budget denied"));
     await expect(linkedinCollector.run(ctx)).rejects.toThrow("Budget denied");
     expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    null,
+    [],
+    "private provider body",
+    { organic_results: "not an array" },
+    { organic_results: [], pagination: "next" },
+    { organic_results: [], pagination: { next: 2 } },
+    { organic_results: [], success: "true" },
+    { organic_results: [], success: false, error: "private provider token" },
+  ])("rejects a malformed or unsuccessful LinkedIn search page: %j", async value => {
+    vi.stubGlobal("fetch", async () => Response.json(value));
+    await expect(linkedinCollector.run(ctx)).rejects.toThrow(/^Invalid Scavio indexed search response\.$/);
+  });
+
+  it.each([
+    null,
+    [],
+    "private provider entry",
+    { link: 12 },
+    { link: "https://www.linkedin.com/posts/builder_agent-activity-1234567890123456789-AbCd", title: { text: "Agent" } },
+    { link: "https://www.linkedin.com/posts/builder_agent-activity-1234567890123456789-AbCd", snippet: ["Agent"] },
+    { link: "https://www.linkedin.com/posts/builder_agent-activity-1234567890123456789-AbCd", date: { timestamp: "2026-10-07" } },
+    { link: "https://www.linkedin.com/posts/builder_agent-activity-1234567890123456789-AbCd", date: 1_791_331_200 },
+  ])("rejects malformed LinkedIn result fields: %j", async item => {
+    vi.stubGlobal("fetch", async () => Response.json({ organic_results: [item] }));
+    await expect(linkedinCollector.run(ctx)).rejects.toThrow(/^Invalid Scavio indexed search response\.$/);
+  });
+
+  it.each([null, "3", -1, {}, true])("rejects malformed Scavio credits instead of silently estimating: %j", async credits_used => {
+    vi.stubGlobal("fetch", async () => Response.json({ organic_results: [], credits_used }));
+    await expect(linkedinCollector.run(ctx)).rejects.toThrow(/^Invalid Scavio indexed search response\.$/);
+  });
+
+  it("rejects non-finite returned credits", async () => {
+    vi.stubGlobal("fetch", async () => new Response('{"organic_results":[],"credits_used":1e400}'));
+    await expect(linkedinCollector.run(ctx)).rejects.toThrow(/^Invalid Scavio indexed search response\.$/);
+  });
+
+  it("sanitizes malformed JSON instead of returning provider body fragments", async () => {
+    vi.stubGlobal("fetch", async () => new Response("private provider token is not JSON"));
+    await expect(linkedinCollector.run(ctx)).rejects.toThrow(/^Invalid Scavio indexed search response\.$/);
+  });
+
+  it.each([
+    { organic_results: "not an array", credits_used: 3 },
+    { organic_results: [{ link: "https://www.linkedin.com/posts/builder_agent-activity-1234567890123456789-AbCd", title: { text: "Agent" } }], credits_used: 3 },
+  ])("returns real credits to the paid gate before rejecting downstream results: %j", async value => {
+    vi.stubGlobal("fetch", async () => Response.json(value));
+    await expect(linkedinCollector.run(ctx)).rejects.toThrow(/^Invalid Scavio indexed search response\.$/);
+    expect(mocks.costs).toEqual([0.012]);
+  });
+
+  it("supports omitted optional fields and relative date text without inventing publication dates", async () => {
+    vi.stubGlobal("fetch", async () => Response.json({ success: true, credits_used: 0, organic_results: [
+      { link: "https://www.linkedin.com/posts/builder_agent-activity-1234567890123456789-AbCd", snippet: "Need reproducible agent evaluation", date: "3 days ago" },
+      { link: "https://www.linkedin.com/posts/builder_agent-activity-1234567890123456780-AbCd", title: "Agent evaluation question" },
+    ] }));
+    const result = await linkedinCollector.run(ctx);
+    expect(result.documents).toHaveLength(2);
+    expect(result.documents.every(doc => doc.postedAt === null)).toBe(true);
+    expect(result.partial).toBe(true);
+    expect(mocks.costs).toEqual([0]);
   });
 
   it("aborts paid collectors before provider calls", async () => {

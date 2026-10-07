@@ -9,6 +9,11 @@ type Question = { question_id: number; link?: string; title?: string; body?: str
 type Answer = { question_id: number; answer_id: number; body?: string; score?: number; owner?: { display_name?: string } | null };
 type Page<T> = { items: T[]; has_more?: boolean; backoff?: number; quota_remaining?: number; error_id?: number };
 
+// The API documents heavy caching without a freshness guarantee. These bounded
+// margins mitigate delayed visibility; they do not create snapshot consistency.
+const SETTLEMENT_SECONDS = 60;
+const COMPLETED_OVERLAP_SECONDS = 300;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -56,7 +61,8 @@ export const stackOverflowCollector: Collector = {
     let state: { since?: number; until?: number; activityMax?: number; nextPage?: number; backoffUntil?: number } = {};
     try { const value = JSON.parse(ctx.cursor ?? "{}"); if (value && typeof value === "object" && !Array.isArray(value)) state = value; } catch { /* Legacy numeric cursor is accepted below. */ }
     const since = Number(state.since ?? ctx.cursor) || now - 72 * 3600;
-    const until = state.until ?? now;
+    const settledUntil = now - SETTLEMENT_SECONDS;
+    const until = state.until ?? Math.max(since, settledUntil);
     const legacyPage = state.nextPage ?? 1;
     let activityMax = state.activityMax ?? until;
     if (!Number.isSafeInteger(since) || since < 0 || !Number.isSafeInteger(until) || until < since || until > now || !Number.isSafeInteger(activityMax) || activityMax < since || activityMax > until || !Number.isSafeInteger(legacyPage) || legacyPage < 1 || legacyPage > Number.MAX_SAFE_INTEGER - 2 || (state.backoffUntil !== undefined && !isCount(state.backoffUntil))) throw new Error("Invalid Stack Overflow pagination cursor");
@@ -64,6 +70,10 @@ export const stackOverflowCollector: Collector = {
     if (!query || query.length > 500) throw new Error("Stack Overflow requires a query of 1-500 characters");
     if (typeof state.backoffUntil === "number" && state.backoffUntil > now) return {
       documents: [], partial: true, coverageReason: `Stack Overflow API backoff until ${state.backoffUntil}`,
+      nextState: { cursor: ctx.cursor },
+    };
+    if (state.until == null && since > settledUntil) return {
+      documents: [], partial: true, coverageReason: `Stack Overflow activity window settling until ${since + SETTLEMENT_SECONDS}`,
       nextState: { cursor: ctx.cursor },
     };
     const maxPages = Math.min(2, Math.max(1, Math.floor(Number(ctx.config.maxPages) || 1)));
@@ -133,6 +143,6 @@ export const stackOverflowCollector: Collector = {
     }
     return { documents, partial: hasMore,
       coverageReason: hasMore ? `Stack Overflow search window incomplete${backoffUntil ? "; API backoff" : quotaRemaining === 0 ? "; API quota exhausted" : ""}${boundaryReason ? `; ${boundaryReason}` : ""}; resume at activity boundary ${activityMax}` : undefined,
-      nextState: { cursor: JSON.stringify(hasMore ? { since, until, activityMax, backoffUntil } : { since: until, backoffUntil }) } };
+      nextState: { cursor: JSON.stringify(hasMore ? { since, until, activityMax, backoffUntil } : { since: Math.max(since, until - COMPLETED_OVERLAP_SECONDS), backoffUntil }) } };
   },
 };

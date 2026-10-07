@@ -56,7 +56,8 @@ export function DraftPanel({
     const revision = ++requestRevision.current;
     (async () => {
       const res = await fetch(
-        `/api/drafts?workspaceId=${encodeURIComponent(workspaceId)}&opportunityId=${encodeURIComponent(opportunityId)}`,
+        `/api/drafts?workspaceId=${encodeURIComponent(workspaceId)}&opportunityId=${encodeURIComponent(opportunityId)}${target ? `&targetDocumentId=${encodeURIComponent(target)}` : ""}`,
+        { cache: "no-store" },
       );
       const data = (await res.json().catch(() => ({}))) as {
         draft?: Draft | null;
@@ -68,7 +69,7 @@ export function DraftPanel({
         setError(data.error ?? "Failed to load draft");
         return;
       }
-      if (data.draft && data.draft.quality?.targetDocumentId === target) {
+      if (data.draft && (data.draft.quality === null || data.draft.quality?.targetDocumentId === target)) {
         setDraft(data.draft);
         setEdited(data.draft.editedText);
         setCopied(false);
@@ -268,7 +269,7 @@ export function DraftPanel({
             {draft.quality.angle && <p><strong>What this adds:</strong> {draft.quality.angle}</p>}
             <p>{draft.quality.gap.note}</p>
             {draft.quality.notes.map(note => <p key={note}>{note}</p>)}
-          </div> : <p className="text-xs">Regenerate this older draft to review its evidence and community rules.</p>}
+          </div> : <p className="text-xs">Legacy draft · conversation not recorded. Review this saved text or regenerate for the selected conversation before handoff.</p>}
           <div>
             <p className="text-xs font-medium text-zinc-500">Original</p>
             <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-zinc-50 p-3 text-xs dark:bg-zinc-900">
