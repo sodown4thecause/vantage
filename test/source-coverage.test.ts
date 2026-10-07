@@ -36,6 +36,12 @@ describe("collector coverage classification", () => {
     expect(result.provider).toBe("scavio");
   });
 
+  it("keeps an empty incomplete scan degraded with its explanation", () => {
+    const result = classifyCollectorCoverage({ documents: [], inserted: 0, skipped: 0, partial: true, coverageReason: "Provider deferred the remaining pages." });
+    expect(result.coverage).toBe("degraded");
+    expect(result.reason).toBe("Provider deferred the remaining pages.");
+  });
+
   it("classifies access / budget / blocked / failed errors", () => {
     expect(
       classifyCollectorCoverage({

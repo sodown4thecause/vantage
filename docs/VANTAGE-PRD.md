@@ -1,5 +1,7 @@
 # VANTAGE — Decisive Product Strategy
 
+Current implementation phase (7 Oct 2026): [developer community collection and contribution quality](superpowers/specs/2026-10-07-community-gtm-phase.md). This adds a curated community catalog, official GitHub/Stack Overflow collection, public Substack feeds, opt-in budgeted provider routes, and human-reviewed contribution drafts. GPT-6.1 Sol writes drafts; optional Inco DeepSeek performs inexpensive triage. Hacker News and Stack Overflow receive research briefs because their policies prohibit AI-written contributions. No posting or messaging is automated. Provider credentials, migrations, and deployment require separate verification.
+
 ## A. One-Sentence Product Definition
 
 **VANTAGE watches the public places where developers talk, finds the few conversations and market changes worth acting on, and gives you a grounded next action before the opportunity disappears.**

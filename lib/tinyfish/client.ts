@@ -6,12 +6,14 @@ import { TinyFish } from "@tiny-fish/sdk";
  */
 export function createTinyFishClient(
   apiKey: string = process.env.TINYFISH_API_KEY ?? "",
+  signal?: AbortSignal,
 ): TinyFish {
   const key = apiKey.trim();
   if (!key) {
     throw new Error("TINYFISH_API_KEY is not configured");
   }
-  return new TinyFish({ apiKey: key });
+  signal?.throwIfAborted();
+  return new TinyFish({ apiKey: key, timeout: 30_000, maxRetries: 0 });
 }
 
 export function hasTinyFishApiKey(

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { authorizeWorkspace } from "@/lib/auth/workspace";
+import { ContributionValidationError } from "@/lib/drafting/contribution";
 import {
+  DraftInputError,
   approveDraftForHandoff,
   createDraftForOpportunity,
   getLatestDraft,
@@ -26,7 +28,12 @@ export async function GET(req: Request) {
         { status: authorization.status },
       );
     }
-    const draft = await getLatestDraft({ workspaceId, opportunityId });
+    const targetDocumentId = url.searchParams.get("targetDocumentId")?.trim().toLowerCase();
+    if (targetDocumentId !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(targetDocumentId)) {
+      return NextResponse.json({ error: "targetDocumentId must be a UUID" }, { status: 400 });
+    }
+    const draft = await getLatestDraft({ workspaceId, opportunityId,
+      ...(targetDocumentId ? { targetDocumentId } : {}) });
     return NextResponse.json({ draft });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -68,6 +75,9 @@ export async function POST(req: Request) {
       const draft = await createDraftForOpportunity({
         workspaceId,
         opportunityId,
+        targetDocumentId: typeof body.targetDocumentId === "string" ? body.targetDocumentId : undefined,
+        rulesReviewed: body.rulesReviewed === true,
+        signal: req.signal,
       });
       return NextResponse.json({ draft }, { status: 201 });
     }
@@ -98,19 +108,15 @@ export async function POST(req: Request) {
           { status: 400 },
         );
       }
-      try {
-        const draft = await approveDraftForHandoff({ workspaceId, draftId });
-        return NextResponse.json({ draft });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return NextResponse.json({ error: message }, { status: 400 });
-      }
+      const draft = await approveDraftForHandoff({ workspaceId, draftId, rulesReviewed: body.rulesReviewed === true, factsReviewed: body.factsReviewed === true });
+      return NextResponse.json({ draft });
     }
 
     return NextResponse.json({ error: "unknown action" }, { status: 400 });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error("[drafts POST]", message);
+    if (err instanceof DraftInputError || err instanceof ContributionValidationError) return NextResponse.json({ error: message }, { status: 400 });
+    console.error("[drafts POST] request failed");
     return NextResponse.json({ error: "draft request failed" }, { status: 500 });
   }
 }

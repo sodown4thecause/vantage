@@ -62,7 +62,8 @@ export const rssCollector: Collector = {
     if (ctx.etag) headers["If-None-Match"] = ctx.etag;
     if (ctx.lastModified) headers["If-Modified-Since"] = ctx.lastModified;
 
-    const { response: res, text: xml } = await fetchPublicText(url, { headers, cache: "no-store", signal: ctx.signal }, 512_000);
+    const maxResponseBytes = Math.min(3_000_000, Math.max(64_000, Math.floor(Number(ctx.config.maxResponseBytes) || 512_000)));
+    const { response: res, text: xml } = await fetchPublicText(url, { headers, cache: "no-store", signal: ctx.signal }, maxResponseBytes);
     if (res.status === 304) {
       return {
         documents: [],

@@ -6,6 +6,10 @@ import { substackCollector } from "@/lib/collectors/substack";
 import type { Collector, SourceType } from "@/lib/collectors/types";
 import { xCollector } from "@/lib/collectors/x";
 import { youtubeCollector } from "@/lib/collectors/youtube";
+import { githubCollector } from "@/lib/collectors/github";
+import { stackOverflowCollector } from "@/lib/collectors/stackoverflow";
+import { alexandriaCollector } from "@/lib/collectors/alexandria";
+import { linkedinCollector } from "@/lib/collectors/linkedin";
 
 export const collectorsByType: Record<SourceType, Collector | undefined> = {
   hn: hnCollector,
@@ -15,7 +19,10 @@ export const collectorsByType: Record<SourceType, Collector | undefined> = {
   youtube: youtubeCollector,
   reddit: redditCollector,
   x: xCollector,
-  web_search: undefined,
+  web_search: alexandriaCollector,
+  github: githubCollector,
+  stackoverflow: stackOverflowCollector,
+  linkedin: linkedinCollector,
   other: undefined,
 };
 
@@ -27,4 +34,8 @@ export const allCollectors: Collector[] = [
   youtubeCollector,
   redditCollector,
   xCollector,
+  githubCollector,
+  stackOverflowCollector,
+  alexandriaCollector,
+  linkedinCollector,
 ];

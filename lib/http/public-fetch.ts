@@ -14,9 +14,10 @@ export function isPublicHttpUrl(value: string): boolean {
 export async function fetchPublicText(
   url: string, init: RequestInit = {}, maxBytes = 64_000,
   fetchImpl: (input: string, init?: RequestInit) => Promise<Response> = fetch,
+  timeoutMs = 4_000,
 ): Promise<{ response: Response; text: string }> {
   if (!isPublicHttpUrl(url)) throw new Error("A public HTTP(S) URL is required.");
-  const timeout = AbortSignal.timeout(4_000);
+  const timeout = AbortSignal.timeout(timeoutMs);
   const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
   signal.throwIfAborted();
   const response = await fetchImpl(url, { ...init, redirect: "manual", signal });

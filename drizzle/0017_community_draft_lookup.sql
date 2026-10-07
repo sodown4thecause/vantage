@@ -1,0 +1,2 @@
+CREATE INDEX "opportunity_draft_scope_target_created_idx" ON "opportunity_draft" USING btree ("workspace_id","opportunity_id",("quality"->>'targetDocumentId'),"created_at" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "opportunity_draft_scope_created_idx" ON "opportunity_draft" USING btree ("workspace_id","opportunity_id","created_at" DESC NULLS LAST);

@@ -18,6 +18,8 @@ export type OpportunityFeatures = {
 };
 
 export type OpportunityEvidenceView = {
+  existingReplies?: string[];
+  discoveryOnly?: boolean;
   documentId: string;
   title: string | null;
   urlCanonical: string;

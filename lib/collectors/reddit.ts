@@ -13,15 +13,21 @@ export const redditCollector: Collector = {
   async run(ctx: CollectorContext): Promise<CollectorResult> {
     const query =
       typeof ctx.config.query === "string" ? ctx.config.query : undefined;
+    const subreddit =
+      typeof ctx.config.subreddit === "string" ? ctx.config.subreddit : undefined;
     const limit = Number(ctx.config.limit ?? ctx.config.first ?? 20);
     const { posts, meta, cursor } = await fetchRedditPostsWithMeta({
       ctx: { workspaceId: ctx.workspaceId, sourceKey: "reddit" },
       query,
+      subreddit,
       limit,
       cursor: ctx.cursor ?? undefined,
+      signal: ctx.signal,
     });
 
     const documents: NewDocument[] = posts.map((p) => {
+      const postedAt = parseValidDate(p.createdAt);
+      const publicationDateMissing = postedAt === null;
       const body = [
         p.subreddit ? `r/${p.subreddit}` : null,
         p.author ? `u/${p.author}` : null,
@@ -39,7 +45,7 @@ export const redditCollector: Collector = {
         platform: "reddit",
         authorRef: p.author ?? null,
         title: p.title,
-        postedAt: parseValidDate(p.createdAt),
+        postedAt,
         contentMd: body,
         contentHash: contentHash("reddit", p.url, body),
         rawSnapshotRef: `reddit:${p.id}`,
@@ -49,12 +55,22 @@ export const redditCollector: Collector = {
           numComments: p.numComments,
           provider: meta.provider,
           mocked: meta.provider === "fixture",
+          contentKind: p.contentKind,
+          discoveryOnly: p.contentKind === "preview",
+          publicationDateMissing,
+          partial: publicationDateMissing,
+          topComments: p.topComments,
         },
       };
     });
 
+    const missingPublicationDates = documents.filter(document => document.postedAt === null).length;
     return {
       documents,
+      partial: missingPublicationDates > 0,
+      coverageReason: missingPublicationDates
+        ? `${missingPublicationDates} Reddit post(s) have no supplied publication date; recency is unverified.`
+        : undefined,
       nextState: {
         cursor: cursor === undefined ? new Date().toISOString() : cursor,
       },
