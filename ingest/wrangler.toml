@@ -1,0 +1,67 @@
+# Cloudflare Workers config for the GTM ingest pipeline.
+#
+# Topology (fail-explicit):
+#   [WORKER: ingest]  --cron--> enqueue jobs --> [QUEUE: gtm-ingest-jobs]
+#                                                        |
+#                                                   queue consumer (same worker file, queue handler)
+#                                                        |
+#                                                   Neon (serverless HTTP driver)
+#
+# NOTE: queues need a paid plan. Consumer concurrency & retry behavior is tuned
+# below; see README "Known constraints" for the *why*.
+
+name = "gtm-ingest"
+main = "src/index.ts"
+compatibility_date = "2024-09-09"
+compatibility_flags = ["nodejs_compat"]
+
+# Only the cron wake-up. It does NOT fetch sources inline; it only enqueues.
+[triggers]
+crons = ["*/5 * * * *"] # every 5 min: poller decides which sources are actually due
+
+[[queues.producers]]
+binding = "INGEST_QUEUE"
+queue = "gtm-ingest-jobs"
+
+[[queues.consumers]]
+queue = "gtm-ingest-jobs"
+# Do not poison-pill: retry a bounded number of times with exponential backoff,
+# then route to a dead-letter queue instead of blocking the queue forever.
+max_batch_size = 10
+max_batch_timeout = 30
+max_retries = 4
+dead_letter_queue = "gtm-ingest-jobs-dlq"
+
+# Classification is a SEPARATE queue so LLM latency/cost never touches ingest.
+# Producer is the ingest path; consumer is the classify-batch handler.
+[[queues.producers]]
+binding = "CLASSIFY_QUEUE"
+queue = "gtm-classify-jobs"
+
+[[queues.consumers]]
+queue = "gtm-classify-jobs"
+# Each message carries a bounded list of item ids (see CLASSIFIER_* vars).
+max_batch_size = 5
+max_batch_timeout = 30
+max_retries = 3
+dead_letter_queue = "gtm-classify-jobs-dlq"
+
+# Secrets (set via `wrangler secret put`):
+#   DATABASE_URL          - Neon pooled connection string (postgres://.../db?sslmode=require)
+#   STACKEXCHANGE_KEY     - optional Stack Exchange API key (raises 300/day -> 10k/day)
+#   MANUAL_TRIGGER_TOKEN  - bearer token required by the manual single-source endpoint
+#   EDGAR_USER_AGENT      - descriptive UA, e.g. "GTM-Monitor/0.1 (contact@example.com)"
+#   INCO_API_KEY          - inference API key for the classification signal layer
+
+# Non-secret vars
+[vars]
+DEFAULT_POLL_INTERVAL_MINUTES = "20"
+USER_AGENT = "GTM-Monitor/0.1 (+https://example.com/gtm-monitor; ingestion bot)"
+# Signal layer. Set CLASSIFIER_ENABLED = "false" to disable all LLM work.
+CLASSIFIER_ENABLED = "true"
+# Exact model ids verified against GET https://api.inco.ai/v1/models (2026-10-07).
+INCO_CLASSIFIER_MODEL = "deepseek-v4.1-flash"
+INCO_WRITER_MODEL = "kimi-k3"
+CLASSIFIER_BATCH_SIZE = "15"
+CLASSIFIER_MAX_ITEMS_PER_MESSAGE = "60"
+CLASSIFIER_MAX_CONCURRENCY = "2"
