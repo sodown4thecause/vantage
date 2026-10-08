@@ -8,7 +8,7 @@ import { isCronAuthorized } from "@/lib/cron/authorize";
 import { claimScanLease, releaseScanLease } from "@/lib/cron/lease";
 import { eligibleSourceCondition, scanNotDueReason } from "@/lib/cron/scan";
 import { getDb } from "@/lib/db/client";
-import { source, workspace } from "@/lib/db/schema";
+import { monitoringProfile, source, workspace } from "@/lib/db/schema";
 import { embedPendingDocuments } from "@/lib/embeddings/index-documents";
 import { buildOpportunities } from "@/lib/opportunities/run";
 import { getLatestMonitoringProfile } from "@/lib/profile/repository";
@@ -27,13 +27,19 @@ export type PlanOutcome =
   | { kind: "busy" }
   | { kind: "planned"; leaseToken: string; sourceIds: string[] };
 
-/** Workspaces whose scheduled cadence has elapsed and that have no live lease, oldest rotation first. */
+/**
+ * Workspaces whose scheduled cadence has elapsed, that have no live lease, and that have a monitoring
+ * profile (the only ones a scan can run for), oldest rotation first.
+ */
 export async function dueWorkspaceIds(now = new Date()): Promise<string[]> {
   const db = getDb();
   const candidates = await db
     .select({ id: workspace.id })
     .from(workspace)
-    .where(or(isNull(workspace.scanLeaseUntil), lt(workspace.scanLeaseUntil, sql`now()`)))
+    .where(and(
+      or(isNull(workspace.scanLeaseUntil), lt(workspace.scanLeaseUntil, sql`now()`)),
+      sql`exists (select 1 from ${monitoringProfile} where ${monitoringProfile.workspaceId} = ${workspace.id})`,
+    ))
     .orderBy(workspace.updatedAt)
     .limit(MAX_DUE_WORKSPACES);
   const checked = await mapWithConcurrency(candidates, 4, async (ws) => ({
@@ -50,7 +56,12 @@ export async function dueWorkspaceIds(now = new Date()): Promise<string[]> {
 export async function planScan(workspaceId: string, now = new Date()): Promise<PlanOutcome> {
   const reason = await scanNotDueReason(workspaceId, now);
   if (reason) return { kind: "skipped", reason };
-  if (!(await getLatestMonitoringProfile(workspaceId))) return { kind: "skipped", reason: "monitoring profile required" };
+  if (!(await getLatestMonitoringProfile(workspaceId))) {
+    // Rotate the workspace to the back, as the tick path does. Without this, a profile-less workspace
+    // keeps the same place in the oldest-first due window and can starve the workspaces behind it.
+    await getDb().update(workspace).set({ updatedAt: new Date() }).where(eq(workspace.id, workspaceId));
+    return { kind: "skipped", reason: "monitoring profile required" };
+  }
   const leaseToken = await claimScanLease(workspaceId, SCAN_LEASE_MINUTES);
   if (!leaseToken) return { kind: "busy" };
   try {

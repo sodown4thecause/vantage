@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   dueWorkspaces: [] as Array<{ id: string }>,
   limits: [] as unknown[],
   writes: [] as Array<{ table: string; set: Record<string, unknown>; where: unknown }>,
+  dueWhere: undefined as unknown,
   hashes: new Set<string>(),
   collectorRun: vi.fn(),
   embed: vi.fn(),
@@ -56,7 +57,10 @@ function readRows(ops: Op[]) {
   if (limit) state.limits.push(limit.args[0]);
   if (selected && "last" in selected) return [{ last: state.lastPolled }];
   if (from === source) return find(ops, "orderBy") ? state.eligible : state.sourceRow ? [state.sourceRow] : [];
-  if (from === workspace) return state.dueWorkspaces;
+  if (from === workspace) {
+    state.dueWhere = find(ops, "where")?.args[0];
+    return state.dueWorkspaces;
+  }
   return [];
 }
 function writeRows(ops: Op[]) {
@@ -170,6 +174,12 @@ describe("due", () => {
     expect(await response.json()).toEqual({ workspaceIds: [WS] });
   });
 
+  it("only considers workspaces that have a monitoring profile", async () => {
+    await call(dueRoute);
+    const sqlText = toSql(state.dueWhere).sql;
+    expect(sqlText).toMatch(/exists \(select 1 from "monitoring_profile"/);
+  });
+
   it("returns none and rotates not-due workspaces to the back of the queue", async () => {
     state.lastPolled = new Date();
     const response = await call(dueRoute);
@@ -199,11 +209,15 @@ describe("plan", () => {
     expect(await response.json()).toEqual({ error: "scan already running" });
   });
 
-  it("returns skipped without claiming a lease when no monitoring profile exists", async () => {
+  it("returns skipped without claiming a lease when no monitoring profile exists, and rotates the workspace", async () => {
     state.profile = false;
     const response = await call(planRoute, { workspaceId: WS });
     expect(await response.json()).toEqual({ skipped: true, reason: "monitoring profile required" });
-    expect(state.writes).toEqual([]);
+    // Only a rotation write: no lease is claimed, and updatedAt moves the workspace to the back of the due queue.
+    expect(state.writes).toHaveLength(1);
+    expect(state.writes[0]).toMatchObject({ table: "workspace" });
+    expect(state.writes[0]!.set).toEqual({ updatedAt: expect.any(Date) });
+    expect(state.writes[0]!.set).not.toHaveProperty("scanLeaseToken");
   });
 
   it("returns skipped when the workspace is not due", async () => {
