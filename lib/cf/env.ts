@@ -26,7 +26,7 @@ function isVectorizeBinding(value: unknown): value is VectorizeBinding {
 }
 
 /** Reads one binding from the Cloudflare request context, or null when unavailable. */
-async function readBinding(name: string): Promise<unknown> {
+export async function readBinding(name: string): Promise<unknown> {
   try {
     const { getCloudflareContext } = await import("@opennextjs/cloudflare");
     const env: unknown = getCloudflareContext().env;
