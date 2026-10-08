@@ -43,24 +43,30 @@ export async function recordShadow(
   return inserted.length;
 }
 
+/** Signals plus the document vectors they were computed from, keyed by document id. */
+export type SemanticStageResult = {
+  signals: Map<string, SemanticSignal>;
+  vectors: Map<string, number[]>;
+};
+
 /**
  * Runs semantic scoring beside the keyword pipeline. Off by default: with mode
  * "off" it returns null before any call. Otherwise it persists pending embeddings,
  * embeds this run's documents, computes signals and records shadow rows. Returns
- * the signals, or null when AI or Vectorize is unavailable. The caller must not
- * feed the result into scoring yet. Never throws.
+ * the signals and the document vectors, or null when AI or Vectorize is unavailable.
+ * The caller must not feed the result into scoring unless the mode is "on". Never throws.
  */
-export async function runSemanticStage(
+export async function runSemanticStageDetailed(
   workspaceId: string,
   docs: NormalizedDocument[],
   signal?: AbortSignal,
-): Promise<Map<string, SemanticSignal> | null> {
+): Promise<SemanticStageResult | null> {
   const mode = getSemanticMode();
   if (mode === "off") return null;
   try {
     await embedPendingDocuments(workspaceId, { limit: STAGE_DOC_LIMIT, signal });
     const stageDocs = docs.slice(0, STAGE_DOC_LIMIT);
-    if (stageDocs.length === 0) return new Map();
+    if (stageDocs.length === 0) return { signals: new Map(), vectors: new Map() };
 
     // Embedded directly from the document text rather than read back from Vectorize.
     const vectors = await embedTexts(
@@ -76,7 +82,7 @@ export async function runSemanticStage(
     if (signals === null) return null;
 
     await recordShadow(workspaceId, stageDocs, signals, mode);
-    return signals;
+    return { signals, vectors: new Map(embedded.map((doc) => [doc.id, doc.vector])) };
   } catch (err) {
     // Only the error class is logged: messages can embed connection details.
     console.error("[semantic] shadow stage failed", {
@@ -84,4 +90,13 @@ export async function runSemanticStage(
     });
     return null;
   }
+}
+
+/** Signals only, for callers that do not need the vectors. Same contract as runSemanticStageDetailed. */
+export async function runSemanticStage(
+  workspaceId: string,
+  docs: NormalizedDocument[],
+  signal?: AbortSignal,
+): Promise<Map<string, SemanticSignal> | null> {
+  return (await runSemanticStageDetailed(workspaceId, docs, signal))?.signals ?? null;
 }

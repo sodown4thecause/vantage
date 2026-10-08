@@ -38,7 +38,8 @@ import {
   type NormalizedDocument,
 } from "@/lib/pipeline/normalize";
 import { getSemanticMode } from "@/lib/cf/env";
-import { runSemanticStage } from "@/lib/pipeline/shadow";
+import { nearDuplicates } from "@/lib/pipeline/dedupe";
+import { runSemanticStageDetailed } from "@/lib/pipeline/shadow";
 
 const QUEUE_STATUSES: OpportunityStatus[] = [
   "opportunity",
@@ -114,6 +115,34 @@ function clusterDocuments(
   return groups;
 }
 
+/**
+ * Collapses near-duplicate documents into one representative each (the earliest posting).
+ * `duplicatesOf` holds the absorbed documents per representative so their evidence is kept.
+ */
+function groupNearDuplicates(
+  docs: NormalizedDocument[],
+  vectors: Map<string, number[]>,
+): { representatives: NormalizedDocument[]; duplicatesOf: Map<string, NormalizedDocument[]> } {
+  const embedded = docs.flatMap((doc) => {
+    const vector = vectors.get(doc.id);
+    return vector ? [{ id: doc.id, vector, postedAt: doc.postedAt?.getTime() ?? null }] : [];
+  });
+  const canonical = nearDuplicates(embedded);
+  const representatives: NormalizedDocument[] = [];
+  const duplicatesOf = new Map<string, NormalizedDocument[]>();
+  for (const doc of docs) {
+    const root = canonical.get(doc.id) ?? doc.id;
+    if (root === doc.id) {
+      representatives.push(doc);
+    } else {
+      const list = duplicatesOf.get(root) ?? [];
+      list.push(doc);
+      duplicatesOf.set(root, list);
+    }
+  }
+  return { representatives, duplicatesOf };
+}
+
 function titleFor(docs: NormalizedDocument[]): string {
   const withTitle = docs.find((d) => d.title?.trim());
   if (withTitle?.title) return withTitle.title.trim().slice(0, 160);
@@ -157,8 +186,11 @@ export async function buildOpportunities(opts: {
   const normalized = normalizeDocuments(rows.filter(isLiveEvidence));
   // Semantic scoring never throws. Its signals reach scoring only in "on" mode; in "off"
   // and "shadow" they are recorded for comparison and scoring stays keyword-only.
-  const semantic = await runSemanticStage(opts.workspaceId, normalized, opts.signal);
-  const semanticForScoring = getSemanticMode() === "on" ? semantic : null;
+  const semantic = await runSemanticStageDetailed(opts.workspaceId, normalized, opts.signal);
+  const semanticOn = getSemanticMode() === "on";
+  const semanticForScoring = semanticOn ? semantic?.signals ?? null : null;
+  // Near-duplicate collapse runs only in "on" mode with document vectors; otherwise clustering is unchanged.
+  const grouped = semanticOn && semantic ? groupNearDuplicates(normalized, semantic.vectors) : null;
 
   const learningConfig = resolveLearningConfig();
   const preferenceModel = await getActivePreferenceModel({
@@ -167,7 +199,7 @@ export async function buildOpportunities(opts: {
   });
   const sourceIdByDocId = new Map(rows.map((r) => [r.id, r.sourceId]));
 
-  const clusters = clusterDocuments(normalized);
+  const clusters = clusterDocuments(grouped?.representatives ?? normalized);
   opts.signal?.throwIfAborted();
   // The bounded recent scan is the current queue; retire clusters it no longer supports.
   await db.update(opportunity).set({ status: "ignore", updatedAt: new Date() })
@@ -199,13 +231,17 @@ export async function buildOpportunities(opts: {
         : "";
     const title = titleFor(docs);
     const summary = summarize(docs);
-    const whyItMatters = `Product profile v${profile.version}: fit ${features.fit.toFixed(2)}, intent ${features.intent.toFixed(2)} across ${docs.length} evidence item(s).${learnedNote}`;
+    // Evidence keeps every absorbed duplicate; scoring and copy use the representatives.
+    const evidenceDocs = grouped
+      ? docs.flatMap((doc) => [doc, ...(grouped.duplicatesOf.get(doc.id) ?? [])])
+      : docs;
+    const whyItMatters = `Product profile v${profile.version}: fit ${features.fit.toFixed(2)}, intent ${features.intent.toFixed(2)} across ${evidenceDocs.length} evidence item(s).${learnedNote}`;
     const whyNow = `Timing ${features.timing.toFixed(2)}, momentum ${features.momentum.toFixed(2)}.`;
     const action = recommendedAction(status);
     const coverage = features.lowConfidence ? "review" : status;
     const providers = [
       ...new Set(
-        docs.map((d) => {
+        evidenceDocs.map((d) => {
           // provider lives on original row metadata when available
           const raw = rows.find((r) => r.id === d.id);
           const p = raw?.metadata?.provider;
@@ -297,11 +333,11 @@ export async function buildOpportunities(opts: {
     }
 
     await db.delete(opportunityEvidence).where(and(eq(opportunityEvidence.opportunityId, opportunityId),
-      notInArray(opportunityEvidence.documentId, docs.map((doc) => doc.id))));
-    if (docs.length) {
+      notInArray(opportunityEvidence.documentId, evidenceDocs.map((doc) => doc.id))));
+    if (evidenceDocs.length) {
       await db
         .insert(opportunityEvidence)
-        .values(docs.map((doc) => ({
+        .values(evidenceDocs.map((doc) => ({
           workspaceId: opts.workspaceId,
           opportunityId,
           documentId: doc.id,

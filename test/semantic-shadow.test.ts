@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   profile: null as unknown,
   shadow: [] as Row[],
   opportunityWrites: [] as Row[],
+  evidence: [] as Row[],
   embedPending: vi.fn<(...args: unknown[]) => Promise<{ embedded: number }>>(async () => ({ embedded: 0 })),
 }));
 
@@ -87,6 +88,10 @@ vi.mock("@/lib/db/client", async () => {
     if (table === schema.opportunity) {
       state.opportunityWrites.push(...rows.map((r) => ({ ...r })));
       return rows.map((_, i) => ({ id: `opp-${state.opportunityWrites.length}-${i}` }));
+    }
+    if (table === schema.opportunityEvidence) {
+      state.evidence.push(...rows.map((r) => ({ ...r })));
+      return rows.map(() => ({ id: "evidence" }));
     }
     return [];
   }
@@ -177,6 +182,7 @@ beforeEach(() => {
   };
   state.shadow = [];
   state.opportunityWrites = [];
+  state.evidence = [];
 });
 
 describe("runSemanticStage", () => {
@@ -297,5 +303,21 @@ describe("buildOpportunities with shadow mode", () => {
     expect(outage).toEqual(off);
     expect(state.opportunityWrites).toEqual(offWrites);
     expect(state.shadow).toHaveLength(0);
+  });
+});
+
+describe("buildOpportunities near-duplicate collapse", () => {
+  it("keeps evidence for every near-duplicate document in on mode", async () => {
+    // Identical text gives identical vectors, so all three documents are mutual near-duplicates.
+    state.docs = [0, 1, 2].map((i) => ({ ...docRow(i), title: "Post", contentMd: TEXTS[0] }));
+    state.mode = "on";
+    state.ai = createFakeAi().binding;
+    state.vectorize = createFakeVectorize().binding;
+
+    const result = await buildOpportunities({ workspaceId: WORKSPACE });
+
+    expect(result.clusters).toBe(1);
+    expect(result.upserted).toBe(1);
+    expect(state.evidence.map((e) => e.documentId).sort()).toEqual([...IDS].sort());
   });
 });
