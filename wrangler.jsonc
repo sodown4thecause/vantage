@@ -35,18 +35,22 @@
 			"ai": { "binding": "AI" },
 			"vectorize": [{ "binding": "VECTORIZE", "index_name": "vantage-docs-staging" }],
 			"vars": { "VANTAGE_SEMANTIC_MODE": "shadow" },
-				"ratelimits": [
-					{ "name": "RADAR_LIMITER", "namespace_id": "1002", "simple": { "limit": 30, "period": 60 } }
-				],
-				"triggers": { "crons": ["0 */3 * * *"] }
+			"ratelimits": [
+				{ "name": "RADAR_LIMITER", "namespace_id": "1002", "simple": { "limit": 30, "period": 60 } }
+			],
+			"triggers": { "crons": ["0 */3 * * *"] }
 		},
 		"production": {
 			"name": "dontkillmyvibe",
 			"build": { "command": "" },
 			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "dontkillmyvibe" }],
+			"browser": { "binding": "BROWSER" },
 			"ai": { "binding": "AI" },
 			"vectorize": [{ "binding": "VECTORIZE", "index_name": "vantage-docs" }],
 			"vars": { "VANTAGE_SEMANTIC_MODE": "off" },
+			"ratelimits": [
+				{ "name": "RADAR_LIMITER", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } }
+			],
 			"triggers": { "crons": [] }
 		}
 	},
