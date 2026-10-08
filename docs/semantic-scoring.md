@@ -85,3 +85,12 @@ low. A high `noSemantic` count with good fits suggests it is too high.
 3. Run the calibration report and review the disagreements.
 4. Adjust `SEMANTIC_THRESHOLDS` if the review shows a problem, and rerun the tests.
 5. Only then move to `on`.
+
+## Before merging to main
+
+Staging deploys automatically from `main` when CI passes. The Worker declares the AI, Vectorize, Queue, and R2 bindings in `wrangler.jsonc`, so `wrangler deploy` fails until the resources they name exist, whatever the mode. Create these first:
+
+- Staging: Vectorize index `vantage-docs-staging` (1024 dimensions, cosine) with metadata indexes `kind`, `platform` (string) and `postedAt` (number); queues `vantage-embed-jobs-staging` and its DLQ `vantage-embed-dlq-staging`; R2 buckets `vantage-artifacts-staging`; AI Gateway `vantage`; apply migration `drizzle/0019_embedding_state_semantic_shadow.sql` to the staging Neon database.
+- Production: the same resources without the `-staging` suffix (`vantage-docs`, `vantage-embed-jobs`, `vantage-embed-dlq`, `vantage-artifacts`), and apply migration 0019 to the production Neon database before the first production deploy.
+
+The production default is `VANTAGE_SEMANTIC_MODE=off`, which makes no AI, Vectorize, or queue calls. The resources must still exist because the bindings are declared. Moving production to `shadow` or `on` later is a separate decision, and it needs the Rollout rule above.

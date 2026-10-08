@@ -61,6 +61,7 @@ npx wrangler vectorize create-metadata-index vantage-docs --property-name=platfo
 npx wrangler vectorize create-metadata-index vantage-docs --property-name=postedAt --type=number
 npx wrangler queues create vantage-embed-jobs && npx wrangler queues create vantage-embed-dlq
 npx wrangler queues create vantage-embed-jobs-staging && npx wrangler queues create vantage-embed-dlq-staging
+npx wrangler r2 bucket create vantage-artifacts && npx wrangler r2 bucket create vantage-artifacts-staging
 ```
 
   Also create an AI Gateway named `vantage` in the dashboard (caching on, logging on) and, if wanted, a dynamic route `draft-route`.
