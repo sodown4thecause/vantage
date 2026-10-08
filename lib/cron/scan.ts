@@ -10,13 +10,18 @@ import { getLatestMonitoringProfile } from "@/lib/profile/repository";
 import { withWorkspaceScanLease } from "@/lib/cron/lease";
 
 /** Source types a scheduled scan actually runs; cadence is measured against these only. */
-const SCHEDULED_SOURCE_TYPES = ["hn", "rss", "substack", "github", "stackoverflow"] as const;
+export const SCHEDULED_SOURCE_TYPES = ["hn", "rss", "substack", "github", "stackoverflow"] as const;
+
+/** Sources a scheduled scan may poll: free lane, not paused, scheduled types only. */
+export function eligibleSourceCondition(workspaceId: string) {
+  return and(eq(source.workspaceId, workspaceId), eq(source.lane, "free"), ne(source.health, "paused"), inArray(source.type, [...SCHEDULED_SOURCE_TYPES]));
+}
 
 /**
  * Scheduled scans honour the plan's `scan_interval_hours` (Free: daily, Pro: 3 hours).
  * Returns the skip reason when the workspace is not due yet, otherwise null.
  */
-async function scanNotDueReason(workspaceId: string, now = new Date()): Promise<string | null> {
+export async function scanNotDueReason(workspaceId: string, now = new Date()): Promise<string | null> {
   const plan = await getWorkspacePlan(workspaceId);
   const { scan_interval_hours: intervalHours } = await getLimits(plan);
   const rows = await getDb()
@@ -55,7 +60,7 @@ export async function scanWorkspace(workspaceId: string, deadline?: AbortSignal,
     const sources = await db
       .select()
       .from(source)
-      .where(and(eq(source.workspaceId, workspaceId), eq(source.lane, "free"), ne(source.health, "paused"), inArray(source.type, [...SCHEDULED_SOURCE_TYPES])))
+      .where(eligibleSourceCondition(workspaceId))
       .orderBy(sql`${source.lastPolledAt} asc nulls first`, source.id).limit(9);
 
     if (sources.length > 8) collectorResults.push({ workspaceId, skipped: true, reason: "Additional eligible sources deferred to the next scan." });
