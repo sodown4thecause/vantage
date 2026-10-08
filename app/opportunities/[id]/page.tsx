@@ -9,6 +9,7 @@ import { Shell } from "@/components/shell";
 
 import { DraftPanel } from "./draft-panel";
 import { FeedbackPanel } from "./feedback-panel";
+import { PlaysPanel } from "./plays-panel";
 
 export default async function OpportunityDetailPage({
   params,
@@ -109,6 +110,7 @@ export default async function OpportunityDetailPage({
             </div>
           </section>
 
+          <PlaysPanel workspaceId={workspaceId} opportunityId={detail.id} />
           <DraftPanel workspaceId={workspaceId} opportunityId={detail.id} conversations={detail.evidence.map(({ documentId, title, urlCanonical, platform, discoveryOnly }) => ({ documentId, title, urlCanonical, platform, discoveryOnly }))} />
           <FeedbackPanel workspaceId={workspaceId} opportunityId={detail.id} />
         </div>

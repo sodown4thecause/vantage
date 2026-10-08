@@ -1,6 +1,6 @@
 {
-  "id": "93dcaa3f-1f0c-4f04-aada-3e14c7d9aaf7",
-  "prevId": "03f145b0-ef23-4a41-95c9-80597d62174e",
+  "id": "ea97234a-eafe-4e08-8de5-fb1a62ebe043",
+  "prevId": "93dcaa3f-1f0c-4f04-aada-3e14c7d9aaf7",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -617,6 +617,18 @@
           "notNull": true,
           "default": "now()"
         },
+        "embedding_model": {
+          "name": "embedding_model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "embedded_at": {
+          "name": "embedded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -643,6 +655,22 @@
             }
           ],
           "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "document_unembedded_idx": {
+          "name": "document_unembedded_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"document\".\"embedded_at\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -1859,6 +1887,124 @@
           ]
         }
       },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.semantic_shadow": {
+      "name": "semantic_shadow",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "document_id": {
+          "name": "document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "keyword_rung": {
+          "name": "keyword_rung",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "semantic_rung": {
+          "name": "semantic_rung",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "semantic_fit": {
+          "name": "semantic_fit",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "anchor_similarity": {
+          "name": "anchor_similarity",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mode": {
+          "name": "mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "semantic_shadow_document_mode_uidx": {
+          "name": "semantic_shadow_document_mode_uidx",
+          "columns": [
+            {
+              "expression": "document_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "mode",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "semantic_shadow_workspace_id_workspace_id_fk": {
+          "name": "semantic_shadow_workspace_id_workspace_id_fk",
+          "tableFrom": "semantic_shadow",
+          "tableTo": "workspace",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "semantic_shadow_document_id_document_id_fk": {
+          "name": "semantic_shadow_document_id_document_id_fk",
+          "tableFrom": "semantic_shadow",
+          "tableTo": "document",
+          "columnsFrom": [
+            "document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

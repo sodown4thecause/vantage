@@ -730,3 +730,179 @@ export const workspaceUsage = pgTable(
   },
   (table) => [primaryKey({ columns: [table.workspaceId, table.period] })],
 );
+
+/**
+ * S75 destination catalog (docs/slices/PLAN-distribution-engine.md section 5).
+ * Global, curated, dated facts about places a developer tool can be listed or launched.
+ * Per-workspace fit lives in a later slice (S76). "unknown" is always allowed and preferred
+ * over guessing; every row needs a primary source URL and a last_verified date.
+ */
+export const destinationKindValues = [
+  "launch_platform",
+  "directory",
+  "ai_directory",
+  "devtool_directory",
+  "marketplace",
+  "newsletter",
+  "alternatives_site",
+  "awesome_list",
+  "resource_page",
+  "community",
+  "podcast",
+  "agent_registry",
+  "template_gallery",
+  "sponsorship",
+] as const;
+export type DestinationKind = (typeof destinationKindValues)[number];
+
+export const destinationCostValues = ["free", "paid", "freemium", "unknown"] as const;
+export type DestinationCost = (typeof destinationCostValues)[number];
+
+export const destinationListingModeValues = [
+  "editorial",
+  "automatic",
+  "review_queue",
+  "unknown",
+] as const;
+export type DestinationListingMode = (typeof destinationListingModeValues)[number];
+
+export const destinationSubmissionsOpenValues = ["yes", "no", "rolling", "unknown"] as const;
+export type DestinationSubmissionsOpen = (typeof destinationSubmissionsOpenValues)[number];
+
+export const destinationLinkAttrValues = [
+  "dofollow",
+  "nofollow",
+  "ugc",
+  "none",
+  "unknown",
+] as const;
+export type DestinationLinkAttr = (typeof destinationLinkAttrValues)[number];
+
+export const destinationAiCitedValues = ["yes", "no", "unknown"] as const;
+export type DestinationAiCited = (typeof destinationAiCitedValues)[number];
+
+export const destination = pgTable(
+  "destination",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    url: text("url").notNull(),
+    kind: text("kind").$type<DestinationKind>().notNull(),
+    audienceTags: text("audience_tags").array().notNull().default([]),
+    categoryTags: text("category_tags").array().notNull().default([]),
+    cost: text("cost").$type<DestinationCost>().notNull().default("unknown"),
+    priceNote: text("price_note").notNull().default(""),
+    listingMode: text("listing_mode")
+      .$type<DestinationListingMode>()
+      .notNull()
+      .default("unknown"),
+    requirements: jsonb("requirements").$type<Record<string, unknown>>().notNull().default({}),
+    submissionsOpen: text("submissions_open")
+      .$type<DestinationSubmissionsOpen>()
+      .notNull()
+      .default("unknown"),
+    submissionUrl: text("submission_url"),
+    linkAttr: text("link_attr").$type<DestinationLinkAttr>().notNull().default("unknown"),
+    aiCited: text("ai_cited").$type<DestinationAiCited>().notNull().default("unknown"),
+    aiCitedEvidence: text("ai_cited_evidence"),
+    sourceUrl: text("source_url").notNull(),
+    lastVerified: date("last_verified", { mode: "string" }).notNull(),
+    verifiedBy: text("verified_by").notNull().default(""),
+    notes: text("notes").notNull().default(""),
+  },
+  (table) => [
+    uniqueIndex("destination_slug_uidx").on(table.slug),
+    index("destination_kind_idx").on(table.kind),
+  ],
+);
+
+export const destinationChangeStatusValues = ["pending", "accepted", "rejected"] as const;
+export type DestinationChangeStatus = (typeof destinationChangeStatusValues)[number];
+
+/** Proposed edits to a destination (from a re-check or a human). Never auto-published. */
+export const destinationChange = pgTable(
+  "destination_change",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    destinationId: uuid("destination_id")
+      .notNull()
+      .references(() => destination.id, { onDelete: "cascade" }),
+    status: text("status").$type<DestinationChangeStatus>().notNull().default("pending"),
+    proposed: jsonb("proposed").$type<Record<string, unknown>>().notNull().default({}),
+    sourceUrl: text("source_url").notNull(),
+    summary: text("summary").notNull().default(""),
+    detectedAt: timestamp("detected_at", { withTimezone: true }).defaultNow().notNull(),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    reviewedBy: text("reviewed_by"),
+  },
+  (table) => [index("destination_change_dest_status_idx").on(table.destinationId, table.status)],
+);
+
+export type Destination = typeof destination.$inferSelect;
+export type NewDestination = typeof destination.$inferInsert;
+export type DestinationChange = typeof destinationChange.$inferSelect;
+
+/**
+ * S72 plays: a typed, recommended go-to-market action for an opportunity.
+ * Vantage only recommends; a human performs the action.
+ */
+export const playKindEnum = pgEnum("play_kind", [
+  "reply_brief",
+  "directory_submission",
+  "comparison_page",
+  "migration_guide",
+  "importer",
+  "integration",
+  "outreach",
+  "trial_offer",
+  "newsletter_pitch",
+]);
+
+export const playStatusEnum = pgEnum("play_status", [
+  "suggested",
+  "accepted",
+  "done",
+  "dismissed",
+]);
+
+export const playEffortEnum = pgEnum("play_effort", ["s", "m", "l"]);
+
+export const play = pgTable(
+  "play",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    opportunityId: uuid("opportunity_id").references(() => opportunity.id, {
+      onDelete: "cascade",
+    }),
+    /** Plain column for now: the `destination` table lands in S75, which adds the foreign key. */
+    destinationId: uuid("destination_id").references(() => destination.id, {
+      onDelete: "set null",
+    }),
+    kind: playKindEnum("kind").notNull(),
+    title: text("title").notNull(),
+    rationale: text("rationale").notNull().default(""),
+    evidence: jsonb("evidence")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    status: playStatusEnum("status").notNull().default("suggested"),
+    effortEstimate: playEffortEnum("effort_estimate").notNull().default("m"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    doneAt: timestamp("done_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("play_workspace_opportunity_idx").on(
+      table.workspaceId,
+      table.opportunityId,
+    ),
+  ],
+);
+
+export type Play = typeof play.$inferSelect;
+export type NewPlay = typeof play.$inferInsert;
