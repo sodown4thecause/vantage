@@ -30,7 +30,11 @@
 			"name": "dontkillmyvibe",
 			"build": { "command": "" },
 			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "dontkillmyvibe" }],
-			"triggers": { "crons": [] }
+			"triggers": { "crons": [] },
+			"routes": [
+				{ "pattern": "contextfor.dev", "custom_domain": true },
+				{ "pattern": "www.contextfor.dev", "custom_domain": true }
+			]
 		}
 	},
 	"observability": {
