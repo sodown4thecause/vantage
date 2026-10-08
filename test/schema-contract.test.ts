@@ -1,5 +1,5 @@
 import { getTableColumns } from "drizzle-orm";
-import { getTableConfig } from "drizzle-orm/pg-core";
+import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -41,7 +41,10 @@ describe("M1 database contract", () => {
       (candidate) => candidate.config.name === "document_unembedded_idx",
     );
     expect(index).toBeDefined();
-    expect(index?.config.where).toBeDefined();
+    const keys = (index?.config.columns ?? []).map((column) => (column as { name?: string }).name);
+    expect(keys).toContain("workspace_id");
+    const predicate = index?.config.where ? new PgDialect().sqlToQuery(index.config.where).sql : "";
+    expect(predicate).toContain('"embedded_at" is null');
   });
 
   it("creates a semantic shadow table keyed uniquely by document and mode", () => {

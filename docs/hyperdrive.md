@@ -8,7 +8,7 @@ Status: the seam ships **off**. With `VANTAGE_DB_DRIVER` unset, every query runs
 - `getReadDb()` returns the cached `HYPERDRIVE` config when `VANTAGE_DB_DRIVER=hyperdrive`. Otherwise it returns `getDb()`.
 - `getFreshDb()` returns the `HYPERDRIVE_FRESH` config (caching disabled) under the same flag. Otherwise it returns `getDb()`.
 - `withTransaction(fn)` runs `fn` in a transaction on the fresh config. On neon-http it throws `Transactions require the Hyperdrive driver`.
-- Missing bindings fall back to neon-http with one warning per binding. The warning never includes a connection string.
+- `getReadDb()` and `getFreshDb()` fall back to neon-http when their binding is missing, with one warning per binding. The warning never includes a connection string. `withTransaction()` throws instead, because neon-http has no transactions.
 - Why async: the binding is read through `getCloudflareContext()`, which is async, and `postgres` is imported lazily so default bundles do not load it. `getDb()` stays sync because existing callers depend on it.
 - Each call creates its own postgres-js client (`max: 5`, `fetch_types: false`). Clients are not cached on `globalThis`, because Hyperdrive pools connections itself.
 
@@ -55,7 +55,7 @@ Status: the seam ships **off**. With `VANTAGE_DB_DRIVER` unset, every query runs
    "placement": { "region": "aws:us-east-1" }
    ```
 
-3. Set `VANTAGE_DB_DRIVER=hyperdrive` as a var on staging first. Leave production off until the benchmark gate below is met.
+3. Set `VANTAGE_DB_DRIVER=hyperdrive` as a var on staging first. Leave production off until the benchmark gate below is met. Until an application path calls `getReadDb()` or `getFreshDb()`, this toggle changes nothing: existing consumers still use `getDb()`.
 
 ## Benchmark procedure
 
@@ -66,7 +66,7 @@ DATABASE_URL="<neon direct url>" pnpm tsx scripts/db-bench.ts --driver=neon-http
 DATABASE_URL="<neon direct url>" pnpm tsx scripts/db-bench.ts --driver=postgres-js --workspace=<staging workspace uuid> --iterations=20
 ```
 
-Use a staging workspace with at least one document and no scan running. Writes are net-zero: the lease is claimed and released, and the budget reserve adds 0.
+Use a staging workspace with at least one document and no scan running. The lease is claimed and released and the budget reserve adds 0, but each release advances `workspace.updated_at`.
 
 Limitation: the script runs outside a Worker and cannot read Hyperdrive bindings. As committed, it measures direct connections only. Hyperdrive numbers need the same query mix run from inside a Worker that has the binding. That harness is not yet built (see Open items).
 
@@ -78,7 +78,7 @@ Limitation: the script runs outside a Worker and cannot read Hyperdrive bindings
 
 ## Gate
 
-Continue to Task 18 only if the benchmark shows a meaningful scan-time win for the Hyperdrive path (record the numbers above), or if transactions are wanted for Task 18. Otherwise keep the flag off.
+Continue to Task 18 only if a Worker-side benchmark (the harness in Open items, which uses the binding) shows a meaningful scan-time win for the Hyperdrive path (record the numbers above), or if transactions are wanted for Task 18. The direct-connection numbers from `scripts/db-bench.ts` cannot establish a Hyperdrive win. Otherwise keep the flag off.
 
 ## Open items
 

@@ -25,9 +25,11 @@ vi.mock("@/lib/profile/repository", () => ({
   saveMonitoringProfile: vi.fn(async () => ({ id: "22222222-2222-4222-8222-222222222222", productMaterialText: "material" })),
 }));
 vi.mock("@/lib/drafting/ground", () => ({ indexMaterial: vi.fn(async () => 1) }));
+vi.mock("@/lib/embeddings/backfill", () => ({ runEmbedJob: vi.fn(async () => ({ profile: 1, material: 1 })) }));
 
 import { POST as postProfile } from "@/app/api/profile/route";
 import { indexMaterial } from "@/lib/drafting/ground";
+import { runEmbedJob } from "@/lib/embeddings/backfill";
 import { enqueueEmbedJob } from "@/lib/cf/queue";
 
 const WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
@@ -85,7 +87,12 @@ describe("profile route indexing", () => {
   it("still saves the profile (201) when the queue is absent, and indexes directly", async () => {
     const response = await postProfile(request());
     expect(response.status).toBe(201);
-    await vi.waitFor(() => expect(indexMaterial).toHaveBeenCalledWith(WORKSPACE_ID, "22222222-2222-4222-8222-222222222222", "material"));
+    // The fallback indexes the whole profile (profile vectors and material), not material alone.
+    await vi.waitFor(() => expect(runEmbedJob).toHaveBeenCalledWith({
+      type: "index-profile",
+      workspaceId: WORKSPACE_ID,
+      profileId: "22222222-2222-4222-8222-222222222222",
+    }));
   });
 
   it("enqueues the profile instead of indexing directly when the queue accepts it", async () => {

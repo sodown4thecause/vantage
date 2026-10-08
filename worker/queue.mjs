@@ -8,9 +8,12 @@
 const BACKFILL_PATH = "/api/internal/embed/backfill";
 const RETRY_STEP_SECONDS = 30;
 
-/** Permanent failures (bad request, gone, unauthorized) are acked so they do not loop to the DLQ. */
+/**
+ * Permanent failures (bad request, gone) are acked so they do not loop to the DLQ. 401 is retried: it
+ * usually means a missing or mismatched CRON_SECRET, a configuration fault that must not drop work.
+ */
 function isPermanent(status) {
-  return status >= 400 && status < 500 && status !== 429;
+  return status >= 400 && status < 500 && status !== 401 && status !== 429;
 }
 
 /** Delivers every message in the batch. One failing message never prevents the others from running. */

@@ -22,7 +22,6 @@ beforeEach(() => {
   vi.restoreAllMocks();
   state.allowed = true; state.dbCalls = 0; state.partial = false; state.writes = []; state.names = []; state.lease = Promise.resolve(); state.sourceLimit = 100;
   state.enqueue = vi.fn(async (_message: unknown) => true);
-  vi.stubEnv("VANTAGE_SEMANTIC_MODE", "shadow");
   state.authorize.mockReset();
   state.authorize.mockImplementation(async () => state.allowed ? { ok: true } : { ok: false, error: "forbidden" });
 });

@@ -114,10 +114,37 @@ async function hyperdriveOrNeon(binding: string): Promise<SharedDb> {
   return (await createPostgresJsDb(connectionString)).db;
 }
 
+/** Runs `fn` on a per-call database and closes its postgres-js pool afterwards (neon-http is never closed). */
+async function scopedDb<T>(binding: string, fn: (db: SharedDb) => Promise<T>): Promise<T> {
+  if (!isHyperdriveDriver()) return fn(getDb());
+  const connectionString = await hyperdriveConnectionString(binding);
+  if (!connectionString) return fn(getDb());
+  const { db, client } = await createPostgresJsDb(connectionString);
+  try {
+    return await fn(db);
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * Runs `fn` against the cached Hyperdrive config, closing its pool when `fn` settles. Prefer this
+ * over getReadDb() so no socket outlives the request.
+ */
+export function withReadDb<T>(fn: (db: SharedDb) => Promise<T>): Promise<T> {
+  return scopedDb(CACHED_BINDING, fn);
+}
+
+/** Scoped variant of getFreshDb(): cache-disabled Hyperdrive config, pool closed when `fn` settles. */
+export function withFreshDb<T>(fn: (db: SharedDb) => Promise<T>): Promise<T> {
+  return scopedDb(FRESH_BINDING, fn);
+}
+
 /**
  * Database for public read pages. Uses the cached Hyperdrive config when the
  * Hyperdrive driver is on, otherwise exactly getDb(). Do not use for lease,
  * budget, switch or read-after-write queries: use getFreshDb() for those.
+ * With Hyperdrive on, the returned postgres-js pool is NOT closed here; prefer withReadDb().
  */
 export function getReadDb(): Promise<SharedDb> {
   return hyperdriveOrNeon(CACHED_BINDING);
@@ -126,6 +153,7 @@ export function getReadDb(): Promise<SharedDb> {
 /**
  * Database for lease, budget, switch and read-after-write queries. Uses the
  * cache-disabled Hyperdrive config when the Hyperdrive driver is on, otherwise getDb().
+ * With Hyperdrive on, the returned postgres-js pool is NOT closed here; prefer withFreshDb().
  */
 export function getFreshDb(): Promise<SharedDb> {
   return hyperdriveOrNeon(FRESH_BINDING);

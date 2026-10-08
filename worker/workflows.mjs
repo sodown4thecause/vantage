@@ -6,7 +6,8 @@
  * `RadarScan` (S21) will join this file as a second export.
  */
 
-import { NonRetryableError, WorkflowEntrypoint } from "cloudflare:workers";
+import { WorkflowEntrypoint } from "cloudflare:workers";
+import { NonRetryableError } from "cloudflare:workflows";
 
 import { runScan } from "./scan-run.mjs";
 

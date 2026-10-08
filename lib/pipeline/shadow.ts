@@ -1,3 +1,5 @@
+import { and, eq, inArray } from "drizzle-orm";
+
 import { getSemanticMode } from "@/lib/cf/env";
 import { getDb } from "@/lib/db/client";
 import { semanticShadow } from "@/lib/db/schema";
@@ -9,6 +11,20 @@ import { semanticSignals, type SemanticSignal } from "@/lib/pipeline/semantic";
 
 /** Documents per build that are embedded and recorded; bounds AI spend per run. */
 const STAGE_DOC_LIMIT = 200;
+
+/** Documents that already have a shadow row for this mode. Their signals can never be stored again. */
+async function recordedDocumentIds(workspaceId: string, mode: "shadow", documentIds: string[]): Promise<Set<string>> {
+  if (documentIds.length === 0) return new Set();
+  const rows = await getDb()
+    .select({ documentId: semanticShadow.documentId })
+    .from(semanticShadow)
+    .where(and(
+      eq(semanticShadow.workspaceId, workspaceId),
+      eq(semanticShadow.mode, mode),
+      inArray(semanticShadow.documentId, documentIds),
+    ));
+  return new Set(rows.map((row) => row.documentId));
+}
 
 /**
  * Inserts one shadow row per document: the keyword rung from the intent ladder
@@ -64,20 +80,33 @@ export async function runSemanticStageDetailed(
   const mode = getSemanticMode();
   if (mode === "off") return null;
   try {
-    await embedPendingDocuments(workspaceId, { limit: STAGE_DOC_LIMIT, signal });
-    const stageDocs = docs.slice(0, STAGE_DOC_LIMIT);
+    const indexed = await embedPendingDocuments(workspaceId, { limit: STAGE_DOC_LIMIT, signal });
+    // Shadow signals never feed scoring, so re-scoring a recorded document only spends AI and Vectorize calls.
+    // "on" mode still needs signals for every document, so it does not skip.
+    let candidates = docs;
+    if (mode === "shadow") {
+      const recorded = await recordedDocumentIds(workspaceId, mode, docs.map((doc) => doc.id));
+      candidates = docs.filter((doc) => !recorded.has(doc.id));
+    }
+    const stageDocs = candidates.slice(0, STAGE_DOC_LIMIT);
     if (stageDocs.length === 0) return { signals: new Map(), vectors: new Map() };
 
-    // Embedded directly from the document text rather than read back from Vectorize.
-    const vectors = await embedTexts(
-      stageDocs.map((doc) => doc.text),
-      { workspaceId, sourceKey: "semantic-shadow", signal },
-    );
-    if (vectors === null) return null;
+    // Reuse vectors computed while indexing this run's pending documents; embed only the rest.
+    const vectorById = new Map(indexed.vectors);
+    const missing = stageDocs.filter((doc) => !vectorById.has(doc.id));
+    if (missing.length > 0) {
+      const fresh = await embedTexts(
+        missing.map((doc) => doc.text),
+        { workspaceId, sourceKey: "semantic-shadow", signal },
+      );
+      if (fresh === null) return null;
+      missing.forEach((doc, i) => vectorById.set(doc.id, fresh[i]));
+    }
 
-    const embedded = stageDocs.flatMap((doc, i) =>
-      vectors[i].length > 0 ? [{ id: doc.id, vector: vectors[i] }] : [],
-    );
+    const embedded = stageDocs.flatMap((doc) => {
+      const vector = vectorById.get(doc.id) ?? [];
+      return vector.length > 0 ? [{ id: doc.id, vector }] : [];
+    });
     const signals = await semanticSignals(workspaceId, embedded);
     if (signals === null) return null;
 

@@ -57,10 +57,12 @@ export async function putArtifact(
   key: string,
   body: ArrayBuffer | string,
   contentType: string,
+  explicitBucket?: unknown,
 ): Promise<string | null> {
   try {
     assertArtifactKey(key);
-    const bucket = await readBinding("ARTIFACTS");
+    // Workflows, queue consumers and cron handlers have no OpenNext context, so they pass the binding explicitly.
+    const bucket = explicitBucket !== undefined ? explicitBucket : await readBinding("ARTIFACTS");
     if (!isArtifactBucket(bucket)) return null;
     await bucket.put(key, body, { httpMetadata: { contentType } });
     return key;

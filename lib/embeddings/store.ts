@@ -93,18 +93,19 @@ export async function isVectorizeAvailable(): Promise<boolean> {
 }
 
 /**
- * Nearest vectors of one kind within the workspace namespace, best first.
- * Returns [] (never throws) when the binding is absent or the call fails, so
- * the caller can fall back to keyword-only scoring.
+ * Nearest vectors of one kind within the workspace namespace, best first. Returns
+ * `[]` when nothing matches, and `null` (never throws) when the binding is absent or
+ * the call fails. Callers must treat `null` as unavailable, not as a zero-similarity
+ * result, so a Vectorize outage cannot be recorded as a real score.
  */
 export async function queryVectors(
   workspaceId: string,
   vector: number[],
   opts: { kind: VectorKind; topK: number; minScore?: number },
-): Promise<VectorMatch[]> {
+): Promise<VectorMatch[] | null> {
   const namespace = requireWorkspace(workspaceId);
   const index = await getVectorize();
-  if (!index) return [];
+  if (!index) return null;
   const requested = Number.isFinite(opts.topK) ? Math.floor(opts.topK) : 1;
   const topK = Math.min(MAX_TOP_K, Math.max(1, requested));
   try {
@@ -114,14 +115,14 @@ export async function queryVectors(
       filter: { kind: opts.kind },
       returnMetadata: "all",
     });
-    if (!isQueryResponse(response)) return [];
+    if (!isQueryResponse(response)) return null;
     const minScore = opts.minScore;
     return response.matches
       .map(parseMatch)
       .filter((m): m is VectorMatch => m !== null && (minScore === undefined || m.score >= minScore));
   } catch (err) {
     logFailure("query", err);
-    return [];
+    return null;
   }
 }
 

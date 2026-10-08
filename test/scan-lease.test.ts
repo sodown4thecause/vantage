@@ -23,8 +23,7 @@ it("claimScanLease takes only unset or expired leases and returns its token with
   expect(state.writes).toHaveLength(1);
   expect(state.writes[0].values).toMatchObject({ scanLeaseToken: token });
   const claim = toSql(state.writes[0].where);
-  expect(claim.sql).toContain('"scan_lease_until" is null');
-  expect(claim.sql).toContain('"scan_lease_until" < now()');
+  expect(claim.sql).toMatch(/"workspace"\."scan_lease_until" is null or "workspace"\."scan_lease_until" < now\(\)/);
   expect(toSql(state.writes[0].values.scanLeaseUntil).params).toContain(5);
 });
 it("releaseScanLease clears the lease in one UPDATE conditional on the token", async () => {

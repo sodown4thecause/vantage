@@ -16,7 +16,7 @@ import { normalizeDocument } from "@/lib/pipeline/normalize";
 export async function embedPendingDocuments(
   workspaceId: string,
   opts: { limit: number; signal?: AbortSignal },
-): Promise<{ embedded: number; skipped?: "unavailable" }> {
+): Promise<{ embedded: number; skipped?: "unavailable"; vectors: Map<string, number[]> }> {
   const db = getDb();
   const rows = await db
     .select()
@@ -24,7 +24,7 @@ export async function embedPendingDocuments(
     .where(and(eq(document.workspaceId, workspaceId), isNull(document.embeddedAt)))
     .orderBy(desc(document.collectedAt))
     .limit(opts.limit);
-  if (rows.length === 0) return { embedded: 0 };
+  if (rows.length === 0) return { embedded: 0, vectors: new Map() };
 
   const embeddable: Array<{ id: string; text: string; platform: string; postedAt?: number }> = [];
   const blankIds: string[] = [];
@@ -42,12 +42,13 @@ export async function embedPendingDocuments(
     }
   }
 
+  const computed = new Map<string, number[]>();
   if (embeddable.length > 0) {
     const vectors = await embedTexts(
       embeddable.map((item) => item.text),
       { workspaceId, sourceKey: "document-index", signal: opts.signal },
     );
-    if (vectors === null) return { embedded: 0, skipped: "unavailable" };
+    if (vectors === null) return { embedded: 0, skipped: "unavailable", vectors: new Map() };
 
     const items: VectorItem[] = embeddable.map((item, i) => ({
       id: `doc:${item.id}`,
@@ -57,8 +58,9 @@ export async function embedPendingDocuments(
       postedAt: item.postedAt,
     }));
     const upserted = await upsertVectors(workspaceId, items);
-    if (!upserted) return { embedded: 0, skipped: "unavailable" };
+    if (!upserted) return { embedded: 0, skipped: "unavailable", vectors: new Map() };
 
+    embeddable.forEach((item, i) => computed.set(item.id, vectors[i]));
     await db
       .update(document)
       .set({ embeddingModel: EMBEDDING_MODEL, embeddedAt: new Date() })
@@ -72,5 +74,6 @@ export async function embedPendingDocuments(
       .where(and(eq(document.workspaceId, workspaceId), inArray(document.id, blankIds)));
   }
 
-  return { embedded: embeddable.length };
+  // Vectors for the documents just written, so callers can score them without embedding again.
+  return { embedded: embeddable.length, vectors: computed };
 }

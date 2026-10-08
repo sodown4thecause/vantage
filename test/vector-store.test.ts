@@ -34,13 +34,18 @@ describe("namespace isolation", () => {
 
     expect(await queryVectors(WS_B, [1, 0, 0], { kind: "doc", topK: 5 })).toEqual([]);
     const own = await queryVectors(WS_A, [1, 0, 0], { kind: "doc", topK: 5 });
-    expect(own.map((m) => m.id)).toEqual(["a1"]);
+    expect(own?.map((m) => m.id)).toEqual(["a1"]);
     expect(fake.calls.filter((c) => c.op === "query").every((c) => c.op === "query" && c.options.namespace)).toBe(true);
   });
 
   it("returns an empty array for a workspace with no vectors", async () => {
     bind(createFakeVectorize());
     expect(await queryVectors(WS_B, [1, 0, 0], { kind: "doc", topK: 5 })).toEqual([]);
+  });
+
+  it("returns null, not an empty array, when the binding is absent", async () => {
+    bind(null);
+    expect(await queryVectors(WS_A, [1, 0, 0], { kind: "doc", topK: 5 })).toBeNull();
   });
 });
 
@@ -52,7 +57,7 @@ describe("query filtering", () => {
       { id: "profile-1", values: [1, 0, 0], kind: "profile" },
     ]);
     const hits = await queryVectors(WS_A, [1, 0, 0], { kind: "profile", topK: 5 });
-    expect(hits.map((m) => m.id)).toEqual(["profile-1"]);
+    expect(hits?.map((m) => m.id)).toEqual(["profile-1"]);
   });
 
   it("drops matches below minScore", async () => {
@@ -63,8 +68,8 @@ describe("query filtering", () => {
       { id: "far", values: [0, 1, 0], kind: "doc" },
     ]);
     const hits = await queryVectors(WS_A, [1, 0, 0], { kind: "doc", topK: 5, minScore: 0.5 });
-    expect(hits.map((m) => m.id)).toEqual(["close", "mid"]);
-    expect(hits[1].score).toBeCloseTo(0.6);
+    expect(hits?.map((m) => m.id)).toEqual(["close", "mid"]);
+    expect(hits?.[1]?.score).toBeCloseTo(0.6);
   });
 
   it("clamps topK to 50 because metadata is returned", async () => {
@@ -125,17 +130,17 @@ describe("scope enforcement", () => {
 });
 
 describe("failure handling", () => {
-  it("returns false or [] when the binding throws, without rejecting", async () => {
+  it("returns false or null when the binding throws, without rejecting", async () => {
     bind(createFakeVectorize({ throws: new Error("secret index endpoint 10.1.2.3") }));
     expect(await upsertVectors(WS_A, [{ id: "x", values: [1, 0, 0], kind: "doc" }])).toBe(false);
-    expect(await queryVectors(WS_A, [1, 0, 0], { kind: "doc", topK: 5 })).toEqual([]);
+    expect(await queryVectors(WS_A, [1, 0, 0], { kind: "doc", topK: 5 })).toBeNull();
     expect(await deleteVectors(WS_A, ["x"])).toBe(false);
   });
 
-  it("returns false or [] when the binding is absent", async () => {
+  it("returns false or null when the binding is absent", async () => {
     bind(null);
     expect(await upsertVectors(WS_A, [{ id: "x", values: [1, 0, 0], kind: "doc" }])).toBe(false);
-    expect(await queryVectors(WS_A, [1, 0, 0], { kind: "doc", topK: 5 })).toEqual([]);
+    expect(await queryVectors(WS_A, [1, 0, 0], { kind: "doc", topK: 5 })).toBeNull();
     expect(await deleteVectors(WS_A, ["x"])).toBe(false);
   });
 });

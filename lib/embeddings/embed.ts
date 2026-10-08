@@ -71,6 +71,8 @@ export async function embedTexts(texts: string[], ctx: EmbedContext): Promise<nu
       });
       await recordEmbedCost(ctx, tokens, true);
     }
+    // An abort during the last batch must not let callers upsert vectors or mark documents embedded.
+    if (ctx.signal?.aborted) return null;
     return out;
   } catch (err) {
     console.error("[embed] unexpected embedding failure", {

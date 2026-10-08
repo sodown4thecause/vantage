@@ -8,18 +8,19 @@ import {
 } from "@/lib/profile/repository";
 import { PlanLimitError } from "@/lib/plans/types";
 import { validateMonitoringProfileInput } from "@/lib/profile/validate";
-import { indexMaterial } from "@/lib/drafting/ground";
+import { runEmbedJob } from "@/lib/embeddings/backfill";
 import { enqueueEmbedJob } from "@/lib/cf/queue";
 import { getSemanticMode } from "@/lib/cf/env";
 
 /**
- * Best-effort: indexes product material for grounded drafts after the response
- * is sent. Failures are logged by error class only and never reach the client.
+ * Best-effort: indexes the saved profile (profile vectors and product material) after the response
+ * is sent. Used only when the queue is absent or rejects the message. Failures are logged by error
+ * class only and never reach the client.
  */
-function scheduleMaterialIndex(workspaceId: string, profileId: string, text: string): void {
+function scheduleProfileIndex(workspaceId: string, profileId: string): void {
   const task = async () => {
     try {
-      await indexMaterial(workspaceId, profileId, text);
+      await runEmbedJob({ type: "index-profile", workspaceId, profileId });
     } catch (err) {
       console.error("[profile route] material index failed", {
         error: err instanceof Error ? err.name : "unknown",
@@ -119,7 +120,7 @@ export async function POST(req: Request) {
     if (getSemanticMode() !== "off") {
       // Queue first; direct material indexing only when the queue is absent or rejects the message.
       const queued = await enqueueEmbedJob({ type: "index-profile", workspaceId, profileId: profile.id });
-      if (!queued) scheduleMaterialIndex(workspaceId, profile.id, profile.productMaterialText);
+      if (!queued) scheduleProfileIndex(workspaceId, profile.id);
     }
     return NextResponse.json({ profile }, { status: 201 });
   } catch (err) {

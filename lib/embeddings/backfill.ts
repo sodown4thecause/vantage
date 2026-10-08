@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, lt } from "drizzle-orm";
 
 import { getSemanticMode } from "@/lib/cf/env";
 import type { EmbedJob } from "@/lib/cf/queue";
@@ -25,17 +25,29 @@ export function parseEmbedJob(body: unknown): EmbedJob | null {
   return null;
 }
 
+/** The newest profile version older than this one. Its vectors are replaced when this version is indexed. */
+async function previousProfileId(workspaceId: string, version: number): Promise<string | undefined> {
+  const [prior] = await getDb()
+    .select({ id: monitoringProfile.id })
+    .from(monitoringProfile)
+    .where(and(eq(monitoringProfile.workspaceId, workspaceId), lt(monitoringProfile.version, version)))
+    .orderBy(desc(monitoringProfile.version))
+    .limit(1);
+  return prior?.id;
+}
+
 /**
  * Re-reads the profile or documents by ID and indexes them. Idempotent: vector ids are
  * deterministic (upsert, then delete stale tails) and documents are selected by `embedded_at is null`.
- * Returns null when a profile does not belong to the workspace. Throws on failure, so the queue retries.
+ * Returns null when a profile does not belong to the workspace. Returns `skipped: "unavailable"` when
+ * embedding or the vector write failed, so the caller can retry. Throws on unexpected failure.
  */
-export async function runEmbedJob(job: EmbedJob): Promise<Record<string, unknown> | null> {
+export async function runEmbedJob(job: EmbedJob, signal?: AbortSignal): Promise<Record<string, unknown> | null> {
   // Mode "off": no AI or Vectorize calls. The message is acknowledged, not retried.
   if (getSemanticMode() === "off") return { skipped: "semantic mode off" };
   if (job.type === "backfill-documents") {
-    const result = await embedPendingDocuments(job.workspaceId, { limit: BACKFILL_DOC_LIMIT });
-    return { embedded: result.embedded };
+    const result = await embedPendingDocuments(job.workspaceId, { limit: BACKFILL_DOC_LIMIT, signal });
+    return result.skipped ? { embedded: 0, skipped: result.skipped } : { embedded: result.embedded };
   }
   const [row] = await getDb()
     .select()
@@ -44,7 +56,15 @@ export async function runEmbedJob(job: EmbedJob): Promise<Record<string, unknown
     .limit(1);
   if (!row) return null;
   const profile = toProfileView(row);
-  const profileResult = await indexProfile(job.workspaceId, profile.id, profile.version, profile);
-  const materialChunks = await indexMaterial(job.workspaceId, profile.id, profile.productMaterialText);
-  return { profile: profileResult.indexed, material: materialChunks };
+  const prior = await previousProfileId(job.workspaceId, profile.version);
+  const profileResult = await indexProfile(job.workspaceId, profile.id, profile.version, profile, prior);
+  const material = await indexMaterial(job.workspaceId, profile.id, profile.productMaterialText, signal, prior);
+  // indexMaterial returns 0 both for empty text and for a failed write; only the latter is unavailable.
+  const materialUnavailable = material === 0 && profile.productMaterialText.trim() !== "";
+  const unavailable = profileResult.skipped === "unavailable" || materialUnavailable;
+  return {
+    profile: profileResult.indexed,
+    material,
+    ...(unavailable ? { skipped: "unavailable" } : {}),
+  };
 }

@@ -21,6 +21,7 @@ const state = vi.hoisted(() => ({
   ai: null as unknown,
   vectorize: null as unknown,
   recorded: [] as Array<Record<string, unknown>>,
+  selectSql: null as null | { where: string; order: string },
 }));
 
 // Params of a drizzle condition: workspace id and row ids are bound values, so
@@ -29,14 +30,20 @@ function paramsOf(condition: unknown): unknown[] {
   return new PgDialect().sqlToQuery(condition as Parameters<PgDialect["sqlToQuery"]>[0]).params;
 }
 
+// Rendered SQL of a drizzle expression, so tests can assert the real predicate and ordering.
+function sqlOf(expression: unknown): string {
+  return new PgDialect().sqlToQuery(expression as Parameters<PgDialect["sqlToQuery"]>[0]).sql;
+}
+
 vi.mock("@/lib/db/client", () => ({
   getDb: () => ({
     select: () => ({
       from: () => ({
         where: (condition: unknown) => ({
-          orderBy: () => ({
+          orderBy: (order: unknown) => ({
             limit: async (n: number) => {
               const params = paramsOf(condition);
+              state.selectSql = { where: sqlOf(condition), order: sqlOf(order) };
               return state.rows
                 .filter((r) => r.embeddedAt === null && params.includes(r.workspaceId))
                 .sort((a, b) => b.collectedAt.getTime() - a.collectedAt.getTime())
@@ -118,7 +125,7 @@ describe("embedPendingDocuments", () => {
 
     const result = await embedPendingDocuments(WORKSPACE, { limit: 10 });
 
-    expect(result).toEqual({ embedded: 1 });
+    expect(result).toMatchObject({ embedded: 1 });
     expect(ai.calls[0].text).toEqual(["Alpha first"]);
     const stored = vz.store.get("doc:d1");
     expect(stored?.values).toEqual(fakeVector("Alpha first"));
@@ -126,6 +133,20 @@ describe("embedPendingDocuments", () => {
     expect(stored?.metadata).toEqual({ kind: "doc", platform: "hn", postedAt: Date.parse("2026-10-01T12:00:00Z") });
     expect(state.rows[0].embeddingModel).toBe(EMBEDDING_MODEL);
     expect(state.rows[0].embeddedAt).toBeInstanceOf(Date);
+  });
+
+  it("selects unembedded rows of the workspace, newest first", async () => {
+    const ai = createFakeAi();
+    const vz = createFakeVectorize();
+    state.ai = ai.binding;
+    state.vectorize = vz.binding;
+    state.rows = [row({ id: "sql-check" })];
+
+    await embedPendingDocuments(WORKSPACE, { limit: 10 });
+
+    expect(state.selectSql?.where).toContain('"embedded_at" is null');
+    expect(state.selectSql?.where).toContain('"workspace_id" = ');
+    expect(state.selectSql?.order).toContain('"collected_at" desc');
   });
 
   it("marks empty-text documents embedded without calling the AI or writing a vector", async () => {
@@ -137,7 +158,7 @@ describe("embedPendingDocuments", () => {
 
     const result = await embedPendingDocuments(WORKSPACE, { limit: 10 });
 
-    expect(result).toEqual({ embedded: 0 });
+    expect(result).toMatchObject({ embedded: 0 });
     expect(ai.calls).toHaveLength(0);
     expect(vz.calls).toHaveLength(0);
     expect(state.rows[0].embeddedAt).toBeInstanceOf(Date);
@@ -150,7 +171,7 @@ describe("embedPendingDocuments", () => {
 
     const result = await embedPendingDocuments(WORKSPACE, { limit: 10 });
 
-    expect(result).toEqual({ embedded: 0, skipped: "unavailable" });
+    expect(result).toMatchObject({ embedded: 0, skipped: "unavailable" });
     expect(vz.calls).toHaveLength(0);
     expect(state.rows[0].embeddedAt).toBeNull();
     expect(state.rows[0].embeddingModel).toBeNull();
@@ -162,8 +183,8 @@ describe("embedPendingDocuments", () => {
     state.vectorize = createFakeVectorize().binding;
     state.rows = [row({ id: "d1" }), row({ id: "d2", contentMd: "other" })];
 
-    expect(await embedPendingDocuments(WORKSPACE, { limit: 10 })).toEqual({ embedded: 2 });
-    expect(await embedPendingDocuments(WORKSPACE, { limit: 10 })).toEqual({ embedded: 0 });
+    expect(await embedPendingDocuments(WORKSPACE, { limit: 10 })).toMatchObject({ embedded: 2 });
+    expect(await embedPendingDocuments(WORKSPACE, { limit: 10 })).toMatchObject({ embedded: 0 });
     expect(ai.calls).toHaveLength(1);
   });
 
@@ -188,7 +209,7 @@ describe("embedPendingDocuments", () => {
       row({ id: "new", collectedAt: new Date("2026-10-06T00:00:00Z"), contentMd: "new" }),
     ];
 
-    expect(await embedPendingDocuments(WORKSPACE, { limit: 1 })).toEqual({ embedded: 1 });
+    expect(await embedPendingDocuments(WORKSPACE, { limit: 1 })).toMatchObject({ embedded: 1 });
     expect(state.rows.find((r) => r.id === "new")?.embeddedAt).toBeInstanceOf(Date);
     expect(state.rows.find((r) => r.id === "old")?.embeddedAt).toBeNull();
   });

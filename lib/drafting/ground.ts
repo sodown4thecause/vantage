@@ -92,13 +92,24 @@ export function chunkText(text: string, opts: { size?: number; overlap?: number 
  * new chunk count. Returns the number of chunks indexed (0 when unavailable).
  * Never throws.
  */
-export async function indexMaterial(workspaceId: string, profileId: string, text: string): Promise<number> {
+/**
+ * Replaces this profile's material vectors. When `previousProfileId` is given, that version's
+ * vectors are deleted too, so superseded material cannot fill the grounding top-K.
+ */
+export async function indexMaterial(
+  workspaceId: string,
+  profileId: string,
+  text: string,
+  signal?: AbortSignal,
+  previousProfileId?: string,
+): Promise<number> {
+  const priorIds = previousProfileId ? staleIds(previousProfileId, 0) : [];
   const chunks = chunkText(text).slice(0, MAX_MATERIAL_CHUNKS);
   if (chunks.length === 0) {
-    await deleteVectors(workspaceId, staleIds(profileId, 0));
+    await deleteVectors(workspaceId, [...staleIds(profileId, 0), ...priorIds]);
     return 0;
   }
-  const vectors = await embedTexts(chunks, { workspaceId, sourceKey: "material-index" });
+  const vectors = await embedTexts(chunks, { workspaceId, sourceKey: "material-index", signal });
   if (vectors === null) return 0;
   const items: VectorItem[] = vectors.map((values, n) => ({
     id: materialVectorId(profileId, n),
@@ -107,7 +118,9 @@ export async function indexMaterial(workspaceId: string, profileId: string, text
   }));
   const upserted = await upsertVectors(workspaceId, items);
   if (!upserted) return 0;
-  await deleteVectors(workspaceId, staleIds(profileId, items.length));
+  // Old-version vectors left behind would crowd this profile out of the top-K, so a failed cleanup is retried.
+  const cleaned = await deleteVectors(workspaceId, [...staleIds(profileId, items.length), ...priorIds]);
+  if (!cleaned) return 0;
   return items.length;
 }
 
@@ -136,6 +149,7 @@ export async function selectGrounding(
   if (!threadVector || threadVector.length === 0) return null;
 
   const matches = await queryVectors(workspaceId, threadVector, { kind: "material", topK: MAX_TOP_K });
+  if (matches === null) return null;
   const prefix = `material:${profileId}:`;
   const picked: string[] = [];
   const seen = new Set<number>();
@@ -165,10 +179,11 @@ export async function rankEvidence<T extends { documentId: string }>(
   limit: number,
 ): Promise<T[]> {
   if (!threadVector || threadVector.length === 0 || evidence.length === 0) return evidence.slice(0, limit);
-  const matches = await queryVectors(workspaceId, threadVector, {
+  // Unavailable Vectorize keeps the original order, the same as having no thread vector.
+  const matches = (await queryVectors(workspaceId, threadVector, {
     kind: "doc",
     topK: Math.min(MAX_TOP_K, Math.max(limit, evidence.length)),
-  });
+  })) ?? [];
   const scores = new Map<string, number>();
   for (const match of matches) {
     if (!match.id.startsWith("doc:")) continue;

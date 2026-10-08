@@ -199,7 +199,10 @@ export async function buildOpportunities(opts: {
   });
   const sourceIdByDocId = new Map(rows.map((r) => [r.id, r.sourceId]));
 
-  const clusters = clusterDocuments(grouped?.representatives ?? normalized);
+  // Keys come from the full document set, so a cluster keeps its identity when near-duplicates are absorbed.
+  // Only representatives feed scoring; evidence still lists every absorbed duplicate.
+  const clusters = clusterDocuments(normalized);
+  const representativeIds = grouped ? new Set(grouped.representatives.map((doc) => doc.id)) : null;
   opts.signal?.throwIfAborted();
   // The bounded recent scan is the current queue; retire clusters it no longer supports.
   await db.update(opportunity).set({ status: "ignore", updatedAt: new Date() })
@@ -209,8 +212,10 @@ export async function buildOpportunities(opts: {
   let budgetLimited = 0;
   let leadCapReached = false;
 
-  for (const [clusterKey, docs] of clusters) {
+  for (const [clusterKey, clusterDocs] of clusters) {
     opts.signal?.throwIfAborted();
+    const docs = representativeIds ? clusterDocs.filter((doc) => representativeIds.has(doc.id)) : clusterDocs;
+    if (docs.length === 0) continue;
     const features = { ...computeFeatures(docs, profile, semanticForScoring), profileVersion: profile.version };
     const status = decideStatus(features);
     const ranking = rankWithPreferences({

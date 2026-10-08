@@ -22,7 +22,8 @@
 - The pipeline must degrade to keyword-only scoring when the `AI`/`VECTORIZE` bindings are absent or a call fails; a scan must never fail because of semantic features.
 - Bindings are not inherited by `env.staging` / `env.production` in `wrangler.jsonc`; every binding is declared at top level and in both envs. Staging uses its own resource names (`-staging` suffix).
 - Never import app source (`lib/**`) from `worker-entry.mjs` or `worker/**`; reach it through `WORKER_SELF_REFERENCE` with `Authorization: Bearer <CRON_SECRET>`.
-- Next free migration number is **0018** (0016/0017 already exist on `main`); re-check `ls drizzle/*.sql` and any merged #49 migration before generating.
+- Next free migration number is **0020** (0016 through 0019 already exist; 0019 is the embedding-state and shadow migration). Re-check `ls drizzle/*.sql` and any merged #49 migration before generating.
+- With `VANTAGE_SEMANTIC_MODE=off`, every indexing path returns before any AI or Vectorize call: the queued embed job, the profile-save fallback, and material indexing.
 - Commit trailer: `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`.
 
 ## Execution Model
@@ -59,6 +60,9 @@ npx wrangler vectorize create vantage-docs-staging --dimensions=1024 --metric=co
 npx wrangler vectorize create-metadata-index vantage-docs --property-name=kind --type=string
 npx wrangler vectorize create-metadata-index vantage-docs --property-name=platform --type=string
 npx wrangler vectorize create-metadata-index vantage-docs --property-name=postedAt --type=number
+npx wrangler vectorize create-metadata-index vantage-docs-staging --property-name=kind --type=string
+npx wrangler vectorize create-metadata-index vantage-docs-staging --property-name=platform --type=string
+npx wrangler vectorize create-metadata-index vantage-docs-staging --property-name=postedAt --type=number
 npx wrangler queues create vantage-embed-jobs && npx wrangler queues create vantage-embed-dlq
 npx wrangler queues create vantage-embed-jobs-staging && npx wrangler queues create vantage-embed-dlq-staging
 npx wrangler r2 bucket create vantage-artifacts && npx wrangler r2 bucket create vantage-artifacts-staging
@@ -122,11 +126,11 @@ npx wrangler r2 bucket create vantage-artifacts && npx wrangler r2 bucket create
 - [ ] **Step 4: Run** the same command — expect PASS.
 - [ ] **Step 5: Commit** `feat: namespaced Vectorize store wrapper`.
 
-### Task 4: Migration 0018 — embedding state and shadow table
+### Task 4: Migration 0019 — embedding state and shadow table
 
 **Files:**
 - Modify: `lib/db/schema.ts` (`document` gets `embeddingModel text`, `embeddedAt timestamptz`; new table `semanticShadow`)
-- Create: `drizzle/0018_*.sql` (generated), `drizzle/meta/*` (generated)
+- Create: `drizzle/0019_*.sql` (generated), `drizzle/meta/*` (generated)
 - Test: extend `test/schema-contract.test.ts`
 
 **Interfaces:**
@@ -134,7 +138,7 @@ npx wrangler r2 bucket create vantage-artifacts && npx wrangler r2 bucket create
 
 - [ ] **Step 1: Failing test** in `test/schema-contract.test.ts` asserting the new columns/table exist on the exported schema objects.
 - [ ] **Step 2: Run** `pnpm vitest run test/schema-contract.test.ts` — expect FAIL.
-- [ ] **Step 3: Edit schema, then** `pnpm db:generate`; confirm the generated file is numbered 0018 and contains only these changes.
+- [ ] **Step 3: Edit schema, then** `pnpm db:generate`; confirm the generated file is numbered 0019 and contains only these changes.
 - [ ] **Step 4: Run** `pnpm vitest run test/schema-contract.test.ts && pnpm typecheck` — expect PASS.
 - [ ] **Step 5: Operator applies the migration to the staging Neon branch** (not production). Executor prints the command and stops.
 - [ ] **Step 6: Commit** `feat: embedding state columns and semantic shadow table`.
@@ -321,7 +325,7 @@ npx wrangler r2 bucket create vantage-artifacts && npx wrangler r2 bucket create
 
 **Interfaces:**
 - Produces: `runScan(params: { workspaceId: string }, step: { do: Function }, call: (path: string, body: object) => Promise<Response>): Promise<{ status: "skipped" | "done" | "partial"; failures: number }>` in `worker/scan-run.mjs`: step `plan` (a `skipped` result ends the run; 409 ends the run as skipped without throwing); then `Promise.all` over `collect:<sourceId>` steps each with `{ retries: { limit: 3, delay: "10 seconds", backoff: "exponential" }, timeout: "2 minutes" }` where a collect step that exhausts its retries is caught and counted in `failures` (one bad source never fails the run); then steps `embed`, `build` (retries limit 2, timeout "5 minutes"); and a `finish` step always executed in a `finally`. Step return values are small JSON (counts and ids).
-- `worker/workflows.mjs` exports `class ScanWorkspace extends WorkflowEntrypoint` whose `run(event, step)` builds `call` from `this.env.WORKER_SELF_REFERENCE` and `this.env.CRON_SECRET` and delegates to `runScan`; non-2xx responses throw `NonRetryableError` for 4xx (except 409 and 429) and a plain `Error` otherwise. It is the shared Workflow export file that S21's `RadarScan` will join.
+- `worker/workflows.mjs` exports `class ScanWorkspace extends WorkflowEntrypoint` whose `run(event, step)` builds `call` from `this.env.WORKER_SELF_REFERENCE` and `this.env.CRON_SECRET` and delegates to `runScan`; 409 responses are returned unchanged so `runScan` can treat lease contention as skipped; other non-2xx responses throw `NonRetryableError` for 4xx (except 409 and 429) and a plain `Error` otherwise. It is the shared Workflow export file that S21's `RadarScan` will join.
 - `scheduled(controller, env)` (when `env.SCAN` exists): `call` the `due` route, then for each workspace `env.SCAN.create({ id: "scan-" + workspaceId + "-" + slot, params: { workspaceId } })` inside `Promise.allSettled`, where `slot = yyyymmddHH` of `controller.scheduledTime`; an "already exists" rejection is counted as skipped, any other rejection is logged and rethrown after all attempts. When `env.SCAN` is absent it keeps the existing tick behaviour (so rollout is a config switch). Wrangler: `"workflows": [{ "name": "vantage-scan", "binding": "SCAN", "class_name": "ScanWorkspace" }]` (staging `vantage-scan-staging`), keeping cron arrays as they are.
 
 - [ ] **Step 1: Failing tests** in `test/scan-run.test.mjs` with a fake `step` that runs callbacks inline and records names/options: run order is `plan` → all `collect:*` → `embed` → `build` → `finish`; a `skipped` plan result runs nothing else and does not call `finish`; 409 from `plan` ends as skipped; one collect step that throws (after the fake step's retries are exhausted) yields `status: "partial", failures: 1` and `build` and `finish` still run; `finish` runs even when `build` throws, and the throw propagates; collect steps are launched concurrently (fake step records overlap). In `test/worker-entry.test.mjs`: with `env.SCAN` present, `scheduled` calls `due` then `create` once per workspace with the id format above and tolerates one "already exists" rejection; with `env.SCAN` absent the existing tick tests still pass unchanged.

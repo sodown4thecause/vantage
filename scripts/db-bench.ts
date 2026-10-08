@@ -160,16 +160,28 @@ function parseArgs(argv: string[]): Record<string, string> {
   return args;
 }
 
-async function openDb(driver: Driver, url: string): Promise<SharedDb> {
+/** Opens the driver and returns a `close` that ends its pool (a no-op for neon-http). */
+async function openDb(driver: Driver, url: string): Promise<{ db: SharedDb; close: () => Promise<void> }> {
   if (driver === "neon-http") {
-    return drizzleNeon(neon(url), { schema });
+    return { db: drizzleNeon(neon(url), { schema }), close: async () => {} };
   }
   // Lazy import: postgres-js is only needed for this driver.
   const [{ drizzle }, { default: postgres }] = await Promise.all([
     import("drizzle-orm/postgres-js"),
     import("postgres"),
   ]);
-  return drizzle(postgres(url, { max: 5, fetch_types: false }), { schema });
+  const client = postgres(url, { max: 5, fetch_types: false });
+  return { db: drizzle(client, { schema }), close: () => client.end({ timeout: 5 }) };
+}
+
+/** Releases the lease this run still holds, so a failed iteration cannot block scans until the TTL expires. */
+async function releaseLease(db: SharedDb, ctx: BenchContext): Promise<void> {
+  if (!ctx.leaseToken) return;
+  await db
+    .update(workspace)
+    .set({ scanLeaseToken: null, scanLeaseUntil: null, updatedAt: new Date() })
+    .where(and(eq(workspace.id, ctx.workspaceId), eq(workspace.scanLeaseToken, ctx.leaseToken)));
+  ctx.leaseToken = null;
 }
 
 async function loadContext(db: SharedDb, workspaceId: string): Promise<BenchContext> {
@@ -207,25 +219,30 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv): Promise<void
     throw new Error("--iterations must be a positive integer.");
   }
 
-  const db = await openDb(driver, url);
+  const { db, close } = await openDb(driver, url);
   const ctx = await loadContext(db, args.workspace);
   console.log(`driver=${driver} workspace=${ctx.workspaceId} iterations=${iterations}`);
 
-  // One untimed warm-up pass so connection setup is not billed to the first sample.
-  for (const query of QUERIES) await query.run(db, ctx);
-
   const samples: number[][] = QUERIES.map(() => []);
   const totals: number[] = [];
-  for (let i = 0; i < iterations; i += 1) {
-    let total = 0;
-    for (let q = 0; q < QUERIES.length; q += 1) {
-      const start = performance.now();
-      await QUERIES[q].run(db, ctx);
-      const elapsed = performance.now() - start;
-      samples[q].push(elapsed);
-      total += elapsed;
+  try {
+    // One untimed warm-up pass so connection setup is not billed to the first sample.
+    for (const query of QUERIES) await query.run(db, ctx);
+
+    for (let i = 0; i < iterations; i += 1) {
+      let total = 0;
+      for (let q = 0; q < QUERIES.length; q += 1) {
+        const start = performance.now();
+        await QUERIES[q].run(db, ctx);
+        const elapsed = performance.now() - start;
+        samples[q].push(elapsed);
+        total += elapsed;
+      }
+      totals.push(total);
     }
-    totals.push(total);
+  } finally {
+    await releaseLease(db, ctx);
+    await close();
   }
 
   const rows = QUERIES.map((query, q) => ({

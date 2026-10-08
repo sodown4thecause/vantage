@@ -125,7 +125,8 @@ async function main() {
   const disagreements = largestDisagreements(rows);
   console.log(`\n${disagreements.length} largest disagreements (keyword rung -> semantic rung):`);
   for (const row of disagreements) {
-    console.log(`  ${row.keywordRung} -> ${row.semanticRung}  ${row.title ?? "(untitled)"}`);
+    // JSON.stringify escapes control and ANSI/OSC sequences from external titles before they reach the terminal.
+    console.log(`  ${row.keywordRung} -> ${row.semanticRung}  ${JSON.stringify(row.title ?? "(untitled)")}`);
   }
 }
 

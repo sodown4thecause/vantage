@@ -82,6 +82,8 @@ export type BrowserRunOptions = {
    */
   binding?: BrowserBinding;
   env?: { BROWSER?: BrowserBinding };
+  /** Explicit R2 bucket for stored screenshots. Required outside an OpenNext request. */
+  artifactBucket?: unknown;
   deps?: Partial<BrowserRunDeps>;
 };
 
@@ -326,17 +328,25 @@ export async function browserJson(
  * Stores the PNG when a workspace id is supplied. Best effort: any failure
  * (unsafe id, missing bucket, failed put) yields null and never fails the screenshot.
  */
-async function storeScreenshot(png: Uint8Array, workspaceId: string | null | undefined): Promise<string | null> {
+async function storeScreenshot(
+  png: Uint8Array,
+  workspaceId: string | null | undefined,
+  bucket: unknown,
+): Promise<string | null> {
   if (!workspaceId) return null;
   try {
     const key = artifactKey(workspaceId, "screenshot", crypto.randomUUID());
-    return await putArtifact(key, png.slice().buffer, "image/png");
+    return await putArtifact(key, png.slice().buffer, "image/png", bucket);
   } catch (err) {
     console.error("[browser-run] screenshot not stored", { error: err instanceof Error ? err.name : "unknown" });
     return null;
   }
 }
 
+/**
+ * Returns the PNG, its timing, and the R2 `key` when the screenshot was stored. `key` is null when no
+ * workspaceId was given or storage failed; the screenshot itself is still returned.
+ */
 export async function browserScreenshot(
   input: { url?: string; html?: string },
   opts: BrowserRunOptions = {},
@@ -350,7 +360,7 @@ export async function browserScreenshot(
     { action: "screenshot", params },
     { maxBytes: DEFAULT_SCREENSHOT_MAX_BYTES, ...opts },
   );
-  const key = await storeScreenshot(body, opts.workspaceId);
+  const key = await storeScreenshot(body, opts.workspaceId, opts.artifactBucket);
   return { png: body, ms, key };
 }
 

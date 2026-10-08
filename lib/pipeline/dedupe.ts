@@ -73,11 +73,11 @@ export async function olderNeighbours(
 ): Promise<string[]> {
   if (item.vector.length === 0) return [];
   const threshold = opts.threshold ?? SEMANTIC_THRESHOLDS.duplicate;
-  const matches: VectorMatch[] = await queryVectors(workspaceId, item.vector, {
+  const matches: VectorMatch[] = (await queryVectors(workspaceId, item.vector, {
     kind: "doc",
     topK: NEIGHBOUR_TOP_K,
     minScore: threshold,
-  });
+  })) ?? [];
   return matches
     .filter((match) => match.id !== item.id && (match.postedAt === undefined || match.postedAt <= opts.before))
     .map((match) => match.id);

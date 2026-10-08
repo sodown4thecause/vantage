@@ -52,13 +52,21 @@ test("posts each message to the backfill route with the cron bearer and acks on 
 });
 
 test("acks 404 and other permanent 4xx responses instead of retrying them", async () => {
-  for (const status of [400, 401, 404, 409]) {
+  for (const status of [400, 404, 409]) {
     const { env } = harness([status]);
     const { batch, acks, retries } = batchOf([JOB]);
     await handleQueue(batch, env);
     assert.deepEqual(acks, [0], `status ${status}`);
     assert.deepEqual(retries, [], `status ${status}`);
   }
+});
+
+test("retries 401 because it usually signals a CRON_SECRET misconfiguration", async () => {
+  const { env } = harness([401]);
+  const { batch, acks, retries } = batchOf([JOB]);
+  await handleQueue(batch, env);
+  assert.deepEqual(acks, []);
+  assert.deepEqual(retries, [{ index: 0, options: { delaySeconds: 30 } }]);
 });
 
 test("retries 500 with a delay of 30 seconds times the attempt number", async () => {

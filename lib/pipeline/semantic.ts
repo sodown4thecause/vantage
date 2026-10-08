@@ -70,7 +70,7 @@ async function signalFor(
   workspaceId: string,
   doc: { id: string; vector: number[] },
   anchors: AnchorVector[],
-): Promise<SemanticSignal> {
+): Promise<SemanticSignal | null> {
   if (doc.vector.length !== EMBEDDING_DIMENSIONS) {
     return { documentId: doc.id, fit: 0, rung: null, anchorSimilarity: null };
   }
@@ -87,8 +87,9 @@ async function signalFor(
   const rung =
     nearest !== null && anchorSimilarity >= SEMANTIC_THRESHOLDS.anchor ? nearest.rung : null;
 
-  // queryVectors degrades to [] when the binding is absent or the call fails, so fit becomes 0.
+  // null means Vectorize failed or is absent: no fit signal for this document, not a fit of 0.
   const matches = await queryVectors(workspaceId, doc.vector, { kind: "profile", topK: PROFILE_TOP_K });
+  if (matches === null) return null;
   const fit = matches.length === 0 ? 0 : Math.max(...matches.map((match) => match.score));
 
   return {
@@ -117,5 +118,11 @@ export async function semanticSignals(
   const signals = await mapWithConcurrency(docs, QUERY_CONCURRENCY, (doc) =>
     signalFor(workspaceId, doc, anchors),
   );
-  return new Map(signals.map((signal) => [signal.documentId, signal]));
+  // One failed Vectorize query makes the stage unavailable: partial fit data would bias "on" scoring.
+  const resolved: SemanticSignal[] = [];
+  for (const signal of signals) {
+    if (signal === null) return null;
+    resolved.push(signal);
+  }
+  return new Map(resolved.map((signal) => [signal.documentId, signal]));
 }

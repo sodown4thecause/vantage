@@ -82,6 +82,7 @@ describe("grounded drafting with material chunks", () => {
   it("uses materialChunks instead of the first 800 characters of product material", () => {
     const draft = generateGroundedDraft({ ...input, materialChunks: ["Chunk about relevant billing seats."] });
     expect(draft.originalText).toContain("Chunk about relevant billing seats.");
+    expect(draft.originalText).not.toContain("Intro material sentence.");
     expect(draft.originalText).not.toContain(tailOnlyMarker);
   });
 
