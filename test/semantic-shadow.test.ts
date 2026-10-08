@@ -319,5 +319,8 @@ describe("buildOpportunities near-duplicate collapse", () => {
     expect(result.clusters).toBe(1);
     expect(result.upserted).toBe(1);
     expect(state.evidence.map((e) => e.documentId).sort()).toEqual([...IDS].sort());
+    // Scoring sees one representative: log2(1 + 1) / 4 = 0.25. Without the collapse, three documents give 0.5.
+    const features = state.opportunityWrites[0].features as { evidence: number };
+    expect(features.evidence).toBeCloseTo(0.25);
   });
 });
