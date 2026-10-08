@@ -94,6 +94,50 @@ Remove the `routes` block from `env.production`. The Worker then stops serving t
 custom domains; it keeps serving on its existing `workers.dev` URL. No other change is
 required to roll back.
 
+## Cloudflare account cleanup (2026-10-08)
+
+Verified via the Cloudflare API against account `eb1a55a5673488809e31067f32290af1`.
+
+Three Cloudflare **Workers Builds** (git integrations) were connected to this repo on
+branch `main`:
+
+- `contextfor` — a dashboard "Hello world" template. Its build command was misconfigured
+  (`root_directory` was set to the literal string
+  `pnpm exec opennextjs-cloudflare build`). It owned the route `*.contextfor.dev/*`, so
+  `https://contextfor.dev` served "Hello world" instead of Vantage.
+- `vantage` — misconfigured build (`pnpm run build`, plain Next.js, not OpenNext), no
+  route.
+- `dontkillmyvibe` — the real application (`pnpm run cf:build`, OpenNext), no route.
+
+**Removed (with owner approval):** the `contextfor` and `vantage` Workers Build
+configurations and their placeholder Worker scripts. This freed the `*.contextfor.dev/*`
+route so the real application's Worker can own the domain.
+
+**Kept:** the `dontkillmyvibe` Worker (the real app). Its production environment now
+declares `contextfor.dev` and `www.contextfor.dev` as `custom_domain` routes (see
+`wrangler.jsonc`).
+
+The real app previously served at `https://dontkillmyvibe.liam-wilson1990.workers.dev`;
+staging at `https://vantage-staging.liam-wilson1990.workers.dev`.
+
+### Promoting the fix to contextfor.dev
+
+Deploy path:
+
+1. This change is on `fix/cloudflare-worker-build-and-domain`; it lands via the open PR
+   into `claude/distribution-engine-dev-tools-f7aac4`, and that branch reaches `main`
+   through its own PR.
+2. `.github/workflows/deploy.yml` deploys on `workflow_run` after CI succeeds on `main`
+   (staging, when Cloudflare secrets exist) and via manual `workflow_dispatch` (choose
+   `production`). Production deploys must be triggered manually.
+3. On deploy, Wrangler attaches the `contextfor.dev` / `www.contextfor.dev` custom
+   domains to the `dontkillmyvibe` Worker and issues TLS certs; the first request may lag
+   until certs are active.
+4. Required before the domain is usable: add both hostnames to Neon Auth trusted origins
+   (see the pre-launch checklist above).
+5. Rollback: remove the `routes` block from `env.production` and redeploy; the Worker
+   keeps serving on its workers.dev URL.
+
 ## Verification evidence
 
 Environment: native Windows, Node 25, pnpm 11.5.0, wrangler 4.147.0.
