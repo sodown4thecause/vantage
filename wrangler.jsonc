@@ -23,6 +23,7 @@
 	"ratelimits": [
 		{ "name": "RADAR_LIMITER", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } }
 	],
+	"workflows": [{ "name": "vantage-scan", "binding": "SCAN", "class_name": "ScanWorkspace" }],
 	"triggers": {
 		"crons": []
 	},
@@ -38,6 +39,7 @@
 			"ratelimits": [
 				{ "name": "RADAR_LIMITER", "namespace_id": "1002", "simple": { "limit": 30, "period": 60 } }
 			],
+			"workflows": [{ "name": "vantage-scan-staging", "binding": "SCAN", "class_name": "ScanWorkspace" }],
 			"triggers": { "crons": ["0 */3 * * *"] }
 		},
 		"production": {
@@ -51,6 +53,7 @@
 			"ratelimits": [
 				{ "name": "RADAR_LIMITER", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } }
 			],
+			"workflows": [{ "name": "vantage-scan", "binding": "SCAN", "class_name": "ScanWorkspace" }],
 			"triggers": { "crons": [] }
 		}
 	},

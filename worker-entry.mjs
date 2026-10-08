@@ -21,7 +21,51 @@
 
 import openNextWorker from "./.open-next/worker.js";
 
+// Workflow class export (the `SCAN` binding). Wrangler requires it on the main module.
+export { ScanWorkspace } from "./worker/workflows.mjs";
+
 const TICK_PATH = "/api/cron/tick";
+const SCAN_DUE_PATH = "/api/internal/scan/due";
+// Workflows reject a duplicate instance ID when `create` runs. The docs say it throws but do not
+// quote the message, so this wording match is unverified; both documented phrasings are accepted.
+const DUPLICATE_INSTANCE = /already (exist|used)/i;
+
+/** Hourly slot (yyyymmddHH, UTC) that makes one scan instance per workspace per cron firing. */
+function scanSlot(scheduledTime) {
+	return new Date(scheduledTime).toISOString().slice(0, 13).replace(/\D/g, "");
+}
+
+/** Starts one Workflow instance per due workspace; duplicates from a retried firing count as skipped. */
+async function startScanInstances(controller, env) {
+	const response = await env.WORKER_SELF_REFERENCE.fetch(
+		new Request(`https://vantage.internal${SCAN_DUE_PATH}`, {
+			method: "POST",
+			headers: { authorization: `Bearer ${env.CRON_SECRET}`, "content-type": "application/json" },
+			body: "{}",
+		}),
+	);
+	if (!response.ok) throw new Error(`due failed: HTTP ${response.status}`);
+	const { workspaceIds = [] } = await response.json();
+
+	const slot = scanSlot(controller.scheduledTime);
+	const results = await Promise.allSettled(workspaceIds.map((workspaceId) =>
+		env.SCAN.create({ id: `scan-${workspaceId}-${slot}`, params: { workspaceId } })));
+
+	let created = 0;
+	let skipped = 0;
+	const errors = [];
+	for (const result of results) {
+		if (result.status === "fulfilled") created += 1;
+		else if (DUPLICATE_INSTANCE.test(String(result.reason?.message ?? result.reason))) skipped += 1;
+		else {
+			console.error("[cron] scan instance failed to start", result.reason);
+			errors.push(result.reason);
+		}
+	}
+	console.log(`[cron] scan instances: ${created} started, ${skipped} already running, ${errors.length} failed`);
+	// Every workspace was attempted above; the scheduled invocation is then marked failed.
+	if (errors.length) throw new Error(`${errors.length} of ${workspaceIds.length} scan instances failed to start`);
+}
 
 const worker = {
 	fetch(request, env, ctx) {
@@ -41,6 +85,12 @@ const worker = {
 
 		if (!env.WORKER_SELF_REFERENCE) {
 			throw new Error("WORKER_SELF_REFERENCE binding is missing");
+		}
+
+		// Rollout switch: with the Workflow binding present, the tick path is not used.
+		if (env.SCAN) {
+			await startScanInstances(controller, env);
+			return;
 		}
 
 		const started = Date.now();
