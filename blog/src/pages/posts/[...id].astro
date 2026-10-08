@@ -1,0 +1,52 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('posts', (p) => !p.data.draft);
+  return posts.map((post) => ({ params: { id: post.id }, props: { post } }));
+}
+
+const { post } = Astro.props;
+const { Content } = await render(post);
+const d = post.data;
+const url = new URL(Astro.url.pathname, Astro.site).href;
+
+const article = {
+  '@context': 'https://schema.org',
+  '@type': 'BlogPosting',
+  headline: d.title,
+  description: d.description,
+  datePublished: d.pubDate.toISOString(),
+  dateModified: (d.updatedDate ?? d.pubDate).toISOString(),
+  author: { '@type': 'Person', name: d.author },
+  mainEntityOfPage: url,
+  keywords: d.tags.join(', '),
+};
+const faq = d.faq && {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: d.faq.map(({ q, a }) => ({
+    '@type': 'Question',
+    name: q,
+    acceptedAnswer: { '@type': 'Answer', text: a },
+  })),
+};
+---
+<Base title={`${d.title} | Vantage`} description={d.description} type="article" jsonLd={faq ? [article, faq] : article}>
+  <article>
+    <h1>{d.title}</h1>
+    <p>
+      By {d.author} ·
+      <time datetime={d.pubDate.toISOString()}>{d.pubDate.toISOString().slice(0, 10)}</time>
+      {d.updatedDate && <> · Updated <time datetime={d.updatedDate.toISOString()}>{d.updatedDate.toISOString().slice(0, 10)}</time></>}
+    </p>
+    <Content />
+    {d.faq && (
+      <section>
+        <h2>FAQ</h2>
+        {d.faq.map(({ q, a }) => (<><h3>{q}</h3><p>{a}</p></>))}
+      </section>
+    )}
+  </article>
+</Base>

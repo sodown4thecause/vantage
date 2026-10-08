@@ -1,0 +1,46 @@
+---
+import { serializeJsonLd } from '../lib/json-ld';
+
+interface Props {
+  title: string;
+  description: string;
+  type?: 'website' | 'article';
+  jsonLd?: Record<string, unknown> | Record<string, unknown>[];
+  noindex?: boolean;
+}
+const { title, description, type = 'website', jsonLd, noindex = false } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
+const ld = jsonLd ? (Array.isArray(jsonLd) ? jsonLd : [jsonLd]) : [];
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    {noindex && <meta name="robots" content="noindex" />}
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <link rel="alternate" type="application/rss+xml" title="Blog feed" href="/rss.xml" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content={type} />
+    <meta property="og:url" content={canonical} />
+    <meta name="twitter:card" content="summary" />
+    {ld.map((o) => <script type="application/ld+json" set:html={serializeJsonLd(o)} />)}
+    <style>
+      :root { color-scheme: light dark; --max: 42rem; }
+      body { font: 1.0625rem/1.65 system-ui, sans-serif; margin: 0; }
+      header, main, footer { max-width: var(--max); margin: 0 auto; padding: 1rem 1.25rem; }
+      header a { font-weight: 600; text-decoration: none; }
+      img { max-width: 100%; height: auto; }
+      pre { overflow-x: auto; padding: 1rem; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <header><a href="/">Vantage Blog</a></header>
+    <main><slot /></main>
+    <footer><a href="/rss.xml">RSS</a></footer>
+  </body>
+</html>
