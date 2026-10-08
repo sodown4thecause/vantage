@@ -151,12 +151,18 @@ Worker script limits are 3 MB (Free) and 10 MB (Paid). CI measures
 
 - `pnpm dev` runs the Next dev server on Node, not Workers. Use `pnpm cf:preview`
   to exercise the real Worker runtime.
-- `opennextjs-cloudflare build` calls `fs.symlinkSync`, which needs Developer Mode
-  on Windows. Run it on Linux (WSL, Docker, or CI) if you hit `EPERM`.
-- Do **not** work around that with `pnpm install --node-linker=hoisted`. Hoisted
-  installs copy every platform variant of native packages such as sharp's libvips
-  instead of hardlinking them, which can exhaust the disk. The default linked
-  layout hardlinks from the pnpm store and costs almost nothing.
+- On native Windows, `opennextjs-cloudflare build` calls `fs.symlinkSync`, which
+  needs Developer Mode or elevation; without it the build fails with `EPERM` from
+  the default linked pnpm layout recreating `.pnpm` virtual-store symlinks. This
+  repo commits `nodeLinker: hoisted` in `pnpm-workspace.yaml` as the chosen fix: a
+  hoisted install writes a flat `node_modules` with no symlinks, so OpenNext copies
+  files instead of recreating symlinks. Alternatively, run the build on Linux (WSL,
+  Docker, or CI). See
+  [docs/operations/2026-10-08-cloudflare-worker-build-and-domain.md](docs/operations/2026-10-08-cloudflare-worker-build-and-domain.md).
+- Operational caveat: a hoisted install copies every platform variant of native
+  packages such as sharp's libvips instead of hardlinking them, so it uses more
+  disk than the default linked layout. Budget for that in CI caches; it does not
+  affect correctness of the build.
 - The build requires no secrets. `lib/auth/server.ts` and `app/api/auth/[...path]/route.ts`
   both defer Neon Auth construction to request time, and CI has a job that fails if
   the build ever needs `NEON_AUTH_*` again.
