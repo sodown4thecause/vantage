@@ -49,17 +49,22 @@ export async function indexProfile(
     : await embedTexts(texts, { workspaceId, sourceKey: "profile-index" });
   if (vectors === null) return { indexed: 0, skipped: "unavailable" };
 
-  const staleOwner = previousProfileId ?? profileId;
-  const staleIds = Array.from({ length: MAX_PROFILE_VECTORS }, (_, n) => profileVectorId(staleOwner, n));
-  const deleted = await deleteVectors(workspaceId, staleIds);
-  if (!deleted) return { indexed: 0, skipped: "unavailable" };
-
   const items: VectorItem[] = vectors.map((values, n) => ({
     id: profileVectorId(profileId, n),
     values,
     kind: "profile",
   }));
+  // Upsert first so a failed write never leaves the profile without vectors; then drop
+  // whatever the new set does not overwrite (the previous version, or this profile's tail).
   const upserted = await upsertVectors(workspaceId, items);
   if (!upserted) return { indexed: 0, skipped: "unavailable" };
+
+  const staleOwner = previousProfileId ?? profileId;
+  const keep = staleOwner === profileId ? items.length : 0;
+  const staleIds = Array.from({ length: MAX_PROFILE_VECTORS - keep }, (_, n) =>
+    profileVectorId(staleOwner, n + keep),
+  );
+  const deleted = await deleteVectors(workspaceId, staleIds);
+  if (!deleted) return { indexed: items.length };
   return { indexed: items.length };
 }

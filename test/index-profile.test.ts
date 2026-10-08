@@ -83,7 +83,7 @@ describe("indexProfile", () => {
     expect(ai.calls).toHaveLength(1);
   });
 
-  it("deletes the previous version's vector ids before upserting", async () => {
+  it("upserts the new vectors, then deletes the previous version's ids", async () => {
     state.ai = createFakeAi().binding;
     const vz = createFakeVectorize();
     state.vectorize = vz.binding;
@@ -93,14 +93,15 @@ describe("indexProfile", () => {
     const deleteIndex = vz.calls.findIndex((c) => c.op === "deleteByIds");
     const upsertIndex = vz.calls.findIndex((c) => c.op === "upsert");
     expect(deleteIndex).toBeGreaterThanOrEqual(0);
-    expect(deleteIndex).toBeLessThan(upsertIndex);
+    expect(upsertIndex).toBeGreaterThanOrEqual(0);
+    expect(upsertIndex).toBeLessThan(deleteIndex);
     const deleted = vz.calls[deleteIndex];
     expect(deleted.op === "deleteByIds" && deleted.ids).toEqual(
       Array.from({ length: MAX_PROFILE_VECTORS }, (_, i) => `profile:prof-1:${i}`),
     );
   });
 
-  it("deletes the current profile's ids when no previous version is given", async () => {
+  it("deletes only the tail beyond the new vectors when no previous version is given", async () => {
     state.ai = createFakeAi().binding;
     const vz = createFakeVectorize();
     state.vectorize = vz.binding;
@@ -108,8 +109,8 @@ describe("indexProfile", () => {
     await indexProfile(WORKSPACE, "prof-1", 1, profile);
 
     const deleted = vz.calls.find((c) => c.op === "deleteByIds");
-    expect(deleted?.op === "deleteByIds" && deleted.ids[0]).toBe("profile:prof-1:0");
-    expect(deleted?.op === "deleteByIds" && deleted.ids).toHaveLength(MAX_PROFILE_VECTORS);
+    expect(deleted?.op === "deleteByIds" && deleted.ids[0]).toBe("profile:prof-1:6");
+    expect(deleted?.op === "deleteByIds" && deleted.ids).toHaveLength(MAX_PROFILE_VECTORS - 6);
   });
 
   it("returns skipped unavailable and touches nothing when the AI binding is absent", async () => {
