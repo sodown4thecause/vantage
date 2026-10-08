@@ -1,166 +1,147 @@
 # Vantage
 
-Social listening / lead capture platform (M1 scaffold).
+**Vantage watches the public places developers talk, finds the few conversations worth joining, and hands you an evidence-backed draft before the moment passes. It never posts for you.**
+
+Built for solo founders and small teams marketing AI developer tools: instead of checking Reddit, Hacker News, X, GitHub, Stack Overflow and newsletters every day, you get a short ranked queue (up to five opportunities a day), the posts that prove each one, and a reply draft you review and send yourself.
+
+Runs on Cloudflare Workers (via OpenNext) with Neon Postgres.
+
+---
+
+## How it works
+
+```
+Onboarding profile ─► Sources ─► Collectors ─► Normalise + intent ladder ─► Opportunity Queue ─► Draft + review ─► You post
+   (5 minutes)      (catalog)   (bounded,      (evidence kept, synthetic    (5-axis score,       (claim ledger,     (feedback trains
+                                 budgeted)      evidence rejected)           max 5/day)            rules check)       per-workspace ranking)
+```
+
+1. **Profile.** A five-minute onboarding captures what you build and who it's for. Hacker News is provisioned automatically; RSS feeds are optional.
+2. **Sources.** Install sources one at a time from a 30-entry community catalog (RSS, public Substack, HN, GitHub issues, Stack Overflow, Reddit, Firecrawl Alexandria, indexed LinkedIn discovery, X). Workspace source limits apply.
+3. **Collection.** Free feeds and official GitHub / Stack Exchange APIs can run on the schedule. Paid providers are manual and opt-in. Every run writes a **coverage receipt** that says what was and wasn't collected (rate limits, partial windows, API deferrals).
+4. **Opportunity Queue.** Documents are scored against your current profile on five axes (fit, intent, evidence, momentum, timing), shown as a score glyph. Only opportunities with real evidence are eligible.
+5. **Drafting.** A draft is produced only after the system finds a contribution gap, builds a sentence-level claim ledger, and checks community rules and evidence. Editing resets approval. Hacker News and Stack Overflow get **research briefs** instead of drafts because their policies prohibit AI-written contributions.
+6. **Outcomes.** Accept / dismiss / outcome events feed a north-star metric and a conservative per-workspace preference ranker.
+
+**Never automated:** posting, commenting, DMs. Vantage recommends; a human acts.
+
+## What's in `main`
+
+| Area | What it does | Where |
+|---|---|---|
+| Onboarding & profile | Workspace creation, monitoring profile, provisioned HN source | `app/onboarding`, `lib/profile` |
+| Community catalog | 30 curated developer-community sources, installed individually | `lib/communities/catalog.ts`, `docs/sources/community-collection.md` |
+| Collectors | HN, RSS/Atom, Substack, GitHub, Stack Overflow, Reddit, X, Alexandria, LinkedIn discovery (Product Hunt / YouTube adapters are access-pending) | `lib/collectors`, `lib/reddit`, `lib/x`, `lib/firecrawl` |
+| Opportunity Queue | Evidence-backed ranking, five-card daily limit, opportunity detail page | `app/queue`, `app/opportunities/[id]`, `lib/opportunities` |
+| Drafting | Contribution-gap check, claim ledger, rules review, human handoff | `lib/drafting`, `app/api/drafts` |
+| Learning & outcomes | Feedback events, north-star metric, bounded preference re-ranking | `lib/outcomes`, `lib/learning` |
+| Cost ledger | Every provider call reserved and settled in a durable daily ledger; ambiguous accounting blocks further paid calls | `lib/costs`, `docs/costs.md` |
+| Source switches | Global admin kill-switches per provider with audit log and paused-state UI | `app/admin/switches` |
+| Plans & entitlements | Atomic metered limits, `/settings/plan` | `lib/plans`, `app/settings/plan` |
+| Public route guard | Rate limit, Turnstile, daily dollar budget for unauthenticated routes | `lib/public` |
+| Browser Run | Cloudflare Browser Run wrapper with cost recording and SSRF guard (never used for Reddit, LinkedIn, Facebook, Instagram or X) | `lib/browser`, `docs/browser-run.md` |
+| Design system | "Survey sheet" tokens, Schibsted Grotesk + Newsreader, score glyph, shared `Shell` | `docs/design.md`, `components/` |
+
+## In review (open PRs)
+
+- **#49 Distribution engine** (S70, S72, S75): deterministic situation classifier (13 situations with freshness half-lives), a hand-verified launch-destination catalog with public `/launch` pages and sitemap, and suggested **plays** on each opportunity. Needs migration 0018 and `scripts/seed-destinations.ts`.
+- **#47 Astro blog**: static SEO/AEO blog in `blog/` served from Workers static assets, with JSON-LD, RSS, sitemap and `llms.txt`. Requires `SITE_URL`.
+- **#46 Cubic review config**: review rules for tenant isolation, migration safety, provider budgets and Worker secrets. Supersedes #33.
+- Dependabot bumps: #41–#45.
+
+## Providers and models
+
+| Purpose | Provider | Notes |
+|---|---|---|
+| Reddit | TinyFish Search/Fetch → optional TinyFish Agent → Scavio | Paid, opt-in |
+| X | Scavio | Grok significance analysis via AI Gateway (`X_GATEWAY_MODEL`, default `spacexai/grok-4.7`) |
+| Web / datasets | Firecrawl (incl. Alexandria developer index and GitHub issues) | Credits priced via `FIRECRAWL_CREDIT_USD` |
+| GitHub, Stack Overflow | Official public APIs | Free; respects rate-limit and backoff headers |
+| HN, RSS, Substack | Public endpoints | Free; 512 KB response cap, opt-in 3 MB |
+| Drafts | Vercel AI Gateway (`COMMENT_DRAFT_MODEL`, default `openai/gpt-6.1-sol`) | Optional Inco DeepSeek triage (`INCO_TRIAGE_ENABLED`) |
+
+Paid collection is off unless `VANTAGE_PAID_PROVIDERS_ENABLED` is set and `VANTAGE_PAID_DAILY_BUDGET_USD` is configured. See `.env.example` for the full list.
 
 ## Stack
 
-- **Next.js** (App Router) + TypeScript + Tailwind
-- **Neon** Postgres via **Drizzle ORM**
-- **Neon Auth** (Managed Better Auth)
-- Free-lane **Collector** interface for HN / RSS / Substack workers
+- **Next.js 16** (App Router) + React 19 + TypeScript + Tailwind 4
+- **Cloudflare Workers** via `@opennextjs/cloudflare`
+- **Neon** Postgres + **Drizzle ORM**, **Neon Auth** (Managed Better Auth)
+- **Vitest** test suite; GitHub Actions CI; Dependabot
 
-## Setup
+## Getting started
 
 ```bash
 pnpm install
 cp .env.example .env.local
-# Fill DATABASE_URL, NEON_AUTH_BASE_URL, NEON_AUTH_COOKIE_SECRET
-pnpm db:migrate   # applies drizzle/0000_m1_core.sql
+# Fill DATABASE_URL, NEON_AUTH_BASE_URL, NEON_AUTH_COOKIE_SECRET (openssl rand -base64 32)
+pnpm db:migrate
 pnpm dev
 ```
 
-### Neon project
+`pnpm dev` runs on Node. Use `pnpm cf:preview` to exercise the real Worker runtime.
 
-1. Create a Neon project and enable **Managed Better Auth**.
-2. Copy the pooled `DATABASE_URL` and Auth base URL into `.env.local`.
-3. Generate a cookie secret: `openssl rand -base64 32`.
-
-## M1 schema
-
-Tables in `lib/db/schema.ts`:
-
-| Table | Purpose |
-|-------|---------|
-| `workspace` | Tenant + plan/budget/consents |
-| `source` | Collector feeds (etag/cursor/config) |
-| `document` | Normalized collected content |
-| `lead` | Scored opportunities tied to documents |
-
-## Collectors & pipeline
-
-| Route | Purpose |
-|-------|---------|
-| `POST /api/collectors/hn` | Hacker News (Algolia + Firebase) |
-| `POST /api/collectors/rss` | RSS/Atom with conditional GET |
-| `POST /api/collectors/substack` | Substack publication feed |
-| `POST /api/collectors/producthunt` | Product Hunt via TinyFish **Search+Fetch** (agent last), else PH GraphQL, else fixture |
-| `POST /api/collectors/youtube` | YouTube via **Scavio** comments scrape, else TinyFish Fetch/Search, else agent, else Data API, else fixture |
-| `POST /api/collectors/reddit` | Reddit via **Scavio** `reddit.search` (`SCAVIO_API_KEY`), else fixture |
-| `POST /api/collectors/x` | X/Twitter via **Scavio** `x.search` (`SCAVIO_API_KEY`), else fixture |
-| `POST /api/pipeline/run` | Normalize + intent ladder → leads |
-| `GET /api/cron/tick` | 3-hour Vercel cron: all sources + pipeline |
-| `/review?workspaceId=` | Lead review UI |
-
-Body for collector routes: `{ "workspaceId": "...", "sourceId": "..." }`.
-
-### Scrape providers
-
-Prefer **search + fetch/scrape** over full browser agents. **Scavio is enough** for Reddit/X/YouTube structured APIs.
-
-1. **YouTube order:** Scavio comments → TinyFish Fetch/Search → TinyFish Agent → `YOUTUBE_API_KEY` → fixture.
-2. **Product Hunt order:** TinyFish Search+Fetch → homepage Fetch → TinyFish Agent → `PH_DEV_TOKEN` → fixture.
-3. **Reddit:** Scavio `client.reddit.search` (`config.query`, `config.limit`) → fixture.
-4. **X:** Scavio `client.x.search` (`config.query`, `config.searchType`, `config.limit`) → fixture.
-5. Documents store `metadata.provider` (`scavio`, `tinyfish_*`, native APIs, or `fixture`).
-6. Optional: deploy [arcade-scavio](https://pypi.org/project/arcade-scavio/) on Arcade if you want the same Scavio tools as MCP (`Scavio.SearchReddit`, etc.). Vantage talks to Scavio directly.
-
-## Scripts
+### Scripts
 
 | Script | Description |
-|--------|-------------|
+|---|---|
 | `pnpm dev` | Next dev server |
 | `pnpm build` | Production Next build |
-| `pnpm typecheck` | `tsc --noEmit` |
-| `pnpm test` | Vitest suite |
-| `pnpm db:generate` | Generate migrations from schema |
-| `pnpm db:migrate` | Apply migrations (run manually — see Deploy) |
-| `pnpm db:push` | Push schema (dev) |
-| `pnpm cf:build` | Build the Cloudflare Worker bundle |
-| `pnpm cf:preview` | Build and preview locally on Workers |
+| `pnpm lint` / `pnpm typecheck` / `pnpm test` | ESLint, `tsc --noEmit`, Vitest |
+| `pnpm db:generate` / `db:migrate` / `db:push` / `db:studio` | Drizzle migrations and tooling |
+| `pnpm cf:build` / `cf:preview` | Build (and preview) the Worker bundle |
 | `pnpm deploy` | Build and deploy to Cloudflare |
 | `pnpm cf:typegen` | Generate `cloudflare-env.d.ts` bindings |
 
-## Deploy (Cloudflare Workers)
+## Deploying to Cloudflare Workers
 
-Vantage runs on Workers via `@opennextjs/cloudflare`. Config lives in
-`wrangler.jsonc` and `open-next.config.ts`; `worker-entry.mjs` is the Worker
-entrypoint.
-
-`compatibility_date` is `2026-10-05`, so `nodejs_compat` is enabled implicitly and
-`node:crypto` / `Buffer` / `process.env` work without extra flags.
-
-### One-time setup
+Config lives in `wrangler.jsonc` and `open-next.config.ts`; `worker-entry.mjs` is the entrypoint and adds a `scheduled` handler.
 
 ```bash
-pnpm install
 wrangler login
 wrangler secret put CRON_SECRET              # 32+ random bytes
 wrangler secret put NEON_AUTH_COOKIE_SECRET  # 32+ chars
 wrangler secret put DATABASE_URL             # Neon pooled connection string
-```
-
-`NEON_AUTH_BASE_URL` must be a **real, reachable** Neon Auth URL. A placeholder
-value builds green and then fails every login at runtime.
-
-### Migrations are a deliberate manual step
-
-`pnpm db:migrate` is **not** chained into `pnpm deploy`. Apply migrations to the
-verified staging database before accepting features that use the new schema.
-Run production migrations deliberately against the confirmed production target:
-
-```bash
-DATABASE_URL="postgresql://…" pnpm db:migrate
-```
-
-### Cloudflare branch previews
-
-`wrangler.jsonc` includes the [required `previews` block](https://developers.cloudflare.com/workers/previews/configuration/).
-Its [custom build command](https://developers.cloudflare.com/workers/wrangler/custom-builds/)
-runs `pnpm run cf:build` before Wrangler bundles the preview, so the dashboard's
-`pnpm run build` followed by `npx wrangler preview` produces `.open-next` assets.
-The package's `build` remains `next build`, avoiding a recursive build hook.
-Named staging and production configurations override the hook with an empty command,
-because CI already runs the explicit OpenNext build before their uploads. Build
-with `pnpm cf:build` before using raw Wrangler commands with those environments.
-
-Configure preview-specific test database and auth secrets in Previews Base before
-testing authenticated flows. The empty preview block copies no production bindings
-or routes. Preview service bindings call the target Worker's production deployment,
-so add only verified test services. Previews do not run cron. Builds never apply migrations.
-
-### Deploy
-
-```bash
 pnpm deploy
 ```
 
-### Cron
+- `NEON_AUTH_BASE_URL` must be a real, reachable Neon Auth URL. A placeholder builds green and then fails every login.
+- **Migrations are manual.** `pnpm db:migrate` is not part of `pnpm deploy`. Apply to staging first, then run deliberately against production: `DATABASE_URL="postgresql://…" pnpm db:migrate`.
+- **Cron** runs only in the `staging` environment (`0 */3 * * *` UTC). The scheduled handler calls the tick route through the `WORKER_SELF_REFERENCE` binding with `Authorization: Bearer ${CRON_SECRET}`.
+- **Branch previews** use the `previews` block in `wrangler.jsonc`, whose build hook runs `pnpm run cf:build`. Previews copy no production bindings, don't run cron and never apply migrations. Give them isolated test secrets.
+- **Bundle size**: CI fails if `.open-next/worker.js` exceeds 10 MB (Paid plan limit).
+- **The build needs no secrets.** Neon Auth is constructed at request time; a CI job enforces this.
 
-The `staging` environment schedules `0 */3 * * *` (every 3 hours, UTC);
-top-level and production cron lists are empty. The adapter emits
-only a `fetch` handler, so `worker-entry.mjs` adds a `scheduled` handler that
-reaches the tick route through the `WORKER_SELF_REFERENCE` service binding with
-`Authorization: Bearer ${CRON_SECRET}`. This reuses the single deployed bundle and
-the existing constant-time check in `lib/cron/authorize.ts` rather than duplicating
-the collector pipeline into a second entrypoint.
+### Production secrets beyond the basics
 
-Worker script limits are 3 MB (Free) and 10 MB (Paid). CI measures
-`.open-next/worker.js` and fails the build above 10 MB.
+`VANTAGE_ADMIN_USER_IDS`, `TURNSTILE_SECRET_KEY`, `VISITOR_SALT`, plus provider keys (`TINYFISH_API_KEY`, `SCAVIO_API_KEY`, `FIRECRAWL_API_KEY`, `AI_GATEWAY_API_KEY`, `INCO_API_KEY`). Leave `ENABLE_PUBLIC_PING` unset in production.
 
-### Local development notes
+### Windows notes
 
-- `pnpm dev` runs the Next dev server on Node, not Workers. Use `pnpm cf:preview`
-  to exercise the real Worker runtime.
-- `opennextjs-cloudflare build` calls `fs.symlinkSync`, which needs Developer Mode
-  on Windows. Run it on Linux (WSL, Docker, or CI) if you hit `EPERM`.
-- Do **not** work around that with `pnpm install --node-linker=hoisted`. Hoisted
-  installs copy every platform variant of native packages such as sharp's libvips
-  instead of hardlinking them, which can exhaust the disk. The default linked
-  layout hardlinks from the pnpm store and costs almost nothing.
-- The build requires no secrets. `lib/auth/server.ts` and `app/api/auth/[...path]/route.ts`
-  both defer Neon Auth construction to request time, and CI has a job that fails if
-  the build ever needs `NEON_AUTH_*` again.
+`opennextjs-cloudflare build` calls `fs.symlinkSync`, which needs Developer Mode on Windows; otherwise build on Linux (WSL, Docker or CI). Don't work around it with `--node-linker=hoisted`, which copies every native-package variant and can exhaust the disk.
 
-## Ref orchestration
+## CI
 
-See `.warp/REF_ORCHESTRATOR_SETUP.md` for Warp Oz ↔ Ref Plans wiring.
+GitHub Actions (`.github/workflows/ci.yml`) runs two jobs on every PR:
+
+- **Lint, typecheck, test, build**, including a migration-drift check
+- **Cloudflare Worker bundle (no secrets)**, which packages the Worker and fails on secret dependence or oversize bundles
+
+`deploy.yml` handles staging/production uploads (needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`).
+
+## Docs
+
+| Doc | What's in it |
+|---|---|
+| `docs/VANTAGE-PRD.md` | Product strategy, ICP, JTBD |
+| `docs/slices/` | Agent-ready delivery slices (S00–S61), human gates, review lenses, decisions |
+| `docs/slices/DECISION-2026-10-07-login-first-usage-billing.md` | Current pricing direction: login-first, free basic scan, usage billing at cost + 20% |
+| `docs/sources/` | Community collection and social-provider routing |
+| `docs/costs.md` | Provider pricing and the cost ledger |
+| `docs/design.md` | Design system |
+| `docs/research/` | Provider verification and phase validation receipts |
+| `docs/gtm/` | Switch-rescue outreach kit |
+
+## Status
+
+Pre-launch pilot. Staging runs on Cloudflare Workers; production cron, paid collection and billing (Stripe credit top-ups, S40–S45) are not yet enabled. See `docs/slices/README.md` for what's next.
