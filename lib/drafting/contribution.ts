@@ -93,7 +93,8 @@ async function modelJson(opts: { workspaceId: string; model: string; triage: boo
   // Notes are optional context, so they are dropped one at a time until the payload fits; evidence is never trimmed here.
   const base = { title: opts.input.opportunityTitle.slice(0, 300), summary: opts.input.opportunitySummary.slice(0, 1_000), customer: opts.input.targetCustomer.slice(0, 500), evidence: opts.input.evidence.slice(0, 5).map(e => ({ ...e, contentMd: e.contentMd.slice(0, 3_000) })), existingReplies: opts.input.existingReplies?.slice(0, 10).map(r => r.slice(0, 800)) ?? [] };
   const serialize = (productNotes: string[]) => JSON.stringify({ ...base, productNotes });
-  let productNotes = (opts.input.materialChunks ?? []).slice(0, 4).map(c => c.slice(0, 1_000));
+  // Triage is sent to a third-party provider, so product material never goes into its payload.
+  let productNotes = opts.triage ? [] : (opts.input.materialChunks ?? []).slice(0, 4).map(c => c.slice(0, 1_000));
   while (productNotes.length > 0 && Buffer.byteLength(serialize(productNotes), "utf8") > 28_000) productNotes = productNotes.slice(0, -1);
   const payload = serialize(productNotes);
   if (Buffer.byteLength(payload, "utf8") > 28_000) throw new ContributionValidationError("Evidence exceeds the drafting input limit.");

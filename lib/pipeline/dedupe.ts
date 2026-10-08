@@ -78,7 +78,9 @@ export async function olderNeighbours(
     topK: NEIGHBOUR_TOP_K,
     minScore: threshold,
   })) ?? [];
+  // Document vectors are stored as `doc:<id>`, so compare logical document ids.
+  const documentIdOf = (id: string) => (id.startsWith("doc:") ? id.slice("doc:".length) : id);
   return matches
-    .filter((match) => match.id !== item.id && (match.postedAt === undefined || match.postedAt <= opts.before))
-    .map((match) => match.id);
+    .filter((match) => documentIdOf(match.id) !== item.id && match.postedAt !== undefined && match.postedAt <= opts.before)
+    .map((match) => documentIdOf(match.id));
 }

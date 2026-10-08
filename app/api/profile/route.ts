@@ -20,7 +20,10 @@ import { getSemanticMode } from "@/lib/cf/env";
 function scheduleProfileIndex(workspaceId: string, profileId: string): void {
   const task = async () => {
     try {
-      await runEmbedJob({ type: "index-profile", workspaceId, profileId });
+      const result = await runEmbedJob({ type: "index-profile", workspaceId, profileId });
+      if (result?.skipped === "unavailable") {
+        console.error("[profile route] profile index unavailable");
+      }
     } catch (err) {
       console.error("[profile route] material index failed", {
         error: err instanceof Error ? err.name : "unknown",

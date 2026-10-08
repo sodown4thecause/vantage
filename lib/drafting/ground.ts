@@ -106,7 +106,9 @@ export async function indexMaterial(
   const priorIds = previousProfileId ? staleIds(previousProfileId, 0) : [];
   const chunks = chunkText(text).slice(0, MAX_MATERIAL_CHUNKS);
   if (chunks.length === 0) {
-    await deleteVectors(workspaceId, [...staleIds(profileId, 0), ...priorIds]);
+    // A failed cleanup must be retried, not reported as success: throw so the job fails and re-queues.
+    const cleared = await deleteVectors(workspaceId, [...staleIds(profileId, 0), ...priorIds]);
+    if (!cleared) throw new Error("material vector cleanup failed");
     return 0;
   }
   const vectors = await embedTexts(chunks, { workspaceId, sourceKey: "material-index", signal });
@@ -164,37 +166,4 @@ export async function selectGrounding(
     if (picked.length >= k) break;
   }
   return picked.length > 0 ? picked : null;
-}
-
-/**
- * Orders evidence by similarity of its document vectors to the thread vector,
- * keeping the original order for documents without a match. Only uses
- * queryVectors; document vectors are never fetched by id. With no thread vector
- * the original order is kept.
- */
-export async function rankEvidence<T extends { documentId: string }>(
-  workspaceId: string,
-  threadVector: number[] | null,
-  evidence: T[],
-  limit: number,
-): Promise<T[]> {
-  if (!threadVector || threadVector.length === 0 || evidence.length === 0) return evidence.slice(0, limit);
-  // Unavailable Vectorize keeps the original order, the same as having no thread vector.
-  const matches = (await queryVectors(workspaceId, threadVector, {
-    kind: "doc",
-    topK: Math.min(MAX_TOP_K, Math.max(limit, evidence.length)),
-  })) ?? [];
-  const scores = new Map<string, number>();
-  for (const match of matches) {
-    if (!match.id.startsWith("doc:")) continue;
-    const documentId = match.id.slice("doc:".length);
-    if (!scores.has(documentId)) scores.set(documentId, match.score);
-  }
-  const scored = evidence
-    .map((item, index) => ({ item, index, score: scores.get(item.documentId) }))
-    .filter((entry): entry is { item: T; index: number; score: number } => entry.score !== undefined)
-    .sort((a, b) => b.score - a.score || a.index - b.index)
-    .map((entry) => entry.item);
-  const unscored = evidence.filter((item) => !scores.has(item.documentId));
-  return [...scored, ...unscored].slice(0, limit);
 }

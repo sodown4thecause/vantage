@@ -18,7 +18,7 @@ vi.mock("@/lib/costs/prices", () => ({
   getUnitCost: async () => 0.0118,
 }));
 
-import { chunkText, indexMaterial, rankEvidence, selectGrounding } from "@/lib/drafting/ground";
+import { chunkText, indexMaterial, selectGrounding } from "@/lib/drafting/ground";
 import { upsertVectors } from "@/lib/embeddings/store";
 import { createFakeAi, fakeVector } from "./helpers/fake-ai";
 import { createFakeVectorize } from "./helpers/fake-vectorize";
@@ -143,26 +143,5 @@ describe("indexMaterial", () => {
     const deleted = vz.calls.flatMap((call) => (call.op === "deleteByIds" ? call.ids : []));
     expect(deleted).toContain(`material:${PROFILE}:1`);
     expect(deleted).not.toContain(`material:${PROFILE}:0`);
-  });
-});
-
-describe("rankEvidence", () => {
-  it("orders evidence by similarity of stored document vectors to the thread vector", async () => {
-    const vz = createFakeVectorize();
-    state.ai = createFakeAi().binding;
-    state.vectorize = vz.binding;
-    await upsertVectors(WORKSPACE, [
-      { id: "doc:a", values: fakeVector("alpha thread"), kind: "doc" },
-      { id: "doc:b", values: fakeVector("beta thread"), kind: "doc" },
-    ]);
-    const evidence = [{ documentId: "a" }, { documentId: "b" }, { documentId: "c" }];
-
-    const ranked = await rankEvidence(WORKSPACE, fakeVector("beta thread"), evidence, 2);
-    expect(ranked.map((item) => item.documentId)).toEqual(["b", "a"]);
-  });
-
-  it("keeps the original order when no thread vector is available", async () => {
-    const evidence = [{ documentId: "a" }, { documentId: "b" }, { documentId: "c" }];
-    expect(await rankEvidence(WORKSPACE, null, evidence, 2)).toEqual(evidence.slice(0, 2));
   });
 });

@@ -141,12 +141,15 @@ describe("embedPendingDocuments", () => {
     state.ai = ai.binding;
     state.vectorize = vz.binding;
     state.rows = [row({ id: "sql-check" })];
+    state.selectSql = null;
 
     await embedPendingDocuments(WORKSPACE, { limit: 10 });
 
-    expect(state.selectSql?.where).toContain('"embedded_at" is null');
-    expect(state.selectSql?.where).toContain('"workspace_id" = ');
-    expect(state.selectSql?.order).toContain('"collected_at" desc');
+    // Read through a cast: the reset above narrows the property to null for the compiler.
+    const captured = state.selectSql as null | { where: string; order: string };
+    expect(captured?.where).toContain('"embedded_at" is null');
+    expect(captured?.where).toContain('"workspace_id" = ');
+    expect(captured?.order).toContain('"collected_at" desc');
   });
 
   it("marks empty-text documents embedded without calling the AI or writing a vector", async () => {

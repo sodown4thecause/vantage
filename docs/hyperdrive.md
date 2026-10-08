@@ -10,7 +10,7 @@ Status: the seam ships **off**. With `VANTAGE_DB_DRIVER` unset, every query runs
 - `withTransaction(fn)` runs `fn` in a transaction on the fresh config. On neon-http it throws `Transactions require the Hyperdrive driver`.
 - `getReadDb()` and `getFreshDb()` fall back to neon-http when their binding is missing, with one warning per binding. The warning never includes a connection string. `withTransaction()` throws instead, because neon-http has no transactions.
 - Why async: the binding is read through `getCloudflareContext()`, which is async, and `postgres` is imported lazily so default bundles do not load it. `getDb()` stays sync because existing callers depend on it.
-- Each call creates its own postgres-js client (`max: 5`, `fetch_types: false`). Clients are not cached on `globalThis`, because Hyperdrive pools connections itself.
+- Each call creates its own postgres-js client (`max: 5`, `fetch_types: false`). Clients are not cached on `globalThis`, because Hyperdrive pools connections itself. `getReadDb()` and `getFreshDb()` do not close their pool; use `withReadDb()` / `withFreshDb()` so the pool closes when the query settles.
 
 ## Which config to use
 

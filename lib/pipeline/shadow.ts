@@ -81,6 +81,8 @@ export async function runSemanticStageDetailed(
   if (mode === "off") return null;
   try {
     const indexed = await embedPendingDocuments(workspaceId, { limit: STAGE_DOC_LIMIT, signal });
+    // An unavailable index means the signals cannot be stored or queried, so stop before a second embedding batch.
+    if (indexed.skipped) return null;
     // Shadow signals never feed scoring, so re-scoring a recorded document only spends AI and Vectorize calls.
     // "on" mode still needs signals for every document, so it does not skip.
     let candidates = docs;

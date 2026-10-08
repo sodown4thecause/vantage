@@ -102,6 +102,7 @@ describe("profile route indexing", () => {
     expect(response.status).toBe(201);
     expect(send).toHaveBeenCalledWith({ type: "index-profile", workspaceId: WORKSPACE_ID, profileId: "22222222-2222-4222-8222-222222222222" });
     expect(indexMaterial).not.toHaveBeenCalled();
+    expect(runEmbedJob).not.toHaveBeenCalled();
   });
 
   it("makes no queue or indexing calls when VANTAGE_SEMANTIC_MODE is off", async () => {
