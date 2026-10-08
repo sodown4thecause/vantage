@@ -27,6 +27,7 @@ export const DEFAULT_PRICES: PriceSeed[] = [
   { provider: "grok", action: "score_post", unitCostUsd: 0.0005, unit: "post", notes: "AI scoring with grok-4.3 ~ $0.0005/post. Source: competitor review 2026-10-06; see https://docs.x.ai (exact page unverified); checked 2026-10-06" },
   { provider: "scrapecreators", action: "request", unitCostUsd: 0.0019, unit: "request", notes: "ScrapeCreators $0.0019/request (LinkedIn/Instagram/Facebook). Source: competitor review 2026-10-06; pricing page URL unverified; checked 2026-10-06" },
   { provider: "browser_run", action: "browser_hour", unitCostUsd: 0.09, unit: "hour", notes: "Cloudflare Browser Run $0.09/hour after 10 free hours/month; use X-Browser-Ms-Used. Source: https://developers.cloudflare.com/browser-rendering/pricing/ ; checked 2026-10-06" },
+  { provider: "workers_ai", action: "embed_m_tokens", unitCostUsd: 0.0118, unit: "million tokens", notes: "Workers AI qwen3-embedding-0.6b $0.0118/M input tokens. Source: https://developers.cloudflare.com/workers-ai/models/qwen3-embedding-0.6b/ ; checked 2026-10-08" },
 ];
 
 const CACHE_TTL_MS = 60_000;
