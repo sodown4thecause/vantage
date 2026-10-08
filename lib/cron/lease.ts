@@ -8,7 +8,7 @@ export async function claimScanLease(workspaceId: string, ttlMinutes: number): P
   const db = getDb();
   const token = crypto.randomUUID();
   const [claimed] = await db.update(workspace).set({
-    scanLeaseToken: token, scanLeaseUntil: sql`now() + make_interval(mins => ${ttlMinutes})`,
+    scanLeaseToken: token, scanLeaseUntil: sql`now() + make_interval(mins => ${ttlMinutes}::int)`,
   }).where(and(eq(workspace.id, workspaceId), or(isNull(workspace.scanLeaseUntil), lt(workspace.scanLeaseUntil, sql`now()`))))
     .returning({ id: workspace.id });
   return claimed ? token : null;
