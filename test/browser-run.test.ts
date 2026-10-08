@@ -24,6 +24,7 @@ import {
   type BrowserRunDeps,
 } from "@/lib/browser/run";
 import { createFakeBrowser, type FakeBrowserOptions } from "./helpers/fake-browser";
+import { createFakeR2 } from "./helpers/fake-r2";
 
 function setup(fake: FakeBrowserOptions = {}, over: Partial<BrowserRunDeps> = {}) {
   const { binding, calls } = createFakeBrowser(fake);
@@ -324,5 +325,56 @@ describe("single entry point", () => {
     };
     walk(root);
     expect(hits).toEqual([]);
+  });
+});
+
+describe("screenshot storage", () => {
+  const WS = "0b8f3c2e-7d1a-4e5b-9c6d-1a2b3c4d5e6f";
+  const url = "https://example.com/";
+  const png = new Uint8Array([137, 80, 78, 71]);
+
+  it("returns a null key and stores nothing without a workspace id", async () => {
+    const bucket = createFakeR2();
+    ctx.env = { ARTIFACTS: bucket.bucket };
+    const s = setup({ raw: png, ms: 7 });
+    const out = await browserScreenshot({ url }, { deps: s.deps });
+    expect(out.key).toBeNull();
+    expect(bucket.puts).toEqual([]);
+  });
+
+  it("stores the PNG under a workspace key and returns it beside the existing fields", async () => {
+    const bucket = createFakeR2();
+    ctx.env = { ARTIFACTS: bucket.bucket };
+    const s = setup({ raw: png, ms: 7 });
+    const out = await browserScreenshot({ url }, { deps: s.deps, workspaceId: WS });
+    expect(out.key).toMatch(new RegExp(`^${WS}/screenshot/[0-9a-f-]{36}$`));
+    expect(out.ms).toBe(7);
+    expect(Array.from(out.png)).toEqual([137, 80, 78, 71]);
+    expect(bucket.puts).toEqual([
+      expect.objectContaining({ key: out.key, contentType: "image/png" }),
+    ]);
+    expect(Array.from(new Uint8Array(bucket.puts[0].body as ArrayBuffer))).toEqual([137, 80, 78, 71]);
+    expect(s.recorded[0]).toMatchObject({ workspaceId: WS, ok: true });
+  });
+
+  it("still returns the screenshot when the put fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const bucket = createFakeR2({ throws: new Error("bucket unavailable") });
+    ctx.env = { ARTIFACTS: bucket.bucket };
+    const s = setup({ raw: png, ms: 7 });
+    const out = await browserScreenshot({ url }, { deps: s.deps, workspaceId: WS });
+    expect(out.key).toBeNull();
+    expect(Array.from(out.png)).toEqual([137, 80, 78, 71]);
+  });
+
+  it("still returns the screenshot when the workspace id is not a safe segment", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const bucket = createFakeR2();
+    ctx.env = { ARTIFACTS: bucket.bucket };
+    const s = setup({ raw: png, ms: 7 });
+    const out = await browserScreenshot({ url }, { deps: s.deps, workspaceId: "../other" });
+    expect(out.key).toBeNull();
+    expect(Array.from(out.png)).toEqual([137, 80, 78, 71]);
+    expect(bucket.puts).toEqual([]);
   });
 });

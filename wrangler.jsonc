@@ -19,6 +19,7 @@
 	"browser": { "binding": "BROWSER" },
 	"ai": { "binding": "AI" },
 	"vectorize": [{ "binding": "VECTORIZE", "index_name": "vantage-docs" }],
+	"r2_buckets": [{ "binding": "ARTIFACTS", "bucket_name": "vantage-artifacts" }],
 	"vars": { "VANTAGE_SEMANTIC_MODE": "off" },
 	"ratelimits": [
 		{ "name": "RADAR_LIMITER", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } }
@@ -35,6 +36,7 @@
 			"browser": { "binding": "BROWSER" },
 			"ai": { "binding": "AI" },
 			"vectorize": [{ "binding": "VECTORIZE", "index_name": "vantage-docs-staging" }],
+			"r2_buckets": [{ "binding": "ARTIFACTS", "bucket_name": "vantage-artifacts-staging" }],
 			"vars": { "VANTAGE_SEMANTIC_MODE": "shadow" },
 			"ratelimits": [
 				{ "name": "RADAR_LIMITER", "namespace_id": "1002", "simple": { "limit": 30, "period": 60 } }
@@ -53,6 +55,7 @@
 			"browser": { "binding": "BROWSER" },
 			"ai": { "binding": "AI" },
 			"vectorize": [{ "binding": "VECTORIZE", "index_name": "vantage-docs" }],
+			"r2_buckets": [{ "binding": "ARTIFACTS", "bucket_name": "vantage-artifacts" }],
 			"vars": { "VANTAGE_SEMANTIC_MODE": "off" },
 			"ratelimits": [
 				{ "name": "RADAR_LIMITER", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } }

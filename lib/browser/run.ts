@@ -1,6 +1,7 @@
 import { recordCost, roundUsd } from "@/lib/costs/ledger";
 import { getUnitCost } from "@/lib/costs/prices";
 import { isPublicHttpUrl } from "@/lib/http/public-fetch";
+import { artifactKey, putArtifact } from "@/lib/r2/artifacts";
 import { getSourceSwitch } from "@/lib/sources/switch";
 
 /**
@@ -321,10 +322,25 @@ export async function browserJson(
   return { data, ms };
 }
 
+/**
+ * Stores the PNG when a workspace id is supplied. Best effort: any failure
+ * (unsafe id, missing bucket, failed put) yields null and never fails the screenshot.
+ */
+async function storeScreenshot(png: Uint8Array, workspaceId: string | null | undefined): Promise<string | null> {
+  if (!workspaceId) return null;
+  try {
+    const key = artifactKey(workspaceId, "screenshot", crypto.randomUUID());
+    return await putArtifact(key, png.slice().buffer, "image/png");
+  } catch (err) {
+    console.error("[browser-run] screenshot not stored", { error: err instanceof Error ? err.name : "unknown" });
+    return null;
+  }
+}
+
 export async function browserScreenshot(
   input: { url?: string; html?: string },
   opts: BrowserRunOptions = {},
-): Promise<{ png: Uint8Array; ms: number }> {
+): Promise<{ png: Uint8Array; ms: number; key: string | null }> {
   const href = input.url !== undefined ? assertBrowsableUrl(input.url) : undefined;
   if (href === undefined && typeof input.html !== "string") {
     throw new BrowserRunError("invalid_url", "A public HTTP(S) URL or HTML is required.");
@@ -334,7 +350,8 @@ export async function browserScreenshot(
     { action: "screenshot", params },
     { maxBytes: DEFAULT_SCREENSHOT_MAX_BYTES, ...opts },
   );
-  return { png: body, ms };
+  const key = await storeScreenshot(body, opts.workspaceId);
+  return { png: body, ms, key };
 }
 
 export async function browserLinks(url: string, opts: BrowserRunOptions = {}): Promise<string[]> {
