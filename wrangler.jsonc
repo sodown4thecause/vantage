@@ -40,7 +40,11 @@
 				{ "name": "RADAR_LIMITER", "namespace_id": "1002", "simple": { "limit": 30, "period": 60 } }
 			],
 			"workflows": [{ "name": "vantage-scan-staging", "binding": "SCAN", "class_name": "ScanWorkspace" }],
-			"triggers": { "crons": ["0 */3 * * *"] }
+			"triggers": { "crons": ["0 */3 * * *"] },
+			"queues": {
+				"producers": [{ "binding": "EMBED_QUEUE", "queue": "vantage-embed-jobs-staging" }],
+				"consumers": [{ "queue": "vantage-embed-jobs-staging", "max_batch_size": 10, "max_retries": 3, "max_concurrency": 2, "dead_letter_queue": "vantage-embed-dlq-staging" }]
+			}
 		},
 		"production": {
 			"name": "dontkillmyvibe",
@@ -54,8 +58,16 @@
 				{ "name": "RADAR_LIMITER", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } }
 			],
 			"workflows": [{ "name": "vantage-scan", "binding": "SCAN", "class_name": "ScanWorkspace" }],
-			"triggers": { "crons": [] }
+			"triggers": { "crons": [] },
+			"queues": {
+				"producers": [{ "binding": "EMBED_QUEUE", "queue": "vantage-embed-jobs" }],
+				"consumers": [{ "queue": "vantage-embed-jobs", "max_batch_size": 10, "max_retries": 3, "max_concurrency": 2, "dead_letter_queue": "vantage-embed-dlq" }]
+			}
 		}
+	},
+	"queues": {
+		"producers": [{ "binding": "EMBED_QUEUE", "queue": "vantage-embed-jobs" }],
+		"consumers": [{ "queue": "vantage-embed-jobs", "max_batch_size": 10, "max_retries": 3, "max_concurrency": 2, "dead_letter_queue": "vantage-embed-dlq" }]
 	},
 	"observability": {
 		"enabled": true

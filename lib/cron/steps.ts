@@ -119,14 +119,14 @@ export async function internalStep(
   req: Request,
   name: string,
   keys: readonly ("workspaceId" | "sourceId" | "leaseToken")[],
-  run: (input: Record<string, string>, signal: AbortSignal) => Promise<Response>,
+  run: (input: Record<string, string>, signal: AbortSignal, body: unknown) => Promise<Response>,
 ): Promise<Response> {
   if (!process.env.CRON_SECRET || !isCronAuthorized(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const input: Record<string, string> = {};
+  let body: unknown;
   if (keys.length > 0) {
-    let body: unknown;
     try {
       body = await req.json();
     } catch {
@@ -141,7 +141,7 @@ export async function internalStep(
     }
   }
   try {
-    return await run(input, AbortSignal.any([req.signal, AbortSignal.timeout(STEP_DEADLINE_MS)]));
+    return await run(input, AbortSignal.any([req.signal, AbortSignal.timeout(STEP_DEADLINE_MS)]), body);
   } catch {
     console.error(`[scan-steps] ${name} step failed`);
     return NextResponse.json({ error: "scan step failed" }, { status: 500 });

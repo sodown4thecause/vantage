@@ -10,7 +10,9 @@ const source = readFileSync(new URL("../worker-entry.mjs", import.meta.url), "ut
   .replace('import openNextWorker from "./.open-next/worker.js";',
     'const openNextWorker = { fetch: () => new Response("app") };')
   .replace('export { ScanWorkspace } from "./worker/workflows.mjs";',
-    "export class ScanWorkspace {}");
+    "export class ScanWorkspace {}")
+  .replace('import { handleQueue } from "./worker/queue.mjs";',
+    "const handleQueue = async () => {};");
 const { default: worker } = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
 const controller = { scheduledTime: 0, cron: "0 */3 * * *" };
 const env = (body = { ok: true, collectorResults: [], opportunityResults: [] }) => ({
@@ -100,4 +102,7 @@ test("fails the Workflow scheduled invocation when the due lookup fails", async 
   const { env } = scanEnv();
   env.WORKER_SELF_REFERENCE = { fetch: async () => new Response("nope", { status: 500 }) };
   await assert.rejects(worker.scheduled(scanController, env), /500/);
+});
+test("exposes the embed queue consumer", () => {
+  assert.equal(typeof worker.queue, "function");
 });

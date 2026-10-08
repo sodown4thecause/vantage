@@ -20,6 +20,7 @@
  */
 
 import openNextWorker from "./.open-next/worker.js";
+import { handleQueue } from "./worker/queue.mjs";
 
 // Workflow class export (the `SCAN` binding). Wrangler requires it on the main module.
 export { ScanWorkspace } from "./worker/workflows.mjs";
@@ -70,6 +71,10 @@ async function startScanInstances(controller, env) {
 const worker = {
 	fetch(request, env, ctx) {
 		return openNextWorker.fetch(request, env, ctx);
+	},
+
+	queue(batch, env) {
+		return handleQueue(batch, env);
 	},
 
 	async scheduled(controller, env) {
