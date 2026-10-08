@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   getDb: vi.fn(),
-  embedPending: vi.fn(async () => ({ embedded: 1 })),
-  indexProfile: vi.fn(async () => ({ indexed: 1 })),
-  indexMaterial: vi.fn(async () => 1),
+  embedPending: vi.fn(async (..._args: unknown[]) => ({ embedded: 1 })),
+  indexProfile: vi.fn(async (..._args: unknown[]) => ({ indexed: 1 })),
+  indexMaterial: vi.fn(async (..._args: unknown[]) => 1),
 }));
 
 vi.mock("@/lib/db/client", () => ({ getDb: () => state.getDb() }));
@@ -26,9 +26,9 @@ const PROFILE_ID = "22222222-2222-4222-8222-222222222222";
 beforeEach(() => {
   vi.stubEnv("VANTAGE_SEMANTIC_MODE", "shadow");
   state.getDb = vi.fn(() => { throw new Error("database should not be reached"); });
-  state.embedPending = vi.fn(async () => ({ embedded: 1 }));
-  state.indexProfile = vi.fn(async () => ({ indexed: 1 }));
-  state.indexMaterial = vi.fn(async () => 1);
+  state.embedPending = vi.fn(async (..._args: unknown[]) => ({ embedded: 1 }));
+  state.indexProfile = vi.fn(async (..._args: unknown[]) => ({ indexed: 1 }));
+  state.indexMaterial = vi.fn(async (..._args: unknown[]) => 1);
 });
 
 afterEach(() => {
