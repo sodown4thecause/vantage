@@ -87,6 +87,11 @@ export async function upsertVectors(workspaceId: string, items: VectorItem[]): P
   }
 }
 
+/** True when the Vectorize binding is present; lets callers degrade to keyword-only up front. */
+export async function isVectorizeAvailable(): Promise<boolean> {
+  return (await getVectorize()) !== null;
+}
+
 /**
  * Nearest vectors of one kind within the workspace namespace, best first.
  * Returns [] (never throws) when the binding is absent or the call fails, so

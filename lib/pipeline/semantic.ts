@@ -1,7 +1,6 @@
 import { mapWithConcurrency } from "@/lib/async/map-with-concurrency";
-import { getVectorize } from "@/lib/cf/env";
 import { EMBEDDING_DIMENSIONS, embedTexts } from "@/lib/embeddings/embed";
-import { queryVectors } from "@/lib/embeddings/store";
+import { isVectorizeAvailable, queryVectors } from "@/lib/embeddings/store";
 import { ANCHORS } from "@/lib/pipeline/anchors";
 
 /** Provisional; calibrated in Task 8. */
@@ -112,7 +111,7 @@ export async function semanticSignals(
   docs: Array<{ id: string; vector: number[] }>,
 ): Promise<Map<string, SemanticSignal> | null> {
   // Without Vectorize there is no fit signal; stay keyword-only rather than emit half a signal.
-  if ((await getVectorize()) === null) return null;
+  if (!(await isVectorizeAvailable())) return null;
   const anchors = await loadAnchorVectors();
   if (anchors === null) return null;
   const signals = await mapWithConcurrency(docs, QUERY_CONCURRENCY, (doc) =>
