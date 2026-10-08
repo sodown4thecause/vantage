@@ -10,6 +10,7 @@ import { PlanLimitError } from "@/lib/plans/types";
 import { validateMonitoringProfileInput } from "@/lib/profile/validate";
 import { indexMaterial } from "@/lib/drafting/ground";
 import { enqueueEmbedJob } from "@/lib/cf/queue";
+import { getSemanticMode } from "@/lib/cf/env";
 
 /**
  * Best-effort: indexes product material for grounded drafts after the response
@@ -114,9 +115,12 @@ export async function POST(req: Request) {
       workspaceId,
       input: validated.value,
     });
-    // Queue first; direct material indexing only when the queue is absent or rejects the message.
-    const queued = await enqueueEmbedJob({ type: "index-profile", workspaceId, profileId: profile.id });
-    if (!queued) scheduleMaterialIndex(workspaceId, profile.id, profile.productMaterialText);
+    // Mode "off" spends nothing on indexing: no queue message and no direct material indexing.
+    if (getSemanticMode() !== "off") {
+      // Queue first; direct material indexing only when the queue is absent or rejects the message.
+      const queued = await enqueueEmbedJob({ type: "index-profile", workspaceId, profileId: profile.id });
+      if (!queued) scheduleMaterialIndex(workspaceId, profile.id, profile.productMaterialText);
+    }
     return NextResponse.json({ profile }, { status: 201 });
   } catch (err) {
     if (err instanceof PlanLimitError) {

@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { mapWithConcurrency } from "@/lib/async/map-with-concurrency";
 import { collectorsByType } from "@/lib/collectors/registry";
 import { runCollector } from "@/lib/collectors/run";
+import { getSemanticMode } from "@/lib/cf/env";
 import { isCronAuthorized } from "@/lib/cron/authorize";
 import { claimScanLease, releaseScanLease } from "@/lib/cron/lease";
 import { eligibleSourceCondition, scanNotDueReason } from "@/lib/cron/scan";
@@ -102,6 +103,8 @@ export async function collectSource(input: { workspaceId: string; sourceId: stri
 
 /** Semantic indexing is best effort: any failure is reported as zero embedded, never as a scan failure. */
 export async function embedWorkspace(workspaceId: string, signal: AbortSignal): Promise<{ embedded: number }> {
+  // Mode "off": no embedding spend at all.
+  if (getSemanticMode() === "off") return { embedded: 0 };
   try {
     const result = await embedPendingDocuments(workspaceId, { limit: EMBED_DOC_LIMIT, signal });
     return { embedded: result.embedded };

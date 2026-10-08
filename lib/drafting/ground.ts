@@ -1,3 +1,4 @@
+import { getSemanticMode } from "@/lib/cf/env";
 import { embedTexts } from "@/lib/embeddings/embed";
 import { deleteVectors, queryVectors, upsertVectors, type VectorItem } from "@/lib/embeddings/store";
 
@@ -126,6 +127,8 @@ export async function selectGrounding(
   threadText: string,
   k = 4,
 ): Promise<string[] | null> {
+  // Mode "off": no grounding, so drafts take the keyword-only path with no AI or Vectorize calls.
+  if (getSemanticMode() === "off") return null;
   const chunks = chunkText(productMaterialText).slice(0, MAX_MATERIAL_CHUNKS);
   if (chunks.length === 0 || threadText.trim() === "") return null;
   const embedded = await embedTexts([threadText], { workspaceId, sourceKey: "draft-grounding" });

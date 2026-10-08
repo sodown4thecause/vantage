@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   ai: null as unknown,
   vectorize: null as unknown,
+  mode: "shadow" as "off" | "shadow" | "on",
 }));
 
 vi.mock("@/lib/cf/env", () => ({
   getAi: async () => state.ai,
   getVectorize: async () => state.vectorize,
+  getSemanticMode: () => state.mode,
 }));
 vi.mock("@/lib/costs/ledger", () => ({
   recordCost: async () => true,
@@ -44,6 +46,7 @@ function materialText(): string {
 beforeEach(() => {
   state.ai = null;
   state.vectorize = null;
+  state.mode = "shadow";
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
@@ -100,6 +103,18 @@ describe("selectGrounding", () => {
 
   it("returns null with no AI or Vectorize bindings", async () => {
     expect(await selectGrounding(WORKSPACE, materialText(), PROFILE, "thread about analytics")).toBeNull();
+  });
+
+  it("makes no AI or Vectorize calls and returns null when the semantic mode is off", async () => {
+    const ai = createFakeAi();
+    const vz = createFakeVectorize();
+    state.ai = ai.binding;
+    state.vectorize = vz.binding;
+    state.mode = "off";
+
+    expect(await selectGrounding(WORKSPACE, materialText(), PROFILE, "thread about analytics")).toBeNull();
+    expect(ai.calls).toHaveLength(0);
+    expect(vz.calls).toHaveLength(0);
   });
 
   it("returns null when there is no material or no thread text", async () => {

@@ -17,6 +17,7 @@ import { withWorkspaceScanLease } from "@/lib/cron/lease";
 import { buildOpportunities } from "@/lib/opportunities/run";
 import { PROFILE_SOURCE_NAME } from "@/lib/profile/repository";
 import { enqueueEmbedJob } from "@/lib/cf/queue";
+import { getSemanticMode } from "@/lib/cf/env";
 
 export type SourceActionState = { error?: string; message?: string };
 export type CommunitySourceActionState = SourceActionState & { catalogId: string };
@@ -31,8 +32,8 @@ async function installSource(workspaceId: string, value: Pick<NewSource, "name" 
     signal.throwIfAborted();
     await db.insert(source).values({ workspaceId, ...value })
       .onConflictDoNothing({ target: [source.workspaceId, source.name] });
-    // Best effort: a missed enqueue only defers embedding to the next scan's embed step.
-    await enqueueEmbedJob({ type: "backfill-documents", workspaceId });
+    // Best effort: a missed enqueue only defers embedding to the next scan's embed step. Mode "off" enqueues nothing.
+    if (getSemanticMode() !== "off") await enqueueEmbedJob({ type: "backfill-documents", workspaceId });
     revalidatePath("/settings/sources");
     return { message };
   });

@@ -36,6 +36,7 @@ const JOB = { type: "backfill-documents", workspaceId: WORKSPACE_ID } as const;
 beforeEach(() => {
   state.throwContext = false;
   state.env = {};
+  vi.stubEnv("VANTAGE_SEMANTIC_MODE", "shadow");
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -43,6 +44,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.clearAllMocks();
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe("enqueueEmbedJob", () => {
@@ -92,6 +94,18 @@ describe("profile route indexing", () => {
     const response = await postProfile(request());
     expect(response.status).toBe(201);
     expect(send).toHaveBeenCalledWith({ type: "index-profile", workspaceId: WORKSPACE_ID, profileId: "22222222-2222-4222-8222-222222222222" });
+    expect(indexMaterial).not.toHaveBeenCalled();
+  });
+
+  it("makes no queue or indexing calls when VANTAGE_SEMANTIC_MODE is off", async () => {
+    vi.stubEnv("VANTAGE_SEMANTIC_MODE", "off");
+    const send = vi.fn().mockResolvedValue(undefined);
+    state.env = { EMBED_QUEUE: { send } };
+    const response = await postProfile(request());
+    expect(response.status).toBe(201);
+    // Let any deferred (after()) indexing run before asserting it did not happen.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(send).not.toHaveBeenCalled();
     expect(indexMaterial).not.toHaveBeenCalled();
   });
 });

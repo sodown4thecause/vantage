@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 
+import { getSemanticMode } from "@/lib/cf/env";
 import type { EmbedJob } from "@/lib/cf/queue";
 import { getDb } from "@/lib/db/client";
 import { monitoringProfile } from "@/lib/db/schema";
@@ -30,6 +31,8 @@ export function parseEmbedJob(body: unknown): EmbedJob | null {
  * Returns null when a profile does not belong to the workspace. Throws on failure, so the queue retries.
  */
 export async function runEmbedJob(job: EmbedJob): Promise<Record<string, unknown> | null> {
+  // Mode "off": no AI or Vectorize calls. The message is acknowledged, not retried.
+  if (getSemanticMode() === "off") return { skipped: "semantic mode off" };
   if (job.type === "backfill-documents") {
     const result = await embedPendingDocuments(job.workspaceId, { limit: BACKFILL_DOC_LIMIT });
     return { embedded: result.embedded };

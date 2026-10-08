@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 
 type Op = { name: string; args: unknown[] };
@@ -257,6 +257,17 @@ describe("collect", () => {
 });
 
 describe("embed", () => {
+  beforeEach(() => vi.stubEnv("VANTAGE_SEMANTIC_MODE", "shadow"));
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("makes no embedding call and returns zero when the semantic mode is off", async () => {
+    vi.stubEnv("VANTAGE_SEMANTIC_MODE", "off");
+    const response = await call(embedRoute, { workspaceId: WS });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ embedded: 0 });
+    expect(state.embed).not.toHaveBeenCalled();
+  });
+
   it("returns the embedded count", async () => {
     expect(await (await call(embedRoute, { workspaceId: WS })).json()).toEqual({ embedded: 3 });
   });
