@@ -37,6 +37,7 @@ import {
   normalizeDocuments,
   type NormalizedDocument,
 } from "@/lib/pipeline/normalize";
+import { runSemanticStage } from "@/lib/pipeline/shadow";
 
 const QUEUE_STATUSES: OpportunityStatus[] = [
   "opportunity",
@@ -153,6 +154,9 @@ export async function buildOpportunities(opts: {
     .limit(limitDocs);
 
   const normalized = normalizeDocuments(rows.filter(isLiveEvidence));
+  // Shadow mode: semantic scoring is recorded for comparison only. Its result is never
+  // passed to clustering or scoring, and it never throws.
+  await runSemanticStage(opts.workspaceId, normalized, opts.signal);
 
   const learningConfig = resolveLearningConfig();
   const preferenceModel = await getActivePreferenceModel({
