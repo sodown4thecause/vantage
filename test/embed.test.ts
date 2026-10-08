@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   ai: null as unknown,
   recorded: [] as Array<Record<string, unknown>>,
+  costError: null as Error | null,
 }));
 
 vi.mock("@/lib/cf/env", () => ({
@@ -10,6 +11,7 @@ vi.mock("@/lib/cf/env", () => ({
 }));
 vi.mock("@/lib/costs/ledger", () => ({
   recordCost: async (input: Record<string, unknown>) => {
+    if (state.costError) throw state.costError;
     state.recorded.push(input);
     return true;
   },
@@ -26,6 +28,7 @@ const ctx = { workspaceId: "ws-1", sourceKey: "reddit" };
 beforeEach(() => {
   state.ai = null;
   state.recorded = [];
+  state.costError = null;
   vi.spyOn(console, "error").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
@@ -77,6 +80,15 @@ describe("embedTexts", () => {
   it("returns null and does not throw when the binding throws", async () => {
     state.ai = createFakeAi({ throws: new Error("AI down") }).binding;
     await expect(embedTexts(["hello"], ctx)).resolves.toBeNull();
+  });
+
+  it("logs only the error class when cost metering fails", async () => {
+    state.ai = createFakeAi().binding;
+    state.costError = new TypeError("postgres://user:secret@db.internal/vantage");
+    await expect(embedTexts(["hello"], ctx)).resolves.toEqual([expect.any(Array)]);
+    const logs = JSON.stringify(vi.mocked(console.error).mock.calls);
+    expect(logs).not.toContain("secret");
+    expect(logs).toContain('"error":"TypeError"');
   });
 
   it("returns null when a vector has the wrong dimension", async () => {

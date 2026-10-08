@@ -94,8 +94,9 @@ async function recordEmbedCost(ctx: EmbedContext, tokens: number, ok: boolean): 
       ok,
     });
   } catch (err) {
+    // Only the error class is logged: exception text can embed connection details.
     console.error("[embed] cost metering failed", {
-      error: err instanceof Error ? err.message : String(err),
+      error: err instanceof Error ? err.name : "unknown",
     });
   }
 }
