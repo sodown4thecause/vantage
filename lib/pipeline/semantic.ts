@@ -1,4 +1,5 @@
 import { mapWithConcurrency } from "@/lib/async/map-with-concurrency";
+import { getVectorize } from "@/lib/cf/env";
 import { EMBEDDING_DIMENSIONS, embedTexts } from "@/lib/embeddings/embed";
 import { queryVectors } from "@/lib/embeddings/store";
 import { ANCHORS } from "@/lib/pipeline/anchors";
@@ -103,13 +104,15 @@ async function signalFor(
  * Semantic signals for documents already embedded by the caller. `fit` is the
  * best cosine to this workspace's profile vectors; `rung` and `anchorSimilarity`
  * come from the nearest anchor, with rung null below SEMANTIC_THRESHOLDS.anchor.
- * Returns null when anchor embedding is unavailable, so the caller keeps
+ * Returns null when anchor embedding or Vectorize is unavailable, so the caller keeps
  * keyword-only scoring. Never throws for AI or Vectorize failures.
  */
 export async function semanticSignals(
   workspaceId: string,
   docs: Array<{ id: string; vector: number[] }>,
 ): Promise<Map<string, SemanticSignal> | null> {
+  // Without Vectorize there is no fit signal; stay keyword-only rather than emit half a signal.
+  if ((await getVectorize()) === null) return null;
   const anchors = await loadAnchorVectors();
   if (anchors === null) return null;
   const signals = await mapWithConcurrency(docs, QUERY_CONCURRENCY, (doc) =>

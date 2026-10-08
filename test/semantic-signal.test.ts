@@ -192,7 +192,7 @@ describe("semanticSignals", () => {
     expect(signals?.get("doc-1")?.fit).toBe(0);
   });
 
-  it("still returns the anchor rung with fit 0 when the Vectorize binding is absent", async () => {
+  it("returns null when the Vectorize binding is absent", async () => {
     const { semanticSignals } = await load();
     state.ai = createFakeAi().binding;
 
@@ -200,7 +200,7 @@ describe("semanticSignals", () => {
       { id: "doc-1", vector: fakeVector(HN_RUNG_3) },
     ]);
 
-    expect(signals?.get("doc-1")).toMatchObject({ fit: 0, rung: 3 });
+    expect(signals).toBeNull();
   });
 
   it("returns null when the AI binding is absent", async () => {
