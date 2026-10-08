@@ -27,6 +27,8 @@ export { ScanWorkspace } from "./worker/workflows.mjs";
 
 const TICK_PATH = "/api/cron/tick";
 const SCAN_DUE_PATH = "/api/internal/scan/due";
+const COST_ROLLUP_PATH = "/api/internal/scan/rollup";
+const ROLLUP_TIMEOUT_MS = 30_000;
 // Workflows reject a duplicate instance ID when `create` runs. The docs say it throws but do not
 // quote the message, so this wording match is unverified; both documented phrasings are accepted.
 const DUPLICATE_INSTANCE = /already (exist|used)/i;
@@ -68,6 +70,26 @@ async function startScanInstances(controller, env) {
 	if (errors.length) throw new Error(`${errors.length} of ${workspaceIds.length} scan instances failed to start`);
 }
 
+/**
+ * Daily cost rollup for the Workflow path, where the tick route (which also rolls up) is not called.
+ * Best effort: any failure is logged by class only and never rejects the scheduled invocation.
+ */
+async function triggerCostRollup(env) {
+  try {
+    const response = await env.WORKER_SELF_REFERENCE.fetch(
+      new Request(`https://vantage.internal${COST_ROLLUP_PATH}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${env.CRON_SECRET}`, "content-type": "application/json" },
+        body: "{}",
+        signal: AbortSignal.timeout(ROLLUP_TIMEOUT_MS),
+      }),
+    );
+    if (!response.ok) console.error(`[cron] cost rollup failed: HTTP ${response.status}`);
+  } catch (error) {
+    console.error("[cron] cost rollup threw", error instanceof Error ? error.name : "unknown");
+  }
+}
+
 const worker = {
 	fetch(request, env, ctx) {
 		return openNextWorker.fetch(request, env, ctx);
@@ -94,7 +116,12 @@ const worker = {
 
 		// Rollout switch: with the Workflow binding present, the tick path is not used.
 		if (env.SCAN) {
-			await startScanInstances(controller, env);
+			// The rollup runs after the starts and in `finally`, so a failed start still gets its rollup.
+			try {
+				await startScanInstances(controller, env);
+			} finally {
+				await triggerCostRollup(env);
+			}
 			return;
 		}
 

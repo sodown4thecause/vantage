@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   collectorRun: vi.fn(),
   embed: vi.fn(),
   build: vi.fn(),
+  rollup: vi.fn(),
 }));
 
 // Minimal thenable query builder: records chained calls, resolves them against `state`.
@@ -91,6 +92,9 @@ vi.mock("@/lib/embeddings/index-documents", () => ({
 vi.mock("@/lib/opportunities/run", () => ({
   buildOpportunities: (...args: unknown[]) => state.build(...args),
 }));
+vi.mock("@/lib/costs/rollup", () => ({
+  rollupRecent: (...args: unknown[]) => state.rollup(...args),
+}));
 
 import { workspace, source } from "@/lib/db/schema";
 import { POST as dueRoute } from "@/app/api/internal/scan/due/route";
@@ -99,6 +103,7 @@ import { POST as collectRoute } from "@/app/api/internal/scan/collect/route";
 import { POST as embedRoute } from "@/app/api/internal/scan/embed/route";
 import { POST as buildRoute } from "@/app/api/internal/scan/build/route";
 import { POST as finishRoute } from "@/app/api/internal/scan/finish/route";
+import { POST as rollupRoute } from "@/app/api/internal/scan/rollup/route";
 
 const WS = "11111111-1111-4111-8111-111111111111";
 const SRC = "22222222-2222-4222-8222-222222222222";
@@ -130,9 +135,10 @@ beforeEach(() => {
   state.collectorRun = vi.fn(async () => ({ documents: [doc("h1"), doc("h2")] }));
   state.embed = vi.fn(async () => ({ embedded: 3 }));
   state.build = vi.fn(async () => ({ scanned: 2, clusters: 1, upserted: 1, top: [] }));
+  state.rollup = vi.fn(async () => undefined);
 });
 
-const routes = { due: dueRoute, plan: planRoute, collect: collectRoute, embed: embedRoute, build: buildRoute, finish: finishRoute };
+const routes = { due: dueRoute, plan: planRoute, collect: collectRoute, embed: embedRoute, build: buildRoute, finish: finishRoute, rollup: rollupRoute };
 
 describe("internal scan step routes: auth", () => {
   it.each(Object.entries(routes))("%s returns 401 without the cron bearer", async (_name, handler) => {
@@ -273,5 +279,19 @@ describe("finish", () => {
     const condition = toSql(release?.where);
     expect(condition.params).toContain(TOKEN);
     expect(condition.sql).toContain('"scan_lease_token"');
+  });
+});
+
+describe("rollup", () => {
+  it("runs the cost rollup and returns ok", async () => {
+    const response = await call(rollupRoute);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(state.rollup).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not run the rollup without the cron bearer", async () => {
+    expect((await call(rollupRoute, undefined, {})).status).toBe(401);
+    expect(state.rollup).not.toHaveBeenCalled();
   });
 });
