@@ -37,6 +37,7 @@ import {
   normalizeDocuments,
   type NormalizedDocument,
 } from "@/lib/pipeline/normalize";
+import { getSemanticMode } from "@/lib/cf/env";
 import { runSemanticStage } from "@/lib/pipeline/shadow";
 
 const QUEUE_STATUSES: OpportunityStatus[] = [
@@ -154,9 +155,10 @@ export async function buildOpportunities(opts: {
     .limit(limitDocs);
 
   const normalized = normalizeDocuments(rows.filter(isLiveEvidence));
-  // Shadow mode: semantic scoring is recorded for comparison only. Its result is never
-  // passed to clustering or scoring, and it never throws.
-  await runSemanticStage(opts.workspaceId, normalized, opts.signal);
+  // Semantic scoring never throws. Its signals reach scoring only in "on" mode; in "off"
+  // and "shadow" they are recorded for comparison and scoring stays keyword-only.
+  const semantic = await runSemanticStage(opts.workspaceId, normalized, opts.signal);
+  const semanticForScoring = getSemanticMode() === "on" ? semantic : null;
 
   const learningConfig = resolveLearningConfig();
   const preferenceModel = await getActivePreferenceModel({
@@ -177,7 +179,7 @@ export async function buildOpportunities(opts: {
 
   for (const [clusterKey, docs] of clusters) {
     opts.signal?.throwIfAborted();
-    const features = { ...computeFeatures(docs, profile), profileVersion: profile.version };
+    const features = { ...computeFeatures(docs, profile, semanticForScoring), profileVersion: profile.version };
     const status = decideStatus(features);
     const ranking = rankWithPreferences({
       features,
