@@ -9,6 +9,7 @@ import {
 } from "@/lib/drafting/generate";
 import { generateContribution, validateContribution } from "@/lib/drafting/contribution";
 import { contributionRule } from "@/lib/drafting/rules";
+import { selectGrounding } from "@/lib/drafting/ground";
 import { getDb } from "@/lib/db/client";
 import { monitoringProfile, opportunityDraft } from "@/lib/db/schema";
 import { getOpportunityDetail } from "@/lib/opportunities/run";
@@ -81,10 +82,19 @@ export async function createDraftForOpportunity(opts: {
   const target = detail.evidence.find(e => e.documentId === opts.targetDocumentId) ?? (!opts.targetDocumentId ? detail.evidence[0] : undefined);
   if (!target) throw new DraftInputError("Conversation evidence not found.");
   const orderedEvidence = [target, ...detail.evidence.filter(e => e.documentId !== target.documentId)];
+  const materialChunks = profile
+    ? await selectGrounding(
+      opts.workspaceId,
+      profile.productMaterialText ?? "",
+      profile.id,
+      [target.title, target.contentMd].filter(Boolean).join("\n").slice(0, 4_000),
+    ).catch(() => null)
+    : null;
   const generated = await generateContribution({
     productDescription: profile?.productDescription ?? "",
     targetCustomer: profile?.targetCustomer ?? "",
     productMaterialText: profile?.productMaterialText ?? "",
+    ...(materialChunks ? { materialChunks } : {}),
     opportunityTitle: detail.title,
     opportunitySummary: detail.summary,
     recommendedAction: detail.recommendedAction,

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 
 import { authorizeWorkspace } from "@/lib/auth/workspace";
 import {
@@ -8,6 +8,28 @@ import {
 } from "@/lib/profile/repository";
 import { PlanLimitError } from "@/lib/plans/types";
 import { validateMonitoringProfileInput } from "@/lib/profile/validate";
+import { indexMaterial } from "@/lib/drafting/ground";
+
+/**
+ * Best-effort: indexes product material for grounded drafts after the response
+ * is sent. Failures are logged by error class only and never reach the client.
+ */
+function scheduleMaterialIndex(workspaceId: string, profileId: string, text: string): void {
+  const task = async () => {
+    try {
+      await indexMaterial(workspaceId, profileId, text);
+    } catch (err) {
+      console.error("[profile route] material index failed", {
+        error: err instanceof Error ? err.name : "unknown",
+      });
+    }
+  };
+  try {
+    after(task);
+  } catch {
+    void task();
+  }
+}
 
 export async function GET(req: Request) {
   try {
@@ -91,6 +113,7 @@ export async function POST(req: Request) {
       workspaceId,
       input: validated.value,
     });
+    scheduleMaterialIndex(workspaceId, profile.id, profile.productMaterialText);
     return NextResponse.json({ profile }, { status: 201 });
   } catch (err) {
     if (err instanceof PlanLimitError) {
