@@ -34,9 +34,10 @@ nodeLinker: hoisted
 
 With the `hoisted` linker, dependencies are placed in a flat top-level `node_modules`
 with no symlinks, so OpenNext's trace copy takes the `copyFileAndMakeOwnerWritable`
-branch instead of `symlinkSync`. The `.pnpm` virtual store directory is still created
-by pnpm, but the traced dependency tree no longer requires symlink recreation during
-the OpenNext copy step.
+branch instead of `symlinkSync`. Under `nodeLinker: hoisted`, pnpm does not create the
+`.pnpm` virtual store; it writes plain, real directories into `node_modules`, so the
+traced dependency tree no longer requires symlink recreation during the OpenNext copy
+step.
 
 ### References
 
@@ -65,6 +66,27 @@ Rules honored: `custom_domain: true` with no `zone_name`/`zone_id`; routes are o
 Sitemap origin: the project does not define a `vars` block anywhere in the repo, so no
 `NEXT_PUBLIC_SITE_URL` var was added. `app/sitemap.ts` already defaults to
 `https://contextfor.dev`, which matches the production domain.
+
+### `www` behavior
+
+Both apex (`contextfor.dev`) and `www` (`www.contextfor.dev`) are attached as separate
+custom domains, so each is served directly with no automatic redirect between them. If
+a single canonical host is wanted later, replace the `www` custom domain with a
+Cloudflare redirect rule (for example, `www` → apex with a 301). This is an
+informational note, not a blocker for launch.
+
+## Required pre-launch operator steps
+
+Complete these before announcing the custom domain as live:
+
+- [ ] Add `contextfor.dev` **and** `www.contextfor.dev` to the Neon Auth trusted
+      origins for the production Neon Auth project. Without this, sign-in/sign-up
+      silently fails on the custom domain.
+- [ ] Verify `contextfor.dev` is a Cloudflare zone in the same account as the
+      `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` used to deploy. A custom domain
+      cannot be attached if the zone lives in a different account.
+- [ ] Expect the first deploy to lag while the TLS certificate for the custom domain
+      is issued; the domain may serve errors or stale content until the cert is active.
 
 ### Rollback
 
