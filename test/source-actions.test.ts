@@ -1,7 +1,8 @@
 import { beforeEach, expect, it, vi } from "vitest";
-const state = vi.hoisted(() => ({ allowed: true, authorize: vi.fn(), dbCalls: 0, partial: false, writes: [] as Record<string, unknown>[], names: [] as Array<{ name: string }>, lease: Promise.resolve(), sourceLimit: 100 }));
+const state = vi.hoisted(() => ({ allowed: true, authorize: vi.fn(), dbCalls: 0, partial: false, writes: [] as Record<string, unknown>[], names: [] as Array<{ name: string }>, lease: Promise.resolve(), sourceLimit: 100, enqueue: vi.fn(async (_message: unknown) => true) }));
 vi.mock("@/lib/auth/workspace", () => ({ authorizeWorkspace: state.authorize }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("@/lib/cf/queue", () => ({ enqueueEmbedJob: (message: unknown) => state.enqueue(message) }));
 vi.mock("@/lib/cron/scan", () => ({ scanWorkspace: async () => ({ collectorResults: state.partial ? [{ error: "collector failed" }] : [], opportunityResults: [] }) }));
 vi.mock("@/lib/cron/lease", () => ({ withWorkspaceScanLease: async (_workspaceId: string, work: (signal: AbortSignal) => Promise<unknown>) => {
   const previous = state.lease; let release!: () => void;
@@ -20,6 +21,7 @@ import { addCommunitySource, addFeed, scanNow } from "@/lib/sources/actions";
 beforeEach(() => {
   vi.restoreAllMocks();
   state.allowed = true; state.dbCalls = 0; state.partial = false; state.writes = []; state.names = []; state.lease = Promise.resolve(); state.sourceLimit = 100;
+  state.enqueue = vi.fn(async (_message: unknown) => true);
   state.authorize.mockReset();
   state.authorize.mockImplementation(async () => state.allowed ? { ok: true } : { ok: false, error: "forbidden" });
 });
@@ -30,6 +32,21 @@ it("returns correctable feed errors without querying another user's data", async
   state.allowed = false; form.set("feedUrl", "https://example.com/feed");
   expect(await addFeed("ws", {}, form)).toHaveProperty("error");
   expect(state.dbCalls).toBe(0);
+});
+it("enqueues document backfill for a new source when the semantic mode is shadow", async () => {
+  vi.stubEnv("VANTAGE_SEMANTIC_MODE", "shadow");
+  const form = new FormData(); form.set("feedUrl", "https://example.com/feed");
+  await addFeed("ws", {}, form);
+  expect(state.enqueue).toHaveBeenCalledWith({ type: "backfill-documents", workspaceId: "ws" });
+  vi.unstubAllEnvs();
+});
+it("makes no queue call when adding a source and the semantic mode is off", async () => {
+  vi.stubEnv("VANTAGE_SEMANTIC_MODE", "off");
+  const form = new FormData(); form.set("feedUrl", "https://example.com/feed");
+  expect(await addFeed("ws", {}, form)).toHaveProperty("message");
+  expect(state.writes).toHaveLength(1);
+  expect(state.enqueue).not.toHaveBeenCalled();
+  vi.unstubAllEnvs();
 });
 it("creates a free feed once and preserves existing source state on repeat submission", async () => {
   const form = new FormData(); form.set("feedUrl", "https://example.com/feed");

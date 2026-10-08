@@ -16,6 +16,15 @@
 			"service": "dontkillmyvibe"
 		}
 	],
+	"browser": { "binding": "BROWSER" },
+	"ai": { "binding": "AI" },
+	"vectorize": [{ "binding": "VECTORIZE", "index_name": "vantage-docs" }],
+	"r2_buckets": [{ "binding": "ARTIFACTS", "bucket_name": "vantage-artifacts" }],
+	"vars": { "VANTAGE_SEMANTIC_MODE": "off" },
+	"ratelimits": [
+		{ "name": "RADAR_LIMITER", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } }
+	],
+	"workflows": [{ "name": "vantage-scan", "binding": "SCAN", "class_name": "ScanWorkspace" }],
 	"triggers": {
 		"crons": []
 	},
@@ -28,18 +37,48 @@
 			"name": "vantage-staging",
 			"build": { "command": "" },
 			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "vantage-staging" }],
-			"triggers": { "crons": ["0 */3 * * *"] }
+			"browser": { "binding": "BROWSER" },
+			"ai": { "binding": "AI" },
+			"vectorize": [{ "binding": "VECTORIZE", "index_name": "vantage-docs-staging" }],
+			"r2_buckets": [{ "binding": "ARTIFACTS", "bucket_name": "vantage-artifacts-staging" }],
+			"vars": { "VANTAGE_SEMANTIC_MODE": "shadow" },
+			"ratelimits": [
+				{ "name": "RADAR_LIMITER", "namespace_id": "1002", "simple": { "limit": 30, "period": 60 } }
+			],
+			"workflows": [{ "name": "vantage-scan-staging", "binding": "SCAN", "class_name": "ScanWorkspace" }],
+			"triggers": { "crons": ["0 */3 * * *"] },
+			"queues": {
+				"producers": [{ "binding": "EMBED_QUEUE", "queue": "vantage-embed-jobs-staging" }],
+				"consumers": [{ "queue": "vantage-embed-jobs-staging", "max_batch_size": 10, "max_retries": 3, "max_concurrency": 2, "dead_letter_queue": "vantage-embed-dlq-staging" }]
+			}
 		},
 		"production": {
 			"name": "dontkillmyvibe",
 			"build": { "command": "" },
 			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "dontkillmyvibe" }],
+			"browser": { "binding": "BROWSER" },
+			"ai": { "binding": "AI" },
+			"vectorize": [{ "binding": "VECTORIZE", "index_name": "vantage-docs" }],
+			"r2_buckets": [{ "binding": "ARTIFACTS", "bucket_name": "vantage-artifacts" }],
+			"vars": { "VANTAGE_SEMANTIC_MODE": "off" },
+			"ratelimits": [
+				{ "name": "RADAR_LIMITER", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } }
+			],
+			"workflows": [{ "name": "vantage-scan", "binding": "SCAN", "class_name": "ScanWorkspace" }],
 			"triggers": { "crons": [] },
 			"routes": [
 				{ "pattern": "contextfor.dev", "custom_domain": true },
 				{ "pattern": "www.contextfor.dev", "custom_domain": true }
-			]
+			],
+			"queues": {
+				"producers": [{ "binding": "EMBED_QUEUE", "queue": "vantage-embed-jobs" }],
+				"consumers": [{ "queue": "vantage-embed-jobs", "max_batch_size": 10, "max_retries": 3, "max_concurrency": 2, "dead_letter_queue": "vantage-embed-dlq" }]
+			}
 		}
+	},
+	"queues": {
+		"producers": [{ "binding": "EMBED_QUEUE", "queue": "vantage-embed-jobs" }],
+		"consumers": [{ "queue": "vantage-embed-jobs", "max_batch_size": 10, "max_retries": 3, "max_concurrency": 2, "dead_letter_queue": "vantage-embed-dlq" }]
 	},
 	"observability": {
 		"enabled": true

@@ -58,3 +58,39 @@ describe("grounded drafting", () => {
     expect(ok.ok).toBe(true);
   });
 });
+
+describe("grounded drafting with material chunks", () => {
+  const tailOnlyMarker = "TAIL-MARKER-AFTER-800";
+  const input = {
+    productDescription: "Vantage helps founders find high-intent conversations.",
+    targetCustomer: "solo B2B founders",
+    productMaterialText: `${"Intro material sentence. ".repeat(40)}${tailOnlyMarker}`,
+    opportunityTitle: "Looking for social listening tools",
+    opportunitySummary: "Founders asking for recommendations",
+    recommendedAction: "Draft a grounded reply",
+    evidence: [
+      {
+        documentId: "d1",
+        title: "Tools thread",
+        urlCanonical: "https://example.com/thread",
+        contentMd: "Which tools do you use?",
+        platform: "reddit",
+      },
+    ],
+  };
+
+  it("uses materialChunks instead of the first 800 characters of product material", () => {
+    const draft = generateGroundedDraft({ ...input, materialChunks: ["Chunk about relevant billing seats."] });
+    expect(draft.originalText).toContain("Chunk about relevant billing seats.");
+    expect(draft.originalText).not.toContain("Intro material sentence.");
+    expect(draft.originalText).not.toContain(tailOnlyMarker);
+  });
+
+  it("falls back to the 800-character slice when materialChunks is absent or empty", () => {
+    const absent = generateGroundedDraft(input);
+    const empty = generateGroundedDraft({ ...input, materialChunks: [] });
+    expect(absent.originalText).toBe(empty.originalText);
+    expect(absent.originalText).not.toContain(tailOnlyMarker);
+    expect(absent.originalText).toContain("Intro material sentence.");
+  });
+});

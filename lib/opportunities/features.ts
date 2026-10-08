@@ -1,6 +1,7 @@
 import { classifyIntent } from "@/lib/pipeline/intent-ladder";
 import type { MonitoringProfileInput } from "@/lib/profile/types";
 import type { NormalizedDocument } from "@/lib/pipeline/normalize";
+import type { SemanticSignal } from "@/lib/pipeline/semantic";
 import type {
   OpportunityFeatures,
   OpportunityStatus,
@@ -47,11 +48,17 @@ export function clusterKeyForDocuments(
   return `${platform}:${shared.join("-")}`;
 }
 
+/**
+ * Keyword features for a cluster. `semantic` is keyed by document id; with it, a
+ * document's semantic rung can raise intent and its semantic fit can raise fit.
+ * Omitted or null keeps the keyword-only result unchanged.
+ */
 export function computeFeatures(
   docs: NormalizedDocument[],
   profile?: Pick<MonitoringProfileInput, "productDescription" | "topics" | "competitors"> | null,
+  semantic?: Map<string, SemanticSignal> | null,
 ): OpportunityFeatures {
-  const intents = docs.map((d) => classifyIntent(d));
+  const intents = docs.map((d) => classifyIntent(d, semantic?.get(d.id) ?? null));
   const maxIntent = intents.reduce((m, i) => Math.max(m, i.intentRung), 0);
   const avgConfidence =
     intents.reduce((s, i) => s + i.confidence, 0) / Math.max(intents.length, 1);
@@ -62,7 +69,11 @@ export function computeFeatures(
     : "").filter((term) => !/^(the|and|for|with|your|our|from|that|this|tool|product|platform|software|teams|https|http|www|com|org|net)$/.test(term)));
   const evidenceTerms = new Set(tokenize(docs.map((d) => `${d.title ?? ""} ${d.text}`).join(" ")));
   const matches = [...terms].filter((term) => evidenceTerms.has(term)).length;
-  const fit = clamp01(matches / Math.max(1, Math.min(terms.size, 4)));
+  const tokenFit = clamp01(matches / Math.max(1, Math.min(terms.size, 4)));
+  const semanticFit = semantic
+    ? docs.reduce((best, d) => Math.max(best, semantic.get(d.id)?.fit ?? 0), 0)
+    : 0;
+  const fit = clamp01(Math.max(tokenFit, semanticFit));
 
   const intent = clamp01(maxIntent / 4);
   const evidence = clamp01(Math.log2(1 + docs.length) / 4);

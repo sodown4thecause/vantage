@@ -13,6 +13,8 @@ export type DraftInput = {
   productDescription: string;
   targetCustomer: string;
   productMaterialText: string;
+  /** Product-material chunks most relevant to the thread; replaces the 800-character slice when non-empty. */
+  materialChunks?: string[];
   opportunityTitle: string;
   opportunitySummary: string;
   recommendedAction: string;
@@ -74,9 +76,12 @@ const UNSUPPORTED_CLAIM_RE =
  * Only references workspace product material + opportunity evidence.
  */
 export function generateGroundedDraft(input: DraftInput): GeneratedDraft {
-  const material = (input.productMaterialText || input.productDescription)
-    .trim()
-    .slice(0, 800);
+  const groundedChunks = (input.materialChunks ?? []).map((chunk) => chunk.trim()).filter((chunk) => chunk !== "");
+  const material = groundedChunks.length > 0
+    ? groundedChunks.join("\n\n")
+    : (input.productMaterialText || input.productDescription)
+      .trim()
+      .slice(0, 800);
   const customer = input.targetCustomer.trim() || "your customers";
   const evidenceLines = input.evidence.slice(0, 5).map((e, i) => {
     const snippet = (e.contentMd || e.title || e.urlCanonical)

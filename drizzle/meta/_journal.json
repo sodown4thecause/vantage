@@ -134,6 +134,13 @@
       "when": 1791384142301,
       "tag": "0018_perfect_sabretooth",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791445098186,
+      "tag": "0019_embedding_state_semantic_shadow",
+      "breakpoints": true
     }
   ]
 }

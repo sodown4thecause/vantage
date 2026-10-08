@@ -44,7 +44,7 @@ jobs:
       - name: Test
         run: |
           pnpm test
-          node --test test/worker-entry.test.mjs
+          node --test test/worker-entry.test.mjs test/scan-run.test.mjs test/queue-consumer.test.mjs
       - name: Check migration drift
         run: |
           pnpm db:generate

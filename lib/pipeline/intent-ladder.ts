@@ -1,4 +1,5 @@
 import type { NormalizedDocument } from "@/lib/pipeline/normalize";
+import type { SemanticSignal } from "@/lib/pipeline/semantic";
 
 export type IntentResult = {
   documentId: string;
@@ -60,7 +61,21 @@ const RULES: Array<{
   },
 ];
 
-export function classifyIntent(doc: NormalizedDocument): IntentResult {
+const RUNG_LABELS: Record<number, string> = {
+  1: "awareness",
+  2: "research",
+  3: "comparison",
+  4: "purchase/recommend",
+};
+
+/**
+ * Keyword rung, raised by the semantic rung when that is higher. A semantic match
+ * never lowers a keyword rung. Without a signal the result is keyword-only.
+ */
+export function classifyIntent(
+  doc: NormalizedDocument,
+  semantic?: SemanticSignal | null,
+): IntentResult {
   const hay = `${doc.title}\n${doc.text}`;
   let best = {
     rung: 0,
@@ -87,6 +102,19 @@ export function classifyIntent(doc: NormalizedDocument): IntentResult {
     }
   }
 
+  if (semantic && (semantic.rung ?? 0) > best.rung) {
+    const rung = semantic.rung ?? 0;
+    best = {
+      rung,
+      confidence:
+        semantic.anchorSimilarity === null
+          ? best.confidence
+          : Math.max(best.confidence, Math.min(0.95, semantic.anchorSimilarity)),
+      reason: `semantic match to ${RUNG_LABELS[rung] ?? String(rung)}`,
+      factors: best.factors,
+    };
+  }
+
   const score = Number((best.rung * 20 + best.confidence * 20).toFixed(2));
   return {
     documentId: doc.id,
@@ -94,7 +122,19 @@ export function classifyIntent(doc: NormalizedDocument): IntentResult {
     confidence: best.confidence,
     score,
     reason: best.reason,
-    factors: { ...best.factors, platform: doc.platform },
+    factors: {
+      ...best.factors,
+      platform: doc.platform,
+      ...(semantic
+        ? {
+            semantic: {
+              rung: semantic.rung,
+              anchorSimilarity: semantic.anchorSimilarity,
+              fit: semantic.fit,
+            },
+          }
+        : {}),
+    },
   };
 }
 

@@ -37,6 +37,9 @@ import {
   normalizeDocuments,
   type NormalizedDocument,
 } from "@/lib/pipeline/normalize";
+import { getSemanticMode } from "@/lib/cf/env";
+import { nearDuplicates } from "@/lib/pipeline/dedupe";
+import { runSemanticStageDetailed } from "@/lib/pipeline/shadow";
 
 const QUEUE_STATUSES: OpportunityStatus[] = [
   "opportunity",
@@ -112,6 +115,34 @@ function clusterDocuments(
   return groups;
 }
 
+/**
+ * Collapses near-duplicate documents into one representative each (the earliest posting).
+ * `duplicatesOf` holds the absorbed documents per representative so their evidence is kept.
+ */
+function groupNearDuplicates(
+  docs: NormalizedDocument[],
+  vectors: Map<string, number[]>,
+): { representatives: NormalizedDocument[]; duplicatesOf: Map<string, NormalizedDocument[]> } {
+  const embedded = docs.flatMap((doc) => {
+    const vector = vectors.get(doc.id);
+    return vector ? [{ id: doc.id, vector, postedAt: doc.postedAt?.getTime() ?? null }] : [];
+  });
+  const canonical = nearDuplicates(embedded);
+  const representatives: NormalizedDocument[] = [];
+  const duplicatesOf = new Map<string, NormalizedDocument[]>();
+  for (const doc of docs) {
+    const root = canonical.get(doc.id) ?? doc.id;
+    if (root === doc.id) {
+      representatives.push(doc);
+    } else {
+      const list = duplicatesOf.get(root) ?? [];
+      list.push(doc);
+      duplicatesOf.set(root, list);
+    }
+  }
+  return { representatives, duplicatesOf };
+}
+
 function titleFor(docs: NormalizedDocument[]): string {
   const withTitle = docs.find((d) => d.title?.trim());
   if (withTitle?.title) return withTitle.title.trim().slice(0, 160);
@@ -153,6 +184,13 @@ export async function buildOpportunities(opts: {
     .limit(limitDocs);
 
   const normalized = normalizeDocuments(rows.filter(isLiveEvidence));
+  // Semantic scoring never throws. Its signals reach scoring only in "on" mode; in "off"
+  // and "shadow" they are recorded for comparison and scoring stays keyword-only.
+  const semantic = await runSemanticStageDetailed(opts.workspaceId, normalized, opts.signal);
+  const semanticOn = getSemanticMode() === "on";
+  const semanticForScoring = semanticOn ? semantic?.signals ?? null : null;
+  // Near-duplicate collapse runs only in "on" mode with document vectors; otherwise clustering is unchanged.
+  const grouped = semanticOn && semantic ? groupNearDuplicates(normalized, semantic.vectors) : null;
 
   const learningConfig = resolveLearningConfig();
   const preferenceModel = await getActivePreferenceModel({
@@ -161,19 +199,34 @@ export async function buildOpportunities(opts: {
   });
   const sourceIdByDocId = new Map(rows.map((r) => [r.id, r.sourceId]));
 
+  // Keys come from the full document set, so a cluster keeps its identity when near-duplicates are absorbed.
+  // Only representatives feed scoring; evidence still lists every absorbed duplicate.
   const clusters = clusterDocuments(normalized);
+  const representativeIds = grouped ? new Set(grouped.representatives.map((doc) => doc.id)) : null;
   opts.signal?.throwIfAborted();
   // The bounded recent scan is the current queue; retire clusters it no longer supports.
   await db.update(opportunity).set({ status: "ignore", updatedAt: new Date() })
     .where(and(eq(opportunity.workspaceId, opts.workspaceId),
       clusters.size ? notInArray(opportunity.clusterKey, [...clusters.keys()]) : undefined));
+  // Clusters whose documents were all absorbed into another representative keep their key, so retire them here.
+  if (representativeIds) {
+    const absorbed = [...clusters.entries()]
+      .filter(([, docs]) => !docs.some((doc) => representativeIds.has(doc.id)))
+      .map(([key]) => key);
+    if (absorbed.length) {
+      await db.update(opportunity).set({ status: "ignore", updatedAt: new Date() })
+        .where(and(eq(opportunity.workspaceId, opts.workspaceId), inArray(opportunity.clusterKey, absorbed)));
+    }
+  }
   let upserted = 0;
   let budgetLimited = 0;
   let leadCapReached = false;
 
-  for (const [clusterKey, docs] of clusters) {
+  for (const [clusterKey, clusterDocs] of clusters) {
     opts.signal?.throwIfAborted();
-    const features = { ...computeFeatures(docs, profile), profileVersion: profile.version };
+    const docs = representativeIds ? clusterDocs.filter((doc) => representativeIds.has(doc.id)) : clusterDocs;
+    if (docs.length === 0) continue;
+    const features = { ...computeFeatures(docs, profile, semanticForScoring), profileVersion: profile.version };
     const status = decideStatus(features);
     const ranking = rankWithPreferences({
       features,
@@ -193,13 +246,17 @@ export async function buildOpportunities(opts: {
         : "";
     const title = titleFor(docs);
     const summary = summarize(docs);
-    const whyItMatters = `Product profile v${profile.version}: fit ${features.fit.toFixed(2)}, intent ${features.intent.toFixed(2)} across ${docs.length} evidence item(s).${learnedNote}`;
+    // Evidence keeps every absorbed duplicate; scoring and copy use the representatives.
+    const evidenceDocs = grouped
+      ? docs.flatMap((doc) => [doc, ...(grouped.duplicatesOf.get(doc.id) ?? [])])
+      : docs;
+    const whyItMatters = `Product profile v${profile.version}: fit ${features.fit.toFixed(2)}, intent ${features.intent.toFixed(2)} across ${evidenceDocs.length} evidence item(s).${learnedNote}`;
     const whyNow = `Timing ${features.timing.toFixed(2)}, momentum ${features.momentum.toFixed(2)}.`;
     const action = recommendedAction(status);
     const coverage = features.lowConfidence ? "review" : status;
     const providers = [
       ...new Set(
-        docs.map((d) => {
+        evidenceDocs.map((d) => {
           // provider lives on original row metadata when available
           const raw = rows.find((r) => r.id === d.id);
           const p = raw?.metadata?.provider;
@@ -291,11 +348,11 @@ export async function buildOpportunities(opts: {
     }
 
     await db.delete(opportunityEvidence).where(and(eq(opportunityEvidence.opportunityId, opportunityId),
-      notInArray(opportunityEvidence.documentId, docs.map((doc) => doc.id))));
-    if (docs.length) {
+      notInArray(opportunityEvidence.documentId, evidenceDocs.map((doc) => doc.id))));
+    if (evidenceDocs.length) {
       await db
         .insert(opportunityEvidence)
-        .values(docs.map((doc) => ({
+        .values(evidenceDocs.map((doc) => ({
           workspaceId: opts.workspaceId,
           opportunityId,
           documentId: doc.id,

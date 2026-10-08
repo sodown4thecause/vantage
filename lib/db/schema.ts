@@ -173,6 +173,8 @@ export const document = pgTable(
     collectedAt: timestamp("collected_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    embeddingModel: text("embedding_model"),
+    embeddedAt: timestamp("embedded_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -181,6 +183,40 @@ export const document = pgTable(
     uniqueIndex("document_workspace_hash_uidx").on(
       table.workspaceId,
       table.contentHash,
+    ),
+    index("document_unembedded_idx")
+      .on(table.workspaceId)
+      .where(sql`${table.embeddedAt} is null`),
+  ],
+);
+
+/**
+ * Shadow scoring for semantic rungs. Written alongside the live keyword score so
+ * the semantic ranking can be compared before it is allowed to change results.
+ */
+export const semanticShadow = pgTable(
+  "semantic_shadow",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => document.id, { onDelete: "cascade" }),
+    keywordRung: integer("keyword_rung").notNull(),
+    semanticRung: integer("semantic_rung"),
+    semanticFit: real("semantic_fit"),
+    anchorSimilarity: real("anchor_similarity"),
+    mode: text("mode").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("semantic_shadow_document_mode_uidx").on(
+      table.documentId,
+      table.mode,
     ),
   ],
 );
