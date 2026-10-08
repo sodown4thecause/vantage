@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   throwContext: false,
@@ -53,6 +53,12 @@ async function loadClient(): Promise<ClientModule> {
   delete (globalThis as { vantageDb?: unknown }).vantageDb;
   return import("@/lib/db/client");
 }
+
+beforeAll(async () => {
+  // The first import transforms the whole schema graph, which can exceed the 5s default when
+  // the full suite runs one worker per file; later tests reuse the transformed modules.
+  await loadClient();
+}, 30_000);
 
 beforeEach(() => {
   state.throwContext = false;
