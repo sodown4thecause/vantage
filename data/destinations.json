@@ -1,0 +1,160 @@
+[
+  {
+    "slug": "product-hunt",
+    "name": "Product Hunt",
+    "url": "https://www.producthunt.com/",
+    "kind": "launch_platform",
+    "audienceTags": ["makers", "early-adopters"],
+    "categoryTags": ["general"],
+    "cost": "free",
+    "priceNote": "Product Hunt's launch guide says it is 100% free to use.",
+    "requirements": {
+      "accounts": "Company accounts are prohibited; launch from a personal account.",
+      "submit_flow": "Log in, click Submit, then New Product and enter the product URL."
+    },
+    "sourceUrl": "https://www.producthunt.com/launch",
+    "lastVerified": "2026-10-07",
+    "verifiedBy": "S75 agent, primary page read; owner spot-check pending",
+    "notes": "Listing mode, link attribute and whether submissions are currently open were not stated on the page and are left unverified."
+  },
+  {
+    "slug": "hacker-news-show-hn",
+    "name": "Hacker News (Show HN)",
+    "url": "https://news.ycombinator.com/showhn.html",
+    "kind": "community",
+    "audienceTags": ["developers"],
+    "categoryTags": ["general"],
+    "requirements": {
+      "what_qualifies": "Something you made that other people can try; non-trivial; you must be around to discuss it.",
+      "not_allowed": [
+        "Blog posts, sign-up pages, newsletters and lists",
+        "Landing pages and fundraisers",
+        "Asking friends to upvote or comment"
+      ],
+      "title": "Submit a story whose title begins with \"Show HN\"."
+    },
+    "sourceUrl": "https://news.ycombinator.com/showhn.html",
+    "lastVerified": "2026-10-07",
+    "verifiedBy": "S75 agent, primary page read; owner spot-check pending",
+    "notes": "Rules are from the official Show HN guidelines. Vantage prepares no Show HN text: the owner writes it."
+  },
+  {
+    "slug": "devhunt",
+    "name": "DevHunt",
+    "url": "https://devhunt.org/",
+    "kind": "launch_platform",
+    "audienceTags": ["developers"],
+    "categoryTags": ["devtools", "open-source", "ai", "mcp"],
+    "cost": "freemium",
+    "priceNote": "Free listing from the launch queue; $19 one-time paid launch (pick the week, newsletter spot); $49 boosted launch.",
+    "requirements": {
+      "accepted": "Tools for developers: open-source projects, APIs and SDKs, frameworks, CLIs, testing, monitoring, DevOps, databases, auth, AI agents and MCP servers.",
+      "not_accepted": ["Tools that are not for developers", "NSFW tools", "Services that sell fake engagement"]
+    },
+    "linkAttr": "nofollow",
+    "sourceUrl": "https://devhunt.org/faq",
+    "lastVerified": "2026-10-07",
+    "verifiedBy": "S75 agent, primary page read; owner spot-check pending",
+    "notes": "Per the FAQ, links on free listings are nofollow and paid launches get a permanent dofollow link. Listing mode and whether submissions are open were not stated."
+  },
+  {
+    "slug": "saashub",
+    "name": "SaaSHub",
+    "url": "https://www.saashub.com/",
+    "kind": "alternatives_site",
+    "audienceTags": ["software-buyers"],
+    "categoryTags": ["software-alternatives", "developer-tools"],
+    "listingMode": "review_queue",
+    "requirements": {
+      "approval": "Submit your product and wait for it to be approved."
+    },
+    "sourceUrl": "https://www.saashub.com/submit/list",
+    "lastVerified": "2026-10-07",
+    "verifiedBy": "S75 agent, primary page read; owner spot-check pending",
+    "notes": "A 'Feature My Product' premium placement exists on the submit page; its price and the cost of a standard listing were not verified. SaaSHub also publishes a list of 110 other submission directories."
+  },
+  {
+    "slug": "github-marketplace",
+    "name": "GitHub Marketplace",
+    "url": "https://github.com/marketplace",
+    "kind": "marketplace",
+    "audienceTags": ["developers"],
+    "categoryTags": ["github-app", "github-action"],
+    "sourceUrl": "https://docs.github.com/en/apps/github-marketplace/github-marketplace-overview/about-github-marketplace-for-apps",
+    "lastVerified": "2026-10-07",
+    "verifiedBy": "S75 agent, primary page read; owner spot-check pending",
+    "notes": "GitHub's docs have a Marketplace section with listing requirements and publisher verification pages. Those details have not been extracted yet, so every fact other than the existence of the listing process is unverified. Eligibility-gated: only relevant when the product ships a GitHub App or Action."
+  },
+  {
+    "slug": "vscode-marketplace",
+    "name": "Visual Studio Marketplace (VS Code)",
+    "url": "https://marketplace.visualstudio.com/vscode",
+    "kind": "marketplace",
+    "audienceTags": ["developers"],
+    "categoryTags": ["vscode-extension"],
+    "requirements": {
+      "publisher": "A publisher identity is required, created in the Visual Studio Marketplace publisher management page with the same Microsoft account used for a Personal Access Token.",
+      "publish_with": "The vsce command line tool (vsce login, then vsce publish).",
+      "eligibility": "Only for products that ship a VS Code extension."
+    },
+    "submissionUrl": "https://marketplace.visualstudio.com/manage/publishers/",
+    "sourceUrl": "https://code.visualstudio.com/api/working-with-extensions/publishing-extension",
+    "lastVerified": "2026-10-07",
+    "verifiedBy": "S75 agent, primary page read; owner spot-check pending",
+    "notes": "Cost, review process and link attribute were not stated on the page and are unverified."
+  },
+  {
+    "slug": "open-vsx",
+    "name": "Open VSX Registry",
+    "url": "https://open-vsx.org/",
+    "kind": "marketplace",
+    "audienceTags": ["developers"],
+    "categoryTags": ["vscode-extension"],
+    "requirements": {
+      "accounts": "An eclipse.org account (with the same GitHub username used to log in to open-vsx.org) and a signed Eclipse Publisher Agreement.",
+      "steps": ["Create an access token", "Create the namespace matching the publisher field in package.json", "Publish with the ovsx tool"],
+      "eligibility": "Only for products that ship a VS Code compatible extension."
+    },
+    "sourceUrl": "https://github.com/eclipse-openvsx/openvsx/wiki/Publishing-Extensions",
+    "lastVerified": "2026-10-07",
+    "verifiedBy": "S75 agent, primary page read; owner spot-check pending",
+    "notes": "Source is the Open VSX project wiki (page last edited 26 Feb 2026 per the page). Cost and link attribute were not stated and are unverified."
+  },
+  {
+    "slug": "jetbrains-marketplace",
+    "name": "JetBrains Marketplace",
+    "url": "https://plugins.jetbrains.com/",
+    "kind": "marketplace",
+    "audienceTags": ["developers"],
+    "categoryTags": ["jetbrains-plugin"],
+    "listingMode": "review_queue",
+    "requirements": {
+      "accounts": "Log in to JetBrains Marketplace, accept the Developer Agreement and create a Vendor profile.",
+      "plugin": "Maximum plugin size 400 MB; you must provide your own end user license agreement; choose correct tags; the plugin must meet the approval criteria.",
+      "eligibility": "Only for products that ship an IDE plugin."
+    },
+    "sourceUrl": "https://plugins.jetbrains.com/docs/marketplace/uploading-a-new-plugin.html",
+    "lastVerified": "2026-10-07",
+    "verifiedBy": "S75 agent, primary page read; owner spot-check pending",
+    "notes": "The upload page refers to approval criteria and to hiding a plugin 'even after approval', so uploads are reviewed. Cost and link attribute were not stated and are unverified."
+  },
+  {
+    "slug": "mcp-registry",
+    "name": "MCP Registry",
+    "url": "https://modelcontextprotocol.io/registry/quickstart",
+    "kind": "agent_registry",
+    "audienceTags": ["developers", "ai-agents"],
+    "categoryTags": ["mcp"],
+    "requirements": {
+      "package": "The registry hosts metadata only: publish the server package (for example to npm) first.",
+      "tooling": "Publish with the official mcp-publisher CLI and a server.json file.",
+      "auth": "The quickstart authenticates with a GitHub account; other methods exist.",
+      "eligibility": "Only for products that ship an MCP server.",
+      "status": "The quickstart says the registry is in preview and breaking changes or data resets may occur."
+    },
+    "sourceUrl": "https://modelcontextprotocol.io/registry/quickstart",
+    "lastVerified": "2026-10-07",
+    "verifiedBy": "S75 agent, primary page read; owner spot-check pending",
+    "notes": "Cost, review process and link attribute were not stated on the page and are unverified."
+  }
+]
