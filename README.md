@@ -54,11 +54,11 @@ Onboarding profile ─► Sources ─► Collectors ─► Normalise + intent la
 | Purpose | Provider | Notes |
 |---|---|---|
 | Reddit | TinyFish Search/Fetch → optional TinyFish Agent → Scavio | Paid, opt-in |
-| X | Scavio | Grok significance analysis via AI Gateway (`X_GATEWAY_MODEL`, default `spacexai/grok-4.7`) |
+| X | Scavio | Paid, opt-in |
 | Web / datasets | Firecrawl (incl. Alexandria developer index and GitHub issues) | Credits priced via `FIRECRAWL_CREDIT_USD` |
 | GitHub, Stack Overflow | Official public APIs | Free; respects rate-limit and backoff headers |
 | HN, RSS, Substack | Public endpoints | Free; 512 KB response cap, opt-in 3 MB |
-| Drafts | Vercel AI Gateway (`COMMENT_DRAFT_MODEL`, default `openai/gpt-6.1-sol`) | Optional Inco DeepSeek triage (`INCO_TRIAGE_ENABLED`) |
+| Comment drafts | GPT 6.1 Sol via Vercel AI Gateway (`COMMENT_DRAFT_MODEL`, default `openai/gpt-6.1-sol`) | Optional Inco DeepSeek triage (`INCO_TRIAGE_ENABLED`) |
 
 Paid collection is off unless `VANTAGE_PAID_PROVIDERS_ENABLED` is set and `VANTAGE_PAID_DAILY_BUDGET_USD` is configured. See `.env.example` for the full list.
 
