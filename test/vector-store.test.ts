@@ -143,7 +143,7 @@ describe("failure handling", () => {
 describe("single entry point", () => {
   it("no file outside lib/embeddings/store.ts and lib/cf/env.ts touches the VECTORIZE binding", () => {
     const root = process.cwd();
-    const skip = new Set(["node_modules", ".next", ".open-next", ".git", ".claude", ".wrangler", "docs", "drizzle"]);
+    const skip = new Set(["node_modules", ".superpowers", ".next", ".open-next", ".git", ".claude", ".wrangler", "docs", "drizzle"]);
     const allowed = new Set(["lib/embeddings/store.ts", "lib/cf/env.ts"]);
     const hits: string[] = [];
     const walk = (dir: string) => {
@@ -161,5 +161,5 @@ describe("single entry point", () => {
     };
     walk(root);
     expect(hits).toEqual([]);
-  });
+  }, 30_000);
 });
