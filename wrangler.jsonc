@@ -16,6 +16,10 @@
 			"service": "dontkillmyvibe"
 		}
 	],
+	"browser": { "binding": "BROWSER" },
+	"ratelimits": [
+		{ "name": "RADAR_LIMITER", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } }
+	],
 	"triggers": {
 		"crons": []
 	},
@@ -24,7 +28,11 @@
 			"name": "vantage-staging",
 			"build": { "command": "" },
 			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "vantage-staging" }],
-			"triggers": { "crons": ["0 */3 * * *"] }
+			"browser": { "binding": "BROWSER" },
+				"ratelimits": [
+					{ "name": "RADAR_LIMITER", "namespace_id": "1002", "simple": { "limit": 30, "period": 60 } }
+				],
+				"triggers": { "crons": ["0 */3 * * *"] }
 		},
 		"production": {
 			"name": "dontkillmyvibe",
