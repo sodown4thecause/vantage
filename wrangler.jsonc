@@ -17,6 +17,9 @@
 		}
 	],
 	"browser": { "binding": "BROWSER" },
+	"ai": { "binding": "AI" },
+	"vectorize": [{ "binding": "VECTORIZE", "index_name": "vantage-docs" }],
+	"vars": { "VANTAGE_SEMANTIC_MODE": "off" },
 	"ratelimits": [
 		{ "name": "RADAR_LIMITER", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } }
 	],
@@ -29,6 +32,9 @@
 			"build": { "command": "" },
 			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "vantage-staging" }],
 			"browser": { "binding": "BROWSER" },
+			"ai": { "binding": "AI" },
+			"vectorize": [{ "binding": "VECTORIZE", "index_name": "vantage-docs-staging" }],
+			"vars": { "VANTAGE_SEMANTIC_MODE": "shadow" },
 				"ratelimits": [
 					{ "name": "RADAR_LIMITER", "namespace_id": "1002", "simple": { "limit": 30, "period": 60 } }
 				],
@@ -38,6 +44,9 @@
 			"name": "dontkillmyvibe",
 			"build": { "command": "" },
 			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "dontkillmyvibe" }],
+			"ai": { "binding": "AI" },
+			"vectorize": [{ "binding": "VECTORIZE", "index_name": "vantage-docs" }],
+			"vars": { "VANTAGE_SEMANTIC_MODE": "off" },
 			"triggers": { "crons": [] }
 		}
 	},
