@@ -1,4 +1,4 @@
-import { and, desc, eq, lt } from "drizzle-orm";
+import { and, desc, eq, gt, lt } from "drizzle-orm";
 
 import { getSemanticMode } from "@/lib/cf/env";
 import type { EmbedJob } from "@/lib/cf/queue";
@@ -7,6 +7,7 @@ import { monitoringProfile } from "@/lib/db/schema";
 import { indexMaterial } from "@/lib/drafting/ground";
 import { embedPendingDocuments } from "@/lib/embeddings/index-documents";
 import { indexProfile } from "@/lib/embeddings/index-profile";
+import { isVectorizeAvailable } from "@/lib/embeddings/store";
 import { toProfileView } from "@/lib/profile/repository";
 
 /** Documents embedded per queue message; the scan embed step covers any remainder. */
@@ -36,6 +37,16 @@ async function previousProfileId(workspaceId: string, version: number): Promise<
   return prior?.id;
 }
 
+/** True when a newer version of this workspace's profile exists; its own job indexes the current vectors. */
+async function hasNewerProfile(workspaceId: string, version: number): Promise<boolean> {
+  const [newer] = await getDb()
+    .select({ id: monitoringProfile.id })
+    .from(monitoringProfile)
+    .where(and(eq(monitoringProfile.workspaceId, workspaceId), gt(monitoringProfile.version, version)))
+    .limit(1);
+  return newer !== undefined;
+}
+
 /**
  * Re-reads the profile or documents by ID and indexes them. Idempotent: vector ids are
  * deterministic (upsert, then delete stale tails) and documents are selected by `embedded_at is null`.
@@ -45,6 +56,8 @@ async function previousProfileId(workspaceId: string, version: number): Promise<
 export async function runEmbedJob(job: EmbedJob, signal?: AbortSignal): Promise<Record<string, unknown> | null> {
   // Mode "off": no AI or Vectorize calls. The message is acknowledged, not retried.
   if (getSemanticMode() === "off") return { skipped: "semantic mode off" };
+  // Without Vectorize nothing can be stored, so acknowledge the job instead of re-embedding it on every retry.
+  if (!(await isVectorizeAvailable())) return { skipped: "vectorize unavailable" };
   if (job.type === "backfill-documents") {
     const result = await embedPendingDocuments(job.workspaceId, { limit: BACKFILL_DOC_LIMIT, signal });
     return result.skipped ? { embedded: 0, skipped: result.skipped } : { embedded: result.embedded };
@@ -56,8 +69,10 @@ export async function runEmbedJob(job: EmbedJob, signal?: AbortSignal): Promise<
     .limit(1);
   if (!row) return null;
   const profile = toProfileView(row);
+  // A retried job for an older version must not write its vectors back over the current ones.
+  if (await hasNewerProfile(job.workspaceId, profile.version)) return { skipped: "superseded" };
   const prior = await previousProfileId(job.workspaceId, profile.version);
-  const profileResult = await indexProfile(job.workspaceId, profile.id, profile.version, profile, prior);
+  const profileResult = await indexProfile(job.workspaceId, profile.id, profile.version, profile, prior, signal);
   const material = await indexMaterial(job.workspaceId, profile.id, profile.productMaterialText, signal, prior);
   // indexMaterial returns 0 both for empty text and for a failed write; only the latter is unavailable.
   const materialUnavailable = material === 0 && profile.productMaterialText.trim() !== "";

@@ -40,13 +40,14 @@ export async function indexProfile(
   version: number,
   profile: MonitoringProfileInput,
   previousProfileId?: string,
+  signal?: AbortSignal,
 ): Promise<{ indexed: number; skipped?: "unavailable" }> {
   void version;
   const texts = profileTexts(profile).slice(0, MAX_PROFILE_VECTORS);
 
   const vectors = texts.length === 0
     ? []
-    : await embedTexts(texts, { workspaceId, sourceKey: "profile-index" });
+    : await embedTexts(texts, { workspaceId, sourceKey: "profile-index", signal });
   if (vectors === null) return { indexed: 0, skipped: "unavailable" };
 
   const items: VectorItem[] = vectors.map((values, n) => ({
@@ -65,6 +66,7 @@ export async function indexProfile(
     profileVectorId(staleOwner, n + keep),
   );
   const deleted = await deleteVectors(workspaceId, staleIds);
-  if (!deleted) return { indexed: items.length };
+  // A failed cleanup leaves the previous version's vectors live for semantic fit, so the job retries.
+  if (!deleted) return { indexed: items.length, skipped: "unavailable" };
   return { indexed: items.length };
 }

@@ -208,6 +208,16 @@ export async function buildOpportunities(opts: {
   await db.update(opportunity).set({ status: "ignore", updatedAt: new Date() })
     .where(and(eq(opportunity.workspaceId, opts.workspaceId),
       clusters.size ? notInArray(opportunity.clusterKey, [...clusters.keys()]) : undefined));
+  // Clusters whose documents were all absorbed into another representative keep their key, so retire them here.
+  if (representativeIds) {
+    const absorbed = [...clusters.entries()]
+      .filter(([, docs]) => !docs.some((doc) => representativeIds.has(doc.id)))
+      .map(([key]) => key);
+    if (absorbed.length) {
+      await db.update(opportunity).set({ status: "ignore", updatedAt: new Date() })
+        .where(and(eq(opportunity.workspaceId, opts.workspaceId), inArray(opportunity.clusterKey, absorbed)));
+    }
+  }
   let upserted = 0;
   let budgetLimited = 0;
   let leadCapReached = false;

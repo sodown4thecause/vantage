@@ -7,7 +7,7 @@ import { readBinding } from "@/lib/cf/env";
 import * as schema from "@/lib/db/schema";
 
 type VantageDb = ReturnType<typeof drizzle<typeof schema>>;
-type PostgresJsInstance = { db: PostgresJsDatabase<typeof schema>; client: { end(): Promise<void> } };
+type PostgresJsInstance = { db: PostgresJsDatabase<typeof schema>; client: { end(options?: { timeout?: number }): Promise<void> } };
 
 neonConfig.fetchFunction = (input: RequestInfo | URL, init?: RequestInit) => {
   const timeout = AbortSignal.timeout(10_000);
@@ -123,7 +123,8 @@ async function scopedDb<T>(binding: string, fn: (db: SharedDb) => Promise<T>): P
   try {
     return await fn(db);
   } finally {
-    await client.end();
+    // A close failure must not replace fn's result or error; the timeout stops in-flight queries from stalling it.
+    await client.end({ timeout: 5 }).catch(() => {});
   }
 }
 

@@ -5,6 +5,7 @@ const state = vi.hoisted(() => ({
   embedPending: vi.fn(async (..._args: unknown[]) => ({ embedded: 1 })),
   indexProfile: vi.fn(async (..._args: unknown[]) => ({ indexed: 1 })),
   indexMaterial: vi.fn(async (..._args: unknown[]) => 1),
+  vectorizeAvailable: true,
 }));
 
 vi.mock("@/lib/db/client", () => ({ getDb: () => state.getDb() }));
@@ -16,6 +17,9 @@ vi.mock("@/lib/embeddings/index-profile", () => ({
 }));
 vi.mock("@/lib/drafting/ground", () => ({
   indexMaterial: (...args: unknown[]) => state.indexMaterial(...args),
+}));
+vi.mock("@/lib/embeddings/store", () => ({
+  isVectorizeAvailable: async () => state.vectorizeAvailable,
 }));
 
 import { runEmbedJob } from "@/lib/embeddings/backfill";
@@ -29,6 +33,7 @@ beforeEach(() => {
   state.embedPending = vi.fn(async (..._args: unknown[]) => ({ embedded: 1 }));
   state.indexProfile = vi.fn(async (..._args: unknown[]) => ({ indexed: 1 }));
   state.indexMaterial = vi.fn(async (..._args: unknown[]) => 1);
+  state.vectorizeAvailable = true;
 });
 
 afterEach(() => {
@@ -39,6 +44,12 @@ describe("runEmbedJob", () => {
   it("indexes pending documents when the semantic mode is shadow", async () => {
     expect(await runEmbedJob({ type: "backfill-documents", workspaceId: WORKSPACE_ID })).toEqual({ embedded: 1 });
     expect(state.embedPending).toHaveBeenCalledTimes(1);
+  });
+
+  it("acknowledges the job without embedding when Vectorize is not bound", async () => {
+    state.vectorizeAvailable = false;
+    expect(await runEmbedJob({ type: "backfill-documents", workspaceId: WORKSPACE_ID })).toEqual({ skipped: "vectorize unavailable" });
+    expect(state.embedPending).not.toHaveBeenCalled();
   });
 
   it("makes no database, AI, or Vectorize calls when the semantic mode is off", async () => {
