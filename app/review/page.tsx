@@ -5,7 +5,11 @@ import { LeadActions } from "@/app/components/LeadActions";
 import { authorizeWorkspace } from "@/lib/auth/workspace";
 import { SOURCE_TYPE_LABELS } from "@/lib/collectors/config";
 import { listSourcesForWorkspace } from "@/lib/db/sources";
-import { listReviewQueue } from "@/lib/pipeline/run";
+import type { ReviewQueueRow } from "@/lib/pipeline/run";
+import {
+  countReviewQueue,
+  listReviewQueuePage,
+} from "@/lib/pipeline/run";
 
 export const dynamic = "force-dynamic";
 
@@ -27,9 +31,9 @@ function formatTimestamp(value: Date | null): string {
 export default async function ReviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ workspaceId?: string }>;
+  searchParams: Promise<{ workspaceId?: string; cursor?: string }>;
 }) {
-  const { workspaceId } = await searchParams;
+  const { workspaceId, cursor } = await searchParams;
 
   if (!workspaceId) {
     return (
@@ -45,16 +49,24 @@ export default async function ReviewPage({
     );
   }
 
-  let rows: Awaited<ReturnType<typeof listReviewQueue>> = [];
+  let rows: ReviewQueueRow[] = [];
   let sources: Awaited<ReturnType<typeof listSourcesForWorkspace>> = [];
+  let queueCount = 0;
+  let nextCursor: string | null = null;
   let error: string | null = null;
   try {
     const authorization = await authorizeWorkspace(workspaceId);
     if (!authorization.ok) {
       error = "Unable to load this review queue.";
     } else {
-      rows = await listReviewQueue(workspaceId);
+      const page = await listReviewQueuePage({
+        workspaceId,
+        cursor,
+      });
+      rows = page.rows;
+      nextCursor = page.nextCursor;
       sources = await listSourcesForWorkspace(workspaceId);
+      queueCount = await countReviewQueue(workspaceId);
     }
   } catch (err) {
     console.error("[review page] failed to load queue", {
@@ -69,7 +81,7 @@ export default async function ReviewPage({
       <div className="flex items-end justify-between gap-4">
         <div>
           <p className="text-sm uppercase tracking-wide text-zinc-500">
-            Workspace {workspaceId}
+            Workspace {workspaceId} · {queueCount} in queue
           </p>
           <h1 className="text-2xl font-semibold">Review queue</h1>
         </div>
@@ -182,6 +194,17 @@ export default async function ReviewPage({
           );
         })}
       </ul>
+
+      {nextCursor ? (
+        <div className="pt-2">
+          <Link
+            href={`/review?workspaceId=${workspaceId}&cursor=${encodeURIComponent(nextCursor)}`}
+            className="inline-flex h-10 items-center justify-center rounded-lg border border-zinc-300 px-4 text-sm font-medium text-zinc-900 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-50 dark:hover:bg-zinc-900"
+          >
+            Load more
+          </Link>
+        </div>
+      ) : null}
     </main>
   );
 }
