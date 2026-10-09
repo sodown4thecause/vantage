@@ -1,10 +1,11 @@
 import { and, eq, isNull, lt, or } from "drizzle-orm";
 
+import { appUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db/client";
-import { workspace } from "@/lib/db/schema";
 import { isDigestDue } from "@/lib/digest/schedule";
 import { markDigestSent, sendDigestEmail } from "@/lib/digest/send";
 import { selectDigestOpportunities } from "@/lib/digest/select";
+import { workspace } from "@/lib/db/schema";
 
 const MIN_DIGEST_INTERVAL_HOURS = 20;
 
@@ -72,7 +73,7 @@ export async function runDueDigests(now: Date = new Date()): Promise<DigestDispa
       to: ws.digestEmail,
       workspaceId: ws.id,
       opportunities,
-      manageUrl: `https://app.contextfor.dev/settings?workspaceId=${ws.id}`,
+      manageUrl: `${appUrl()}/settings?workspaceId=${ws.id}`,
     });
 
     if (!result.ok) {

@@ -29,6 +29,8 @@ vi.mock("@/lib/db/client", () => ({
 }));
 
 vi.mock("@/lib/env/server", () => ({
+  optionalEnv: (name: string, env?: Record<string, string | undefined>) =>
+    (env ?? process.env)[name],
   resendApiKey: () => state.apiKey,
   digestFromAddress: () => "digest@contextfor.dev",
   digestFromName: () => "Vantage",

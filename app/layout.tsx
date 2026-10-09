@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
 import { Providers } from "@/app/providers";
+import { appUrl } from "@/lib/app-url";
 
 import "./globals.css";
 
@@ -16,8 +17,21 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Vantage",
-  description: "Social listening and lead capture for free-lane collectors",
+  metadataBase: new URL(appUrl()),
+  title: {
+    default: "Vantage — social listening for makers",
+    template: "%s · Vantage",
+  },
+  description:
+    "Vantage reads Reddit, Hacker News, X, YouTube, Product Hunt and your own feeds, then ranks the conversations worth joining. You write the reply — Vantage never posts for you.",
+  openGraph: {
+    type: "website",
+    siteName: "Vantage",
+    url: appUrl(),
+    title: "Vantage — social listening for makers",
+    description:
+      "Find the people already asking for what you build, ranked and delivered daily.",
+  },
 };
 
 export default function RootLayout({
