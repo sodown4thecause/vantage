@@ -1,5 +1,4 @@
 import {
-  boolean,
   integer,
   jsonb,
   numeric,
@@ -176,65 +175,6 @@ export const lead = pgTable("lead", {
     .notNull(),
 });
 
-export const opportunityOutcomeTypeEnum = pgEnum("opportunity_outcome_type", [
-  "useful",
-  "not_useful",
-  "acted_on",
-]);
-
-export const opportunityOutcome = pgTable(
-  "opportunity_outcome",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    workspaceId: uuid("workspace_id")
-      .notNull()
-      .references(() => workspace.id, { onDelete: "cascade" }),
-    leadId: uuid("lead_id")
-      .notNull()
-      .references(() => lead.id, { onDelete: "cascade" }),
-    outcomeType: opportunityOutcomeTypeEnum("outcome_type").notNull(),
-    metadata: jsonb("metadata")
-      .$type<Record<string, unknown>>()
-      .notNull()
-      .default({}),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    uniqueIndex(
-      "opportunity_outcome_workspace_lead_uidx",
-    ).on(table.workspaceId, table.leadId),
-  ],
-);
-
-export const workspaceLearningWeights = pgTable(
-  "workspace_learning_weights",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    workspaceId: uuid("workspace_id")
-      .notNull()
-      .references(() => workspace.id, { onDelete: "cascade" }),
-    weights: jsonb("weights")
-      .$type<Record<string, number>>()
-      .notNull()
-      .default({}),
-    version: integer("version").notNull().default(1),
-    active: boolean("active").notNull().default(true),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    uniqueIndex("workspace_learning_weights_workspace_uidx").on(
-      table.workspaceId,
-    ),
-  ],
-);
-
 export type Workspace = typeof workspace.$inferSelect;
 export type NewWorkspace = typeof workspace.$inferInsert;
 export type Source = typeof source.$inferSelect;
@@ -243,7 +183,3 @@ export type DocumentRecord = typeof document.$inferSelect;
 export type NewDocument = typeof document.$inferInsert;
 export type Lead = typeof lead.$inferSelect;
 export type NewLead = typeof lead.$inferInsert;
-export type OpportunityOutcome = typeof opportunityOutcome.$inferSelect;
-export type NewOpportunityOutcome = typeof opportunityOutcome.$inferInsert;
-export type WorkspaceLearningWeights = typeof workspaceLearningWeights.$inferSelect;
-export type NewWorkspaceLearningWeights = typeof workspaceLearningWeights.$inferInsert;
