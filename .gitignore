@@ -37,6 +37,20 @@ yarn-error.log*
 # vercel
 .vercel
 
+# cloudflare / opennext (local dev state — secrets come from dashboard/wrangler)
+.wrangler/
+.dev.vars
+.dev.vars.*
+/.open-next/
+
+# neon cli local state (org/project/branch pointers — env specific, not secret)
+.neon
+
+# local agent tooling state
+/.agents/skills/
+/.warp/
+skills-lock.json
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
