@@ -27,7 +27,6 @@
 
 <!-- Commands run and their result, e.g. pnpm lint/typecheck/test/build, or the
      staging E2E journey driven through the agent browser. -->
-
 ## Notes for reviewers
 
 <!-- Optional: what to look at first, or anything intentionally left out of scope. -->

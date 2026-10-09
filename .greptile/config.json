@@ -1,0 +1,49 @@
+{
+  "strictness": 2,
+  "commentTypes": ["logic", "syntax"],
+  "autoReview": ["open", "push"],
+  "triggerOnDrafts": false,
+  "statusCheck": true,
+  "statusCommentsEnabled": true,
+  "ignorePatterns": "*.md\npnpm-lock.yaml\ndist/**\n.next/**\n.open-next/**\n.wrangler/**\ntest/fixtures/**\ndrizzle/meta/**\n.next/**",
+  "excludeAuthors": ["dependabot[bot]", "renovate[bot]"],
+  "instructions": "Vantage is a multi-tenant SaaS: Neon Postgres per workspace, Next.js App Router, Cloudflare Workers. Prioritise correctness and tenant isolation over style. Every database read or write must be scoped to a workspace id. Flag anything that could leak one workspace's data to another, any unauthenticated mutation, and any user-supplied URL fetched without the policy in lib/collectors/safeFetch.ts. Error messages returned to customers must stay generic; internal detail belongs in logs.",
+  "rules": [
+    {
+      "id": "tenant-scoping",
+      "rule": "Every query and mutation must be scoped by workspace id. A missing workspace predicate is a P0.",
+      "scope": ["lib/db/**", "lib/outcomes/**", "app/actions/**", "lib/pipeline/**", "lib/collectors/run.ts"],
+      "severity": "high"
+    },
+    {
+      "id": "auth-before-write",
+      "rule": "Server actions and API routes must call authorizeWorkspace and refuse on failure before any database write.",
+      "scope": ["app/actions/**", "app/api/**", "lib/auth/**"],
+      "severity": "high"
+    },
+    {
+      "id": "fetch-policy",
+      "rule": "User-supplied URLs must go through guardedFetch from lib/collectors/safeFetch.ts. Raw fetch() on user input is a security issue.",
+      "scope": ["lib/collectors/**"],
+      "severity": "high"
+    },
+    {
+      "id": "no-secrets",
+      "rule": "Never introduce credentials, tokens or live customer data into source, tests, fixtures or logs.",
+      "scope": ["**/*"],
+      "severity": "high"
+    },
+    {
+      "id": "fixtures-off-in-prod",
+      "rule": "Fixture sample data must never be persisted or shown as real leads in production unless ALLOW_FIXTURES is explicitly set.",
+      "scope": ["lib/collectors/**", "app/review/**"],
+      "severity": "medium"
+    },
+    {
+      "id": "additive-migrations",
+      "rule": "Schema changes must be additive (expand/contract). Dropping a column or table in the same release as the code that stops using it is a bug.",
+      "scope": ["drizzle/**", "lib/db/schema.ts"],
+      "severity": "medium"
+    }
+  ]
+}
