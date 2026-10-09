@@ -9,6 +9,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  index,
 } from "drizzle-orm/pg-core";
 
 /**
@@ -61,6 +62,12 @@ export const leadStatusEnum = pgEnum("lead_status", [
   "rejected",
   "posted",
   "expired",
+]);
+
+export const outcomeTypeEnum = pgEnum("outcome_type", [
+  "useful",
+  "not_useful",
+  "acted_on",
 ]);
 
 export const workspace = pgTable("workspace", {
@@ -175,6 +182,31 @@ export const lead = pgTable("lead", {
     .notNull(),
 });
 
+export const opportunityOutcome = pgTable(
+  "opportunity_outcome",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    leadId: uuid("lead_id")
+      .notNull()
+      .references(() => lead.id, { onDelete: "cascade" }),
+    outcomeType: outcomeTypeEnum("outcome_type").notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("opportunity_outcome_workspace_idx").on(table.workspaceId),
+    uniqueIndex("opportunity_outcome_lead_type_uidx").on(
+      table.leadId,
+      table.outcomeType,
+    ),
+  ],
+);
+
 export type Workspace = typeof workspace.$inferSelect;
 export type NewWorkspace = typeof workspace.$inferInsert;
 export type Source = typeof source.$inferSelect;
@@ -183,3 +215,6 @@ export type DocumentRecord = typeof document.$inferSelect;
 export type NewDocument = typeof document.$inferInsert;
 export type Lead = typeof lead.$inferSelect;
 export type NewLead = typeof lead.$inferInsert;
+export type OutcomeType = (typeof outcomeTypeEnum.enumValues)[number];
+export type OpportunityOutcome = typeof opportunityOutcome.$inferSelect;
+export type NewOpportunityOutcome = typeof opportunityOutcome.$inferInsert;

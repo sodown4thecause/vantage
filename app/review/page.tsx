@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { CollectNowButton } from "@/app/components/CollectNowButton";
 import { LeadActions } from "@/app/components/LeadActions";
+import { OutcomeButtons } from "@/app/components/OutcomeButtons";
 import { authorizeWorkspace } from "@/lib/auth/workspace";
 import { SOURCE_TYPE_LABELS } from "@/lib/collectors/config";
 import { listSourcesForWorkspace } from "@/lib/db/sources";
@@ -187,8 +188,9 @@ export default async function ReviewPage({
               <p className="mt-2 line-clamp-3 text-sm text-zinc-700 dark:text-zinc-300">
                 {d.contentMd}
               </p>
-              <div className="mt-3">
+              <div className="mt-3 flex flex-wrap items-center gap-4">
                 <LeadActions workspaceId={workspaceId} leadId={l.id} />
+                <OutcomeButtons workspaceId={workspaceId} leadId={l.id} />
               </div>
             </li>
           );
