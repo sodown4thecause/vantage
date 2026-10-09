@@ -5,6 +5,13 @@ import { listReviewQueue } from "@/lib/pipeline/run";
 
 export const dynamic = "force-dynamic";
 
+function documentProvenance(metadata: Record<string, unknown> | null) {
+  const provider =
+    typeof metadata?.provider === "string" ? metadata.provider : null;
+  const mocked = metadata?.mocked === true || provider === "fixture";
+  return { provider, mocked };
+}
+
 export default async function ReviewPage({
   searchParams,
 }: {
@@ -72,38 +79,49 @@ export default async function ReviewPage({
       ) : null}
 
       <ul className="space-y-3">
-        {rows.map(({ lead: l, document: d }) => (
-          <li
-            key={l.id}
-            className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
-          >
-            <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-              <span className="rounded-full bg-zinc-100 px-2 py-0.5 dark:bg-zinc-900">
-                rung {l.intentRung}
-              </span>
-              <span>score {l.score}</span>
-              <span>conf {l.confidence}</span>
-              <span>{d.platform}</span>
-              <span className="uppercase">{l.status}</span>
-            </div>
-            <h2 className="mt-2 text-lg font-medium">
-              <a
-                href={d.urlCanonical}
-                target="_blank"
-                rel="noreferrer"
-                className="hover:underline"
-              >
-                {d.title || d.urlCanonical}
-              </a>
-            </h2>
-            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-              {l.reason}
-            </p>
-            <p className="mt-2 line-clamp-3 text-sm text-zinc-700 dark:text-zinc-300">
-              {d.contentMd}
-            </p>
-          </li>
-        ))}
+        {rows.map(({ lead: l, document: d }) => {
+          const provenance = documentProvenance(d.metadata);
+          return (
+            <li
+              key={l.id}
+              className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
+            >
+              <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                <span className="rounded-full bg-zinc-100 px-2 py-0.5 dark:bg-zinc-900">
+                  rung {l.intentRung}
+                </span>
+                <span>score {l.score}</span>
+                <span>conf {l.confidence}</span>
+                <span>{d.platform}</span>
+                <span className="uppercase">{l.status}</span>
+                <span className="rounded-full bg-zinc-100 px-2 py-0.5 dark:bg-zinc-900">
+                  via {provenance.provider ?? "unknown"}
+                </span>
+                {provenance.mocked ? (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+                    sample data
+                  </span>
+                ) : null}
+              </div>
+              <h2 className="mt-2 text-lg font-medium">
+                <a
+                  href={d.urlCanonical}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover:underline"
+                >
+                  {d.title || d.urlCanonical}
+                </a>
+              </h2>
+              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                {l.reason}
+              </p>
+              <p className="mt-2 line-clamp-3 text-sm text-zinc-700 dark:text-zinc-300">
+                {d.contentMd}
+              </p>
+            </li>
+          );
+        })}
       </ul>
     </main>
   );

@@ -6,6 +6,7 @@ import type {
   CollectorResult,
 } from "@/lib/collectors/types";
 import type { NewDocument } from "@/lib/db/schema";
+import { assertRealProvider } from "@/lib/collectors/provenance";
 import { fetchXPostsWithMeta } from "@/lib/x/client";
 
 export const xCollector: Collector = {
@@ -31,6 +32,7 @@ export const xCollector: Collector = {
       cursor: ctx.cursor ?? undefined,
       searchType,
     });
+    assertRealProvider(meta, "x");
 
     const documents: NewDocument[] = posts.map((p) => {
       const body = [

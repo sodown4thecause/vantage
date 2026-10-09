@@ -6,6 +6,7 @@ import type {
   CollectorResult,
 } from "@/lib/collectors/types";
 import type { NewDocument } from "@/lib/db/schema";
+import { assertRealProvider } from "@/lib/collectors/provenance";
 import { fetchRedditPostsWithMeta } from "@/lib/reddit/client";
 
 export const redditCollector: Collector = {
@@ -19,6 +20,7 @@ export const redditCollector: Collector = {
       limit,
       cursor: ctx.cursor ?? undefined,
     });
+    assertRealProvider(meta, "reddit");
 
     const documents: NewDocument[] = posts.map((p) => {
       const body = [

@@ -5,6 +5,7 @@ import type {
   CollectorContext,
   CollectorResult,
 } from "@/lib/collectors/types";
+import { assertRealProvider } from "@/lib/collectors/provenance";
 import { fetchProductHuntPostsWithMeta } from "@/lib/producthunt/client";
 import type { NewDocument } from "@/lib/db/schema";
 
@@ -15,6 +16,7 @@ export const productHuntCollector: Collector = {
     const query =
       typeof ctx.config.query === "string" ? ctx.config.query : undefined;
     const { posts, meta } = await fetchProductHuntPostsWithMeta({ first, query });
+    assertRealProvider(meta, "producthunt");
     const documents: NewDocument[] = posts.map((p) => {
       const body = [`# ${p.name}`, p.tagline, "", p.description].join("\n");
       return {
