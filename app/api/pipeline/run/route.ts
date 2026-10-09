@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { authorizeWorkspace } from "@/lib/auth/workspace";
+import { MANUAL_ENDPOINT_RULE, checkRateLimit, rateLimitResponse } from "@/lib/http/rateLimit";
 import { normalizePipelineOptions } from "@/lib/pipeline/options";
 import { runPipeline } from "@/lib/pipeline/run";
 
@@ -32,6 +33,13 @@ export async function POST(req: Request) {
         { error: authorization.error },
         { status: authorization.status },
       );
+    }
+    const rateLimit = checkRateLimit(
+      `pipeline:${body.workspaceId}`,
+      MANUAL_ENDPOINT_RULE,
+    );
+    if (!rateLimit.ok) {
+      return rateLimitResponse(rateLimit.retryAfterSeconds);
     }
     const result = await runPipeline({
       workspaceId: body.workspaceId,

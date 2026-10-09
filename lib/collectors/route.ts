@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { authorizeWorkspace } from "@/lib/auth/workspace";
+import { MANUAL_ENDPOINT_RULE, checkRateLimit, rateLimitResponse } from "@/lib/http/rateLimit";
 import { runCollectorForType } from "@/lib/collectors/run";
 import type { Collector, SourceType } from "@/lib/collectors/types";
 
@@ -28,6 +29,13 @@ export async function handleCollectorPost(
         { error: authorization.error },
         { status: authorization.status },
       );
+    }
+    const rateLimit = checkRateLimit(
+      `collector:${body.workspaceId}`,
+      MANUAL_ENDPOINT_RULE,
+    );
+    if (!rateLimit.ok) {
+      return rateLimitResponse(rateLimit.retryAfterSeconds);
     }
     const results = await runCollectorForType({
       collector,
