@@ -35,6 +35,7 @@
 		"staging": {
 			"name": "vantage-staging",
 			"build": { "command": "" },
+			"routes": [],
 			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "vantage-staging" }],
 			"browser": { "binding": "BROWSER" },
 			"ai": { "binding": "AI" },
