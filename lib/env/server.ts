@@ -51,9 +51,7 @@ export function neonAuthCookieSecret(env: EnvLike = process.env): string {
 /** Collector credentials. All optional: collectors fall back per provider. */
 export function scavioApiKey(env: EnvLike = process.env): string | undefined {
   return optionalEnv("SCAVIO_API_KEY", env);
-}
-
-export function tinyfishApiKey(env: EnvLike = process.env): string | undefined {
+}export function tinyfishApiKey(env: EnvLike = process.env): string | undefined {
   return optionalEnv("TINYFISH_API_KEY", env);
 }
 
@@ -68,6 +66,19 @@ export function youtubeApiKey(env: EnvLike = process.env): string | undefined {
 /** Masters candidate learning weights; default-off until 3.5 lands. */
 export function learningEnabled(env: EnvLike = process.env): boolean {
   return flagEnv("LEARNING_ENABLED", env);
+}
+
+/** Resend credential for the daily digest; digests skip when unset. */
+export function resendApiKey(env: EnvLike = process.env): string | undefined {
+  return optionalEnv("RESEND_API_KEY", env);
+}
+
+export function digestFromAddress(env: EnvLike = process.env): string {
+  return optionalEnv("DIGEST_FROM_ADDRESS", env) ?? "digest@contextfor.dev";
+}
+
+export function digestFromName(env: EnvLike = process.env): string {
+  return optionalEnv("DIGEST_FROM_NAME", env) ?? "Vantage";
 }
 
 /**

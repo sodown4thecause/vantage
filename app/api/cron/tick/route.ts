@@ -3,8 +3,10 @@ import { NextResponse } from "next/server";
 
 import { mapWithConcurrency } from "@/lib/async/map-with-concurrency";
 import { collectorsByType } from "@/lib/collectors/registry";
+import { publicCollectorError } from "@/lib/collectors/errors";
 import { runCollector } from "@/lib/collectors/run";
 import { isCronAuthorized } from "@/lib/cron/authorize";
+import { runDueDigests } from "@/lib/digest/dispatch";
 import { getDb } from "@/lib/db/client";
 import { source, workspace } from "@/lib/db/schema";
 import { runPipeline } from "@/lib/pipeline/run";
@@ -13,8 +15,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * 3-hour tick: run every free-lane collector source, then pipeline.
- * Failures on one source are logged; other sources continue.
+ * 3-hour tick: run every free-lane collector source, then pipeline, then
+ * dispatch due daily digests. Failures on one source are logged; other
+ * sources continue.
  */
 export async function GET(req: Request) {
   if (!isCronAuthorized(req)) {
@@ -35,6 +38,7 @@ export async function GET(req: Request) {
 
     const collectorResults = [];
     const pipelineResults = [];
+    let digestSummary: Awaited<ReturnType<typeof runDueDigests>> | null = null;
 
     for (const ws of workspaces) {
       const sources = await db
@@ -67,7 +71,7 @@ export async function GET(req: Request) {
               workspaceId: ws.id,
               ...publicResult,
               type: src.type,
-              ...(error ? { error: "collector failed" } : {}),
+              ...(error ? { error: publicCollectorError(error) } : {}),
             };
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
@@ -76,7 +80,7 @@ export async function GET(req: Request) {
               workspaceId: ws.id,
               sourceId: src.id,
               type: src.type,
-              error: "collector failed",
+              error: publicCollectorError(message),
               inserted: 0,
               skipped: 0,
               collector: collector.name,
@@ -96,12 +100,20 @@ export async function GET(req: Request) {
       }
     }
 
+    try {
+      digestSummary = await runDueDigests();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[tick] digest dispatch failed", message);
+    }
+
     return NextResponse.json({
       ok: true,
       ranAt: new Date().toISOString(),
       workspaces: workspaces.length,
       collectorResults,
       pipelineResults,
+      digest: digestSummary,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
