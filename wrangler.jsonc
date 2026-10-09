@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "contextfor-dev-app",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-10-09",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "limits": {
+    "cpu_ms": 300000
+  },
+  "triggers": {
+    "crons": ["0 */3 * * *"]
+  },
+  "routes": [
+    { "pattern": "app.contextfor.dev", "custom_domain": true }
+  ],
+  "workers_dev": false,
+  "vars": {
+    "NEXT_PUBLIC_APP_URL": "https://app.contextfor.dev"
+  }
+}

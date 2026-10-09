@@ -1,5 +1,6 @@
+# pnpm 11 settings (moved out of package.json in v11).
+# workerd ships a postinstall that fetches its runtime binary and esbuild
+# needs its platform binary; both are required for Cloudflare builds.
 allowBuilds:
-  core-js: false
+  workerd: true
   esbuild: true
-  sharp: false
-  unrs-resolver: false
