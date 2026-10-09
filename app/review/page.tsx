@@ -24,11 +24,10 @@ export default async function ReviewPage({
       <main className="mx-auto max-w-3xl space-y-4 p-8">
         <h1 className="text-2xl font-semibold">Review queue</h1>
         <p className="text-zinc-600">
-          Pass <code className="rounded bg-zinc-100 px-1">?workspaceId=…</code>{" "}
-          to load leads.
+          Pick a workspace from your dashboard to open its queue.
         </p>
         <Link href="/" className="text-sm underline">
-          Home
+          Go to your workspaces
         </Link>
       </main>
     );

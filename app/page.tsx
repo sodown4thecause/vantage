@@ -1,64 +1,132 @@
 import Link from "next/link";
 
-export default function Home() {
+import { CreateWorkspaceForm } from "@/app/components/CreateWorkspaceForm";
+import { auth } from "@/lib/auth/server";
+import { listWorkspacesForUser } from "@/lib/db/queries";
+
+export const dynamic = "force-dynamic";
+
+export default async function Home() {
+  const { data: session } = await auth.getSession();
+  const userId = session?.user?.id;
+
+  if (!userId) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center bg-zinc-50 px-6 py-24 font-sans dark:bg-black">
+        <main className="w-full max-w-2xl space-y-8 rounded-2xl border border-zinc-200 bg-white p-10 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="space-y-3">
+            <p className="text-sm font-medium uppercase tracking-wide text-zinc-500">
+              Vantage
+            </p>
+            <h1 className="text-3xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
+              Find the people already asking for what you build
+            </h1>
+            <p className="text-base leading-7 text-zinc-600 dark:text-zinc-400">
+              Vantage reads Reddit, Hacker News, X, YouTube, Product Hunt and
+              your own feeds, then ranks the conversations worth joining. You
+              write the reply — Vantage never posts for you.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/auth/sign-up"
+              className="inline-flex h-11 items-center justify-center rounded-full bg-zinc-950 px-5 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
+            >
+              Create free account
+            </Link>
+            <Link
+              href="/auth/sign-in"
+              className="inline-flex h-11 items-center justify-center rounded-full border border-zinc-300 px-5 text-sm font-medium text-zinc-900 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-50 dark:hover:bg-zinc-900"
+            >
+              Sign in
+            </Link>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  let workspaces: Awaited<ReturnType<typeof listWorkspacesForUser>> = [];
+  let loadError: string | null = null;
+  try {
+    workspaces = await listWorkspacesForUser(String(userId));
+  } catch (err) {
+    console.error("[home] failed to load workspaces", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    loadError = "Could not load your workspaces. Please refresh.";
+  }
+
   return (
-    <div className="flex flex-1 flex-col items-center justify-center bg-zinc-50 px-6 py-24 font-sans dark:bg-black">
-      <main className="w-full max-w-2xl space-y-8 rounded-2xl border border-zinc-200 bg-white p-10 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="space-y-3">
-          <p className="text-sm font-medium uppercase tracking-wide text-zinc-500">
-            Vantage · M1 scaffold
-          </p>
-          <h1 className="text-3xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
-            Social listening foundation
-          </h1>
-          <p className="text-base leading-7 text-zinc-600 dark:text-zinc-400">
-            Next.js + Neon Postgres (Drizzle) + Neon Auth, with the free-lane{" "}
-            <code className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-sm dark:bg-zinc-900">
-              Collector
-            </code>{" "}
-            interface ready for HN / RSS / Substack workers.
-          </p>
-        </div>
+    <div className="flex flex-1 flex-col items-center bg-zinc-50 px-6 py-16 font-sans dark:bg-black">
+      <main className="w-full max-w-3xl space-y-8">
+        <header className="flex items-end justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
+              Your workspaces
+            </h1>
+            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+              Each workspace has its own sources, queue and digest.
+            </p>
+          </div>
+          <Link
+            href="/auth/sign-out"
+            className="text-sm text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+          >
+            Sign out
+          </Link>
+        </header>
 
-        <ul className="grid gap-3 text-sm text-zinc-700 dark:text-zinc-300 sm:grid-cols-2">
-          <li className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
-            <span className="font-medium">Schema</span>
-            <p className="mt-1 text-zinc-500">workspace · source · document · lead</p>
-          </li>
-          <li className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
-            <span className="font-medium">Auth</span>
-            <p className="mt-1 text-zinc-500">Neon Managed Better Auth routes</p>
-          </li>
-          <li className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
-            <span className="font-medium">Collectors</span>
-            <p className="mt-1 text-zinc-500">lib/collectors/types.ts contract</p>
-          </li>
-          <li className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
-            <span className="font-medium">DB client</span>
-            <p className="mt-1 text-zinc-500">lib/db/client.ts via Neon HTTP</p>
-          </li>
-        </ul>
+        {loadError ? (
+          <p className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+            {loadError}
+          </p>
+        ) : null}
 
-        <div className="flex flex-wrap gap-3">
-          <Link
-            href="/auth/sign-in"
-            className="inline-flex h-11 items-center justify-center rounded-full bg-zinc-950 px-5 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
-          >
-            Sign in
-          </Link>
-          <Link
-            href="/auth/sign-up"
-            className="inline-flex h-11 items-center justify-center rounded-full border border-zinc-300 px-5 text-sm font-medium text-zinc-900 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-50 dark:hover:bg-zinc-900"
-          >
-            Create account
-          </Link>
-          <Link
-            href="/review"
-            className="inline-flex h-11 items-center justify-center rounded-full border border-zinc-300 px-5 text-sm font-medium text-zinc-900 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-50 dark:hover:bg-zinc-900"
-          >
-            Review queue
-          </Link>
-        </div>
+        {!loadError && workspaces.length === 0 ? (
+          <section className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="space-y-2">
+              <h2 className="text-lg font-medium text-zinc-950 dark:text-zinc-50">
+                Create your first workspace
+              </h2>
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                Name it after the product or brand you want to monitor. Next
+                you&apos;ll add sources, then Vantage starts surfacing the
+                conversations worth joining.
+              </p>
+            </div>
+            <CreateWorkspaceForm />
+          </section>
+        ) : null}
+
+        {workspaces.length > 0 ? (
+          <>
+            <ul className="space-y-3">
+              {workspaces.map((w) => (
+                <li key={w.id}>
+                  <Link
+                    href={`/review?workspaceId=${w.id}`}
+                    className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white p-4 shadow-sm hover:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-600"
+                  >
+                    <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                      {w.name}
+                    </span>
+                    <span className="text-sm text-zinc-500">
+                      {w.plan} · open queue
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+              <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
+                New workspace
+              </h2>
+              <CreateWorkspaceForm compact />
+            </section>
+          </>
+        ) : null}
       </main>
     </div>
   );
