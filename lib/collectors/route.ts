@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { authorizeWorkspace } from "@/lib/auth/workspace";
+import { publicCollectorError } from "@/lib/collectors/errors";
 import { MANUAL_ENDPOINT_RULE, checkRateLimit, rateLimitResponse } from "@/lib/http/rateLimit";
 import { runCollectorForType } from "@/lib/collectors/run";
 import type { Collector, SourceType } from "@/lib/collectors/types";
@@ -45,7 +46,7 @@ export async function handleCollectorPost(
     });
     const failed = results.filter((r) => r.error);
     const publicResults = results.map(({ error, ...result }) =>
-      error ? { ...result, error: "collector failed" } : result,
+      error ? { ...result, error: publicCollectorError(error) } : result,
     );
     return NextResponse.json(
       { results: publicResults },
