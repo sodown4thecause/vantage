@@ -60,9 +60,15 @@ export default async function ReviewPage({
           <h1 className="text-2xl font-semibold">Review queue</h1>
         </div>
         <Link href="/" className="text-sm underline">
-          Home
+          Go to your workspaces
         </Link>
       </div>
+      <Link
+        href={`/sources?workspaceId=${workspaceId}`}
+        className="text-sm underline"
+      >
+        Manage sources
+      </Link>
 
       {error ? (
         <p className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">

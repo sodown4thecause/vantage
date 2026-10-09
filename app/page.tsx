@@ -119,6 +119,13 @@ export default async function Home() {
                 </li>
               ))}
             </ul>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              Manage a workspace&apos;s sources from its{" "}
+              <Link href="/sources" className="underline">
+                sources page
+              </Link>
+              .
+            </p>
             <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
               <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
                 New workspace
