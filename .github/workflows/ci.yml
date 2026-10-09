@@ -1,0 +1,93 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      # The build and unit tests must never need live provider credentials.
+      DATABASE_URL: postgresql://vantage:vantage@localhost:5432/vantage_test
+      NEON_AUTH_BASE_URL: https://example.invalid/auth
+      NEON_AUTH_COOKIE_SECRET: ci-only-cookie-secret-at-least-32-chars
+      CRON_SECRET: ci-only-cron-secret
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vantage
+          POSTGRES_PASSWORD: vantage
+          POSTGRES_DB: vantage_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vantage"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Use pnpm ${{ vars.PNPM_VERSION || '11.5.0' }}
+        run: corepack prepare pnpm@${{ vars.PNPM_VERSION || '11.5.0' }} --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations to the test database
+        run: pnpm exec drizzle-kit migrate
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Test
+        run: pnpm test
+
+      # drizzle-kit generate rewrites drizzle/meta/_journal.json on every run,
+      # even with no schema changes, so the drift gate compares migrations and
+      # snapshots only: a modified tracked migration, a new migration file, or
+      # a changed snapshot fails the build.
+      - name: Check for schema drift
+        run: |
+          pnpm run db:generate
+          git diff --exit-code -- drizzle/*.sql
+          if [ -n "$(git status --porcelain -- drizzle | grep -v '_journal.json')" ]; then
+            echo "::error::Schema drift detected: drizzle-kit generated changes not committed."
+            git status --porcelain -- drizzle
+            exit 1
+          fi
+
+      - name: Build
+        run: pnpm run build
+
+  workflow-lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: actionlint
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@latest
+          actionlint -color
+      - name: zizmor
+        run: |
+          go install github.com/woodruffw/zizmor@latest
+          zizmor --persona=auditor .github/workflows
