@@ -19,4 +19,32 @@ describe("public error disclosure contract", () => {
       "error = err instanceof Error ? err.message : String(err)",
     );
   });
+
+  it.each([
+    "app/actions/workspace.ts",
+    "app/actions/source.ts",
+    "app/actions/lead.ts",
+    "app/actions/outcome.ts",
+    "app/actions/digest.ts",
+  ])("returns only fixed or domain-validated errors from %s", (path) => {
+    const source = read(path);
+    expect(source).not.toMatch(/return\s*\{\s*error:\s*err\b/);
+    expect(source).not.toMatch(/return\s*\{\s*error:\s*String\(/);
+    expect(source).not.toMatch(/return\s*\{\s*error:\s*message\b/);
+    // Raw exception text may be logged internally, never returned.
+    expect(source).not.toMatch(/return\s*\{[^}]*err\.message/);
+  });
+
+  it.each([
+    "app/sources/page.tsx",
+    "app/settings/page.tsx",
+  ])("renders only a fixed access-denied message in %s", (path) => {
+    expect(read(path)).toContain("You do not have access to this workspace.");
+  });
+
+  it("never sends raw provider payloads in the digest email", () => {
+    const source = read("lib/digest/send.ts");
+    expect(source).toContain("escapeHtml");
+    expect(source).not.toContain("JSON.stringify(opportunities)");
+  });
 });
