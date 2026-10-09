@@ -1,3 +1,4 @@
+import { youtubeApiKey } from "@/lib/env/server";
 import fixture from "@/test/fixtures/youtube.json";
 import {
   asRecordArray,
@@ -343,7 +344,7 @@ async function fetchViaTinyFishAgent(opts?: {
 async function fetchViaYouTubeApi(opts?: {
   videoIds?: string[];
 }): Promise<YouTubeComment[]> {
-  const key = process.env.YOUTUBE_API_KEY;
+  const key = youtubeApiKey();
   if (!key) throw new Error("YOUTUBE_API_KEY is not configured");
 
   const videoIds =
@@ -460,7 +461,7 @@ export async function fetchYouTubeCommentsWithMeta(opts?: {
     if (agentHit) return agentHit;
   }
 
-  if (process.env.YOUTUBE_API_KEY?.trim()) {
+  if (youtubeApiKey()) {
     const comments = await fetchViaYouTubeApi(opts);
     return { comments, meta: { provider: "youtube_api" } };
   }

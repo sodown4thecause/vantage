@@ -29,9 +29,9 @@ vi.mock("@/lib/reddit/client", () => ({
 import { redditCollector } from "@/lib/collectors/reddit";
 import {
   assertRealProvider,
-  fixturesAllowed,
   isFixtureProvider,
 } from "@/lib/collectors/provenance";
+import { fixturesAllowed } from "@/lib/env/server";
 
 const ctx = {
   workspaceId: "workspace-1",

@@ -1,5 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 
+import { cronSecret } from "@/lib/env/server";
+
 type CronAuthorizationOptions = {
   secret?: string;
   nodeEnv?: string;
@@ -9,7 +11,7 @@ export function isCronAuthorized(
   req: Request,
   options: CronAuthorizationOptions = {},
 ): boolean {
-  const secret = options.secret ?? process.env.CRON_SECRET;
+  const secret = options.secret ?? cronSecret();
   const nodeEnv = options.nodeEnv ?? process.env.NODE_ENV;
 
   if (!secret) return nodeEnv !== "production";

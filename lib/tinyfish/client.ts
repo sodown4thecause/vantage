@@ -1,11 +1,13 @@
 import { TinyFish } from "@tiny-fish/sdk";
 
+import { optionalEnv, type EnvLike } from "@/lib/env/server";
+
 /**
  * Shared TinyFish SDK client. Uses TINYFISH_API_KEY from the environment
  * (also accepted by the SDK constructor default).
  */
 export function createTinyFishClient(
-  apiKey: string = process.env.TINYFISH_API_KEY ?? "",
+  apiKey: string = optionalEnv("TINYFISH_API_KEY") ?? "",
 ): TinyFish {
   const key = apiKey.trim();
   if (!key) {
@@ -17,5 +19,5 @@ export function createTinyFishClient(
 export function hasTinyFishApiKey(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return Boolean(env.TINYFISH_API_KEY?.trim());
+  return Boolean(optionalEnv("TINYFISH_API_KEY", env as EnvLike));
 }

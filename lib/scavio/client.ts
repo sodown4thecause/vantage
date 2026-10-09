@@ -1,13 +1,15 @@
 import { Scavio } from "scavio";
 
+import { optionalEnv, type EnvLike } from "@/lib/env/server";
+
 export function hasScavioApiKey(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return Boolean(env.SCAVIO_API_KEY?.trim());
+  return Boolean(optionalEnv("SCAVIO_API_KEY", env as EnvLike));
 }
 
 export function createScavioClient(
-  apiKey: string = process.env.SCAVIO_API_KEY ?? "",
+  apiKey: string = optionalEnv("SCAVIO_API_KEY") ?? "",
 ): Scavio {
   const key = apiKey.trim();
   if (!key) {

@@ -1,3 +1,4 @@
+import { productHuntDevToken } from "@/lib/env/server";
 import fixture from "@/test/fixtures/producthunt.json";
 import {
   asRecordArray,
@@ -264,7 +265,7 @@ async function fetchViaTinyFishAgent(opts?: {
 async function fetchViaProductHuntApi(opts?: {
   first?: number;
 }): Promise<ProductHuntPost[]> {
-  const token = process.env.PH_DEV_TOKEN;
+  const token = productHuntDevToken();
   if (!token?.trim()) throw new Error("PH_DEV_TOKEN is not configured");
 
   const query = `
@@ -384,7 +385,7 @@ export async function fetchProductHuntPostsWithMeta(opts?: {
     if (agent) return agent;
   }
 
-  if (process.env.PH_DEV_TOKEN?.trim()) {
+  if (productHuntDevToken()) {
     const posts = await fetchViaProductHuntApi(opts);
     return { posts, meta: { provider: "producthunt_api" } };
   }

@@ -1,22 +1,10 @@
-type EnvLike = Record<string, string | undefined>;
+import { fixturesAllowed, type EnvLike } from "@/lib/env/server";
 
 const FIXTURE_PROVIDER = "fixture";
 
 /** True when a provider result is bundled sample data, not live platform data. */
 export function isFixtureProvider(provider: string): boolean {
   return provider === FIXTURE_PROVIDER;
-}
-
-/**
- * Fixture fallbacks are allowed in development and in any environment that
- * explicitly opts in. Production silently serving sample data as real leads
- * is never acceptable, so there the collector fails instead.
- */
-export function fixturesAllowed(env: EnvLike = process.env): boolean {
-  if (env.NODE_ENV !== "production") {
-    return true;
-  }
-  return env.ALLOW_FIXTURES === "true";
 }
 
 /**
