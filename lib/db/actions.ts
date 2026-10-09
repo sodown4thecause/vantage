@@ -2,8 +2,7 @@
 
 import { auth } from "@/lib/auth/server";
 import { getDb } from "@/lib/db/client";
-import { document, lead, workspace } from "@/lib/db/schema";
-import type { SourcePlatform } from "@/lib/db/schema";
+import { workspace } from "@/lib/db/schema";
 
 /**
  * Creates a workspace row for the signed-in Neon Auth user.
@@ -28,36 +27,3 @@ export async function createWorkspaceForCurrentUser(name: string) {
   return row;
 }
 
-/** Smoke-test insert path used by verification scripts. */
-export async function insertDocumentAndLead(input: {
-  workspaceId: string;
-  urlCanonical: string;
-  platform: SourcePlatform;
-  contentMd: string;
-  contentHash: string;
-  reason?: string;
-}) {
-  const db = getDb();
-  const [doc] = await db
-    .insert(document)
-    .values({
-      workspaceId: input.workspaceId,
-      urlCanonical: input.urlCanonical,
-      platform: input.platform,
-      contentMd: input.contentMd,
-      contentHash: input.contentHash,
-    })
-    .returning();
-
-  const [row] = await db
-    .insert(lead)
-    .values({
-      workspaceId: input.workspaceId,
-      documentId: doc.id,
-      reason: input.reason ?? "scaffold verification",
-      status: "new",
-    })
-    .returning();
-
-  return { document: doc, lead: row };
-}
