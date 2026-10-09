@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://cubic.dev/schema/cubic-repository-config.schema.json
+version: 1
+reviews:
+  enabled: true
+  # Start quiet: raise to high once the initial noise is tuned out.
+  sensitivity: medium
+  # Re-review only the commits pushed to an open PR.
+  incremental_commits: true
+  # Draft PRs stay unreviewed until they are marked ready.
+  check_drafts: false
+  # Deep codebase reviews on demand only; they cost 3x reviewed lines.
+  ultrareview: manual
+  # Shadow first: cubic records what it would approve without approving,
+  # then flip auto_approve_behavior to live.
+  auto_approve_behavior: shadow
+  auto_approve: always
+  senior_reviewers: []
+  ignore:
+    files:
+      - "dist/**"
+      - "drizzle/**"
+      - "pnpm-lock.yaml"
+      - "test/fixtures/**"
+    # Generated migration churn and dependency bumps are not review-worthy.
+    pr_labels:
+      - "skip-review"
+    max_changed_lines: 5000
+pr_descriptions:
+  skip_if_author_description: false

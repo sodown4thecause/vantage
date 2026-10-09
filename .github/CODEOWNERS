@@ -1,0 +1,18 @@
+# Review ownership. CODEOWNERS approval is required for the paths below once
+# branch protection is enabled (see AGENTS.md → Branch protection).
+
+*                                   @liam
+
+# Tenant boundaries and persistence: changes here can move data across
+# workspaces, so they always need a second pair of eyes.
+/lib/db/
+/lib/auth/
+/lib/outcomes/
+/drizzle/
+
+# Collection executes user-supplied URLs and provider credentials.
+/lib/collectors/
+
+# CI and review process changes affect every PR.
+/.github/workflows/
+/cubic.yaml

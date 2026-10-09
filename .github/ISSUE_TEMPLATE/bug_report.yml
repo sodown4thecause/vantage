@@ -1,0 +1,37 @@
+name: Bug report
+description: Something in Vantage is not working as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, and what did Vantage do instead?
+    validations:
+      required: true
+  - type: input
+    id: workspace
+    attributes:
+      label: Workspace
+      description: Workspace id (from the dashboard URL), if you have it.
+    validations:
+      required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Sign-up / onboarding
+        - Sources
+        - Collection
+        - Review queue
+        - Daily digest
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: false

@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest something Vantage should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do that Vantage does not help with today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+    validations:
+      required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Sign-up / onboarding
+        - Sources
+        - Collection
+        - Review queue
+        - Daily digest
+        - Other
+    validations:
+      required: true

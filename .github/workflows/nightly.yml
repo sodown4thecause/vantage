@@ -1,0 +1,62 @@
+name: nightly
+
+on:
+  schedule:
+    # 09:00 UTC daily: catches drift and build rot that PRs would surface,
+    # including breakage on a branch nobody has pushed in a while.
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  re-verify:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      DATABASE_URL: postgresql://vantage:vantage@localhost:5432/vantage_test
+      NEON_AUTH_BASE_URL: https://example.invalid/auth
+      NEON_AUTH_COOKIE_SECRET: ci-only-cookie-secret-at-least-32-chars
+      CRON_SECRET: ci-only-cron-secret
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vantage
+          POSTGRES_PASSWORD: vantage
+          POSTGRES_DB: vantage_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vantage"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable corepack
+        run: corepack enable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Apply migrations to the test database
+        run: pnpm exec drizzle-kit migrate
+      - name: Test
+        run: pnpm test
+      - name: Check for schema drift
+        run: |
+          pnpm run db:generate
+          git diff --exit-code -- drizzle/*.sql
+          if [ -n "$(git status --porcelain -- drizzle | grep -v '_journal.json')" ]; then
+            echo "::error::Schema drift detected on main."
+            exit 1
+          fi
+      - name: Audit dependencies
+        run: pnpm audit --audit-level high || true

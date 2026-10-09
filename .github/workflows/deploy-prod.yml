@@ -1,0 +1,45 @@
+name: deploy-prod
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  deployments: write
+
+jobs:
+  deploy-prod:
+    runs-on: ubuntu-latest
+    # Production deploys are gated by the GitHub Environment's required
+    # reviewers, so a human confirms every release.
+    environment:
+      name: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Worker (production)
+        run: pnpm exec opennextjs-cloudflare build
+        env:
+          NEXT_PUBLIC_APP_URL: https://app.contextfor.dev
+
+      - name: Deploy Worker (production)
+        run: pnpm exec opennextjs-cloudflare deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

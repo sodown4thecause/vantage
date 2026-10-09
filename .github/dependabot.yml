@@ -1,0 +1,46 @@
+version: 2
+updates:
+  # Framework and ORM move together and need review; everything else is
+  # security-only so the queue stays actionable.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    groups:
+      framework:
+        patterns:
+          - next
+          - react
+          - react-dom
+          - eslint-config-next
+          - drizzle-orm
+          - drizzle-kit
+        update-types:
+          - minor
+          - patch
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    commit-message:
+      prefix: chore
+      prefix-development: chore
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: "Etc/UTC"
+    labels:
+      - dependencies
+      - ci
+    commit-message:
+      prefix: ci
