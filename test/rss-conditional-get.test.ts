@@ -42,6 +42,19 @@ describe("rssCollector conditional requests", () => {
             "https://user:secret@example.com/private.xml?token=signed#fragment",
         },
       }),
-    ).rejects.toThrow("RSS fetch 403 for https://example.com/private.xml");
+    ).rejects.toThrow(/credentials|example\.com/);
+
+    const error = await rssCollector
+      .run({
+        workspaceId: "workspace-1",
+        sourceId: "source-1",
+        config: {
+          feedUrl:
+            "https://user:secret@example.com/private.xml?token=signed#fragment",
+        },
+      })
+      .catch((err: Error) => err.message);
+    expect(error).not.toContain("secret");
+    expect(error).not.toContain("token=signed");
   });
 });

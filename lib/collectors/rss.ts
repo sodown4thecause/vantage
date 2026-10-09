@@ -2,6 +2,7 @@ import { XMLParser } from "fast-xml-parser";
 
 import { contentHash, sha256Hex } from "@/lib/collectors/hash";
 import { parseValidDate } from "@/lib/collectors/date";
+import { guardedFetch, readTextWithinLimit } from "@/lib/collectors/safeFetch";
 import type {
   Collector,
   CollectorContext,
@@ -61,7 +62,7 @@ export const rssCollector: Collector = {
     if (ctx.etag) headers["If-None-Match"] = ctx.etag;
     if (ctx.lastModified) headers["If-Modified-Since"] = ctx.lastModified;
 
-    const res = await fetch(url, { headers, next: { revalidate: 0 } });
+    const res = await guardedFetch(url, { headers });
     if (res.status === 304) {
       return {
         documents: [],
@@ -72,7 +73,7 @@ export const rssCollector: Collector = {
       throw new Error(`RSS fetch ${res.status} for ${safeUrlForError(url)}`);
     }
 
-    const xml = await res.text();
+    const xml = await readTextWithinLimit(res);
     const parsed = parser.parse(xml);
     const channel = parsed?.rss?.channel ?? parsed?.feed;
     const items = asArray(
