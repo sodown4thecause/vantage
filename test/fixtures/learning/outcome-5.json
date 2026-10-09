@@ -1,0 +1,10 @@
+{
+  "workspaceId": "ws-fixture-1",
+  "leadId": "lead-5",
+  "outcomeType": "acted_on",
+  "createdAt": "2026-09-21T04:00:00Z",
+  "metadata": {
+    "platform": "producthunt",
+    "intent": "purchase"
+  }
+}

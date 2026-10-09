@@ -1,0 +1,9 @@
+{
+  "id": "w-fixture-2",
+  "workspaceId": "ws-fixture-1",
+  "weights": { "intent_rung": 0.4, "confidence": 0.15, "base_score": 0.05 },
+  "version": 2,
+  "active": false,
+  "createdAt": "2026-09-21T01:00:00Z",
+  "updatedAt": "2026-09-21T01:00:00Z"
+}

@@ -1,0 +1,1 @@
+export { scoreFeatures, decideStatus, applyLearningWeights, getActiveWeights, hasEvidenceThreshold, scoreOpportunity, getBaselineGoldenVector, MIN_EVIDENCE_THRESHOLD, MIN_ACTED_ON_THRESHOLD, type FeatureVector, type OpportunityLead, type ScoredOpportunity } from "./features";

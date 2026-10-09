@@ -1,0 +1,10 @@
+{
+  "workspaceId": "ws-fixture-1",
+  "leadId": "lead-1",
+  "outcomeType": "useful",
+  "createdAt": "2026-09-21T00:00:00Z",
+  "metadata": {
+    "platform": "reddit",
+    "intent": "research"
+  }
+}
