@@ -1,80 +1,118 @@
-# Vantage
+# [Vantage](https://contextfor.dev)
 
-Social listening / lead capture platform (M1 scaffold).
+**Find the people already asking for what you build.**
+
+Vantage reads Reddit, Hacker News, X, YouTube, Product Hunt, Substack and your
+own feeds, scores what it finds for buying intent, and puts the handful of
+conversations worth joining in front of you each morning. You write the reply —
+Vantage never posts on your behalf.
+
+- App: **https://app.contextfor.dev** · Marketing: **https://contextfor.dev**
 
 ## Stack
 
-- **Next.js** (App Router) + TypeScript + Tailwind
-- **Neon** Postgres via **Drizzle ORM**
+- **Next.js 16** (App Router) + TypeScript + Tailwind v4
+- **Neon** Postgres via **Drizzle ORM** (`neon-http` driver — fetch only, no
+  connection pool to manage)
 - **Neon Auth** (Managed Better Auth)
-- Free-lane **Collector** interface for HN / RSS / Substack workers
+- **Cloudflare Workers** (Paid) via OpenNext — custom domain, Cron Trigger for
+  the sweep, Workers static assets
+- **Resend** for the daily digest
+- **Greptile** for AI pull-request review, **GitHub Actions** for CI/CD
+
+## The product journey
+
+1. **Sign up** → create a workspace (one per product or brand you monitor).
+2. **Add sources** → RSS/Atom feeds, Substack publications, or search queries
+   for Hacker News, Reddit, X, YouTube and Product Hunt. Every source shows
+   health and last-poll time, and can be paused.
+3. **Collect** → press *Collect now* on a source, or wait for the scheduled
+   sweep (every 3 hours). Each collector records which provider produced the
+   data, and fixture sample data is refused in production.
+4. **Review** → leads are ranked by intent, with the original post, the reason
+   it scored, and the provider it came from. Approve or reject, and record
+   whether the lead was actually useful.
+5. **Daily digest** → up to five top-ranked conversations, emailed once a day
+   at your chosen hour.
+
+Pages: `/` (workspaces), `/sources`, `/review`, `/settings` (digest, unsubscribe).
+
+## Data model
+
+Tables in [`lib/db/schema.ts`](lib/db/schema.ts):
+
+| Table | Purpose |
+|-------|---------|
+| `workspace` | Tenant, owner (Neon Auth user), plan, digest preferences |
+| `source` | Collector feeds: type, config, health, etag/cursor, last poll |
+| `document` | Normalized collected content, deduped by content hash |
+| `lead` | Scored opportunity tied to a document, with review status |
+| `opportunity_outcome` | Was this lead useful / not useful / acted on |
+
+Migrations live in [`drizzle/`](drizzle) and are additive only
+(expand/contract), so a Worker rollback always works against the live schema.
+
+## Collectors
+
+| Type | Order |
+|------|-------|
+| `rss` | Direct fetch with conditional GET (ETag / `If-Modified-Since`) |
+| `substack` | Publication feed via the RSS collector |
+| `hn` | Algolia search + Firebase item enrichment |
+| `reddit` | Scavio `reddit.search` → fixture (fixtures blocked in production) |
+| `x` | Scavio `x.search` → fixture |
+| `youtube` | Scavio comments → TinyFish Fetch/Search → TinyFish agent → YouTube Data API → fixture |
+| `producthunt` | TinyFish Search+Fetch → homepage fetch → agent → PH GraphQL → fixture |
+
+Every document stores `metadata.provider` and `metadata.mocked`, and the review
+queue shows both — sample data can never pass itself off as a real lead.
+
+User-supplied feed URLs go through `lib/collectors/safeFetch.ts`: only public
+http(s), no embedded credentials, no loopback/private/link-local/cloud-metadata
+hosts, redirects re-validated per hop, plus request timeout and response size
+caps.
+
+Multitenancy is enforced at the query layer and proven by
+[`test/tenant-isolation-sweep.test.ts`](test/tenant-isolation-sweep.test.ts):
+anonymous and cross-workspace callers are refused with zero database writes.
 
 ## Setup
 
 ```bash
 pnpm install
 cp .env.example .env.local
-# Fill DATABASE_URL, NEON_AUTH_BASE_URL, NEON_AUTH_COOKIE_SECRET
-pnpm db:migrate   # applies drizzle/0000_m1_core.sql
+# Fill DATABASE_URL (pooled), NEON_AUTH_BASE_URL, NEON_AUTH_COOKIE_SECRET
+pnpm db:migrate
 pnpm dev
 ```
 
-### Neon project
-
-1. Create a Neon project and enable **Managed Better Auth**.
-2. Copy the pooled `DATABASE_URL` and Auth base URL into `.env.local`.
-3. Generate a cookie secret: `openssl rand -base64 32`.
-
-## M1 schema
-
-Tables in `lib/db/schema.ts`:
-
-| Table | Purpose |
-|-------|---------|
-| `workspace` | Tenant + plan/budget/consents |
-| `source` | Collector feeds (etag/cursor/config) |
-| `document` | Normalized collected content |
-| `lead` | Scored opportunities tied to documents |
-
-## Collectors & pipeline
-
-| Route | Purpose |
-|-------|---------|
-| `POST /api/collectors/hn` | Hacker News (Algolia + Firebase) |
-| `POST /api/collectors/rss` | RSS/Atom with conditional GET |
-| `POST /api/collectors/substack` | Substack publication feed |
-| `POST /api/collectors/producthunt` | Product Hunt via TinyFish **Search+Fetch** (agent last), else PH GraphQL, else fixture |
-| `POST /api/collectors/youtube` | YouTube via **Scavio** comments scrape, else TinyFish Fetch/Search, else agent, else Data API, else fixture |
-| `POST /api/collectors/reddit` | Reddit via **Scavio** `reddit.search` (`SCAVIO_API_KEY`), else fixture |
-| `POST /api/collectors/x` | X/Twitter via **Scavio** `x.search` (`SCAVIO_API_KEY`), else fixture |
-| `POST /api/pipeline/run` | Normalize + intent ladder → leads |
-| `GET /api/cron/tick` | 3-hour Vercel cron: all sources + pipeline |
-| `/review?workspaceId=` | Lead review UI |
-
-Body for collector routes: `{ "workspaceId": "...", "sourceId": "..." }`.
-
-### Scrape providers
-
-Prefer **search + fetch/scrape** over full browser agents. **Scavio is enough** for Reddit/X/YouTube structured APIs.
-
-1. **YouTube order:** Scavio comments → TinyFish Fetch/Search → TinyFish Agent → `YOUTUBE_API_KEY` → fixture.
-2. **Product Hunt order:** TinyFish Search+Fetch → homepage Fetch → TinyFish Agent → `PH_DEV_TOKEN` → fixture.
-3. **Reddit:** Scavio `client.reddit.search` (`config.query`, `config.limit`) → fixture.
-4. **X:** Scavio `client.x.search` (`config.query`, `config.searchType`, `config.limit`) → fixture.
-5. Documents store `metadata.provider` (`scavio`, `tinyfish_*`, native APIs, or `fixture`).
-6. Optional: deploy [arcade-scavio](https://pypi.org/project/arcade-scavio/) on Arcade if you want the same Scavio tools as MCP (`Scavio.SearchReddit`, etc.). Vantage talks to Scavio directly.
+Optional: collector keys (`SCAVIO_API_KEY`, `TINYFISH_API_KEY`,
+`PH_DEV_TOKEN`, `YOUTUBE_API_KEY`), `RESEND_API_KEY` for digests,
+`CRON_SECRET` to protect the sweep, `ALLOW_FIXTURES` to permit sample data.
 
 ## Scripts
 
 | Script | Description |
 |--------|-------------|
-| `pnpm dev` | Next dev server |
-| `pnpm build` | Production build |
+| `pnpm dev` / `build` / `start` | Next dev server / build / start |
+| `pnpm test` | Unit + contract tests (Vitest) |
 | `pnpm typecheck` | `tsc --noEmit` |
-| `pnpm db:generate` | Generate migrations from schema |
-| `pnpm db:migrate` | Apply migrations |
-| `pnpm db:push` | Push schema (dev) |
+| `pnpm lint` | ESLint |
+| `pnpm db:generate` / `db:migrate` / `db:push` | Drizzle migrations |
+| `pnpm cf:build` / `cf:deploy` / `cf:preview` | OpenNext build + Wrangler deploy |
 
-## Ref orchestration
+## Deployment
 
-See `.warp/REF_ORCHESTRATOR_SETUP.md` for Warp Oz ↔ Ref Plans wiring.
+Cloudflare Workers, configured in [`wrangler.jsonc`](wrangler.jsonc):
+`app.contextfor.dev` custom domain, Workers static assets, `nodejs_compat`,
+observability, and a 3-hourly Cron Trigger for the sweep. CI/CD is
+[`.github/workflows`](.github/workflows): `ci.yml` runs lint → typecheck →
+tests → migration drift → build on every PR, plus workflow linting;
+`deploy-staging.yml` deploys every PR and comments the URL; `deploy-prod.yml`
+deploys `main` behind a required reviewer. Migrations in CI use the direct
+(non-pooled) Neon endpoint; the runtime uses the pooled one.
+
+## Contributing
+
+See [AGENTS.md](AGENTS.md) for the standard loop, tenant-safety rules,
+migration conventions, secrets handling, and how Greptile reviews PRs.
