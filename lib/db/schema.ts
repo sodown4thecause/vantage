@@ -115,6 +115,11 @@ export const workspace = pgTable("workspace", {
     .$type<Record<string, unknown>>()
     .notNull()
     .default({}),
+  /** Daily digest delivery, opt-in per workspace. */
+  digestEnabled: boolean("digest_enabled").notNull().default(false),
+  digestEmail: text("digest_email"),
+  digestHourUtc: integer("digest_hour_utc").notNull().default(13),
+  digestLastSentAt: timestamp("digest_last_sent_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

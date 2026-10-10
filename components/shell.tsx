@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { Mark } from "@/components/glyph";
 
-type NavKey = "queue" | "sources" | "profile" | "plan";
+type NavKey = "queue" | "sources" | "profile" | "plan" | "digest";
 
 export function Shell({
   children,
@@ -21,6 +21,7 @@ export function Shell({
     { key: "sources", label: "Sources", href: `/settings/sources${q}` },
     { key: "profile", label: "Profile", href: `/onboarding${q}` },
     { key: "plan", label: "Plan", href: `/settings/plan${q}` },
+    { key: "digest", label: "Digest", href: `/settings/digest${q}` },
   ];
 
   return (

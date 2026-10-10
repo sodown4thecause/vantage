@@ -10,3 +10,12 @@ export function requiredEnv(
   }
   return value;
 }
+
+/** Trimmed value, or undefined when unset/blank. */
+export function optionalEnv(
+  name: string,
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const value = env[name]?.trim();
+  return value ? value : undefined;
+}
