@@ -1,134 +1,160 @@
-# Vantage
+# [Vantage](https://contextfor.dev)
 
-Social listening / lead capture platform (M1 scaffold).
+**Find the people already asking for what you build.**
+
+Vantage reads Reddit, Hacker News, X, YouTube, Product Hunt, Substack, GitHub,
+Stack Overflow, LinkedIn and your own feeds, scores what it finds for buying
+intent, and puts the conversations worth joining in front of the workspace
+owner. You write the reply — Vantage never posts on your behalf.
 
 ## Stack
 
-- **Next.js** (App Router) + TypeScript + Tailwind
-- **Neon** Postgres via **Drizzle ORM**
-- **Neon Auth** (Managed Better Auth)
-- Free-lane **Collector** interface for HN / RSS / Substack workers
+- **Next.js 16** (App Router) + TypeScript + Tailwind v4
+- **Neon** Postgres via **Drizzle ORM** (`neon-http` driver, pooled endpoint)
+- **Neon Auth** (Managed Better Auth), constructed lazily so builds need no secrets
+- **Cloudflare Workers** — custom domain `contextfor.dev`, static assets,
+  Cron Trigger, Browser / AI / Vectorize / R2 / Workflows bindings
+- **Greptile** for AI pull-request review, **GitHub Actions** for CI/CD
+
+## The product
+
+| Surface | What it does |
+|---------|--------------|
+| Sign-up / onboarding | Create a workspace per product or brand you monitor |
+| Sources | Collector feeds with health, last-poll time, pause/resume and per-collector validation |
+| Collect | Manual run per source, or the scheduled sweep |
+| Queue / review | Leads ranked by intent, with the original post, the reason it scored and the provider it came from; approve, reject and record outcomes |
+| Settings | Plan, sources and digest delivery |
+| Daily digest | Up to five top-ranked conversations, emailed once a day at your chosen hour |
+
+Documents store `metadata.provider` and `metadata.mocked`, and the UI shows
+both — fixture sample data can never pass itself off as a real lead. Collectors
+fail closed before saving fixtures in production unless `ALLOW_FIXTURES=true`
+explicitly permits an intentional demo. Other values do not opt in. Persisted
+samples stay marked as mocked, their source coverage stays degraded, and they
+remain excluded from the live opportunity queue.
+
+## Data model
+
+Tables live in [`lib/db/schema.ts`](lib/db/schema.ts): `workspace`, `source`,
+`document`, `lead`, `opportunity_outcome`, plus the opportunity/budget/scan and
+distribution tables used by the sweep engine. Migrations in
+[`drizzle/`](drizzle) are additive only (expand/contract), so a Worker rollback
+always works against the live schema.
+
+## Collectors
+
+| Type | Order |
+|------|-------|
+| `rss` | Direct fetch with conditional GET (ETag / `If-Modified-Since`) through `fetchPublicText` |
+| `substack` | Publication feed via the RSS collector |
+| `hn` | Algolia search + Firebase item enrichment |
+| `reddit` | Scavio `reddit.search` → fixture |
+| `x` | Scavio `x.search` → fixture |
+| `youtube` | Scavio comments → TinyFish Fetch/Search → agent → YouTube Data API → fixture |
+| `producthunt` | TinyFish Search+Fetch → homepage fetch → agent → PH GraphQL → fixture |
+| `github`, `stackoverflow`, `linkedin`, `alexandria` | Native APIs and search |
+
+Every user-supplied URL goes through
+[`lib/http/public-fetch.ts`](lib/http/public-fetch.ts): public http(s) only, no
+embedded credentials, no loopback/private/link-local/cloud-metadata hosts,
+manual redirect handling, timeout and streaming size caps — on top of
+Cloudflare's `global_fetch_strictly_public` DNS protection.
+
+Multitenancy is enforced at the query layer. Coverage includes
+[`test/workspace-authorization.test.ts`](test/workspace-authorization.test.ts),
+[`test/queue-visibility.test.ts`](test/queue-visibility.test.ts), and
+[`test/digest-actions.test.ts`](test/digest-actions.test.ts); refused digest
+mutations never reach the database.
 
 ## Setup
 
 ```bash
 pnpm install
 cp .env.example .env.local
-# Fill DATABASE_URL, NEON_AUTH_BASE_URL, NEON_AUTH_COOKIE_SECRET
-pnpm db:migrate   # applies drizzle/0000_m1_core.sql
+# Fill DATABASE_URL (pooled), NEON_AUTH_BASE_URL, NEON_AUTH_COOKIE_SECRET
+pnpm db:migrate
 pnpm dev
 ```
+
+Optional: collector keys (`SCAVIO_API_KEY`, `TINYFISH_API_KEY`,
+`PH_DEV_TOKEN`, `YOUTUBE_API_KEY`), `RESEND_API_KEY` for digests,
+`CRON_SECRET` to protect the sweep, `ALLOW_FIXTURES=true` to permit sample data.
+
+Set `NEXT_PUBLIC_APP_URL` to each deployment's own origin (including staging).
+Production-mode digest dispatch fails closed if it is unset; local development
+defaults to `http://localhost:3000`. Configure `DIGEST_FROM_ADDRESS` with a verified
+Resend sender and optionally `DIGEST_FROM_NAME`.
+
+Digest dispatch isolates workspace failures: selection, delivery or last-sent
+recording errors count as failures without stopping other workspaces. Skipped or
+rejected sends never update the last-sent timestamp.
+
+Digests select the active opportunity queue, not legacy leads: current monitoring
+profile, live same-workspace evidence, updated in the last 24 hours, ranked up to
+five entries. Email destinations use the same HTTP(S)-only policy as the app.
+The preferred UTC hour identifies a daily slot; the next cron catches up an
+elapsed slot across midnight, without sending it twice or less than 20 hours
+after the previous digest. First-time subscribers catch up the latest elapsed
+slot because preferences do not store an activation timestamp.
+
+Each sweep handles at most 25 eligible workspaces, oldest attempt first, with a
+90-second shared time budget and a 10-second email request timeout. `hasMore`
+reports batch/deadline deferral; later cron runs continue fairly, including when
+empty or failing workspaces remain due. A dedicated atomic lease serializes
+delivery per workspace; token-fenced completion cannot overwrite a newer claim.
+
+Resend requests use a stable delivery idempotency key derived from the workspace
+and previous successful send. Resend retains keys for 24 hours. If email is
+accepted but recording fails, an unchanged retry is deduplicated within that
+window; a changed payload can be rejected as a conflict and remains failed.
+This is not an exactly-once guarantee across crashes or the provider retention
+window. Never manually replay uncertain deliveries without checking provider
+status.
 
 ### Neon project
 
 1. Create a Neon project and enable **Managed Better Auth**.
-2. Copy the pooled `DATABASE_URL` and Auth base URL into `.env.local`.
+2. Copy the pooled `DATABASE_URL` and the Auth base URL into `.env.local`.
+   Migrations use the direct (non-pooler) endpoint.
 3. Generate a cookie secret: `openssl rand -base64 32`.
-
-## M1 schema
-
-Tables in `lib/db/schema.ts`:
-
-| Table | Purpose |
-|-------|---------|
-| `workspace` | Tenant + plan/budget/consents |
-| `source` | Collector feeds (etag/cursor/config) |
-| `document` | Normalized collected content |
-| `lead` | Scored opportunities tied to documents |
-
-## Collectors & pipeline
-
-| Route | Purpose |
-|-------|---------|
-| `POST /api/collectors/hn` | Hacker News (Algolia + Firebase) |
-| `POST /api/collectors/rss` | RSS/Atom with conditional GET |
-| `POST /api/collectors/substack` | Substack publication feed |
-| `POST /api/collectors/producthunt` | Product Hunt via TinyFish **Search+Fetch** (agent last), else PH GraphQL, else fixture |
-| `POST /api/collectors/youtube` | YouTube via **Scavio** comments scrape, else TinyFish Fetch/Search, else agent, else Data API, else fixture |
-| `POST /api/collectors/reddit` | Reddit via **Scavio** `reddit.search` (`SCAVIO_API_KEY`), else fixture |
-| `POST /api/collectors/x` | X/Twitter via **Scavio** `x.search` (`SCAVIO_API_KEY`), else fixture |
-| `POST /api/pipeline/run` | Normalize + intent ladder → leads |
-| `GET /api/cron/tick` | 3-hour Vercel cron: all sources + pipeline |
-| `/review?workspaceId=` | Lead review UI |
-
-Body for collector routes: `{ "workspaceId": "...", "sourceId": "..." }`.
-
-### Scrape providers
-
-Prefer **search + fetch/scrape** over full browser agents. **Scavio is enough** for Reddit/X/YouTube structured APIs.
-
-1. **YouTube order:** Scavio comments → TinyFish Fetch/Search → TinyFish Agent → `YOUTUBE_API_KEY` → fixture.
-2. **Product Hunt order:** TinyFish Search+Fetch → homepage Fetch → TinyFish Agent → `PH_DEV_TOKEN` → fixture.
-3. **Reddit:** Scavio `client.reddit.search` (`config.query`, `config.limit`) → fixture.
-4. **X:** Scavio `client.x.search` (`config.query`, `config.searchType`, `config.limit`) → fixture.
-5. Documents store `metadata.provider` (`scavio`, `tinyfish_*`, native APIs, or `fixture`).
-6. Optional: deploy [arcade-scavio](https://pypi.org/project/arcade-scavio/) on Arcade if you want the same Scavio tools as MCP (`Scavio.SearchReddit`, etc.). Vantage talks to Scavio directly.
 
 ## Scripts
 
 | Script | Description |
 |--------|-------------|
-| `pnpm dev` | Next dev server |
-| `pnpm build` | Production Next build |
-| `pnpm typecheck` | `tsc --noEmit` |
+| `pnpm dev` / `build` / `start` | Next dev server / build / start |
 | `pnpm test` | Vitest suite |
-| `pnpm db:generate` | Generate migrations from schema |
-| `pnpm db:migrate` | Apply migrations (run manually — see Deploy) |
-| `pnpm db:push` | Push schema (dev) |
-| `pnpm cf:build` | Build the Cloudflare Worker bundle |
-| `pnpm cf:preview` | Build and preview locally on Workers |
-| `pnpm deploy` | Build and deploy to Cloudflare |
-| `pnpm cf:typegen` | Generate `cloudflare-env.d.ts` bindings |
+| `pnpm typecheck` | `tsc --noEmit` |
+| `pnpm lint` | ESLint |
+| `pnpm db:generate` / `db:migrate` / `db:push` | Drizzle migrations |
+| `pnpm cf:build` / `cf:preview` / `deploy` | OpenNext build + Wrangler preview/deploy |
 
-## Deploy (Cloudflare Workers)
+Worker entry tests run separately: `node --test test/worker-entry.test.mjs
+test/scan-run.test.mjs test/queue-consumer.test.mjs`.
 
-Vantage runs on Workers via `@opennextjs/cloudflare`. Config lives in
-`wrangler.jsonc` and `open-next.config.ts`; `worker-entry.mjs` is the Worker
-entrypoint.
+## Deployment
 
-`compatibility_date` is `2026-10-05`, so `nodejs_compat` is enabled implicitly and
-`node:crypto` / `Buffer` / `process.env` work without extra flags.
+Cloudflare Workers, configured in [`wrangler.jsonc`](wrangler.jsonc):
+`contextfor.dev` and `www.contextfor.dev` custom domains, Workers static
+assets, `nodejs_compat` + `global_fetch_strictly_public`, observability, and
+the Browser / AI / Vectorize / R2 / Workflows / rate-limit bindings.
 
-### One-time setup
+CI/CD lives in [`.github/workflows`](.github/workflows): `CI` runs lint,
+typecheck, tests, migration drift and build on every PR and push, plus a job
+that measures the Worker bundle against the 10 MB limit and fails the build if
+a Worker ever needs secrets again.
 
-```bash
-pnpm install
-wrangler login
-wrangler secret put CRON_SECRET              # 32+ random bytes
-wrangler secret put NEON_AUTH_COOKIE_SECRET  # 32+ chars
-wrangler secret put DATABASE_URL             # Neon pooled connection string
-```
+Before deploying this change, apply the additive digest migrations to the target
+database using its direct Neon endpoint. Automatic staging deployment does not
+run migrations; use the manual Deploy workflow with **run migrations** enabled
+for the intended environment. Set that environment's `NEXT_PUBLIC_APP_URL` before
+enabling digest delivery. Keep production deployment gated until the schema and
+runtime configuration are verified.
 
-`NEON_AUTH_BASE_URL` must be a **real, reachable** Neon Auth URL. A placeholder
-value builds green and then fails every login at runtime.
-
-### Migrations are a deliberate manual step
-
-`pnpm db:migrate` is **not** chained into `pnpm deploy`. Apply migrations to the
-verified staging database before accepting features that use the new schema.
-Run production migrations deliberately against the confirmed production target:
-
-```bash
-DATABASE_URL="postgresql://…" pnpm db:migrate
-```
-
-### Cloudflare branch previews
-
-`wrangler.jsonc` includes the [required `previews` block](https://developers.cloudflare.com/workers/previews/configuration/).
-Its [custom build command](https://developers.cloudflare.com/workers/wrangler/custom-builds/)
-runs `pnpm run cf:build` before Wrangler bundles the preview, so the dashboard's
-`pnpm run build` followed by `npx wrangler preview` produces `.open-next` assets.
-The package's `build` remains `next build`, avoiding a recursive build hook.
-Named staging and production configurations override the hook with an empty command,
-because CI already runs the explicit OpenNext build before their uploads. Build
-with `pnpm cf:build` before using raw Wrangler commands with those environments.
-
-Configure preview-specific test database and auth secrets in Previews Base before
-testing authenticated flows. The empty preview block copies no production bindings
-or routes. Preview service bindings call the target Worker's production deployment,
-so add only verified test services. Previews do not run cron. Builds never apply migrations.
-
-### Deploy
+The Cloudflare Git integration runs independently of GitHub Actions. Verify its
+production branch, preview isolation and commands in the dashboard; the manual
+production gate in `deploy.yml` does not govern that separate integration.
 
 ```bash
 pnpm deploy
@@ -137,12 +163,12 @@ pnpm deploy
 ### Cron
 
 The `staging` environment schedules `0 */3 * * *` (every 3 hours, UTC);
-top-level and production cron lists are empty. The adapter emits
-only a `fetch` handler, so `worker-entry.mjs` adds a `scheduled` handler that
-reaches the tick route through the `WORKER_SELF_REFERENCE` service binding with
-`Authorization: Bearer ${CRON_SECRET}`. This reuses the single deployed bundle and
-the existing constant-time check in `lib/cron/authorize.ts` rather than duplicating
-the collector pipeline into a second entrypoint.
+top-level and production cron lists are empty. `worker-entry.mjs` adds the
+`scheduled` handler missing from the adapter. With the configured `SCAN` binding,
+it starts per-workspace scan Workflows, requests cost rollup, then POSTs to
+`/api/cron/digest`. Without `SCAN`, it calls `/api/cron/tick`, which performs the
+scan, rollup and digest sweep itself. Both paths use `WORKER_SELF_REFERENCE` and
+`Authorization: Bearer ${CRON_SECRET}`; digest failures do not fail scan scheduling.
 
 Worker script limits are 3 MB (Free) and 10 MB (Paid). CI measures
 `.open-next/worker.js` and fails the build above 10 MB.
@@ -166,6 +192,13 @@ Worker script limits are 3 MB (Free) and 10 MB (Paid). CI measures
 - The build requires no secrets. `lib/auth/server.ts` and `app/api/auth/[...path]/route.ts`
   both defer Neon Auth construction to request time, and CI has a job that fails if
   the build ever needs `NEON_AUTH_*` again.
+
+## Contributing
+
+See [AGENTS.md](AGENTS.md) for the standard loop, the Superpowers workflow,
+available MCP servers (agent-browser, Supermemory, Greptile), Cloudflare and
+Neon operating rules, security invariants, migration conventions and how
+Greptile reviews PRs.
 
 ## Ref orchestration
 

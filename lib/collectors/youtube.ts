@@ -6,6 +6,7 @@ import type {
   CollectorResult,
 } from "@/lib/collectors/types";
 import type { NewDocument } from "@/lib/db/schema";
+import { assertRealProvider } from "@/lib/collectors/provenance";
 import { fetchYouTubeCommentsWithMeta } from "@/lib/youtube/client";
 
 export const youtubeCollector: Collector = {
@@ -21,6 +22,7 @@ export const youtubeCollector: Collector = {
       videoIds,
       query,
     });
+    assertRealProvider(meta, "youtube");
     const documents: NewDocument[] = comments.map((c) => {
       const body = [
         `Video: ${c.videoTitle}`,

@@ -7,6 +7,7 @@ import type {
 } from "@/lib/collectors/types";
 import { fetchProductHuntPostsWithMeta } from "@/lib/producthunt/client";
 import type { NewDocument } from "@/lib/db/schema";
+import { assertRealProvider } from "@/lib/collectors/provenance";
 
 export const productHuntCollector: Collector = {
   name: "producthunt",
@@ -19,6 +20,7 @@ export const productHuntCollector: Collector = {
       query,
       ctx: { workspaceId: ctx.workspaceId, sourceKey: "producthunt" },
     });
+    assertRealProvider(meta, "producthunt");
     const documents: NewDocument[] = posts.map((p) => {
       const body = [`# ${p.name}`, p.tagline, "", p.description].join("\n");
       return {

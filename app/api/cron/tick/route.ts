@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { rollupRecent } from "@/lib/costs/rollup";
 import { scanWorkspace } from "@/lib/cron/scan";
 import { isCronAuthorized } from "@/lib/cron/authorize";
+import { runDueDigests } from "@/lib/digest/dispatch";
 import { getDb } from "@/lib/db/client";
 import { workspace } from "@/lib/db/schema";
 
@@ -11,8 +12,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Run collectors, then refresh the profile-based opportunity queue.
- * Failures on one source are logged; other sources continue.
+ * Run collectors, then refresh the profile-based opportunity queue, then
+ * dispatch due daily digests.
+ * Failures on one source or workspace are logged; the rest continue.
  */
 export async function GET(req: Request) {
   if (!isCronAuthorized(req)) {
@@ -57,12 +59,24 @@ export async function GET(req: Request) {
     // Best effort: cost rollups must never fail the tick (rollupRecent swallows errors).
     await rollupRecent();
 
+    // Best effort: one workspace failing its digest must never fail the tick.
+    let digest: Awaited<ReturnType<typeof runDueDigests>> | null = null;
+    try {
+      digest = await runDueDigests();
+    } catch (error) {
+      console.error(
+        "[tick] digest dispatch failed",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+
     return NextResponse.json({
       ok: ![...collectorResults, ...opportunityResults].some((result) => "error" in result),
       ranAt: new Date().toISOString(),
       workspaces: workspaces.length,
       collectorResults,
       opportunityResults,
+      digest,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

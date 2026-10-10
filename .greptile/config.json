@@ -1,0 +1,55 @@
+{
+  "strictness": 2,
+  "commentTypes": ["logic", "syntax"],
+  "autoReview": ["open", "push"],
+  "triggerOnDrafts": false,
+  "statusCheck": true,
+  "statusCommentsEnabled": true,
+  "ignorePatterns": "*.md\npnpm-lock.yaml\ndist/**\n.next/**\n.open-next/**\n.wrangler/**\ntest/fixtures/**\ndrizzle/meta/**\ncloudflare-env.d.ts",
+  "excludeAuthors": ["dependabot[bot]", "renovate[bot]"],
+  "instructions": "Vantage is a multi-tenant SaaS on Cloudflare Workers with Neon Postgres: every workspace's data must stay isolated. Prioritise correctness and tenant isolation over style. Flag any query or mutation without a workspace predicate, any unauthenticated mutation, any user-supplied URL fetched without lib/http/public-fetch, and any secret or customer data reaching source, tests, fixtures or logs. Error messages returned to customers stay generic; internal detail belongs in logs.",
+  "rules": [
+    {
+      "id": "tenant-scoping",
+      "rule": "Every query and mutation must be scoped by workspace id. A missing workspace predicate is a P0.",
+      "scope": ["lib/db/**", "lib/outcomes/**", "app/api/**", "lib/pipeline/**", "lib/opportunities/**", "lib/collectors/run.ts"],
+      "severity": "high"
+    },
+    {
+      "id": "auth-before-write",
+      "rule": "Server actions and API routes must call authorizeWorkspace and refuse on failure before any database write or upstream fetch.",
+      "scope": ["app/api/**", "lib/auth/**"],
+      "severity": "high"
+    },
+    {
+      "id": "fetch-policy",
+      "rule": "User-supplied URLs must go through fetchPublicText from lib/http/public-fetch. Raw fetch() on user input is a security issue.",
+      "scope": ["lib/collectors/**", "lib/http/**"],
+      "severity": "high"
+    },
+    {
+      "id": "no-secrets",
+      "rule": "Never introduce credentials, tokens or live customer data into source, tests, fixtures or logs.",
+      "scope": ["**/*"],
+      "severity": "high"
+    },
+    {
+      "id": "fixtures-off-in-prod",
+      "rule": "Fixture sample data must never be persisted or shown as real leads in production unless ALLOW_FIXTURES is explicitly set.",
+      "scope": ["lib/collectors/**", "app/**"],
+      "severity": "medium"
+    },
+    {
+      "id": "additive-migrations",
+      "rule": "Schema changes must be additive (expand/contract). Dropping a column or table in the same release as the code that stops using it is a bug, because Worker rollbacks run against the current schema.",
+      "scope": ["drizzle/**", "lib/db/schema.ts"],
+      "severity": "medium"
+    },
+    {
+      "id": "workers-runtime",
+      "rule": "Runtime code must stay Workers-compatible: fetch-only database access, no Node-only APIs beyond what nodejs_compat provides, and no reliance on long-lived connections or in-process timers.",
+      "scope": ["lib/**", "app/**", "worker-entry.mjs"],
+      "severity": "medium"
+    }
+  ]
+}
