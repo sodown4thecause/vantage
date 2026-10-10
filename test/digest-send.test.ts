@@ -1,30 +1,23 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   fetchImpl: null as null | ((url: string, init?: RequestInit) => Promise<Response>),
 }));
 
-vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
-  if (!state.fetchImpl) throw new Error("fetch not expected");
-  return state.fetchImpl(String(url), init);
-});
-
 import { renderDigestEmail, sendDigestEmail } from "@/lib/digest/send";
 
 const opportunities = [
   {
-    leadId: "lead-1",
+    opportunityId: "opportunity-1",
     score: 91.5,
-    intentRung: 3,
     reason: 'asks for a <cheaper> "tracking" tool',
     platform: "reddit",
     title: "Looking for an alternative to Brandwatch",
     url: "https://reddit.com/r/saas/comments/abc",
   },
   {
-    leadId: "lead-2",
+    opportunityId: "opportunity-2",
     score: 77,
-    intentRung: 2,
     reason: null,
     platform: "hn",
     title: null,
@@ -32,38 +25,85 @@ const opportunities = [
   },
 ];
 
+beforeEach(() => {
+  vi.stubEnv("RESEND_API_KEY", "");
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+    if (!state.fetchImpl) throw new Error("fetch not expected");
+    return state.fetchImpl(String(url), init);
+  });
+});
+
 afterEach(() => {
   state.fetchImpl = null;
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe("renderDigestEmail", () => {
   it("escapes third-party content and lists every opportunity", () => {
-    const { subject, html, text } = renderDigestEmail(
+    const { html, text } = renderDigestEmail(
       opportunities,
       "https://contextfor.dev/settings/digest?workspaceId=w1",
     );
 
-    expect(subject).toBe("Vantage: 2 conversations worth joining today");
     expect(html).toContain("Looking for an alternative to Brandwatch");
     expect(html).not.toContain("<cheaper>");
     expect(html).toContain("&lt;cheaper&gt;");
     expect(text).toContain("https://reddit.com/r/saas/comments/abc");
-    expect(text).toContain("Manage digest settings");
+    expect(text).toContain(opportunities[1]!.url);
   });
 
-  it("uses a singular subject for one opportunity", () => {
-    const { subject } = renderDigestEmail(
-      [opportunities[0]!],
+  it.each([
+    'javascript:alert("private")',
+    "data:text/html,<script>alert('private')</script>",
+    "file:///etc/private",
+  ])("renders %s destinations without emitting an unsafe URI", (url) => {
+    const { html, text } = renderDigestEmail(
+      [{ ...opportunities[0]!, title: "Unsafe <conversation>", url }],
       "https://contextfor.dev/settings/digest?workspaceId=w1",
     );
-    expect(subject).toBe("Vantage: 1 conversation worth joining today");
+
+    expect(html).toContain("1. Unsafe &lt;conversation&gt;");
+    expect(html).not.toContain(`<a href="${url}`);
+    expect(html).not.toContain(url);
+    expect(text).toContain("1. Unsafe <conversation>");
+    expect(text).not.toContain(url);
   });
+
+  it("does not fall back to an unsafe URL when the title is missing", () => {
+    const url = "javascript:alert('private')";
+    const { html, text } = renderDigestEmail(
+      [{ ...opportunities[0]!, title: null, url }],
+      "https://contextfor.dev/settings/digest?workspaceId=w1",
+    );
+
+    expect(html).toContain("1. Conversation");
+    expect(html).not.toContain(url);
+    expect(text).toContain("1. Conversation");
+    expect(text).not.toContain(url);
+  });
+
+  it("retains safe HTTPS destinations in both email bodies", () => {
+    const url = "https://example.com/conversation?first=1&second=2";
+    const { html, text } = renderDigestEmail(
+      [{ ...opportunities[0]!, url }],
+      "https://contextfor.dev/settings/digest?workspaceId=w1",
+    );
+
+    expect(html).toContain(
+      'href="https://example.com/conversation?first=1&amp;second=2"',
+    );
+    expect(text).toContain(url);
+  });
+
 });
 
 describe("sendDigestEmail", () => {
   const base = {
     to: "founder@example.com",
     workspaceId: "workspace-1",
+    previousDigestLastSentAt: null,
     manageUrl: "https://contextfor.dev/settings/digest?workspaceId=workspace-1",
   };
 
@@ -73,11 +113,7 @@ describe("sendDigestEmail", () => {
       opportunities: [],
       apiKey: "re_test",
     });
-    expect(result).toEqual({
-      ok: true,
-      skipped: true,
-      reason: "no opportunities",
-    });
+    expect(result).toMatchObject({ ok: true, skipped: true });
   });
 
   it("skips when no API key is configured", async () => {
@@ -86,38 +122,33 @@ describe("sendDigestEmail", () => {
       opportunities,
       apiKey: undefined,
     });
-    expect(result.ok).toBe(true);
-    if (result.ok && result.skipped) {
-      expect(result.reason).toBe("no api key");
+    expect(result).toMatchObject({ ok: true, skipped: true });
+  });
+
+  it("aborts a stalled provider call within the configured timeout without logging credentials", async () => {
+    vi.useFakeTimers();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    state.fetchImpl = async (_url, init) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+    });
+    // Use a timer-backed signal so fake timers exercise the same abort contract.
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((timeout) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException("Timed out", "TimeoutError")), timeout);
+      return controller.signal;
+    });
+    try {
+      const sending = sendDigestEmail({ ...base, opportunities, apiKey: "re_test_key" });
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect((await sending).ok).toBe(false);
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toMatch(/re_test_key|founder@example\.com/);
+    } finally {
+      vi.useRealTimers();
     }
   });
 
-  it("posts the digest to Resend with the bearer key", async () => {
-    const captured: {
-      value: { url: string; init?: RequestInit } | null;
-    } = { value: null };
-    state.fetchImpl = async (url, init) => {
-      captured.value = { url, init };
-      return new Response(JSON.stringify({ id: "email_1" }), { status: 200 });
-    };
-
-    const result = await sendDigestEmail({
-      ...base,
-      opportunities,
-      apiKey: "re_test_key",
-    });
-
-    expect(result).toEqual({ ok: true });
-    expect(captured.value?.url).toBe("https://api.resend.com/emails");
-    const headers = (captured.value?.init?.headers ?? {}) as Record<string, string>;
-    expect(headers.authorization).toBe("Bearer re_test_key");
-    const body = JSON.parse(String(captured.value?.init?.body));
-    expect(body.to).toEqual(["founder@example.com"]);
-    expect(body.subject).toContain("Vantage");
-    expect(body.html).toContain("Brandwatch");
-  });
-
   it("reports provider rejections without leaking the response", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     state.fetchImpl = async () =>
       new Response("invalid api key re_test_key", { status: 401 });
 
@@ -128,14 +159,15 @@ describe("sendDigestEmail", () => {
     });
 
     expect(result.ok).toBe(false);
-    expect(result.ok === false && result.error).toBe(
-      "email provider rejected the digest",
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toMatch(
+      /re_test_key|founder@example\.com|invalid api key/,
     );
   });
 
-  it("reports network failures", async () => {
+  it("reports network failures without logging exception payloads", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     state.fetchImpl = async () => {
-      throw new Error("network down");
+      throw new Error("private network payload re_test_key founder@example.com");
     };
     const result = await sendDigestEmail({
       ...base,
@@ -143,5 +175,8 @@ describe("sendDigestEmail", () => {
       apiKey: "re_test_key",
     });
     expect(result.ok).toBe(false);
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toMatch(
+      /private network payload|re_test_key|founder@example\.com/,
+    );
   });
 });

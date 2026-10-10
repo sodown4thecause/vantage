@@ -4,11 +4,12 @@
  * Every collector records which provider produced its documents
  * (`metadata.provider`, `metadata.mocked`). When a provider path fails, the
  * provider clients fall back to bundled sample data — which is fine in
- * development and demos, but must never reach a customer's workspace in
- * production: sample data presented as a real lead is a lie with a source
- * link attached.
+ * development and intentional demos. Production rejects samples unless
+ * ALLOW_FIXTURES=true explicitly opts in; persisted samples must keep their
+ * mocked metadata so they never pass themselves off as live leads.
  *
- * Call `assertRealProvider` immediately after every provider fetch.
+ * Call `assertRealProvider` immediately after every provider fetch, and use
+ * `fixturesAllowed` at the persistence boundary too.
  */
 
 const FIXTURE_PROVIDER = "fixture";
@@ -25,7 +26,7 @@ function isProduction(env: NodeJS.ProcessEnv): boolean {
 /**
  * Fixtures are allowed in development and in any environment that explicitly
  * opts in with ALLOW_FIXTURES=true (intentional demos, staging with sample
- * data). In production the collector fails instead of returning samples.
+ * data). All other production values fail closed before persistence.
  */
 export function fixturesAllowed(
   env: NodeJS.ProcessEnv = process.env,

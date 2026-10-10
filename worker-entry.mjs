@@ -5,12 +5,12 @@
  * Triggers invoke `scheduled`. This wrapper delegates `fetch` to the generated
  * OpenNext worker and adds the scheduled handler.
  *
- * The handler reaches the tick logic through the `WORKER_SELF_REFERENCE` service
- * binding rather than importing `lib/cron/tick` directly. Importing app source
- * here would make esbuild emit a *second* copy of the tick pipeline, collectors,
- * and Drizzle alongside the OpenNext bundle. A service binding instead re-enters
- * the single bundle that is already deployed, so there is one copy of the code
- * and one set of credentials.
+ * The handler reaches the scan, digest and fallback tick logic through the
+ * `WORKER_SELF_REFERENCE` service binding rather than importing app source
+ * directly. Importing app source here would make esbuild emit a *second* copy
+ * of the pipelines and Drizzle alongside the OpenNext bundle. A service binding
+ * instead re-enters the single bundle that is already deployed, so there is one
+ * copy of the code and one set of credentials.
  *
  * The self-fetch carries `Authorization: Bearer <CRON_SECRET>`, which
  * `lib/cron/authorize.ts` already verifies with a constant-time compare, so the
@@ -26,9 +26,11 @@ import { handleQueue } from "./worker/queue.mjs";
 export { ScanWorkspace } from "./worker/workflows.mjs";
 
 const TICK_PATH = "/api/cron/tick";
+const DIGEST_PATH = "/api/cron/digest";
 const SCAN_DUE_PATH = "/api/internal/scan/due";
 const COST_ROLLUP_PATH = "/api/internal/scan/rollup";
 const ROLLUP_TIMEOUT_MS = 30_000;
+const DIGEST_TIMEOUT_MS = 120_000;
 // Workflows reject a duplicate instance ID when `create` runs. The docs say it throws but do not
 // quote the message, so this wording match is unverified; both documented phrasings are accepted.
 const DUPLICATE_INSTANCE = /already (exist|used)/i;
@@ -90,6 +92,23 @@ async function triggerCostRollup(env) {
   }
 }
 
+/** Dispatch due digests without letting an email failure fail the scan schedule. */
+async function triggerDigests(env) {
+  try {
+    const response = await env.WORKER_SELF_REFERENCE.fetch(
+      new Request(`https://vantage.internal${DIGEST_PATH}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${env.CRON_SECRET}`, "content-type": "application/json" },
+        body: "{}",
+        signal: AbortSignal.timeout(DIGEST_TIMEOUT_MS),
+      }),
+    );
+    if (!response.ok) console.error(`[cron] digest dispatch failed: HTTP ${response.status}`);
+  } catch (error) {
+    console.error("[cron] digest dispatch threw", error instanceof Error ? error.name : "unknown");
+  }
+}
+
 const worker = {
 	fetch(request, env, ctx) {
 		return openNextWorker.fetch(request, env, ctx);
@@ -116,11 +135,12 @@ const worker = {
 
 		// Rollout switch: with the Workflow binding present, the tick path is not used.
 		if (env.SCAN) {
-			// The rollup runs after the starts and in `finally`, so a failed start still gets its rollup.
+			// Best-effort side effects still run when starting scans fails.
 			try {
 				await startScanInstances(controller, env);
 			} finally {
 				await triggerCostRollup(env);
+				await triggerDigests(env);
 			}
 			return;
 		}

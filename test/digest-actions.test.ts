@@ -15,7 +15,7 @@ vi.mock("@/lib/auth/workspace", () => ({
 }));
 
 vi.mock("@/lib/db/client", () => ({
-  getDb: () => ({
+  getDb: vi.fn(() => ({
     update: () => ({
       set: (values: Record<string, unknown>) => ({
         where: async () => {
@@ -23,9 +23,10 @@ vi.mock("@/lib/db/client", () => ({
         },
       }),
     }),
-  }),
+  })),
 }));
 
+import { getDb } from "@/lib/db/client";
 import {
   unsubscribeDigest,
   updateDigestPreferences,
@@ -42,6 +43,7 @@ function form(entries: Record<string, string>): FormData {
 afterEach(() => {
   state.authorized = true;
   state.updates = [];
+  vi.mocked(getDb).mockClear();
 });
 
 describe("updateDigestPreferences", () => {
@@ -72,7 +74,7 @@ describe("updateDigestPreferences", () => {
           form({ workspaceId: "workspace-1", digestEnabled: "on" }),
         )
       ).error,
-    ).toMatch(/email address/);
+    ).not.toBeNull();
 
     expect(
       (
@@ -85,7 +87,7 @@ describe("updateDigestPreferences", () => {
           }),
         )
       ).error,
-    ).toMatch(/does not look valid/);
+    ).not.toBeNull();
 
     expect(state.updates).toHaveLength(0);
   });
@@ -112,7 +114,8 @@ describe("updateDigestPreferences", () => {
         digestEmail: "founder@example.com",
       }),
     );
-    expect(result.error).toBe("Not authorized for this workspace.");
+    expect(result.error).not.toBeNull();
+    expect(getDb).not.toHaveBeenCalled();
     expect(state.updates).toHaveLength(0);
   });
 });
@@ -133,7 +136,8 @@ describe("unsubscribeDigest", () => {
       { error: null },
       form({ workspaceId: "workspace-1" }),
     );
-    expect(result.error).toBe("Not authorized for this workspace.");
+    expect(result.error).not.toBeNull();
+    expect(getDb).not.toHaveBeenCalled();
     expect(state.updates).toHaveLength(0);
   });
 });

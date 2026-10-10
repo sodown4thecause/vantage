@@ -17,9 +17,9 @@ describe("clampHour", () => {
 describe("isDigestDue", () => {
   const now = new Date("2026-10-09T14:30:00.000Z");
 
-  it("is due for a never-sent workspace after its hour", () => {
+  it("is due for a never-sent workspace's latest elapsed slot", () => {
     expect(isDigestDue({ digestHourUtc: 13, lastSentAt: null, now })).toBe(true);
-    expect(isDigestDue({ digestHourUtc: 15, lastSentAt: null, now })).toBe(false);
+    expect(isDigestDue({ digestHourUtc: 15, lastSentAt: null, now })).toBe(true);
   });
 
   it("waits at least 20 hours between digests", () => {
@@ -39,7 +39,60 @@ describe("isDigestDue", () => {
     ).toBe(true);
   });
 
-  it("becomes due once the hour passes and 20h have elapsed", () => {
+  it("catches up the 23 UTC slot at the next midnight", () => {
+    expect(
+      isDigestDue({
+        digestHourUtc: 23,
+        lastSentAt: new Date("2026-10-09T00:00:00.000Z"),
+        now: new Date("2026-10-10T00:00:00.000Z"),
+      }),
+    ).toBe(true);
+  });
+
+  it("catches up a never-sent workspace's 23 UTC slot at midnight", () => {
+    expect(
+      isDigestDue({
+        digestHourUtc: 23,
+        lastSentAt: null,
+        now: new Date("2026-10-10T00:00:00.000Z"),
+      }),
+    ).toBe(true);
+  });
+
+  it("does not send twice for a slot even after the minimum interval", () => {
+    expect(
+      isDigestDue({
+        digestHourUtc: 0,
+        lastSentAt: new Date("2026-10-09T00:00:00.000Z"),
+        now: new Date("2026-10-09T21:00:00.000Z"),
+      }),
+    ).toBe(false);
+  });
+
+  it("requires the full 20-hour interval for an unsent slot", () => {
+    const input = {
+      digestHourUtc: 22,
+      lastSentAt: new Date("2026-10-09T04:00:00.000Z"),
+    };
+    expect(
+      isDigestDue({ ...input, now: new Date("2026-10-09T23:59:59.999Z") }),
+    ).toBe(false);
+    expect(
+      isDigestDue({ ...input, now: new Date("2026-10-10T00:00:00.000Z") }),
+    ).toBe(true);
+  });
+
+  it("catches up a late slot across a UTC month boundary", () => {
+    expect(
+      isDigestDue({
+        digestHourUtc: 23,
+        lastSentAt: new Date("2026-10-31T00:00:00.000Z"),
+        now: new Date("2026-11-01T00:00:00.000Z"),
+      }),
+    ).toBe(true);
+  });
+
+  it("catches up an unsent prior slot while waiting for today's hour", () => {
     expect(
       isDigestDue({
         digestHourUtc: 14,
@@ -53,12 +106,12 @@ describe("isDigestDue", () => {
         lastSentAt: new Date("2026-10-08T10:00:00.000Z"),
         now: new Date("2026-10-09T13:59:00.000Z"),
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isDigestDue({
         digestHourUtc: 14,
         lastSentAt: new Date("2026-10-08T10:00:00.000Z"),
-        now: new Date("2026-10-09T14:01:00.000Z"),
+        now: new Date("2026-10-09T14:00:00.000Z"),
       }),
     ).toBe(true);
   });

@@ -120,6 +120,9 @@ export const workspace = pgTable("workspace", {
   digestEmail: text("digest_email"),
   digestHourUtc: integer("digest_hour_utc").notNull().default(13),
   digestLastSentAt: timestamp("digest_last_sent_at", { withTimezone: true }),
+  digestLeaseToken: text("digest_lease_token"),
+  digestLeaseUntil: timestamp("digest_lease_until", { withTimezone: true }),
+  digestLastAttemptAt: timestamp("digest_last_attempt_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

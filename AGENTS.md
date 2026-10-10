@@ -33,9 +33,9 @@ and checklists are part of the work, not decoration.
 
 1. Branch: `git switch -c <type>/<short-slug>` (types: feat, fix, chore, docs,
    test, refactor, perf, ci).
-2. Implement. Every new query or mutation is workspace-scoped — if it touches
-   the database it must be provable from
-   `test/tenant-isolation-sweep.test.ts`.
+2. Implement. Every new query or mutation is workspace-scoped. Prove its
+   boundary in the relevant authorization/query tests (for example,
+   `test/workspace-authorization.test.ts` and `test/queue-visibility.test.ts`).
 3. Verify locally: `pnpm lint && pnpm typecheck && pnpm test && pnpm build`,
    plus `node --test test/worker-entry.test.mjs test/scan-run.test.mjs
    test/queue-consumer.test.mjs` for the Worker entry.
@@ -86,10 +86,11 @@ verified in this repo's Checks list.
 - **Routes**: `contextfor.dev` and `www.contextfor.dev` as custom domains;
   `workers_dev` is false. Staging is a separate environment/worker and must not
   inherit production custom domains.
-- **Cron**: the adapter emits only a `fetch` handler, so `worker-entry.mjs` adds
-  a `scheduled` handler that calls the tick route through
-  `WORKER_SELF_REFERENCE` with `Authorization: Bearer ${CRON_SECRET}`. Staging
-  runs `0 */3 * * *`; production cron lists are empty until the sweep is sized.
+- **Cron**: `worker-entry.mjs` adds the scheduled handler. With `SCAN`, it starts
+  scan Workflows, rolls up costs, then calls `/api/cron/digest`; without `SCAN`,
+  `/api/cron/tick` handles the sweep. Self-fetches use `WORKER_SELF_REFERENCE`
+  and `Authorization: Bearer ${CRON_SECRET}`. Staging runs `0 */3 * * *`;
+  production cron lists are empty until the sweep is sized.
 - **Runtime rules**: fetch-only database access; no Node-only APIs beyond what
   `nodejs_compat` provides (`node:crypto` and `Buffer` are fine); no long-lived
   connections or in-process timers; global scope must stay under the 1 s startup
@@ -133,9 +134,8 @@ verified in this repo's Checks list.
   works against the current schema.
 
 ## Security invariants
-
-- Every query and mutation is scoped by `workspaceId`; the tenant-isolation
-  sweep proves it and must keep passing.
+- Every query and mutation is scoped by `workspaceId`; authorization and
+  query-boundary tests must keep passing.
 - `authorizeWorkspace` runs before any write or upstream fetch in API routes
   and server actions; refusal returns a generic message to the caller.
 - User-supplied URLs go through `fetchPublicText` (`lib/http/public-fetch.ts`).

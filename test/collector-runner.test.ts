@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 
 const state = vi.hoisted(() => ({
@@ -47,7 +47,26 @@ vi.mock("@/lib/sources/switch", () => ({
   getSourceSwitch: async () => switchState.decision,
 }));
 
+vi.mock("@/lib/reddit/client", () => ({
+  fetchRedditPostsWithMeta: async () => ({
+    posts: [{
+      id: "fixture-1",
+      url: "https://reddit.com/r/test/fixture-1",
+      title: "Intentional demo post",
+      body: "Fixture body",
+      author: "fixture-user",
+      subreddit: "test",
+      score: 1,
+      numComments: 0,
+      createdAt: "2026-10-01T00:00:00.000Z",
+    }],
+    meta: { provider: "fixture" },
+    cursor: undefined,
+  }),
+}));
+
 import { runCollector } from "@/lib/collectors/run";
+import { redditCollector } from "@/lib/collectors/reddit";
 import type { Collector } from "@/lib/collectors/types";
 
 const sourceRow = {
@@ -77,6 +96,10 @@ beforeEach(() => {
   state.insertValues = [];
   switchState.decision = { enabled: true, state: "on", reason: "" };
   vi.restoreAllMocks();
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe("runCollector", () => {
@@ -122,6 +145,98 @@ describe("runCollector", () => {
     expect(result.inserted).toBe(0);
     expect(result.receipt?.coverage).toBe("access_pending");
     expect(state.insertOutcomes).toHaveLength(1);
+  });
+
+  it("blocks the real fixture collector before persistence by default in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ALLOW_FIXTURES", undefined);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    state.row = { ...sourceRow, type: "reddit", lane: "byok" };
+    state.insertOutcomes = [[{ id: "fixture-1" }]];
+    const result = await runCollector({
+      collector: redditCollector,
+      workspaceId: "workspace-1",
+      sourceId: "source-1",
+    });
+
+    expect(result).toMatchObject({ inserted: 0, skipped: 0 });
+    expect(result.error).toContain("fixture fallback is disabled in production");
+    expect(state.insertValues).toHaveLength(0);
+    expect(state.insertOutcomes).toHaveLength(1);
+  });
+
+  it.each([undefined, "", "false", "TRUE", "1"])(
+    "blocks fixture persistence in production when ALLOW_FIXTURES is %s",
+    async (allowFixtures) => {
+      vi.stubEnv("NODE_ENV", "production");
+      vi.stubEnv("ALLOW_FIXTURES", allowFixtures);
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      state.insertOutcomes = [[{ id: "fixture-1" }]];
+      const result = await runCollector({
+        collector: {
+          name: "hn",
+          run: async () => ({
+            documents: [
+              { ...document, contentHash: "live-hash", metadata: { provider: "hn", mocked: false } },
+              { ...document, metadata: { provider: "fixture", mocked: true } },
+              { ...document, contentHash: "mocked-hash", metadata: { provider: "hn", mocked: true } },
+            ],
+          }),
+        },
+        workspaceId: "workspace-1",
+        sourceId: "source-1",
+      });
+
+      expect(result).toMatchObject({ inserted: 0, skipped: 0 });
+      expect(result.error).toContain("synthetic provider output rejected");
+      expect(result.receipt?.coverage).toBe("access_pending");
+      expect(state.insertValues).toHaveLength(0);
+      expect(state.insertOutcomes).toHaveLength(1);
+    },
+  );
+
+  it("rejects mocked documents even when their provider is not fixture", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ALLOW_FIXTURES", "false");
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const result = await runCollector({
+      collector: {
+        name: "hn",
+        run: async () => ({ documents: [{ ...document, metadata: { provider: "hn", mocked: true } }] }),
+      },
+      workspaceId: "workspace-1",
+      sourceId: "source-1",
+    });
+
+    expect(result.inserted).toBe(0);
+    expect(result.error).toContain("synthetic provider output rejected");
+    expect(state.insertValues).toHaveLength(0);
+  });
+
+  it("persists explicitly allowed production fixtures with mocked metadata intact", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ALLOW_FIXTURES", "true");
+    state.insertOutcomes = [[{ id: "fixture-1" }]];
+    state.row = { ...sourceRow, type: "reddit", lane: "byok" };
+    const result = await runCollector({
+      collector: redditCollector,
+      workspaceId: "workspace-1",
+      sourceId: "source-1",
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result).toMatchObject({ inserted: 1, skipped: 0 });
+    expect(state.insertValues).toHaveLength(1);
+    expect(state.insertValues[0]).toEqual([
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        sourceId: "source-1",
+        platform: "reddit",
+        metadata: expect.objectContaining({ provider: "fixture", mocked: true }),
+      }),
+    ]);
+    expect(result.receipt).toMatchObject({ coverage: "degraded", provider: "fixture", resultCount: 1 });
+    expect(state.updates.at(-1)).toHaveProperty("health", "degraded");
   });
   it("deduplicates atomically and preserves omitted state while clearing null", async () => {
     state.insertOutcomes = [[{ id: "doc-1" }], []];

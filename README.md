@@ -28,8 +28,11 @@ owner. You write the reply — Vantage never posts on your behalf.
 | Daily digest | Up to five top-ranked conversations, emailed once a day at your chosen hour |
 
 Documents store `metadata.provider` and `metadata.mocked`, and the UI shows
-both — fixture sample data can never pass itself off as a real lead, and
-fixtures fail closed in production unless `ALLOW_FIXTURES` is set.
+both — fixture sample data can never pass itself off as a real lead. Collectors
+fail closed before saving fixtures in production unless `ALLOW_FIXTURES=true`
+explicitly permits an intentional demo. Other values do not opt in. Persisted
+samples stay marked as mocked, their source coverage stays degraded, and they
+remain excluded from the live opportunity queue.
 
 ## Data model
 
@@ -58,9 +61,11 @@ embedded credentials, no loopback/private/link-local/cloud-metadata hosts,
 manual redirect handling, timeout and streaming size caps — on top of
 Cloudflare's `global_fetch_strictly_public` DNS protection.
 
-Multitenancy is enforced at the query layer and proven by
-[`test/tenant-isolation-sweep.test.ts`](test/tenant-isolation-sweep.test.ts):
-anonymous and cross-workspace callers are refused with zero database writes.
+Multitenancy is enforced at the query layer. Coverage includes
+[`test/workspace-authorization.test.ts`](test/workspace-authorization.test.ts),
+[`test/queue-visibility.test.ts`](test/queue-visibility.test.ts), and
+[`test/digest-actions.test.ts`](test/digest-actions.test.ts); refused digest
+mutations never reach the database.
 
 ## Setup
 
@@ -74,7 +79,38 @@ pnpm dev
 
 Optional: collector keys (`SCAVIO_API_KEY`, `TINYFISH_API_KEY`,
 `PH_DEV_TOKEN`, `YOUTUBE_API_KEY`), `RESEND_API_KEY` for digests,
-`CRON_SECRET` to protect the sweep, `ALLOW_FIXTURES` to permit sample data.
+`CRON_SECRET` to protect the sweep, `ALLOW_FIXTURES=true` to permit sample data.
+
+Set `NEXT_PUBLIC_APP_URL` to each deployment's own origin (including staging).
+Production-mode digest dispatch fails closed if it is unset; local development
+defaults to `http://localhost:3000`. Configure `DIGEST_FROM_ADDRESS` with a verified
+Resend sender and optionally `DIGEST_FROM_NAME`.
+
+Digest dispatch isolates workspace failures: selection, delivery or last-sent
+recording errors count as failures without stopping other workspaces. Skipped or
+rejected sends never update the last-sent timestamp.
+
+Digests select the active opportunity queue, not legacy leads: current monitoring
+profile, live same-workspace evidence, updated in the last 24 hours, ranked up to
+five entries. Email destinations use the same HTTP(S)-only policy as the app.
+The preferred UTC hour identifies a daily slot; the next cron catches up an
+elapsed slot across midnight, without sending it twice or less than 20 hours
+after the previous digest. First-time subscribers catch up the latest elapsed
+slot because preferences do not store an activation timestamp.
+
+Each sweep handles at most 25 eligible workspaces, oldest attempt first, with a
+90-second shared time budget and a 10-second email request timeout. `hasMore`
+reports batch/deadline deferral; later cron runs continue fairly, including when
+empty or failing workspaces remain due. A dedicated atomic lease serializes
+delivery per workspace; token-fenced completion cannot overwrite a newer claim.
+
+Resend requests use a stable delivery idempotency key derived from the workspace
+and previous successful send. Resend retains keys for 24 hours. If email is
+accepted but recording fails, an unchanged retry is deduplicated within that
+window; a changed payload can be rejected as a conflict and remains failed.
+This is not an exactly-once guarantee across crashes or the provider retention
+window. Never manually replay uncertain deliveries without checking provider
+status.
 
 ### Neon project
 
@@ -109,6 +145,17 @@ typecheck, tests, migration drift and build on every PR and push, plus a job
 that measures the Worker bundle against the 10 MB limit and fails the build if
 a Worker ever needs secrets again.
 
+Before deploying this change, apply the additive digest migrations to the target
+database using its direct Neon endpoint. Automatic staging deployment does not
+run migrations; use the manual Deploy workflow with **run migrations** enabled
+for the intended environment. Set that environment's `NEXT_PUBLIC_APP_URL` before
+enabling digest delivery. Keep production deployment gated until the schema and
+runtime configuration are verified.
+
+The Cloudflare Git integration runs independently of GitHub Actions. Verify its
+production branch, preview isolation and commands in the dashboard; the manual
+production gate in `deploy.yml` does not govern that separate integration.
+
 ```bash
 pnpm deploy
 ```
@@ -116,12 +163,12 @@ pnpm deploy
 ### Cron
 
 The `staging` environment schedules `0 */3 * * *` (every 3 hours, UTC);
-top-level and production cron lists are empty. The adapter emits
-only a `fetch` handler, so `worker-entry.mjs` adds a `scheduled` handler that
-reaches the tick route through the `WORKER_SELF_REFERENCE` service binding with
-`Authorization: Bearer ${CRON_SECRET}`. This reuses the single deployed bundle and
-the existing constant-time check in `lib/cron/authorize.ts` rather than duplicating
-the collector pipeline into a second entrypoint.
+top-level and production cron lists are empty. `worker-entry.mjs` adds the
+`scheduled` handler missing from the adapter. With the configured `SCAN` binding,
+it starts per-workspace scan Workflows, requests cost rollup, then POSTs to
+`/api/cron/digest`. Without `SCAN`, it calls `/api/cron/tick`, which performs the
+scan, rollup and digest sweep itself. Both paths use `WORKER_SELF_REFERENCE` and
+`Authorization: Bearer ${CRON_SECRET}`; digest failures do not fail scan scheduling.
 
 Worker script limits are 3 MB (Free) and 10 MB (Paid). CI measures
 `.open-next/worker.js` and fails the build above 10 MB.

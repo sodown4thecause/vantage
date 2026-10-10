@@ -40,7 +40,7 @@ export function DigestSettingsForm({
             type="checkbox"
             name="digestEnabled"
             defaultChecked={enabled}
-            className="h-4 w-4 rounded border-zinc-300"
+            className="h-4 w-4 rounded border-contour"
           />
           Email me a daily digest of the top conversations
         </label>
@@ -56,7 +56,7 @@ export function DigestSettingsForm({
               type="email"
               defaultValue={email ?? ""}
               placeholder="you@company.com"
-              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="w-full rounded-lg border border-contour bg-sheet px-3 py-2 text-sm text-ink"
             />
           </div>
           <div className="space-y-1">
@@ -67,7 +67,7 @@ export function DigestSettingsForm({
               id="digest-hour"
               name="digestHourUtc"
               defaultValue={String(hourUtc)}
-              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="w-full rounded-lg border border-contour bg-sheet px-3 py-2 text-sm text-ink"
             >
               {Array.from({ length: 24 }, (_, hour) => (
                 <option key={hour} value={hour}>
@@ -82,7 +82,7 @@ export function DigestSettingsForm({
           <button
             type="submit"
             disabled={pending}
-            className="inline-flex h-10 items-center justify-center rounded-lg bg-ink px-4 text-sm font-medium text-white hover:bg-ink/90 disabled:opacity-60"
+            className="btn h-10 justify-center text-sm disabled:opacity-60"
           >
             {pending ? "Saving…" : "Save digest settings"}
           </button>
@@ -102,13 +102,13 @@ export function DigestSettingsForm({
       {enabled ? (
         <form
           action={unsubAction}
-          className="border-t border-zinc-200 pt-4 dark:border-zinc-800"
+          className="border-t border-contour pt-4"
         >
           <input type="hidden" name="workspaceId" value={workspaceId} />
           <button
             type="submit"
             disabled={unsubPending}
-            className="text-sm text-ridge underline hover:text-ink dark:text-zinc-400 dark:hover:text-zinc-100"
+            className="text-sm text-ridge underline hover:text-ink"
           >
             {unsubPending ? "Unsubscribing…" : "Unsubscribe from the digest"}
           </button>

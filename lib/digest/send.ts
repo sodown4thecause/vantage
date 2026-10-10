@@ -1,9 +1,10 @@
-import { eq } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { workspace } from "@/lib/db/schema";
 import { digestFromAddress, digestFromName, resendApiKey } from "@/lib/env/server";
 import type { DigestOpportunity } from "@/lib/digest/select";
+import { safeHttpUrl } from "@/lib/http/safe-url";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
@@ -28,24 +29,28 @@ export function renderDigestEmail(
     opportunities.length === 1 ? "" : "s"
   } worth joining today`;
 
-  const items = opportunities
-    .map(
-      (o, index) =>
-        `<li style="margin-bottom:12px"><a href="${escapeHtml(o.url)}">${index + 1}. ${escapeHtml(o.title ?? o.url)}</a><br/><span style="color:#525252">${escapeHtml(o.platform)} · score ${o.score}${o.reason ? ` · ${escapeHtml(o.reason)}` : ""}</span></li>`,
-    )
-    .join("");
-
-  const html = `<div style="font-family:sans-serif;max-width:560px;margin:0 auto"><h2>Today&rsquo;s conversations</h2><ul style="padding-left:18px">${items}</ul><p style="color:#737373;font-size:13px"><a href="${escapeHtml(manageUrl)}">Manage digest settings</a> to unsubscribe or change your delivery time.</p></div>`;
+  const entries = opportunities.map((opportunity, index) => {
+    const url = safeHttpUrl(opportunity.url);
+    const title = `${index + 1}. ${opportunity.title ?? url ?? "Conversation"}`;
+    const label = escapeHtml(title);
+    const destination = url ? `<a href="${escapeHtml(url)}">${label}</a>` : label;
+    return {
+      html: `<li style="margin-bottom:12px">${destination}<br/><span style="color:#525252">${escapeHtml(opportunity.platform)} · score ${opportunity.score}${opportunity.reason ? ` · ${escapeHtml(opportunity.reason)}` : ""}</span></li>`,
+      text: `${title} (${opportunity.platform}, score ${opportunity.score})${url ? `\n   ${url}` : ""}`,
+    };
+  });
+  const settingsUrl = safeHttpUrl(manageUrl);
+  const settingsLink = settingsUrl
+    ? `<a href="${escapeHtml(settingsUrl)}">Manage digest settings</a>`
+    : "Manage digest settings";
+  const html = `<div style="font-family:sans-serif;max-width:560px;margin:0 auto"><h2>Today&rsquo;s conversations</h2><ul style="padding-left:18px">${entries.map((entry) => entry.html).join("")}</ul><p style="color:#737373;font-size:13px">${settingsLink} to unsubscribe or change your delivery time.</p></div>`;
 
   const text = [
     "Today's conversations",
     "",
-    ...opportunities.map(
-      (o, i) =>
-        `${i + 1}. ${o.title ?? o.url} (${o.platform}, score ${o.score})\n   ${o.url}`,
-    ),
+    ...entries.map((entry) => entry.text),
     "",
-    `Manage digest settings: ${manageUrl}`,
+    `Manage digest settings${settingsUrl ? `: ${settingsUrl}` : ""}`,
   ].join("\n");
 
   return { subject, html, text };
@@ -58,6 +63,7 @@ export function renderDigestEmail(
 export async function sendDigestEmail(input: {
   to: string;
   workspaceId: string;
+  previousDigestLastSentAt: Date | null;
   opportunities: DigestOpportunity[];
   manageUrl: string;
   apiKey?: string;
@@ -80,9 +86,11 @@ export async function sendDigestEmail(input: {
   try {
     const response = await fetch(RESEND_ENDPOINT, {
       method: "POST",
+      signal: AbortSignal.timeout(10_000),
       headers: {
         authorization: `Bearer ${apiKey}`,
         "content-type": "application/json",
+        "Idempotency-Key": `digest/${input.workspaceId}/${input.previousDigestLastSentAt?.toISOString() ?? "first"}`,
       },
       body: JSON.stringify({
         from: `${digestFromName()} <${digestFromAddress()}>`,
@@ -94,32 +102,36 @@ export async function sendDigestEmail(input: {
     });
 
     if (!response.ok) {
-      const detail = await response.text().catch(() => "");
+      await response.body?.cancel().catch(() => undefined);
       console.error("[digest] resend rejected", {
         workspaceId: input.workspaceId,
         status: response.status,
-        detail: detail.slice(0, 200),
       });
       return { ok: false, error: "email provider rejected the digest" };
     }
     return { ok: true };
-  } catch (err) {
+  } catch {
     console.error("[digest] send failed", {
       workspaceId: input.workspaceId,
-      error: err instanceof Error ? err.message : String(err),
     });
     return { ok: false, error: "email send failed" };
   }
 }
 
-/** Record that a digest went out, so the next one is at least a day later. */
+/** Only the live claim owner may advance the successful delivery cycle. */
 export async function markDigestSent(
   workspaceId: string,
   at: Date,
-): Promise<void> {
-  const db = getDb();
-  await db
+  token: string,
+): Promise<boolean> {
+  const [marked] = await getDb()
     .update(workspace)
     .set({ digestLastSentAt: at })
-    .where(eq(workspace.id, workspaceId));
+    .where(and(
+      eq(workspace.id, workspaceId),
+      eq(workspace.digestLeaseToken, token),
+      gt(workspace.digestLeaseUntil, sql`now()`),
+    ))
+    .returning({ id: workspace.id });
+  return Boolean(marked);
 }

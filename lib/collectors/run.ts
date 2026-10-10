@@ -5,6 +5,7 @@ import {
   documentsAreFixtureOnly,
   type SourceRunReceipt,
 } from "@/lib/collectors/coverage";
+import { fixturesAllowed } from "@/lib/collectors/provenance";
 import type {
   Collector,
   CollectorResult,
@@ -100,7 +101,7 @@ export async function runCollector(
       lastModified: row.lastModified,
       cursor: row.cursor,
     });
-    if (process.env.NODE_ENV === "production" &&
+    if (!fixturesAllowed() &&
         result.documents.some((doc) => documentsAreFixtureOnly([doc]))) {
       throw new Error("Access pending: synthetic provider output rejected; configure live access.");
     }

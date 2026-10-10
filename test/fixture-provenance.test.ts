@@ -77,6 +77,16 @@ describe("fixture provenance", () => {
     ).toBe(false);
   });
 
+  it.each(["", "TRUE", "1", "yes", " true "])(
+    "does not accept invalid production ALLOW_FIXTURES value %s",
+    (allowFixtures) => {
+      const env = { NODE_ENV: "production", ALLOW_FIXTURES: allowFixtures } as NodeJS.ProcessEnv;
+      expect(fixturesAllowed(env)).toBe(false);
+      expect(() => assertRealProvider({ provider: "fixture" }, "reddit", env))
+        .toThrow(/fixture fallback is disabled in production/);
+    },
+  );
+
   it("never blocks real provider data, even in production", () => {
     expect(() =>
       assertRealProvider({ provider: "scavio" }, "reddit", {
@@ -110,10 +120,14 @@ describe("fixture provenance", () => {
     );
   });
 
-  it("stores fixture documents in production when ALLOW_FIXTURES is set", async () => {
+  it("returns honestly mocked fixture documents with explicit production opt-in", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("ALLOW_FIXTURES", "true");
     const result = await redditCollector.run(ctx);
     expect(result.documents).toHaveLength(1);
+    expect(result.documents[0]?.metadata).toMatchObject({
+      provider: "fixture",
+      mocked: true,
+    });
   });
 });
