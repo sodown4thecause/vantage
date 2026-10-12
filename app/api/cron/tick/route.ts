@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { rollupRecent } from "@/lib/costs/rollup";
 import { scanWorkspace } from "@/lib/cron/scan";
 import { isCronAuthorized } from "@/lib/cron/authorize";
+import { ScanLeaseBusyError } from "@/lib/cron/lease-error";
 import { runDueDigests } from "@/lib/digest/dispatch";
 import { getDb } from "@/lib/db/client";
 import { workspace } from "@/lib/db/schema";
@@ -51,7 +52,7 @@ export async function GET(req: Request) {
         opportunityResults.push(...result.opportunityResults);
       } catch (error) {
         console.error("[tick] workspace scan failed", ws.id, error instanceof Error ? error.message : String(error));
-        const busy = error instanceof Error && error.message === "Workspace scan already running.";
+        const busy = error instanceof ScanLeaseBusyError;
         opportunityResults.push(busy ? { workspaceId: ws.id, skipped: true, reason: "scan already running" } : { workspaceId: ws.id, error: "workspace scan failed" });
       }
     }

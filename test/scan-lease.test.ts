@@ -9,6 +9,7 @@ vi.mock("@/lib/db/client", () => ({ getDb: () => ({ update: () => ({
   } }),
 }) }) }));
 import { claimScanLease, releaseScanLease, withWorkspaceScanLease } from "@/lib/cron/lease";
+import { ScanLeaseBusyError } from "@/lib/cron/lease-error";
 
 const toSql = (chunk: unknown) => new PgDialect().sqlToQuery(chunk as Parameters<PgDialect["sqlToQuery"]>[0]);
 
@@ -43,7 +44,7 @@ it("releaseScanLease with a stale token only matches that token", async () => {
 it("does not scan when another invocation owns the lease", async () => {
   state.claimed = false;
   const run = vi.fn();
-  await expect(withWorkspaceScanLease("ws-1", run)).rejects.toThrow(/already running/);
+  await expect(withWorkspaceScanLease("ws-1", run)).rejects.toBeInstanceOf(ScanLeaseBusyError);
   expect(run).not.toHaveBeenCalled();
 });
 it("releases only its own token even when the scan fails", async () => {

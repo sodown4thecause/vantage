@@ -14,6 +14,7 @@ import { COMMUNITY_SOURCE_CATALOG } from "@/lib/communities/catalog";
 import { collectorsByType } from "@/lib/collectors/registry";
 import { runCollector } from "@/lib/collectors/run";
 import { withWorkspaceScanLease } from "@/lib/cron/lease";
+import { ScanLeaseBusyError } from "@/lib/cron/lease-error";
 import { buildOpportunities } from "@/lib/opportunities/run";
 import { PROFILE_SOURCE_NAME } from "@/lib/profile/repository";
 import { enqueueEmbedJob } from "@/lib/cf/queue";
@@ -80,7 +81,7 @@ export async function addSearchSource(workspaceId: string, _previous: SourceActi
     return { message: `${installed.message} ${scanned.message ?? ""} New posts are listed under "Latest posts found".`.trim() };
   } catch (error) {
     if (error instanceof PlanLimitError) return { error: error.message };
-    return { error: error instanceof Error && error.message === "Workspace scan already running." ? "A scan is already running for this workspace. Try again in a minute." : "Search could not be added. Please try again." };
+    return { error: error instanceof ScanLeaseBusyError ? "A scan is already running for this workspace. Try again in a minute." : "Search could not be added. Please try again." };
   }
 }
 
@@ -122,7 +123,7 @@ export async function scanNow(workspaceId: string): Promise<SourceActionState> {
     }
     return { message: "Scan completed. The opportunity queue is refreshed." };
   } catch (error) {
-    return { error: error instanceof Error && error.message === "Workspace scan already running." ? error.message : "Scan could not be completed. Please try again." };
+    return { error: error instanceof ScanLeaseBusyError ? error.message : "Scan could not be completed. Please try again." };
   }
 }
 

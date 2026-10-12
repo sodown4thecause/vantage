@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   rows: [] as Array<{ id: string; name: string; type: string; health: string }>,
   writes: [] as Record<string, unknown>[],
   collected: [] as string[],
+  busy: false,
   scanError: false,
   recentWhere: undefined as SQL | undefined,
   recentJoin: undefined as SQL | undefined,
@@ -19,7 +20,10 @@ vi.mock("@/lib/auth/workspace", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/cf/queue", () => ({ enqueueEmbedJob: async () => true }));
 vi.mock("@/lib/cron/lease", () => ({
-  withWorkspaceScanLease: async (_ws: string, work: (signal: AbortSignal) => Promise<unknown>) => work(new AbortController().signal),
+  withWorkspaceScanLease: async (_ws: string, work: (signal: AbortSignal) => Promise<unknown>) => {
+    if (state.busy) throw new (await import("@/lib/cron/lease-error")).ScanLeaseBusyError();
+    return work(new AbortController().signal);
+  },
 }));
 vi.mock("@/lib/plans/limits", async (original) => ({
   ...(await original<typeof import("@/lib/plans/limits")>()),
@@ -70,7 +74,7 @@ import { listRecentPosts } from "@/lib/sources/recent";
 import { buildSearchSource } from "@/lib/sources/search";
 
 beforeEach(() => {
-  state.allowed = true; state.dbCalls = 0; state.rows = []; state.writes = []; state.collected = []; state.scanError = false;
+  state.allowed = true; state.dbCalls = 0; state.rows = []; state.writes = []; state.collected = []; state.scanError = false; state.busy = false;
 });
 
 function form(fields: Record<string, string>): FormData {
@@ -122,6 +126,12 @@ describe("addSearchSource", () => {
     expect(result.message).toContain("Search added.");
     expect(state.writes).toEqual([expect.objectContaining({ workspaceId: "ws", name: "Search (Hacker News): brand monitoring", type: "hn" })]);
     expect(state.collected).toEqual(["src-1"]);
+  });
+
+  it("tells the customer when another scan holds the workspace lease", async () => {
+    state.busy = true;
+    expect(await addSearchSource("ws", {}, form({ platform: "hn", query: "brand monitoring" })))
+      .toEqual({ error: "A scan is already running for this workspace. Try again in a minute." });
   });
 
   it("keeps the search and explains when the first scan fails", async () => {
