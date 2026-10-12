@@ -4,8 +4,10 @@ import Link from "next/link";
 import { PageHead, Shell } from "@/components/shell";
 
 import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
+import { SafeLink } from "@/components/safe-link";
+import { listRecentPosts } from "@/lib/sources/recent";
 import { listWorkspaceSources } from "@/lib/sources/list";
-import { CommunitySourceForm, FeedForm, SourceScanButton } from "@/app/source-controls";
+import { CommunitySourceForm, FeedForm, SearchSourceForm, SourceScanButton } from "@/app/source-controls";
 
 export default async function SourcesCoveragePage({
   searchParams,
@@ -28,18 +30,50 @@ export default async function SourcesCoveragePage({
     );
   }
 
-  const sources = await listWorkspaceSources(workspaceId);
+  const [sources, recent] = await Promise.all([
+    listWorkspaceSources(workspaceId),
+    listRecentPosts(workspaceId, 10),
+  ]);
 
   return (
     <Shell workspaceId={workspaceId} active="sources">
-      <PageHead title={"Sources & Coverage"} lede={"Last scan, coverage status, result counts, and provider provenance. Fixture-only runs are marked degraded, never as healthy live coverage."} />
+      <PageHead title={"Sources"} lede={"Choose where contextfor.dev looks for conversations. Search a community for your own keywords, add a feed, or pick from the catalog. Every source shows when it last ran and what it found."} />
 
-      <FeedForm workspaceId={workspaceId} />
-      <CommunitySourceForm workspaceId={workspaceId} />
+      <section aria-labelledby="search-heading" className="mb-12 rounded-lg border border-contour bg-sheet p-5 sm:p-6">
+        <h2 id="search-heading" className="mb-1 text-2xl font-bold tracking-tight">Search a community</h2>
+        <p className="mb-5 max-w-[60ch] text-ridge">
+          Use the words your buyers would type when asking for help. The search runs straight away and again on every scan.
+        </p>
+        <SearchSourceForm workspaceId={workspaceId} />
+      </section>
 
+      <section aria-labelledby="recent-heading" className="mb-12">
+        <h2 id="recent-heading" className="mb-4 text-2xl font-bold tracking-tight">Latest posts found</h2>
+        {recent.length === 0 ? (
+          <p className="text-ridge" data-testid="recent-empty">
+            Nothing collected yet. Add a search above, or use Scan this source on any source below.
+          </p>
+        ) : (
+          <ul className="divide-y divide-contour border-y border-contour" data-testid="recent-posts">
+            {recent.map((post) => (
+              <li key={post.id} className="space-y-1 py-3">
+                <SafeLink href={post.url} className="link font-semibold leading-snug">{post.title}</SafeLink>
+                <p className="flex flex-wrap gap-x-4 text-sm text-ridge">
+                  <span className="capitalize">{post.platform}</span>
+                  {post.sourceName && <span>{post.sourceName}</span>}
+                  {post.postedAt && <span>Posted {post.postedAt.toISOString().slice(0, 10)}</span>}
+                  {post.sample && <span className="font-semibold text-flag-ink">Sample data</span>}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <h2 className="mb-4 text-2xl font-bold tracking-tight">Your sources</h2>
       {sources.length === 0 ? (
         <p className="text-sm text-zinc-500" data-testid="sources-empty">
-          No sources configured for this workspace yet.
+          No sources yet. Save your monitoring profile to add a Hacker News search for your topics, or add a search above.
         </p>
       ) : (
         <ul className="space-y-3" data-testid="sources-list">
@@ -116,7 +150,13 @@ export default async function SourcesCoveragePage({
         </ul>
       )}
 
-      <div className="flex flex-wrap gap-3 text-sm">
+      <section aria-labelledby="more-heading" className="mt-12 space-y-6 border-t border-contour pt-8">
+        <h2 id="more-heading" className="text-2xl font-bold tracking-tight">More ways to add sources</h2>
+        <FeedForm workspaceId={workspaceId} />
+        <CommunitySourceForm workspaceId={workspaceId} />
+      </section>
+
+      <div className="mt-8 flex flex-wrap gap-3 text-sm">
         <Link
           href={`/onboarding?workspaceId=${encodeURIComponent(workspaceId)}`}
           className="font-medium text-zinc-900 underline dark:text-zinc-50"

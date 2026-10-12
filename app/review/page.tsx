@@ -1,8 +1,8 @@
-import Link from "next/link";
-
 import { SafeLink } from "@/components/safe-link";
 import { Shell } from "@/components/shell";
-import { authorizeWorkspace } from "@/lib/auth/workspace";
+import { redirect } from "next/navigation";
+
+import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
 import { listReviewQueue } from "@/lib/pipeline/run";
 
 export const dynamic = "force-dynamic";
@@ -12,24 +12,9 @@ export default async function ReviewPage({
 }: {
   searchParams: Promise<{ workspaceId?: string }>;
 }) {
-  const { workspaceId } = await searchParams;
-
-  if (!workspaceId) {
-    return (
-      <Shell>
-        <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">Review queue</h1>
-        <p className="text-zinc-600">
-          Pass <code className="rounded bg-zinc-100 px-1">?workspaceId=…</code>{" "}
-          to load leads.
-        </p>
-        <Link href="/" className="link">
-          Home
-        </Link>
-        </div>
-      </Shell>
-    );
-  }
+  const params = await searchParams;
+  const workspaceId = params.workspaceId?.trim() || (await getCurrentWorkspace())?.id;
+  if (!workspaceId) redirect("/");
 
   let rows: Awaited<ReturnType<typeof listReviewQueue>> = [];
   let error: string | null = null;
@@ -52,7 +37,6 @@ export default async function ReviewPage({
     <Shell workspaceId={workspaceId} wide>
       <div className="mb-8">
         <h1 className="display text-4xl">Review queue</h1>
-        <p className="text-sm text-ridge">Workspace {workspaceId}</p>
       </div>
 
       {error ? (

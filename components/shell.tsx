@@ -59,6 +59,10 @@ export function Shell({
                   {n.label}
                 </Link>
               ))}
+              {/* Never prefetched: loading the sign-out view ends the session. */}
+              <Link href="/auth/sign-out" prefetch={false} className="rounded px-3 py-1.5 font-medium text-ridge transition-colors hover:text-ink">
+                Sign out
+              </Link>
             </nav>
           ) : (
             <nav aria-label="Site" className="-mx-3 flex flex-wrap items-center gap-1 text-[0.9375rem]">

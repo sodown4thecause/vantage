@@ -14,10 +14,12 @@ import { COMMUNITY_SOURCE_CATALOG } from "@/lib/communities/catalog";
 import { collectorsByType } from "@/lib/collectors/registry";
 import { runCollector } from "@/lib/collectors/run";
 import { withWorkspaceScanLease } from "@/lib/cron/lease";
+import { ScanLeaseBusyError } from "@/lib/cron/lease-error";
 import { buildOpportunities } from "@/lib/opportunities/run";
 import { PROFILE_SOURCE_NAME } from "@/lib/profile/repository";
 import { enqueueEmbedJob } from "@/lib/cf/queue";
 import { getSemanticMode } from "@/lib/cf/env";
+import { buildSearchSource } from "@/lib/sources/search";
 
 export type SourceActionState = { error?: string; message?: string };
 export type CommunitySourceActionState = SourceActionState & { catalogId: string };
@@ -49,10 +51,38 @@ export async function addCommunitySource(workspaceId: string, _previous: SourceA
     const name = `Community: ${entry.name}`;
     return { ...await installSource(workspaceId, { name, type: entry.type, lane: entry.lane,
       config: { ...entry.config, catalogId: entry.id, rulesUrl: entry.rulesUrl } },
-      entry.lane === "free" ? "Source added. Run a scan to collect it." : "Source added. Configure provider access and run it individually."), catalogId };
+      entry.lane === "free" ? "Source added. Run a scan to collect it." : "Source added. It needs provider access, which the site operator configures; use Scan this source to check it."), catalogId };
   } catch (error) {
     return { catalogId: String(form.get("catalogId") ?? ""),
       error: error instanceof PlanLimitError ? error.message : "Community source could not be added. Please try again." };
+  }
+}
+
+/** Adds a keyword search on one platform, then scans it so the customer sees live posts straight away. */
+export async function addSearchSource(workspaceId: string, _previous: SourceActionState, form: FormData): Promise<SourceActionState> {
+  try {
+    const authorization = await authorizeWorkspace(workspaceId);
+    if (!authorization.ok) return { error: "Unable to add sources for this workspace." };
+    const built = buildSearchSource({
+      platform: String(form.get("platform") ?? ""),
+      query: String(form.get("query") ?? ""),
+      subreddit: String(form.get("subreddit") ?? ""),
+      tag: String(form.get("tag") ?? ""),
+    });
+    if (!built.ok) return { error: built.error };
+    const installed = await installSource(workspaceId, built.source, "Search added.");
+    const [row] = await getDb().select({ id: source.id }).from(source)
+      .where(and(eq(source.workspaceId, workspaceId), eq(source.name, String(built.source.name)))).limit(1);
+    if (!row) return { error: "Search could not be added. Please try again." };
+    const scanned = await scanSource(workspaceId, row.id);
+    if (scanned.error) {
+      return { error: `${installed.message} The first scan did not finish: check its status below and try "Scan this source" again.` };
+    }
+    // Pass the scan's own outcome through (it may be paused); never claim posts were found.
+    return { message: `${installed.message} ${scanned.message ?? ""} Anything it found is listed under "Latest posts found".`.replace(/\s+/g, " ").trim() };
+  } catch (error) {
+    if (error instanceof PlanLimitError) return { error: error.message };
+    return { error: error instanceof ScanLeaseBusyError ? "A scan is already running for this workspace. Try again in a minute." : "Search could not be added. Please try again." };
   }
 }
 
@@ -84,7 +114,7 @@ export async function scanNow(workspaceId: string): Promise<SourceActionState> {
     const attempted = (result.collectorResults as Array<Record<string, unknown>>).filter((row) => "sourceId" in row);
     const paused = attempted.filter((row) => row.reason === "source paused").length;
     if ([...result.collectorResults, ...result.opportunityResults].some((row) => "error" in row)) {
-      return { error: "Some sources could not be scanned. Check Sources & Coverage." };
+      return { error: "Some sources could not be scanned. Check their status on the Sources page." };
     }
     if (paused > 0 && paused === attempted.length) {
       return { message: "All sources checked in this scan are paused by the operator, so nothing was fetched. The opportunity queue was rebuilt from existing data." };
@@ -94,7 +124,7 @@ export async function scanNow(workspaceId: string): Promise<SourceActionState> {
     }
     return { message: "Scan completed. The opportunity queue is refreshed." };
   } catch (error) {
-    return { error: error instanceof Error && error.message === "Workspace scan already running." ? error.message : "Scan could not be completed. Please try again." };
+    return { error: error instanceof ScanLeaseBusyError ? error.message : "Scan could not be completed. Please try again." };
   }
 }
 
