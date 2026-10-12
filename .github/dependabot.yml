@@ -7,6 +7,12 @@ updates:
       day: monday
       timezone: Australia/Sydney
     open-pull-requests-limit: 5
+    ignore:
+      # Next 16.4 crashes @opennextjs/cloudflare 1.20.x at startup (preview-props.json manifest, error 1101). Remove once OpenNext supports 16.4.
+      - dependency-name: "next"
+        versions: [">=16.4.0"]
+      - dependency-name: "eslint-config-next"
+        versions: [">=16.4.0"]
     groups:
       next-react:
         patterns: ["next", "eslint-config-next", "react", "react-dom", "@types/react", "@types/react-dom"]
