@@ -63,7 +63,7 @@ export function renderDigestEmail(
 export async function sendDigestEmail(input: {
   to: string;
   workspaceId: string;
-  previousDigestLastSentAt: Date | null;
+  scheduledFor: Date;
   opportunities: DigestOpportunity[];
   manageUrl: string;
   apiKey?: string;
@@ -90,7 +90,7 @@ export async function sendDigestEmail(input: {
       headers: {
         authorization: `Bearer ${apiKey}`,
         "content-type": "application/json",
-        "Idempotency-Key": `digest/${input.workspaceId}/${input.previousDigestLastSentAt?.toISOString() ?? "first"}`,
+        "Idempotency-Key": `digest/${input.workspaceId}/${input.scheduledFor.toISOString()}`,
       },
       body: JSON.stringify({
         from: `${digestFromName()} <${digestFromAddress()}>`,

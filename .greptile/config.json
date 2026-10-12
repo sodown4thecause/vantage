@@ -17,7 +17,7 @@
     },
     {
       "id": "auth-before-write",
-      "rule": "Server actions and API routes must call authorizeWorkspace and refuse on failure before any database write or upstream fetch.",
+      "rule": "User-facing server actions and API routes must call authorizeWorkspace and refuse on failure before any database write or upstream fetch. Trusted internal system cron routes must fail closed with isCronAuthorized before writes or fetches; workspace authorization is not applicable to a system-wide cron sweep.",
       "scope": ["app/api/**", "lib/auth/**"],
       "severity": "high"
     },

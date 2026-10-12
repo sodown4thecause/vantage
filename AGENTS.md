@@ -87,8 +87,9 @@ verified in this repo's Checks list.
   `workers_dev` is false. Staging is a separate environment/worker and must not
   inherit production custom domains.
 - **Cron**: `worker-entry.mjs` adds the scheduled handler. With `SCAN`, it starts
-  scan Workflows, rolls up costs, then calls `/api/cron/digest`; without `SCAN`,
-  `/api/cron/tick` handles the sweep. Self-fetches use `WORKER_SELF_REFERENCE`
+  scan Workflows and rolls up costs; each Workflow builds its workspace queue,
+  releases its lease, then calls `/api/cron/digest` for that workspace. Without
+  `SCAN`, `/api/cron/tick` handles the sweep. Self-fetches use `WORKER_SELF_REFERENCE`
   and `Authorization: Bearer ${CRON_SECRET}`. Staging runs `0 */3 * * *`;
   production cron lists are empty until the sweep is sized.
 - **Runtime rules**: fetch-only database access; no Node-only APIs beyond what

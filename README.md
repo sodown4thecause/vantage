@@ -165,10 +165,11 @@ pnpm deploy
 The `staging` environment schedules `0 */3 * * *` (every 3 hours, UTC);
 top-level and production cron lists are empty. `worker-entry.mjs` adds the
 `scheduled` handler missing from the adapter. With the configured `SCAN` binding,
-it starts per-workspace scan Workflows, requests cost rollup, then POSTs to
-`/api/cron/digest`. Without `SCAN`, it calls `/api/cron/tick`, which performs the
+it starts per-workspace scan Workflows and requests cost rollup. Each Workflow
+builds its workspace queue, releases its lease, then POSTs to `/api/cron/digest`
+for that workspace. Without `SCAN`, it calls `/api/cron/tick`, which performs the
 scan, rollup and digest sweep itself. Both paths use `WORKER_SELF_REFERENCE` and
-`Authorization: Bearer ${CRON_SECRET}`; digest failures do not fail scan scheduling.
+`Authorization: Bearer ${CRON_SECRET}`. On the SCAN path, a failed digest step is retried by that Workflow.
 
 Worker script limits are 3 MB (Free) and 10 MB (Paid). CI measures
 `.open-next/worker.js` and fails the build above 10 MB.

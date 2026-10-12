@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { clampHour, isDigestDue } from "@/lib/digest/schedule";
+import { clampHour, isDigestDue, latestDigestSlot } from "@/lib/digest/schedule";
 
 describe("clampHour", () => {
   it("keeps hours inside 0-23", () => {
@@ -114,5 +114,14 @@ describe("isDigestDue", () => {
         now: new Date("2026-10-09T14:00:00.000Z"),
       }),
     ).toBe(true);
+  });
+});
+
+describe("latestDigestSlot", () => {
+  it("returns the preferred UTC hour for the latest elapsed day", () => {
+    expect(latestDigestSlot(14, new Date("2026-10-09T13:59:00.000Z")))
+      .toEqual(new Date("2026-10-08T14:00:00.000Z"));
+    expect(latestDigestSlot(14, new Date("2026-10-09T14:00:00.000Z")))
+      .toEqual(new Date("2026-10-09T14:00:00.000Z"));
   });
 });

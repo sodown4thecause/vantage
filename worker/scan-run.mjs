@@ -15,8 +15,9 @@ const COLLECT_PATH = "/api/internal/scan/collect";
 const EMBED_PATH = "/api/internal/scan/embed";
 const BUILD_PATH = "/api/internal/scan/build";
 const FINISH_PATH = "/api/internal/scan/finish";
+const DIGEST_PATH = "/api/cron/digest";
 
-const COLLECT_STEP = {
+const RETRYABLE_STEP = {
   retries: { limit: 3, delay: "10 seconds", backoff: "exponential" },
   timeout: "2 minutes",
 };
@@ -53,7 +54,7 @@ export async function runScan(params, step, call) {
     // A source whose collect step exhausts its retries is counted, never fatal to the run.
     const collected = await Promise.all(plan.sourceIds.map(async (sourceId) => {
       try {
-        await step.do(`collect:${sourceId}`, COLLECT_STEP, async () =>
+        await step.do(`collect:${sourceId}`, RETRYABLE_STEP, async () =>
           readJson(await call(COLLECT_PATH, { workspaceId, sourceId }), COLLECT_PATH));
         return true;
       } catch {
@@ -69,6 +70,9 @@ export async function runScan(params, step, call) {
     await step.do("finish", async () =>
       readJson(await call(FINISH_PATH, { workspaceId, leaseToken: plan.leaseToken }), FINISH_PATH));
   }
+
+  await step.do("digest", RETRYABLE_STEP, async () =>
+    readJson(await call(DIGEST_PATH, { workspaceId }), DIGEST_PATH));
 
   return { status: failures > 0 ? "partial" : "done", failures };
 }
