@@ -25,7 +25,7 @@ export function renderDigestEmail(
   opportunities: DigestOpportunity[],
   manageUrl: string,
 ): { subject: string; html: string; text: string } {
-  const subject = `Vantage: ${opportunities.length} conversation${
+  const subject = `contextfor.dev: ${opportunities.length} conversation${
     opportunities.length === 1 ? "" : "s"
   } worth joining today`;
 

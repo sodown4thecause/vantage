@@ -113,7 +113,7 @@ export function PlaysPanel({
         </button>
       </div>
       <p className="text-xs text-ridge">
-        Vantage recommends; you do the action. Nothing is posted or sent for you.
+        contextfor.dev recommends; you do the action. Nothing is posted or sent for you.
       </p>
       {plays && plays.length === 0 ? (
         <p className="text-sm text-ridge">No plays yet for this opportunity.</p>

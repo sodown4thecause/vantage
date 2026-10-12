@@ -50,7 +50,7 @@ export default async function OpportunityQueuePage({
             <Link href={`/onboarding?workspaceId=${encodeURIComponent(workspaceId)}`} className="link">
               refine your monitoring profile
             </Link>{" "}
-            so Vantage knows what to look for.
+            so contextfor.dev knows what to look for.
           </p>
         </div>
       ) : (

@@ -1,18 +1,28 @@
 import Link from "next/link";
 
-import { Mark } from "@/components/glyph";
+import { Wordmark } from "@/components/wordmark";
 
 type NavKey = "queue" | "sources" | "profile" | "plan" | "digest";
+type PublicKey = "how" | "blog" | "launch";
+
+const PUBLIC_NAV: { key: PublicKey; label: string; href: string }[] = [
+  { key: "how", label: "How it works", href: "/#how-it-works" },
+  { key: "blog", label: "Blog", href: "/blog" },
+  { key: "launch", label: "Launch catalog", href: "/launch" },
+];
 
 export function Shell({
   children,
   workspaceId,
   active,
+  section,
   wide = false,
 }: {
   children: React.ReactNode;
   workspaceId?: string;
   active?: NavKey;
+  /** Highlights a public nav item on marketing pages. */
+  section?: PublicKey;
   wide?: boolean;
 }) {
   const q = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
@@ -26,14 +36,16 @@ export function Shell({
 
   return (
     <div className="flex min-h-screen flex-1 flex-col">
+      <a href="#main" className="skip-link">
+        Skip to content
+      </a>
       <header className="border-b border-contour">
         <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-x-8 gap-y-2 px-5 py-3 sm:px-8">
-          <Link href="/" className="flex items-center gap-2 text-lg font-bold tracking-tight text-ink">
-            <Mark />
-            Vantage
+          <Link href="/" aria-label="contextfor.dev home">
+            <Wordmark />
           </Link>
-          {workspaceId && (
-            <nav aria-label="Workspace" className="flex gap-1 text-[0.9375rem]">
+          {workspaceId ? (
+            <nav aria-label="Workspace" className="-mx-3 flex flex-wrap gap-1 text-[0.9375rem]">
               {nav.map((n) => (
                 <Link
                   key={n.key}
@@ -41,22 +53,71 @@ export function Shell({
                   aria-current={active === n.key ? "page" : undefined}
                   className={
                     "rounded px-3 py-1.5 font-medium transition-colors " +
-                    (active === n.key
-                      ? "bg-ink text-paper"
-                      : "text-ridge hover:text-ink")
+                    (active === n.key ? "bg-ink text-paper" : "text-ridge hover:text-ink")
                   }
                 >
                   {n.label}
                 </Link>
               ))}
             </nav>
+          ) : (
+            <nav aria-label="Site" className="-mx-3 flex flex-wrap items-center gap-1 text-[0.9375rem]">
+              {PUBLIC_NAV.map((n) => (
+                <Link
+                  key={n.key}
+                  href={n.href}
+                  aria-current={section === n.key ? "page" : undefined}
+                  className={
+                    "rounded px-3 py-1.5 font-medium transition-colors " +
+                    (section === n.key ? "text-ink underline decoration-signal decoration-2 underline-offset-[6px]" : "text-ridge hover:text-ink")
+                  }
+                >
+                  {n.label}
+                </Link>
+              ))}
+              <Link href="/auth/sign-in" className="rounded px-3 py-1.5 font-medium text-ridge hover:text-ink">
+                Sign in
+              </Link>
+            </nav>
           )}
         </div>
       </header>
-      <main className={`mx-auto w-full flex-1 px-5 py-10 sm:px-8 sm:py-14 ${wide ? "max-w-5xl" : "max-w-3xl"}`}>
+      <main id="main" className={`mx-auto w-full flex-1 px-5 py-10 sm:px-8 sm:py-14 ${wide ? "max-w-5xl" : "max-w-3xl"}`}>
         {children}
       </main>
+      <SiteFooter />
     </div>
+  );
+}
+
+function SiteFooter() {
+  return (
+    <footer className="border-t border-contour">
+      <div className="mx-auto grid w-full max-w-5xl gap-8 px-5 py-10 text-[0.9375rem] sm:grid-cols-[1.4fr_1fr_1fr] sm:px-8">
+        <div className="space-y-2">
+          <Wordmark />
+          <p className="max-w-[36ch] text-ridge">
+            Conversations worth joining, with the posts that prove it. You write every reply.
+          </p>
+        </div>
+        <nav aria-label="Product" className="space-y-2">
+          <p className="font-semibold">Product</p>
+          <ul className="space-y-1.5 text-ridge">
+            <li><Link className="hover:text-ink" href="/#how-it-works">How it works</Link></li>
+            <li><Link className="hover:text-ink" href="/#faq">Questions</Link></li>
+            <li><Link className="hover:text-ink" href="/auth/sign-up">Create a free account</Link></li>
+          </ul>
+        </nav>
+        <nav aria-label="Resources" className="space-y-2">
+          <p className="font-semibold">Resources</p>
+          <ul className="space-y-1.5 text-ridge">
+            <li><Link className="hover:text-ink" href="/blog">Blog</Link></li>
+            <li><a className="hover:text-ink" href="/blog/rss.xml">RSS feed</a></li>
+            <li><Link className="hover:text-ink" href="/launch">Where to launch a developer tool</Link></li>
+          </ul>
+        </nav>
+      </div>
+    </footer>
   );
 }
 

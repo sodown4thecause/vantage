@@ -16,5 +16,5 @@ export function digestFromAddress(): string {
 }
 
 export function digestFromName(): string {
-  return optionalEnv("DIGEST_FROM_NAME") ?? "Vantage";
+  return optionalEnv("DIGEST_FROM_NAME") ?? "contextfor.dev";
 }

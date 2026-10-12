@@ -46,7 +46,7 @@ export default async function DigestSettingsPage({
       <PageHead title="Daily digest" />
       <p className="-mt-4 mb-8 max-w-[56ch] text-lg leading-snug text-ridge">
         Up to five of the highest-ranked conversations from the last 24 hours,
-        delivered once a day. Vantage never posts on your behalf.
+        delivered once a day. contextfor.dev never posts on your behalf.
       </p>
       {row ? (
         <DigestSettingsForm
