@@ -1,7 +1,8 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { addCommunitySource, addFeed, scanNow, scanSource, type CommunitySourceActionState } from "@/lib/sources/actions";
+import { addCommunitySource, addFeed, addSearchSource, scanNow, scanSource, type CommunitySourceActionState } from "@/lib/sources/actions";
+import { SEARCH_PLATFORMS, type SearchPlatform } from "@/lib/sources/search";
 import { COMMUNITY_SOURCE_CATALOG } from "@/lib/communities/catalog";
 import { SafeLink } from "@/components/safe-link";
 
@@ -12,6 +13,44 @@ export function ScanButton({ workspaceId }: { workspaceId: string }) {
     {state.error && <p role="alert" className="mt-2 text-sm text-red-600">{state.error}</p>}
     {state.message && <p role="status" className="mt-2 text-sm">{state.message}</p>}
   </div>;
+}
+
+const SEARCH_HINTS: Record<SearchPlatform, string> = {
+  hn: "Searches Hacker News stories from the past week, then new ones on each scan.",
+  reddit: "Searches Reddit, or one subreddit. Needs provider access set up by the site operator.",
+  stackoverflow: "Searches Stack Overflow questions, optionally within one tag.",
+  github: "Searches open public GitHub issues updated in the past week.",
+};
+
+export function SearchSourceForm({ workspaceId }: { workspaceId: string }) {
+  const [platform, setPlatform] = useState<SearchPlatform>("hn");
+  const [state, action, pending] = useActionState(addSearchSource.bind(null, workspaceId), {});
+  return <form action={action} className="space-y-4" data-testid="search-source-form">
+    <div className="grid gap-4 sm:grid-cols-[12rem_1fr]">
+      <div className="space-y-1.5">
+        <label htmlFor="search-platform" className="block text-sm font-semibold">Where</label>
+        <select id="search-platform" name="platform" value={platform} onChange={e => setPlatform(e.target.value as SearchPlatform)} className="w-full rounded border p-3">
+          {(Object.keys(SEARCH_PLATFORMS) as SearchPlatform[]).map(key => <option key={key} value={key}>{SEARCH_PLATFORMS[key].label}</option>)}
+        </select>
+      </div>
+      <div className="space-y-1.5">
+        <label htmlFor="search-query" className="block text-sm font-semibold">Search for</label>
+        <input id="search-query" name="query" required minLength={2} maxLength={100} placeholder="e.g. track brand mentions in ChatGPT" className="w-full rounded border p-3" />
+      </div>
+    </div>
+    {platform === "reddit" && <div className="space-y-1.5">
+      <label htmlFor="search-subreddit" className="block text-sm font-semibold">Subreddit <span className="font-normal text-ridge">(optional)</span></label>
+      <input id="search-subreddit" name="subreddit" maxLength={23} pattern="(r/)?[A-Za-z0-9_]{2,21}" placeholder="SaaS" className="w-full rounded border p-3 sm:max-w-xs" />
+    </div>}
+    {platform === "stackoverflow" && <div className="space-y-1.5">
+      <label htmlFor="search-tag" className="block text-sm font-semibold">Tag <span className="font-normal text-ridge">(optional)</span></label>
+      <input id="search-tag" name="tag" maxLength={35} placeholder="seo" className="w-full rounded border p-3 sm:max-w-xs" />
+    </div>}
+    <p className="text-sm text-ridge">{SEARCH_HINTS[platform]}</p>
+    <button disabled={pending} className="btn disabled:opacity-60">{pending ? "Searching…" : "Search and add"}</button>
+    {state.error && <p role="alert" className="text-sm text-stop">{state.error}</p>}
+    {state.message && <p role="status" className="text-sm">{state.message}</p>}
+  </form>;
 }
 
 export function FeedForm({ workspaceId }: { workspaceId: string }) {

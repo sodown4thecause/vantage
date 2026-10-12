@@ -58,7 +58,7 @@ it("creates a free feed once and preserves existing source state on repeat submi
 });
 it("returns partial scan failure for display instead of throwing", async () => {
   state.partial = true;
-  expect(await scanNow("ws")).toEqual({ error: "Some sources could not be scanned. Check Sources & Coverage." });
+  expect(await scanNow("ws")).toEqual({ error: "Some sources could not be scanned. Check their status on the Sources page." });
 });
 it("installs an authorized catalog entry once and ignores supplied provider config", async () => {
   const form = new FormData(); form.set("catalogId", "dev-ai"); form.set("config", "http://localhost/secret");

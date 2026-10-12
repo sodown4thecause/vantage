@@ -347,7 +347,10 @@ export function OnboardingForm({ workspaceId }: Props) {
         <p role="status" className="text-sm text-emerald-700 dark:text-emerald-300">
           {savedMessage}
         </p>
-        <Link href={`/queue?workspaceId=${encodeURIComponent(workspaceId)}`} className="inline-block rounded bg-zinc-900 px-4 py-2 text-sm text-white">Continue to opportunity queue</Link>
+        <div className="flex flex-wrap items-center gap-4">
+          <Link href={`/settings/sources?workspaceId=${encodeURIComponent(workspaceId)}`} className="btn">Next: choose where to search</Link>
+          <Link href={`/queue?workspaceId=${encodeURIComponent(workspaceId)}`} className="link text-sm">Go to the opportunity queue</Link>
+        </div>
         </div>
       ) : null}
 
