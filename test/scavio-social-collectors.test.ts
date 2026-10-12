@@ -81,6 +81,22 @@ describe("Reddit Scavio client", () => {
   });
 });
 
+describe("Reddit collector with several profile topics", () => {
+  it("searches each topic, shares the limit and drops duplicate threads", async () => {
+    process.env.SCAVIO_API_KEY = "sk_test";
+    const post = (id: string, title: string) => ({ post_id: `t3_${id}`, title, selftext: "body", subreddit: "SaaS",
+      url: `https://www.reddit.com/r/SaaS/comments/${id}/x/`, created_utc: 1_760_000_000 });
+    redditSearch.mockImplementation(async ({ query }: { query: string }) => ({ data: { results: query === "social listening"
+      ? [post("aaa", "Social listening tool?"), post("bbb", "Shared thread")]
+      : [post("bbb", "Shared thread"), post("ccc", "Reddit leads?")] } }));
+    const result = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1",
+      config: { queries: ["social listening", "reddit lead generation", "social listening"], limit: 4 } });
+    expect(redditSearch.mock.calls.map(([args]) => args.query)).toEqual(["social listening", "reddit lead generation"]);
+    expect(result.documents.map(d => d.title)).toEqual(["Social listening tool?", "Shared thread", "Reddit leads?"]);
+    expect(result.nextState?.cursor).toBeNull();
+  });
+});
+
 describe("X Scavio client", () => {
   it("uses Scavio search when SCAVIO_API_KEY is set", async () => {
     process.env.SCAVIO_API_KEY = "sk_test";

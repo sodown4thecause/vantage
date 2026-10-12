@@ -110,6 +110,8 @@ describe("runCollector", () => {
   });
   it("blocks paid providers in production before any external call", async () => {
     vi.stubEnv("NODE_ENV", "production");
+    // Pin the opt-in off: a developer shell may export it.
+    vi.stubEnv("VANTAGE_PAID_PROVIDERS_ENABLED", "false");
     state.row = { ...sourceRow, type: "reddit", lane: "paid" };
     const run = vi.fn(async () => ({ documents: [] }));
     const result = await runCollector({ collector: { name: "reddit", run }, workspaceId: "workspace-1", sourceId: "source-1" });
@@ -145,6 +147,25 @@ describe("runCollector", () => {
     expect(result.inserted).toBe(0);
     expect(result.receipt?.coverage).toBe("access_pending");
     expect(state.insertOutcomes).toHaveLength(1);
+  });
+
+  it("runs keyed forum and blog search in production without the paid opt-in", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VANTAGE_PAID_PROVIDERS_ENABLED", "false");
+    state.row = { ...sourceRow, type: "web_search", lane: "byok", config: { provider: "tinyfish-web", queries: ["seo"] } };
+    const run = vi.fn(async () => ({ documents: [] }));
+    await runCollector({ collector: { name: "web_search", run }, workspaceId: "workspace-1", sourceId: "source-1" });
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it("keeps keyed Alexandria datasets behind the paid opt-in", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VANTAGE_PAID_PROVIDERS_ENABLED", "false");
+    state.row = { ...sourceRow, type: "web_search", lane: "byok", config: { provider: "firecrawl-developer-index" } };
+    const run = vi.fn(async () => ({ documents: [] }));
+    const result = await runCollector({ collector: { name: "web_search", run }, workspaceId: "workspace-1", sourceId: "source-1" });
+    expect(run).not.toHaveBeenCalled();
+    expect(result.receipt?.coverage).toBe("budget_limited");
   });
 
   it("blocks the real fixture collector before persistence by default in production", async () => {

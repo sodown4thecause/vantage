@@ -52,6 +52,7 @@ vi.mock("@/lib/db/client", () => ({
                 return { orderBy: () => ({ limit: async () => [
                   { id: "d1", title: "Need a tool", url: "https://news.ycombinator.com/item?id=1", platform: "hn", postedAt: null, collectedAt: new Date(), metadata: { provider: "algolia" }, sourceName: "Search (Hacker News): x" },
                   { id: "d2", title: null, url: "https://example.com/p", platform: "reddit", postedAt: null, collectedAt: new Date(), metadata: { provider: "fixture", mocked: true }, sourceName: null },
+                  { id: "d3", title: "First customers?", url: "https://www.indiehackers.com/post/x", platform: "forum", postedAt: null, collectedAt: new Date(), metadata: { provider: "tinyfish_search_fetch", site: "indiehackers.com" }, sourceName: "Profile: Dev forums & blogs" },
                 ] }) };
               },
             };
@@ -99,6 +100,14 @@ describe("buildSearchSource", () => {
     const gh = buildSearchSource({ platform: "github", query: "llms.txt" });
     expect(gh.ok && gh.source).toMatchObject({ type: "github", config: { query: "llms.txt is:open", lookbackHours: 168 } });
     expect(so.ok && so.source).toMatchObject({ config: { lookbackHours: 168 } });
+  });
+
+  it("searches developer forums or blogs through the keyed web-discussions provider", () => {
+    const forums = buildSearchSource({ platform: "forums", query: "first customers" });
+    expect(forums.ok && forums.source).toEqual({ name: "Search (Dev forums): first customers", type: "web_search", lane: "byok",
+      config: { provider: "tinyfish-web", queries: ["first customers"], kinds: ["forum"], maxResults: 10, lookbackHours: 168, search: true } });
+    const blogs = buildSearchSource({ platform: "blogs", query: "reddit marketing" });
+    expect(blogs.ok && blogs.source).toMatchObject({ type: "web_search", config: { kinds: ["blog"] } });
   });
 
   it("rejects unknown platforms, bad phrases, subreddits and tags", () => {
@@ -161,6 +170,6 @@ describe("listRecentPosts", () => {
     expect(where.params).toEqual(["ws-1"]);
     expect(join.sql).toContain('"source"."workspace_id" = $1');
     expect(join.params).toEqual(["ws-1"]);
-    expect(posts.map((p) => [p.title, p.sample])).toEqual([["Need a tool", false], ["https://example.com/p", true]]);
+    expect(posts.map((p) => [p.title, p.sample, p.site])).toEqual([["Need a tool", false, null], ["https://example.com/p", true, null], ["First customers?", false, "indiehackers.com"]]);
   });
 });

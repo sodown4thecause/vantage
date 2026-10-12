@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
 import { mapWithConcurrency } from "@/lib/async/map-with-concurrency";
 import { collectorsByType } from "@/lib/collectors/registry";
 import { runCollector } from "@/lib/collectors/run";
@@ -12,9 +12,16 @@ import { withWorkspaceScanLease } from "@/lib/cron/lease";
 /** Source types a scheduled scan actually runs; cadence is measured against these only. */
 export const SCHEDULED_SOURCE_TYPES = ["hn", "rss", "substack", "github", "stackoverflow"] as const;
 
-/** Sources a scheduled scan may poll: free lane, not paused, scheduled types only. */
-export function eligibleSourceCondition(workspaceId: string) {
-  return and(eq(source.workspaceId, workspaceId), eq(source.lane, "free"), ne(source.health, "paused"), inArray(source.type, [...SCHEDULED_SOURCE_TYPES]));
+/** Keyed (TinyFish/Scavio/Firecrawl) source types an owner's manual "Scan now" also runs. Never scheduled. */
+export const MANUAL_KEYED_SOURCE_TYPES = ["reddit", "web_search"] as const;
+
+/** Sources a scan may poll: free lane, not paused, scheduled types only; a manual scan adds keyed sources. */
+export function eligibleSourceCondition(workspaceId: string, options: { includeKeyed?: boolean } = {}) {
+  const free = and(eq(source.lane, "free"), inArray(source.type, [...SCHEDULED_SOURCE_TYPES]));
+  const lanes = options.includeKeyed
+    ? or(free, and(eq(source.lane, "byok"), inArray(source.type, [...MANUAL_KEYED_SOURCE_TYPES])))
+    : free;
+  return and(eq(source.workspaceId, workspaceId), ne(source.health, "paused"), lanes);
 }
 
 /**
@@ -40,7 +47,7 @@ export async function scanNotDueReason(workspaceId: string, now = new Date()): P
   return isScanDue(last, now, intervalHours) ? null : `${plan} plan scans at most every ${intervalHours} hours`;
 }
 
-export async function scanWorkspace(workspaceId: string, deadline?: AbortSignal, options: { enforceCadence?: boolean } = {}) {
+export async function scanWorkspace(workspaceId: string, deadline?: AbortSignal, options: { enforceCadence?: boolean; includeKeyed?: boolean } = {}) {
   if (options.enforceCadence) {
     const reason = await scanNotDueReason(workspaceId);
     if (reason) {
@@ -60,7 +67,7 @@ export async function scanWorkspace(workspaceId: string, deadline?: AbortSignal,
     const sources = await db
       .select()
       .from(source)
-      .where(eligibleSourceCondition(workspaceId))
+      .where(eligibleSourceCondition(workspaceId, { includeKeyed: options.includeKeyed }))
       .orderBy(sql`${source.lastPolledAt} asc nulls first`, source.id).limit(9);
 
     if (sources.length > 8) collectorResults.push({ workspaceId, skipped: true, reason: "Additional eligible sources deferred to the next scan." });

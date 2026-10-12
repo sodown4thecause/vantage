@@ -8,6 +8,8 @@ export type RecentPost = {
   title: string;
   url: string;
   platform: string;
+  /** Host of a forum thread or blog post, so "Forum" says which forum. */
+  site: string | null;
   sourceName: string | null;
   postedAt: Date | null;
   collectedAt: Date | null;
@@ -41,6 +43,7 @@ export async function listRecentPosts(workspaceId: string, limit = 10): Promise<
       title: row.title?.trim() || row.url,
       url: row.url,
       platform: row.platform,
+      site: typeof metadata.site === "string" ? metadata.site : null,
       sourceName: row.sourceName ?? null,
       postedAt: row.postedAt,
       collectedAt: row.collectedAt,

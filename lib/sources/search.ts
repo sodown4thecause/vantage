@@ -1,3 +1,4 @@
+import { WEB_DISCUSSIONS_PROVIDER } from "@/lib/collectors/web-provider";
 import type { NewSource } from "@/lib/db/schema";
 
 /** Platforms a customer can search with their own keywords. */
@@ -6,6 +7,8 @@ export const SEARCH_PLATFORMS = {
   reddit: { label: "Reddit", lane: "byok" },
   stackoverflow: { label: "Stack Overflow", lane: "free" },
   github: { label: "GitHub issues", lane: "free" },
+  forums: { label: "Dev forums", lane: "byok" },
+  blogs: { label: "Blogs", lane: "byok" },
 } as const;
 
 export type SearchPlatform = keyof typeof SEARCH_PLATFORMS;
@@ -59,6 +62,11 @@ export function buildSearchSource(input: SearchInput): { ok: true; source: Searc
       return { ok: true, source: { name: `Search (${where}): ${query}`, type: "reddit", lane,
         config: { query, ...(subreddit ? { subreddit } : {}), limit: 10, search: true } } };
     }
+    case "forums":
+    case "blogs":
+      return { ok: true, source: { name: `Search (${label}): ${query}`, type: "web_search", lane,
+        config: { provider: WEB_DISCUSSIONS_PROVIDER, queries: [query], kinds: [platform === "forums" ? "forum" : "blog"],
+          maxResults: 10, lookbackHours: FIRST_SCAN_LOOKBACK_HOURS, search: true } } };
     case "stackoverflow": {
       const tag = (input.tag ?? "").trim().toLowerCase();
       if (tag && !SO_TAG_RE.test(tag)) return { ok: false, error: "Enter a single Stack Overflow tag like next.js or seo." };

@@ -48,6 +48,9 @@ export const sourcePlatformValues = [
   "github",
   "stackoverflow",
   "linkedin",
+  /** Public developer forum threads and blog posts found by keyword search (text column; no migration). */
+  "forum",
+  "blog",
 ] as const;
 export type SourcePlatform = (typeof sourcePlatformValues)[number];
 
