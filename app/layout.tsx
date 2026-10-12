@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Newsreader, Schibsted_Grotesk } from "next/font/google";
 
 import { Providers } from "@/app/providers";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, siteUrl } from "@/lib/site";
 
 import "./globals.css";
 
@@ -17,8 +18,13 @@ const newsreader = Newsreader({
 });
 
 export const metadata: Metadata = {
-  title: "Vantage",
-  description: "A short daily list of conversations worth joining, each backed by the posts that prove it.",
+  metadataBase: new URL(siteUrl()),
+  title: { default: `${SITE_NAME}: ${SITE_TAGLINE}`, template: `%s | ${SITE_NAME}` },
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
+  openGraph: { type: "website", siteName: SITE_NAME, locale: "en_US" },
+  twitter: { card: "summary_large_image" },
+  alternates: { types: { "application/rss+xml": [{ url: "/blog/rss.xml", title: `${SITE_NAME} blog` }] } },
 };
 
 export default function RootLayout({

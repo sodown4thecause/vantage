@@ -9,7 +9,7 @@ import type { Destination } from "@/lib/db/schema";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Where to launch a developer tool | Vantage",
+  title: "Where to launch a developer tool",
   description:
     "A hand-verified catalog of places to launch or list a developer tool: cost, requirements, link type and when each fact was last checked. Unknown stays unknown.",
   alternates: { canonical: "/launch" },
@@ -26,7 +26,7 @@ export default async function LaunchIndex() {
   }
 
   return (
-    <Shell wide>
+    <Shell wide section="launch">
       <PageHead
         title="Where to launch a developer tool"
         lede="Each entry cites a primary source and the date we last checked it. Facts we could not verify say so instead of guessing."

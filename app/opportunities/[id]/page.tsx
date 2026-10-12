@@ -25,7 +25,7 @@ export default async function OpportunityDetailPage({
   if (!workspaceId) {
     return (
       <Shell>
-        <p className="text-ridge">Open this opportunity from your queue so Vantage knows which workspace it belongs to.</p>
+        <p className="text-ridge">Open this opportunity from your queue so contextfor.dev knows which workspace it belongs to.</p>
       </Shell>
     );
   }

@@ -245,7 +245,8 @@ describe("/launch page and sitemap", () => {
     expect(urls.some((u) => u.endsWith("/launch"))).toBe(true);
     expect(urls.some((u) => u.endsWith("/launch/example-hunt"))).toBe(true);
     state.fail = true;
-    const fallback = await sitemap();
-    expect(fallback).toHaveLength(1);
+    const fallback = (await sitemap()).map((e) => e.url);
+    expect(fallback.some((u) => u.endsWith("/launch"))).toBe(true);
+    expect(fallback.some((u) => u.includes("/launch/"))).toBe(false);
   });
 });

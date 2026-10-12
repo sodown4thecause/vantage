@@ -1,4 +1,4 @@
-# [Vantage](https://contextfor.dev)
+# [contextfor.dev](https://contextfor.dev)
 
 **Find the people already asking for what you build.**
 
@@ -33,6 +33,15 @@ fail closed before saving fixtures in production unless `ALLOW_FIXTURES=true`
 explicitly permits an intentional demo. Other values do not opt in. Persisted
 samples stay marked as mocked, their source coverage stays degraded, and they
 remain excluded from the live opportunity queue.
+
+## Blog
+
+Posts are Markdown files in [`content/blog/`](content/blog). Copy
+`_template.md` to `<slug>.md`, run `pnpm blog:build`, and commit both the post
+and the regenerated `lib/blog/posts.generated.ts`. Posts render to HTML at
+build time (no filesystem or Markdown parser in the Worker) and ship with
+canonical URLs, Open Graph tags, `BlogPosting`/`BreadcrumbList`/`FAQPage`
+JSON-LD, and entries in `/sitemap.xml`, `/blog/rss.xml` and `/llms.txt`.
 
 ## Data model
 

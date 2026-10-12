@@ -24,9 +24,9 @@ async function load(slug: string): Promise<{ row: Destination | null; failed: bo
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const { row } = await load(slug);
-  if (!row) return { title: "Launch destination | Vantage", robots: { index: false } };
+  if (!row) return { title: "Launch destination", robots: { index: false } };
   return {
-    title: `Is ${row.name} worth it for a developer tool? | Vantage`,
+    title: `Is ${row.name} worth it for a developer tool?`,
     description: `${row.name}: cost ${humanize(row.cost)}, listing mode ${humanize(row.listingMode)}, link type ${humanize(row.linkAttr)}. Last verified ${row.lastVerified}.`,
     alternates: { canonical: `/launch/${row.slug}` },
   };
@@ -38,7 +38,7 @@ export default async function LaunchDestination({ params }: Props) {
 
   if (failed) {
     return (
-      <Shell>
+      <Shell section="launch">
         <p role="alert" className="text-ridge">
           This entry could not be loaded right now. Try again in a minute.
         </p>
@@ -58,7 +58,7 @@ export default async function LaunchDestination({ params }: Props) {
   ];
 
   return (
-    <Shell>
+    <Shell section="launch">
       <p className="mb-4 text-sm">
         <Link href="/launch" className="text-ridge hover:text-ink">
           All destinations
@@ -109,7 +109,7 @@ export default async function LaunchDestination({ params }: Props) {
           . Last verified {row.lastVerified}
           {isStale(row.lastVerified) ? " (stale, needs a re-check)" : ""}.
         </p>
-        <p>Vantage never submits anything for you; you submit on the destination yourself.</p>
+        <p>contextfor.dev never submits anything for you; you submit on the destination yourself.</p>
       </section>
     </Shell>
   );
