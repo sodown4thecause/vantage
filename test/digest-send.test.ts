@@ -103,7 +103,7 @@ describe("sendDigestEmail", () => {
   const base = {
     to: "founder@example.com",
     workspaceId: "workspace-1",
-    previousDigestLastSentAt: null,
+    scheduledFor: new Date("2026-10-10T13:00:00.000Z"),
     manageUrl: "https://contextfor.dev/settings/digest?workspaceId=workspace-1",
   };
 

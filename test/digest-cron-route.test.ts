@@ -6,10 +6,11 @@ vi.mock("@/lib/digest/dispatch", () => ({ runDueDigests: dispatch }));
 
 import { POST } from "@/app/api/cron/digest/route";
 
-function call(authorization?: string) {
+function call(authorization?: string, body?: unknown) {
   return POST(new Request("https://example.com/api/cron/digest", {
     method: "POST",
-    headers: authorization ? { authorization } : {},
+    headers: authorization ? { authorization, "content-type": "application/json" } : {},
+    body: body === undefined ? undefined : JSON.stringify(body),
   }));
 }
 
@@ -38,17 +39,32 @@ describe("digest cron route", () => {
   });
 
   it("dispatches due digests for an authenticated request", async () => {
-    const digest = { checked: 3, sent: 1, skipped: 1, failed: 1, hasMore: false };
+    const digest = { checked: 1, sent: 1, skipped: 0, failed: 0, hasMore: false };
     dispatch.mockResolvedValue(digest);
-    const response = await call("Bearer secret");
+    const response = await call("Bearer secret", { workspaceId: "ws-1" });
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, digest });
     expect(dispatch).toHaveBeenCalledOnce();
+    expect(dispatch).toHaveBeenCalledWith(expect.any(Date), "ws-1");
+  });
+
+  it("returns a retryable status when a workspace digest fails", async () => {
+    const digest = { checked: 1, sent: 0, skipped: 0, failed: 1, hasMore: false };
+    dispatch.mockResolvedValue(digest);
+    const response = await call("Bearer secret", { workspaceId: "ws-1" });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ ok: false, digest });
+  });
+
+  it("requires an authenticated workspace scope", async () => {
+    const response = await call("Bearer secret", {});
+    expect(response.status).toBe(400);
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it("returns a generic failure without exposing provider details", async () => {
     dispatch.mockRejectedValue(new TypeError("provider secret request detail"));
-    const response = await call("Bearer secret");
+    const response = await call("Bearer secret", { workspaceId: "ws-1" });
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: "digest dispatch failed" });
     expect(console.error).toHaveBeenCalledWith("[digest-cron] dispatch failed", "TypeError");

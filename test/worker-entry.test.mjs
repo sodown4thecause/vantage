@@ -50,7 +50,7 @@ test("completes a successful scheduled scan", async () => {
 // Workflow path: taken whenever env.SCAN exists; the tick path is not called.
 const slotTime = Date.UTC(2026, 9, 8, 12, 30);
 const scanController = { scheduledTime: slotTime, cron: "0 */3 * * *" };
-const scanEnv = ({ dueBody = { workspaceIds: ["ws-1", "ws-2"] }, create, rollup = () => Response.json({ ok: true }), digest = () => Response.json({ ok: true }) } = {}) => {
+const scanEnv = ({ dueBody = { workspaceIds: ["ws-1", "ws-2"] }, create, rollup = () => Response.json({ ok: true }) } = {}) => {
   const creates = [];
   const rollups = [];
   const digests = [];
@@ -70,7 +70,7 @@ const scanEnv = ({ dueBody = { workspaceIds: ["ws-1", "ws-2"] }, create, rollup 
         }
         if (pathname === "/api/cron/digest") {
           digests.push(request);
-          return digest(request);
+          return Response.json({ ok: true });
         }
         assert.equal(pathname, "/api/internal/scan/due");
         return Response.json(dueBody);
@@ -124,14 +124,11 @@ test("triggers the daily cost rollup through the self-reference binding after st
   assert.equal(rollups[0].headers.get("authorization"), "Bearer test-secret");
   assert.equal(new URL(rollups[0].url).host, "vantage.internal");
 });
-test("dispatches due digests on the configured Workflow cron path", async () => {
+test("does not dispatch digests before the workspace scan Workflows finish", async () => {
   const { env, creates, digests } = scanEnv();
   await worker.scheduled(scanController, env);
   assert.equal(creates.length, 2);
-  assert.equal(digests.length, 1);
-  assert.equal(digests[0].method, "POST");
-  assert.equal(digests[0].headers.get("authorization"), "Bearer test-secret");
-  assert.equal(new URL(digests[0].url).host, "vantage.internal");
+  assert.equal(digests.length, 0);
 });
 test("refuses the configured Workflow cron path without its secret before any fetch", async () => {
   let fetches = 0;
@@ -143,34 +140,21 @@ test("refuses the configured Workflow cron path without its secret before any fe
   assert.equal(fetches, 0);
   assert.equal(creates, 0);
 });
-test("a failing digest dispatch does not fail the scan schedule", async () => {
-  const { env, creates, digests } = scanEnv({ digest: () => new Response("boom", { status: 500 }) });
-  await worker.scheduled(scanController, env);
-  assert.equal(creates.length, 2);
-  assert.equal(digests.length, 1);
-});
-test("a digest dispatch that throws does not fail the scan schedule", async () => {
-  const { env, creates, digests } = scanEnv({ digest: () => { throw new TypeError("network down"); } });
-  await worker.scheduled(scanController, env);
-  assert.equal(creates.length, 2);
-  assert.equal(digests.length, 1);
-});
 test("a failing cost rollup does not stop the scan starts or fail the invocation", async () => {
   const { env, creates } = scanEnv({ rollup: () => new Response("boom", { status: 500 }) });
   await worker.scheduled(scanController, env);
   assert.equal(creates.length, 2);
 });
-test("a rollup that throws does not fail the invocation", async () => {
-  const { env, creates, digests } = scanEnv({ rollup: () => { throw new TypeError("network down"); } });
+test("a rollup that throws does not fail the invocation or trigger a digest", async () => {
+  const { env, creates } = scanEnv({ rollup: () => { throw new TypeError("network down"); } });
   await worker.scheduled(scanController, env);
   assert.equal(creates.length, 2);
-  assert.equal(digests.length, 1);
 });
-test("still runs rollup and digest dispatch when starting scans fails, and reports the start failure", async () => {
+test("still runs rollup when starting scans fails, and reports the start failure", async () => {
   const { env, rollups, digests } = scanEnv({ dueBody: { workspaceIds: ["ws-1"] }, create: () => { throw new Error("quota exceeded"); } });
   await assert.rejects(worker.scheduled(scanController, env), /1 of 1 scan instances failed/);
   assert.equal(rollups.length, 1);
-  assert.equal(digests.length, 1);
+  assert.equal(digests.length, 0);
 });
 test("exposes the embed queue consumer", () => {
   assert.equal(typeof worker.queue, "function");

@@ -1,0 +1,21 @@
+diff --git a/dist/cli/build/patches/plugins/load-manifest.js b/dist/cli/build/patches/plugins/load-manifest.js
+index b0616a9a1a2729c3bc1cf03dd88edde8afa09d08..e6327e46b46ad71c089b736be9ffd4fcda03b7ec 100644
+--- a/dist/cli/build/patches/plugins/load-manifest.js
++++ b/dist/cli/build/patches/plugins/load-manifest.js
+@@ -31,7 +31,7 @@ async function getLoadManifestRule(buildOpts) {
+     const { outputDir } = buildOpts;
+     const baseDir = join(outputDir, "server-functions/default", getPackagePath(buildOpts));
+     const dotNextDir = join(baseDir, ".next");
+-    const manifests = await glob(join(dotNextDir, "**/{*-manifest,required-server-files,prefetch-hints}.json"), {
++    const manifests = await glob(join(dotNextDir, "**/{*-manifest,required-server-files,prefetch-hints,preview-props}.json"), {
+         windowsPathsNoEscape: true,
+     });
+     const returnManifests = (await Promise.all(manifests.map(async (manifest) => `
+@@ -65,6 +65,7 @@ function loadManifest($PATH, $$$ARGS) {
+         p.endsWith("server-reference-manifest") ||
+         p.endsWith("dynamic-css-manifest") ||
+         p.endsWith("fallback-build-manifest") ||
++        p.endsWith("preview-props") ||
+         p.endsWith("prefetch-hints")) {
+       return {};
+     }

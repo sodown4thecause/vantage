@@ -3,7 +3,7 @@ import { and, asc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import { appUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db/client";
 import { workspace } from "@/lib/db/schema";
-import { isDigestDue } from "@/lib/digest/schedule";
+import { isDigestDue, latestDigestSlot } from "@/lib/digest/schedule";
 import { markDigestSent, sendDigestEmail } from "@/lib/digest/send";
 import { selectDigestOpportunities } from "@/lib/digest/select";
 import { resendApiKey } from "@/lib/env/server";
@@ -28,6 +28,7 @@ export type DigestDispatchSummary = {
  */
 export async function runDueDigests(
   now: Date = new Date(),
+  workspaceId?: string,
 ): Promise<DigestDispatchSummary> {
   const startedAt = Date.now();
   const db = getDb();
@@ -53,7 +54,7 @@ export async function runDueDigests(
   const candidates = await db
     .select({ id: workspace.id })
     .from(workspace)
-    .where(and(eligible, available))
+    .where(and(eligible, available, workspaceId ? eq(workspace.id, workspaceId) : undefined))
     .orderBy(sql`${workspace.digestLastAttemptAt} asc nulls first`, asc(workspace.id))
     .limit(DIGEST_BATCH_SIZE + 1);
 
@@ -121,7 +122,7 @@ export async function runDueDigests(
       const result = await sendDigestEmail({
         to: ws.digestEmail,
         workspaceId: ws.id,
-        previousDigestLastSentAt: ws.digestLastSentAt,
+        scheduledFor: latestDigestSlot(ws.digestHourUtc, now),
         opportunities,
         apiKey,
         manageUrl: `${appUrl()}/settings/digest?workspaceId=${ws.id}`,

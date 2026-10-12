@@ -52,6 +52,7 @@ function fakeCall(overrides = {}) {
     "/api/internal/scan/embed": () => json({ embedded: 3 }),
     "/api/internal/scan/build": () => json({ ok: true }),
     "/api/internal/scan/finish": () => json({ released: true }),
+    "/api/cron/digest": () => json({ ok: true }),
     ...overrides,
   };
   const call = async (path, body) => {
@@ -64,10 +65,10 @@ function fakeCall(overrides = {}) {
 const names = (step) => step.steps.map((record) => record.name);
 const record = (step, name) => step.steps.find((entry) => entry.name === name);
 
-test("runs plan, every collect, embed, build, then finish in that order", async () => {
+test("runs plan, every collect, embed, build, finish, then the workspace digest", async () => {
   const step = fakeStep();
   const result = await runScan(PARAMS, step, fakeCall().call);
-  assert.deepEqual(names(step), ["plan", "collect:src-a", "collect:src-b", "embed", "build", "finish"]);
+  assert.deepEqual(names(step), ["plan", "collect:src-a", "collect:src-b", "embed", "build", "finish", "digest"]);
   assert.deepEqual(result, { status: "done", failures: 0 });
 });
 
@@ -78,6 +79,7 @@ test("configures retries and timeouts for collect and build steps", async () => 
     retries: { limit: 3, delay: "10 seconds", backoff: "exponential" },
     timeout: "2 minutes",
   });
+  assert.deepEqual(record(step, "digest").options, record(step, "collect:src-a").options);
   assert.equal(record(step, "build").options.retries.limit, 2);
   assert.equal(record(step, "build").options.timeout, "5 minutes");
 });
@@ -92,6 +94,7 @@ test("posts the documented bodies to each internal route", async () => {
     { path: "/api/internal/scan/embed", body: { workspaceId: "ws-1" } },
     { path: "/api/internal/scan/build", body: { workspaceId: "ws-1" } },
     { path: "/api/internal/scan/finish", body: { workspaceId: "ws-1", leaseToken: LEASE } },
+    { path: "/api/cron/digest", body: { workspaceId: "ws-1" } },
   ]);
 });
 
@@ -128,7 +131,7 @@ test("one collect step that exhausts its retries yields partial and the run stil
   assert.equal(record(step, "collect:src-a").attempts, 1);
   assert.deepEqual(result, { status: "partial", failures: 1 });
   assert.ok(names(step).includes("build"));
-  assert.equal(names(step).at(-1), "finish");
+  assert.deepEqual(names(step).slice(-2), ["finish", "digest"]);
 });
 
 test("finish runs even when build throws, and the build error propagates", async () => {

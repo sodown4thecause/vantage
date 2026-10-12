@@ -13,6 +13,15 @@ export function clampHour(hour: number): number {
   return Math.min(23, Math.max(0, Math.trunc(hour)));
 }
 
+export function latestDigestSlot(digestHourUtc: number, now: Date = new Date()): Date {
+  const scheduledAt = new Date(now);
+  scheduledAt.setUTCHours(clampHour(digestHourUtc), 0, 0, 0);
+  if (scheduledAt.getTime() > now.getTime()) {
+    scheduledAt.setUTCDate(scheduledAt.getUTCDate() - 1);
+  }
+  return scheduledAt;
+}
+
 /**
  * A digest is due for the latest elapsed daily UTC slot, provided that slot
  * has not been sent and at least 20 hours have elapsed since the last send.
@@ -21,11 +30,7 @@ export function clampHour(hour: number): number {
  */
 export function isDigestDue(input: DigestDueInput): boolean {
   const now = input.now ?? new Date();
-  const scheduledAt = new Date(now);
-  scheduledAt.setUTCHours(clampHour(input.digestHourUtc), 0, 0, 0);
-  if (scheduledAt.getTime() > now.getTime()) {
-    scheduledAt.setUTCDate(scheduledAt.getUTCDate() - 1);
-  }
+  const scheduledAt = latestDigestSlot(input.digestHourUtc, now);
 
   if (input.lastSentAt) {
     if (input.lastSentAt.getTime() >= scheduledAt.getTime()) return false;

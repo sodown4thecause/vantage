@@ -48,8 +48,12 @@ vi.mock("@/lib/db/client", () => ({
           orderBy: (...order: unknown[]) => ({
             limit: async (limit: number) => {
               state.queries.push({ where, order, limit });
+              const params = toSql(where).params;
+              const workspaceScope = params.find((value) => typeof value === "string"
+                && state.workspaces.some((row) => row.id === value));
               return state.workspaces
                 .filter((ws) => ws.digestEnabled && !!ws.digestEmail?.trim()
+                  && (!workspaceScope || ws.id === workspaceScope)
                   && isDigestDue({ digestHourUtc: ws.digestHourUtc, lastSentAt: ws.digestLastSentAt, now: state.dbNow })
                   && (!ws.digestLeaseUntil || ws.digestLeaseUntil < state.dbNow))
                 .sort((a, b) => (a.digestLastAttemptAt?.getTime() ?? -Infinity) - (b.digestLastAttemptAt?.getTime() ?? -Infinity) || a.id.localeCompare(b.id))
@@ -160,6 +164,15 @@ describe("runDueDigests", () => {
     await expect(runDueDigests(now)).resolves.toEqual({ checked: 0, sent: 0, skipped: 0, failed: 0, hasMore: false });
     expect(state.select).not.toHaveBeenCalled();
     expect(state.fetch).not.toHaveBeenCalled();
+  });
+
+  it("scopes a Workflow dispatch to its workspace", async () => {
+    state.workspaces = [workspace("selected"), workspace("other")];
+    expect((await runDueDigests(now, "selected")).sent).toBe(1);
+    expect(state.fetch).toHaveBeenCalledOnce();
+    expect(state.workspaces[0]?.digestLastSentAt).toEqual(now);
+    expect(state.workspaces[1]?.digestLastAttemptAt).toBeNull();
+    expect(toSql(state.queries[0]!.where).params).toContain("selected");
   });
 
   it("skips an unconfigured provider without resolving an unavailable app origin", async () => {
