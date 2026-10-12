@@ -227,6 +227,16 @@ describe("public developer collectors", () => {
     expect((await collector.run(ctx)).documents).toHaveLength(1);
   });
 
+  it("starts a fresh Stack Overflow search at its configured lookback, capped at one week", async () => {
+    const mins: number[] = [];
+    vi.stubGlobal("fetch", async (input: string) => { mins.push(Number(new URL(input).searchParams.get("min"))); return Response.json({ items: [], has_more: false, quota_remaining: 100 }); });
+    const now = Math.floor(Date.now() / 1000);
+    await stackOverflowCollector.run(ctx);
+    await stackOverflowCollector.run({ ...ctx, config: { ...ctx.config, lookbackHours: 168 } });
+    await stackOverflowCollector.run({ ...ctx, config: { ...ctx.config, lookbackHours: 10_000 } });
+    expect(mins.map(min => Math.round((now - min) / 3600))).toEqual([72, 168, 168]);
+  });
+
   it("normalizes Stack Overflow bodies and never invents missing creation dates", async () => {
     vi.stubGlobal("fetch", async () => Response.json({ has_more: false, quota_remaining: 100, items: [{ question_id: 101, link: "https://stackoverflow.com/questions/101/agent", title: "Agent &amp; eval", body: "<p>Need reproducible evaluation</p>", owner: { display_name: "Builder" }, tags: ["langchain"], answer_count: 2 }] }));
     const result = await stackOverflowCollector.run(ctx);

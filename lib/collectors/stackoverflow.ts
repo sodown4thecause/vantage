@@ -60,7 +60,8 @@ export const stackOverflowCollector: Collector = {
     const now = Math.floor(Date.now() / 1000);
     let state: { since?: number; until?: number; activityMax?: number; nextPage?: number; backoffUntil?: number } = {};
     try { const value = JSON.parse(ctx.cursor ?? "{}"); if (value && typeof value === "object" && !Array.isArray(value)) state = value; } catch { /* Legacy numeric cursor is accepted below. */ }
-    const since = Number(state.since ?? ctx.cursor) || now - 72 * 3600;
+    const lookbackHours = Math.min(168, Math.max(1, Number(ctx.config.lookbackHours) || 72));
+    const since = Number(state.since ?? ctx.cursor) || now - lookbackHours * 3600;
     const settledUntil = now - SETTLEMENT_SECONDS;
     const until = state.until ?? Math.max(since, settledUntil);
     const legacyPage = state.nextPage ?? 1;

@@ -18,7 +18,7 @@ export function ScanButton({ workspaceId }: { workspaceId: string }) {
 const SEARCH_HINTS: Record<SearchPlatform, string> = {
   hn: "Searches Hacker News stories from the past week, then new ones on each scan.",
   reddit: "Searches Reddit, or one subreddit. Needs provider access set up by the site operator.",
-  stackoverflow: "Searches Stack Overflow questions, optionally within one tag.",
+  stackoverflow: "Searches Stack Overflow questions active in the past week, optionally within one tag.",
   github: "Searches open public GitHub issues updated in the past week.",
 };
 

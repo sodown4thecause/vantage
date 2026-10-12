@@ -48,7 +48,8 @@ export function buildSearchSource(input: SearchInput): { ok: true; source: Searc
         config: { queries: [query], maxPages: 1, lookbackHours: FIRST_SCAN_LOOKBACK_HOURS, search: true } } };
     case "github":
       return { ok: true, source: { name: `Search (${label}): ${query}`, type: "github", lane,
-        config: { query, maxPages: 1, lookbackHours: FIRST_SCAN_LOOKBACK_HOURS, search: true } } };
+        // The form promises open issues; the collector only adds public/issue/date filters.
+        config: { query: `${query} is:open`, maxPages: 1, lookbackHours: FIRST_SCAN_LOOKBACK_HOURS, search: true } } };
     case "reddit": {
       const subreddit = (input.subreddit ?? "").trim().replace(/^\/?r\//i, "");
       if (subreddit && !SUBREDDIT_RE.test(subreddit)) {
@@ -63,7 +64,7 @@ export function buildSearchSource(input: SearchInput): { ok: true; source: Searc
       if (tag && !SO_TAG_RE.test(tag)) return { ok: false, error: "Enter a single Stack Overflow tag like next.js or seo." };
       const where = tag ? `${label} [${tag}]` : label;
       return { ok: true, source: { name: `Search (${where}): ${query}`, type: "stackoverflow", lane,
-        config: { query, ...(tag ? { tagged: tag } : {}), includeReplies: true, maxPages: 1, search: true } } };
+        config: { query, ...(tag ? { tagged: tag } : {}), includeReplies: true, maxPages: 1, lookbackHours: FIRST_SCAN_LOOKBACK_HOURS, search: true } } };
     }
   }
 }

@@ -78,7 +78,8 @@ export async function addSearchSource(workspaceId: string, _previous: SourceActi
     if (scanned.error) {
       return { error: `${installed.message} The first scan did not finish: check its status below and try "Scan this source" again.` };
     }
-    return { message: `${installed.message} ${scanned.message ?? ""} New posts are listed under "Latest posts found".`.trim() };
+    // Pass the scan's own outcome through (it may be paused); never claim posts were found.
+    return { message: `${installed.message} ${scanned.message ?? ""} Anything it found is listed under "Latest posts found".`.replace(/\s+/g, " ").trim() };
   } catch (error) {
     if (error instanceof PlanLimitError) return { error: error.message };
     return { error: error instanceof ScanLeaseBusyError ? "A scan is already running for this workspace. Try again in a minute." : "Search could not be added. Please try again." };

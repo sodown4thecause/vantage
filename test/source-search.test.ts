@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   collected: [] as string[],
   busy: false,
   scanError: false,
+  sourceHealth: "healthy",
   recentWhere: undefined as SQL | undefined,
   recentJoin: undefined as SQL | undefined,
 }));
@@ -61,7 +62,7 @@ vi.mock("@/lib/db/client", () => ({
         values: (value: Record<string, unknown>) => ({
           onConflictDoNothing: async () => {
             state.writes.push(value);
-            state.rows.push({ id: "src-1", name: String(value.name), type: String(value.type), health: "healthy" });
+            state.rows.push({ id: "src-1", name: String(value.name), type: String(value.type), health: state.sourceHealth });
           },
         }),
       }),
@@ -74,7 +75,7 @@ import { listRecentPosts } from "@/lib/sources/recent";
 import { buildSearchSource } from "@/lib/sources/search";
 
 beforeEach(() => {
-  state.allowed = true; state.dbCalls = 0; state.rows = []; state.writes = []; state.collected = []; state.scanError = false; state.busy = false;
+  state.allowed = true; state.dbCalls = 0; state.rows = []; state.writes = []; state.collected = []; state.scanError = false; state.busy = false; state.sourceHealth = "healthy";
 });
 
 function form(fields: Record<string, string>): FormData {
@@ -96,7 +97,8 @@ describe("buildSearchSource", () => {
     const so = buildSearchSource({ platform: "stackoverflow", query: "sitemap", tag: "Next.js" });
     expect(so.ok && so.source).toMatchObject({ name: "Search (Stack Overflow [next.js]): sitemap", config: { tagged: "next.js", query: "sitemap" } });
     const gh = buildSearchSource({ platform: "github", query: "llms.txt" });
-    expect(gh.ok && gh.source).toMatchObject({ type: "github", config: { query: "llms.txt", lookbackHours: 168 } });
+    expect(gh.ok && gh.source).toMatchObject({ type: "github", config: { query: "llms.txt is:open", lookbackHours: 168 } });
+    expect(so.ok && so.source).toMatchObject({ config: { lookbackHours: 168 } });
   });
 
   it("rejects unknown platforms, bad phrases, subreddits and tags", () => {
@@ -123,7 +125,7 @@ describe("addSearchSource", () => {
 
   it("adds the search to the workspace and scans it straight away", async () => {
     const result = await addSearchSource("ws", {}, form({ platform: "hn", query: "brand monitoring" }));
-    expect(result.message).toContain("Search added.");
+    expect(result.message).toBe('Search added. Source scanned. The opportunity queue is refreshed. Anything it found is listed under "Latest posts found".');
     expect(state.writes).toEqual([expect.objectContaining({ workspaceId: "ws", name: "Search (Hacker News): brand monitoring", type: "hn" })]);
     expect(state.collected).toEqual(["src-1"]);
   });
@@ -132,6 +134,13 @@ describe("addSearchSource", () => {
     state.busy = true;
     expect(await addSearchSource("ws", {}, form({ platform: "hn", query: "brand monitoring" })))
       .toEqual({ error: "A scan is already running for this workspace. Try again in a minute." });
+  });
+
+  it("passes a paused scan through instead of claiming posts were found", async () => {
+    state.sourceHealth = "paused";
+    const result = await addSearchSource("ws", {}, form({ platform: "hn", query: "brand monitoring" }));
+    expect(result.message).toContain("This source is paused.");
+    expect(state.collected).toEqual([]);
   });
 
   it("keeps the search and explains when the first scan fails", async () => {
