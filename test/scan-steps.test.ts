@@ -89,6 +89,7 @@ vi.mock("@/lib/collectors/registry", () => ({
 }));
 vi.mock("@/lib/sources/switch", () => ({
   getSourceSwitch: async () => ({ enabled: true, state: "on", reason: "" }),
+  listOffSwitches: async () => new Map(),
 }));
 vi.mock("@/lib/embeddings/index-documents", () => ({
   embedPendingDocuments: (...args: unknown[]) => state.embed(...args),
