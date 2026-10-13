@@ -1,0 +1,1 @@
+CREATE INDEX "cost_event_request_ref_idx" ON "cost_event" USING btree ("request_ref");

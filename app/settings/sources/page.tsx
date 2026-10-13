@@ -7,7 +7,9 @@ import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
 import { SafeLink } from "@/components/safe-link";
 import { listRecentPosts } from "@/lib/sources/recent";
 import { listWorkspaceSources } from "@/lib/sources/list";
-import { CommunitySourceForm, FeedForm, SearchSourceForm, SourceScanButton } from "@/app/source-controls";
+import { listSubredditSuggestions } from "@/lib/sources/subreddit-suggestions";
+import { getLatestMonitoringProfile } from "@/lib/profile/repository";
+import { CommunitySourceForm, FeedForm, SearchSourceForm, SourceScanButton, TrackSubredditButton } from "@/app/source-controls";
 
 export default async function SourcesCoveragePage({
   searchParams,
@@ -30,10 +32,14 @@ export default async function SourcesCoveragePage({
     );
   }
 
-  const [sources, recent] = await Promise.all([
+  const [sources, recent, subredditSuggestions, profile] = await Promise.all([
     listWorkspaceSources(workspaceId),
     listRecentPosts(workspaceId, 10),
+    listSubredditSuggestions(workspaceId),
+    getLatestMonitoringProfile(workspaceId),
   ]);
+  const topic = profile?.topics[0]?.trim() ?? "";
+  const showSubreddits = subredditSuggestions.length > 0 && topic.length > 0;
 
   return (
     <Shell workspaceId={workspaceId} active="sources">
@@ -46,6 +52,26 @@ export default async function SourcesCoveragePage({
         </p>
         <SearchSourceForm workspaceId={workspaceId} />
       </section>
+
+      {showSubreddits && (
+        <section aria-labelledby="subreddits-heading" className="mb-12">
+          <h2 id="subreddits-heading" className="mb-1 text-2xl font-bold tracking-tight">Subreddits worth tracking</h2>
+          <p className="mb-4 max-w-[60ch] text-ridge">
+            These subreddits keep showing up in your collected Reddit posts; tracking one searches only that subreddit for “{topic}”.
+          </p>
+          <ul className="divide-y divide-contour border-y border-contour" data-testid="subreddit-suggestions">
+            {subredditSuggestions.map((suggestion) => (
+              <li key={suggestion.subreddit} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                <div>
+                  <p className="font-semibold">r/{suggestion.subreddit}</p>
+                  <p className="text-sm text-ridge">{suggestion.posts} posts found</p>
+                </div>
+                <TrackSubredditButton workspaceId={workspaceId} subreddit={suggestion.subreddit} query={topic} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section aria-labelledby="recent-heading" className="mb-12">
         <h2 id="recent-heading" className="mb-4 text-2xl font-bold tracking-tight">Latest posts found</h2>

@@ -3,9 +3,9 @@ import { deleteVectors, upsertVectors, type VectorItem } from "@/lib/embeddings/
 import type { MonitoringProfileInput } from "@/lib/profile/types";
 
 /** Upper bound on profile vectors per profile version; ids 0..63 are the only ones ever deleted. */
-const MAX_PROFILE_VECTORS = 64;
+export const MAX_PROFILE_VECTORS = 64;
 
-function profileVectorId(profileId: string, n: number): string {
+export function profileVectorId(profileId: string, n: number): string {
   return `profile:${profileId}:${n}`;
 }
 

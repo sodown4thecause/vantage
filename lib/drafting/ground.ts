@@ -3,13 +3,13 @@ import { embedTexts } from "@/lib/embeddings/embed";
 import { deleteVectors, queryVectors, upsertVectors, type VectorItem } from "@/lib/embeddings/store";
 
 /** Upper bound on material vectors per profile; ids 0..63 are the only ones ever written or deleted. */
-const MAX_MATERIAL_CHUNKS = 64;
+export const MAX_MATERIAL_CHUNKS = 64;
 /** Vectorize allows topK up to 50 when metadata is returned. */
 const MAX_TOP_K = 50;
 
 type Unit = { text: string; newParagraph: boolean };
 
-function materialVectorId(profileId: string, n: number): string {
+export function materialVectorId(profileId: string, n: number): string {
   return `material:${profileId}:${n}`;
 }
 

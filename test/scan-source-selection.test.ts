@@ -1,8 +1,16 @@
-import { expect, it } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { eligibleSourceCondition } from "@/lib/cron/scan";
+import { sql } from "drizzle-orm";
 
-const render = (options?: { includeKeyed?: boolean }) => new PgDialect().sqlToQuery(eligibleSourceCondition("ws-1", options)!);
+const state = vi.hoisted(() => ({ off: new Map<string, unknown>() }));
+vi.mock("@/lib/sources/switch", () => ({ listOffSwitches: async () => state.off }));
+
+import { eligibleSourceCondition, scanOrder } from "@/lib/cron/scan";
+
+const dialect = new PgDialect();
+const render = (options?: { includeKeyed?: boolean }) => dialect.sqlToQuery(eligibleSourceCondition("ws-1", options)!);
+
+beforeEach(() => { state.off = new Map(); });
 
 it("keeps scheduled scans on free public sources only", () => {
   const { sql, params } = render();
@@ -19,4 +27,17 @@ it("adds keyed Reddit and forum/blog searches to an owner's manual scan, still s
   expect(params[0]).toBe("ws-1");
   expect(params).toEqual(expect.arrayContaining(["free", "byok", "reddit", "web_search", "paused"]));
   expect(params).not.toContain("paid");
+});
+
+it("orders by poll time when no source type is switched off", async () => {
+  const { sql: text } = dialect.sqlToQuery(sql.join(await scanOrder(), sql`, `));
+  expect(text).toBe('"source"."last_polled_at" asc nulls first, "source"."id"');
+});
+
+it("puts switched-off source types last so they cannot starve enabled sources", async () => {
+  // browser_run is a switch key but not a source type; comparing it to the enum would fail in Postgres.
+  state.off = new Map([["reddit", {}], ["browser_run", {}], ["hn", {}]]);
+  const { sql: text, params } = dialect.sqlToQuery(sql.join(await scanOrder(), sql`, `));
+  expect(text).toBe('case when "source"."type" in ($1, $2) then 1 else 0 end, "source"."last_polled_at" asc nulls first, "source"."id"');
+  expect(params).toEqual(["reddit", "hn"]);
 });

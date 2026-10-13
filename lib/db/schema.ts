@@ -598,6 +598,7 @@ export const costEvent = pgTable(
   (table) => [
     index("cost_event_ts_idx").on(table.ts),
     index("cost_event_workspace_ts_idx").on(table.workspaceId, table.ts),
+    index("cost_event_request_ref_idx").on(table.requestRef),
   ],
 );
 

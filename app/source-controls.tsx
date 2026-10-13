@@ -55,6 +55,19 @@ export function SearchSourceForm({ workspaceId }: { workspaceId: string }) {
   </form>;
 }
 
+/** One click adds a subreddit-scoped Reddit search for `query`, then scans it, like the search form does. */
+export function TrackSubredditButton({ workspaceId, subreddit, query }: { workspaceId: string; subreddit: string; query: string }) {
+  const [state, action, pending] = useActionState(addSearchSource.bind(null, workspaceId), {});
+  return <form action={action} className="space-y-2" data-testid="track-subreddit-form">
+    <input type="hidden" name="platform" value="reddit" />
+    <input type="hidden" name="subreddit" value={subreddit} />
+    <input type="hidden" name="query" value={query} />
+    <button disabled={pending} className="btn text-xs disabled:opacity-60">{pending ? "Tracking…" : `Track r/${subreddit}`}</button>
+    {state.error && <p role="alert" className="text-sm text-stop">{state.error}</p>}
+    {state.message && <p role="status" className="text-sm">{state.message}</p>}
+  </form>;
+}
+
 export function FeedForm({ workspaceId }: { workspaceId: string }) {
   const [state, action, pending] = useActionState(addFeed.bind(null, workspaceId), {});
   return <form action={action} className="space-y-3">

@@ -3,11 +3,12 @@ import { mapWithConcurrency } from "@/lib/async/map-with-concurrency";
 import { collectorsByType } from "@/lib/collectors/registry";
 import { runCollector } from "@/lib/collectors/run";
 import { getDb } from "@/lib/db/client";
-import { source, workspace } from "@/lib/db/schema";
+import { source, sourceTypeEnum, workspace } from "@/lib/db/schema";
 import { getLimits, getWorkspacePlan, isScanDue } from "@/lib/plans/limits";
 import { buildOpportunities } from "@/lib/opportunities/run";
 import { getLatestMonitoringProfile } from "@/lib/profile/repository";
 import { withWorkspaceScanLease } from "@/lib/cron/lease";
+import { listOffSwitches } from "@/lib/sources/switch";
 
 /** Source types a scheduled scan actually runs; cadence is measured against these only. */
 export const SCHEDULED_SOURCE_TYPES = ["hn", "rss", "substack", "github", "stackoverflow"] as const;
@@ -22,6 +23,19 @@ export function eligibleSourceCondition(workspaceId: string, options: { includeK
     ? or(free, and(eq(source.lane, "byok"), inArray(source.type, [...MANUAL_KEYED_SOURCE_TYPES])))
     : free;
   return and(eq(source.workspaceId, workspaceId), ne(source.health, "paused"), lanes);
+}
+
+/**
+ * Order for picking which eligible sources a scan runs: least recently polled first, but source types
+ * the operator switched off go last. A switched-off source is never polled, so by poll time alone it
+ * would stay at the front forever and, once a workspace had enough of them, starve every enabled source.
+ */
+export async function scanOrder() {
+  const types: readonly string[] = sourceTypeEnum.enumValues;
+  const off = [...(await listOffSwitches()).keys()]
+    .filter((key): key is (typeof sourceTypeEnum.enumValues)[number] => types.includes(key));
+  const byPollTime = [sql`${source.lastPolledAt} asc nulls first`, source.id] as const;
+  return off.length ? [sql`case when ${inArray(source.type, off)} then 1 else 0 end`, ...byPollTime] : [...byPollTime];
 }
 
 /**
@@ -68,7 +82,7 @@ export async function scanWorkspace(workspaceId: string, deadline?: AbortSignal,
       .select()
       .from(source)
       .where(eligibleSourceCondition(workspaceId, { includeKeyed: options.includeKeyed }))
-      .orderBy(sql`${source.lastPolledAt} asc nulls first`, source.id).limit(9);
+      .orderBy(...(await scanOrder())).limit(9);
 
     if (sources.length > 8) collectorResults.push({ workspaceId, skipped: true, reason: "Additional eligible sources deferred to the next scan." });
 

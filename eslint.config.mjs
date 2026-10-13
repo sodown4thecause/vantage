@@ -16,6 +16,8 @@ const eslintConfig = defineConfig([
     ".open-next/**",
     ".wrangler/**",
     "cloudflare-env.d.ts",
+    // Claude Code agent worktrees: full checkouts of this repo, linted in their own right.
+    ".claude/worktrees/**",
   ]),
 ]);
 

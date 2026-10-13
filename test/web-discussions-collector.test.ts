@@ -106,6 +106,23 @@ describe("webDiscussionsCollector", () => {
     expect(result.documents.map(d => d.title)).toEqual(["New"]);
   });
 
+  it("keeps every known forum out of blog results, even forums outside this source's own pack", async () => {
+    searchQuery.mockImplementation(async (params: Record<string, unknown>) => params.exclude_domains
+      ? { results: [
+        hit("https://community.shopify.com/c/shopify-discussion/store-owners-thread", "Store owners thread on a forum"),
+        hit("https://growthnotes.io/blog/store-owner-lead-gen", "Lead generation for store owners"),
+      ] }
+      : { results: [] });
+
+    const result = await webDiscussionsCollector.run(ctx({ kinds: ["blog"],
+      forumDomains: ["community.hubspot.com", "warriorforum.com", "webmasterworld.com", "indiehackers.com"] }));
+
+    const blogCall = searchQuery.mock.calls.find(([p]) => p.exclude_domains)![0];
+    expect(blogCall.exclude_domains.split(",")).toEqual(expect.arrayContaining(["community.shopify.com", "dev.to", "reddit.com"]));
+    expect(result.documents.map(d => d.urlCanonical)).toEqual(["https://growthnotes.io/blog/store-owner-lead-gen"]);
+    expect(result.documents[0].platform).toBe("blog");
+  });
+
   it("shares the result limit between forums and blogs", async () => {
     searchQuery.mockImplementation(async (params: Record<string, unknown>) => ({ results: Array.from({ length: 8 }, (_, i) =>
       params.include_domains ? hit(`https://dev.to/a/post-${i}`, `Forum ${i}`) : hit(`https://blog${i}.io/post`, `Blog ${i}`)) }));

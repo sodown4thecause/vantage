@@ -7,7 +7,7 @@ import { runCollector } from "@/lib/collectors/run";
 import { getSemanticMode } from "@/lib/cf/env";
 import { isCronAuthorized } from "@/lib/cron/authorize";
 import { claimScanLease, releaseScanLease } from "@/lib/cron/lease";
-import { eligibleSourceCondition, scanNotDueReason } from "@/lib/cron/scan";
+import { eligibleSourceCondition, scanNotDueReason, scanOrder } from "@/lib/cron/scan";
 import { getDb } from "@/lib/db/client";
 import { monitoringProfile, source, workspace } from "@/lib/db/schema";
 import { embedPendingDocuments } from "@/lib/embeddings/index-documents";
@@ -70,7 +70,7 @@ export async function planScan(workspaceId: string, now = new Date()): Promise<P
       .select({ id: source.id })
       .from(source)
       .where(eligibleSourceCondition(workspaceId))
-      .orderBy(sql`${source.lastPolledAt} asc nulls first`, source.id)
+      .orderBy(...(await scanOrder()))
       .limit(MAX_SOURCES_PER_SCAN);
     return { kind: "planned", leaseToken, sourceIds: rows.map((row) => row.id) };
   } catch (err) {
