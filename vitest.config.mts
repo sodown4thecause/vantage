@@ -4,7 +4,8 @@ import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    exclude: [...configDefaults.exclude, "test/worker-entry.test.mjs", "test/scan-run.test.mjs", "test/queue-consumer.test.mjs"],
+    // .claude/worktrees holds agent checkouts of this repo; their tests are not ours.
+    exclude: [...configDefaults.exclude, ".claude/**", "test/worker-entry.test.mjs", "test/scan-run.test.mjs", "test/queue-consumer.test.mjs"],
     setupFiles: ["./test/setup-env.ts"],
   },
   resolve: {
