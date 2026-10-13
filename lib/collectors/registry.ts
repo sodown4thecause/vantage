@@ -10,6 +10,14 @@ import { githubCollector } from "@/lib/collectors/github";
 import { stackOverflowCollector } from "@/lib/collectors/stackoverflow";
 import { alexandriaCollector } from "@/lib/collectors/alexandria";
 import { linkedinCollector } from "@/lib/collectors/linkedin";
+import { webDiscussionsCollector } from "@/lib/collectors/web-discussions";
+import { WEB_DISCUSSIONS_PROVIDER } from "@/lib/collectors/web-provider";
+
+/** `web_search` sources carry their provider in config: forum/blog search or an Alexandria dataset. */
+const webSearchCollector: Collector = {
+  name: "web_search",
+  run: (ctx) => (ctx.config.provider === WEB_DISCUSSIONS_PROVIDER ? webDiscussionsCollector : alexandriaCollector).run(ctx),
+};
 
 export const collectorsByType: Record<SourceType, Collector | undefined> = {
   hn: hnCollector,
@@ -19,7 +27,7 @@ export const collectorsByType: Record<SourceType, Collector | undefined> = {
   youtube: youtubeCollector,
   reddit: redditCollector,
   x: xCollector,
-  web_search: alexandriaCollector,
+  web_search: webSearchCollector,
   github: githubCollector,
   stackoverflow: stackOverflowCollector,
   linkedin: linkedinCollector,
@@ -37,5 +45,6 @@ export const allCollectors: Collector[] = [
   githubCollector,
   stackOverflowCollector,
   alexandriaCollector,
+  webDiscussionsCollector,
   linkedinCollector,
 ];

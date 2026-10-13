@@ -59,7 +59,7 @@ export default async function SourcesCoveragePage({
               <li key={post.id} className="space-y-1 py-3">
                 <SafeLink href={post.url} className="link font-semibold leading-snug">{post.title}</SafeLink>
                 <p className="flex flex-wrap gap-x-4 text-sm text-ridge">
-                  <span className="capitalize">{post.platform}</span>
+                  <span className="capitalize">{post.platform}{post.site ? ` · ${post.site}` : ""}</span>
                   {post.sourceName && <span>{post.sourceName}</span>}
                   {post.postedAt && <span>Posted {post.postedAt.toISOString().slice(0, 10)}</span>}
                   {post.sample && <span className="font-semibold text-flag-ink">Sample data</span>}

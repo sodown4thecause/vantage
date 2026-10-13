@@ -20,6 +20,8 @@ const SEARCH_HINTS: Record<SearchPlatform, string> = {
   reddit: "Searches Reddit, or one subreddit. Needs provider access set up by the site operator.",
   stackoverflow: "Searches Stack Overflow questions active in the past week, optionally within one tag.",
   github: "Searches open public GitHub issues updated in the past week.",
+  forums: "Searches public developer forums such as DEV, Indie Hackers, Lobsters and public Discourse communities. Needs provider access set up by the site operator.",
+  blogs: "Searches recent blog posts across the web, leaving out social networks and forums. Needs provider access set up by the site operator.",
 };
 
 export function SearchSourceForm({ workspaceId }: { workspaceId: string }) {

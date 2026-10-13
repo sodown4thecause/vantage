@@ -7,24 +7,38 @@ import type {
 } from "@/lib/collectors/types";
 import type { NewDocument } from "@/lib/db/schema";
 import { assertRealProvider } from "@/lib/collectors/provenance";
-import { fetchRedditPostsWithMeta } from "@/lib/reddit/client";
+import { fetchRedditPostsWithMeta, type RedditFetchMeta, type RedditPost } from "@/lib/reddit/client";
 
 export const redditCollector: Collector = {
   name: "reddit",
   async run(ctx: CollectorContext): Promise<CollectorResult> {
-    const query =
-      typeof ctx.config.query === "string" ? ctx.config.query : undefined;
+    // Profile sources carry up to three topics in `queries`; customer searches carry one `query`.
+    const queries = [...new Set((Array.isArray(ctx.config.queries) ? ctx.config.queries : [ctx.config.query])
+      .filter((q): q is string => typeof q === "string" && q.trim().length > 0).map(q => q.trim()))].slice(0, 3);
     const subreddit =
       typeof ctx.config.subreddit === "string" ? ctx.config.subreddit : undefined;
     const limit = Number(ctx.config.limit ?? ctx.config.first ?? 20);
-    const { posts, meta, cursor } = await fetchRedditPostsWithMeta({
-      ctx: { workspaceId: ctx.workspaceId, sourceKey: "reddit" },
-      query,
-      subreddit,
-      limit,
-      cursor: ctx.cursor ?? undefined,
-      signal: ctx.signal,
-    });
+    const posts: RedditPost[] = [];
+    let meta: RedditFetchMeta | undefined;
+    let cursor: string | null | undefined;
+    // Share the limit so one busy topic cannot crowd out the others.
+    const perQuery = queries.length > 1 && Number.isInteger(limit) ? Math.max(1, Math.ceil(limit / queries.length)) : limit;
+    for (const query of queries.length ? queries : [undefined]) {
+      const result = await fetchRedditPostsWithMeta({
+        ctx: { workspaceId: ctx.workspaceId, sourceKey: "reddit" },
+        query,
+        subreddit,
+        limit: perQuery,
+        cursor: ctx.cursor ?? undefined,
+        signal: ctx.signal,
+      });
+      meta ??= result.meta;
+      cursor = queries.length > 1 ? null : result.cursor;
+      for (const post of result.posts) {
+        if (posts.length < limit && !posts.some(existing => existing.id === post.id)) posts.push(post);
+      }
+    }
+    if (!meta) throw new Error("Reddit provider unavailable");
     assertRealProvider(meta, "reddit");
 
     const documents: NewDocument[] = posts.map((p) => {

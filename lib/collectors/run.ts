@@ -6,6 +6,7 @@ import {
   type SourceRunReceipt,
 } from "@/lib/collectors/coverage";
 import { fixturesAllowed } from "@/lib/collectors/provenance";
+import { WEB_DISCUSSIONS_PROVIDER } from "@/lib/collectors/web-provider";
 import type {
   Collector,
   CollectorResult,
@@ -89,6 +90,7 @@ export async function runCollector(
     if (process.env.NODE_ENV === "production" &&
         !(row.lane === "free" && ["hn", "rss", "substack", "github", "stackoverflow"].includes(row.type)) &&
         !(row.type === "reddit" && row.lane === "byok") &&
+        !(row.type === "web_search" && row.lane === "byok" && (row.config as Record<string, unknown> | null)?.provider === WEB_DISCUSSIONS_PROVIDER) &&
         !(process.env.VANTAGE_PAID_PROVIDERS_ENABLED === "true" && ["reddit", "x", "web_search", "linkedin"].includes(row.type))) {
       throw new Error("Budget limited: this provider requires an explicit paid-provider opt-in.");
     }

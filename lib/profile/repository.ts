@@ -5,8 +5,11 @@ import {
   monitoringProfile,
   source,
   type MonitoringProfile,
+  type NewSource,
 } from "@/lib/db/schema";
+import { WEB_DISCUSSIONS_PROVIDER, bareHost } from "@/lib/collectors/web-provider";
 import { assertWithinCount } from "@/lib/plans/limits";
+import { PlanLimitError } from "@/lib/plans/types";
 import { retrieveProductMaterial } from "@/lib/profile/retrieve";
 import type {
   MonitoringProfileInput,
@@ -105,18 +108,61 @@ export async function saveMonitoringProfile(args: {
   if (!row) {
     throw new Error("failed to persist monitoring profile");
   }
-  await provisionProfileSources(args.workspaceId, args.input.topics);
+  await provisionProfileSources(args.workspaceId, args.input.topics, args.input.productUrl);
   return toProfileView(row);
 }
 
 export const PROFILE_SOURCE_NAME = "Profile: Hacker News";
+export const PROFILE_REDDIT_SOURCE_NAME = "Profile: Reddit";
+export const PROFILE_WEB_SOURCE_NAME = "Profile: Dev forums & blogs";
 
-export async function provisionProfileSources(workspaceId: string, topics: string[]): Promise<void> {
+type ProfileSource = Pick<NewSource, "name" | "type" | "lane" | "config">;
+
+/** Keyed profile sources, only when an operator has configured a provider that can serve them. */
+export function keyedProfileSources(topics: string[], productUrl: string | undefined, env: Record<string, string | undefined> = process.env): ProfileSource[] {
+  const queries = topics.slice(0, 3);
+  if (!queries.length) return [];
+  const tinyFish = Boolean(env.TINYFISH_API_KEY?.trim());
+  const rows: ProfileSource[] = [];
+  if (tinyFish || env.SCAVIO_API_KEY?.trim()) {
+    rows.push({ name: PROFILE_REDDIT_SOURCE_NAME, type: "reddit", lane: "byok", config: { queries, limit: 10 } });
+  }
+  if (tinyFish || env.FIRECRAWL_API_KEY?.trim()) {
+    const ownHost = productUrl ? bareHost(productUrl) : undefined;
+    rows.push({ name: PROFILE_WEB_SOURCE_NAME, type: "web_search", lane: "byok", config: {
+      provider: WEB_DISCUSSIONS_PROVIDER, queries, kinds: ["forum", "blog"], maxResults: 10, lookbackHours: 168,
+      // The owner's own site is never an opportunity.
+      excludeHosts: ownHost ? [ownHost] : [],
+    } });
+  }
+  return rows;
+}
+
+export async function provisionProfileSources(workspaceId: string, topics: string[], productUrl?: string): Promise<void> {
+  const db = getDb();
   const config = { queries: topics.slice(0, 5), maxPages: 1, enrich: false };
-  await getDb().insert(source).values({
+  await db.insert(source).values({
     workspaceId, name: PROFILE_SOURCE_NAME, type: "hn", lane: "free", config,
   }).onConflictDoUpdate({
     target: [source.workspaceId, source.name],
     set: { config: sql`${source.config} || ${JSON.stringify(config)}::jsonb`, updatedAt: new Date() },
   });
+
+  const keyed = keyedProfileSources(topics, productUrl);
+  if (!keyed.length) return;
+  const existing = await db.select({ name: source.name }).from(source).where(eq(source.workspaceId, workspaceId)).limit(100);
+  let count = existing.length;
+  for (const row of keyed) {
+    const present = existing.some(e => e.name === row.name);
+    if (!present) {
+      // Defaults never push a workspace past its plan; the owner can add these from the Sources page instead.
+      try { await assertWithinCount(workspaceId, "sources", count); }
+      catch (error) { if (error instanceof PlanLimitError) continue; throw error; }
+      count++;
+    }
+    await db.insert(source).values({ workspaceId, ...row }).onConflictDoUpdate({
+      target: [source.workspaceId, source.name],
+      set: { config: sql`${source.config} || ${JSON.stringify(row.config)}::jsonb`, updatedAt: new Date() },
+    });
+  }
 }

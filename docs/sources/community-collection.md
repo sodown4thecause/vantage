@@ -29,6 +29,23 @@ The following feeds were fetched publicly on 7 October 2026 and returned XML wit
 
 LangChain's former `https://blog.langchain.com/rss/` returned HTML rather than a feed during the check and is excluded. Reddit catalog entries identify public communities for the TinyFish/Scavio lane; their presence does not enable schedules or bypass the provider gate.
 
+## Developer forums and blogs
+
+A saved monitoring profile provisions up to three sources: `Profile: Hacker News` (free), `Profile: Reddit` and `Profile: Dev forums & blogs` (both keyed, `byok`). The keyed two are added only when a provider can serve them (TinyFish or Scavio for Reddit; TinyFish or Firecrawl for forums and blogs) and only within the plan's source limit. Re-saving the profile refreshes their topics. "Search a community" also offers **Dev forums** and **Blogs** for a single phrase.
+
+Forum and blog sources are `web_search` rows with `config.provider = "tinyfish-web"`; other `web_search` providers remain Alexandria datasets. For each topic (at most three) the collector runs one TinyFish Search per kind:
+
+- **Forums** are restricted to a curated list of public developer communities (DEV, Indie Hackers, Lobsters and public Discourse instances such as the OpenAI, Hugging Face, Cloudflare, Vercel, Cursor, n8n, Python, Rust, freeCodeCamp, Fly.io and Elastic forums). A source can supply its own `forumDomains`.
+- **Blogs** exclude social networks, video, Q&A sites, code hosts, the forums above and the workspace's own product domain.
+
+Searches are bounded by `after_date` (seven days on the first scan, then a day before the saved cursor) and `maxResults` (default 10, at most 20, shared between forums and blogs). TinyFish Fetch reads the hits' page text; Cloudflare Browser Run renders up to five pages Fetch could not read. Anything still unread stays a labelled search snippet (`discoveryOnly`). Documents use the platforms `forum` and `blog` and record `metadata.site`.
+
+When TinyFish search fails, the collector falls back to the [Firecrawl search API](https://docs.firecrawl.dev/api-reference/endpoint/search) (`POST /v2/search`, `tbs` time filter, 2 credits per 10 results). That call goes through `runPaidCall`, so it needs paid-provider opt-in, a daily budget and `FIRECRAWL_CREDIT_USD`. A denied or failed fallback is reported as degraded coverage, never as an empty result.
+
+Scheduled scans still run only free sources. The owner's **Scan now** button also runs keyed Reddit and forum/blog sources; "Scan this source" runs any one source.
+
+`test/live-communities.smoke.test.ts` checks the whole lane against the real providers (`LIVE_SMOKE=1`, skipped otherwise).
+
 ## Alexandria dataset discovery
 
 The [Firecrawl scrape API](https://docs.firecrawl.dev/api-reference/endpoint/scrape) accepts `POST https://api.firecrawl.dev/v2/scrape` with an `alexandria` object or array. Live, zero-credit `find-tools` discovery verified this allowlist on 7 October 2026:

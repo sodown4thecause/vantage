@@ -8,6 +8,8 @@ export type TinyFishSearchHit = {
   title: string;
   snippet: string;
   position: number;
+  /** Publication date when the search index supplies one. */
+  date?: string;
 };
 
 export type TinyFishFetchedPage = {
@@ -23,6 +25,9 @@ export async function tinyFishSearch(
   query: string,
   opts?: {
     includeDomains?: string[];
+    excludeDomains?: string[];
+    /** YYYY-MM-DD lower bound on publication date. */
+    afterDate?: string;
     purpose?: string;
     page?: number;
     client?: TinyFish;
@@ -40,6 +45,8 @@ export async function tinyFishSearch(
         query,
         purpose: opts?.purpose,
         include_domains: opts?.includeDomains?.join(",") || undefined,
+        exclude_domains: opts?.excludeDomains?.join(",") || undefined,
+        after_date: opts?.afterDate,
         page: opts?.page,
       }),
   );
@@ -50,6 +57,7 @@ export async function tinyFishSearch(
       title: r.title,
       snippet: r.snippet,
       position: r.position,
+      ...(r.date ? { date: r.date } : {}),
     }))
     .filter((r) => Boolean(r.url));
 }

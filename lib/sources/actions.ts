@@ -108,7 +108,8 @@ export async function scanNow(workspaceId: string): Promise<SourceActionState> {
   try {
     const authorization = await authorizeWorkspace(workspaceId);
     if (!authorization.ok) throw new Error(authorization.error);
-    const result = await scanWorkspace(workspaceId);
+    // The owner pressed the button: include their keyed Reddit and forum/blog searches, which cron never runs.
+    const result = await scanWorkspace(workspaceId, undefined, { includeKeyed: true });
     revalidatePath("/queue");
     revalidatePath("/settings/sources");
     const attempted = (result.collectorResults as Array<Record<string, unknown>>).filter((row) => "sourceId" in row);
