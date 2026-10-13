@@ -9,7 +9,7 @@ Valid review findings that were deliberately not fixed in PR #34 (each needs a m
 | Workspace creation (`lib/db/actions.ts`) | Check-then-insert race. | Needs a DB constraint (migration) or one atomic statement; neon-http has no transactions. |
 | Source cap (`lib/sources/actions.ts`) | Same check-then-insert race on the per-plan source cap. | Same. |
 | Collector fairness (`lib/collectors/run.ts`) | A paused type can starve enabled sources when a workspace has more than 8 sources (Pro allows 25). | Needs a rotation or filter design that also changes the "paused" messaging. |
-| `cost_event.request_ref` index | Lookups by `request_ref` have no index. | Migration 0011 is applied in production and immutable; add the index in a new migration. |
+| `cost_event.request_ref` index | Lookups by `request_ref` have no index. | Added in `drizzle/0022_rich_giant_girl.sql` (`cost_event_request_ref_idx`); migration 0011 is applied in production and immutable. |
 | Public budget settlement | Settlement is not idempotent per reservation. | Needs a reservation id and storage (migration). |
 | Public budget ledger | Does not fail closed when cost recording is incomplete. | Needs per-request tracking of `recordCost` success; a later cost-wiring slice. |
 | Scheduled scans | Cadence is measured from source poll times. | A persisted scheduled-scan timestamp column (migration) would be cleaner. |
