@@ -31,7 +31,7 @@ LangChain's former `https://blog.langchain.com/rss/` returned HTML rather than a
 
 ## Developer forums and blogs
 
-A saved monitoring profile provisions up to three sources: `Profile: Hacker News` (free), `Profile: Reddit` and `Profile: Dev forums & blogs` (both keyed, `byok`). The keyed two are added only when a provider can serve them (TinyFish or Scavio for Reddit; TinyFish or Firecrawl for forums and blogs) and only within the plan's source limit. Re-saving the profile refreshes their topics. "Search a community" also offers **Dev forums** and **Blogs** for a single phrase.
+A saved monitoring profile provisions up to three sources: `Profile: Hacker News` (free), `Profile: Reddit` and `Profile: Dev forums & blogs` (both keyed, `byok`). The keyed two are added only when a provider can serve them (TinyFish or Scavio for Reddit; TinyFish or Firecrawl for forums and blogs) and only within the plan's source limit. Re-saving the profile refreshes their topics. "Search a community" also offers **Dev forums** and **Blogs** for a single phrase. Reddit searches are site-wide unless scoped, so the Sources page suggests up to five subreddits that keep appearing in the workspace's collected Reddit posts (at least two live posts each, not already tracked), and one click tracks one as a Reddit search for the profile's first topic limited to that subreddit.
 
 Forum and blog sources are `web_search` rows with `config.provider = "tinyfish-web"`; other `web_search` providers remain Alexandria datasets. For each topic (at most three) the collector runs one TinyFish Search per kind:
 
