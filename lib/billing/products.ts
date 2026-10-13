@@ -30,7 +30,7 @@ export const BILLING_PLANS: readonly BillingPlan[] = [
     grants: "pro",
     productIds: {
       sandbox: "REPLACE_WITH_SANDBOX_PRO_MONTHLY_PRODUCT_ID",
-      production: "REPLACE_WITH_PRODUCTION_PRO_MONTHLY_PRODUCT_ID",
+      production: "0e072813-4013-4995-8ae8-917320151539",
     },
   },
   {
