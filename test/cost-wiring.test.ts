@@ -204,6 +204,43 @@ describe("cost wiring: one cost_event per provider call", () => {
     expect(mocks.recorded[0]).toMatchObject({ sourceKey: "src-key" });
   });
 
+  describe("YouTube Data API path (no Scavio or TinyFish key)", () => {
+    const commentThreadsOk = () => new Response(JSON.stringify({ items: [{ id: "c1", snippet: { topLevelComment: { snippet: {
+      authorDisplayName: "viewer", textDisplay: "nice video", publishedAt: "2026-10-06T12:00:00Z", likeCount: 2 } } } }] }), { status: 200 });
+
+    beforeEach(() => {
+      delete process.env.TINYFISH_API_KEY;
+      delete process.env.SCAVIO_API_KEY;
+      process.env.YOUTUBE_API_KEY = "yt-test-key";
+    });
+
+    it("records one zero-cost call per Data API request under the workspace source", async () => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => commentThreadsOk());
+      const out = await fetchYouTubeCommentsWithMeta({ videoIds: ["v1"], ctx });
+      expect(out.meta.provider).toBe("youtube_api");
+      expect(fetchSpy).toHaveBeenCalledOnce();
+      expect(mocks.recorded).toHaveLength(1);
+      expect(mocks.recorded[0]).toMatchObject({ provider: "youtube", action: "comment_threads", units: 1, unitCostUsd: 0,
+        sourceKey: "src-key", workspaceId: "ws-1", ok: true });
+    });
+
+    it("defaults to the youtube source key when no context is passed", async () => {
+      vi.spyOn(globalThis, "fetch").mockImplementation(async () => commentThreadsOk());
+      await fetchYouTubeCommentsWithMeta({ videoIds: ["v1"] });
+      expect(mocks.recorded).toHaveLength(1);
+      expect(mocks.recorded[0]).toMatchObject({ provider: "youtube", action: "comment_threads", sourceKey: "youtube", ok: true });
+      expect(mocks.recorded[0].workspaceId).toBeUndefined();
+    });
+
+    it("a 403 is recorded as a failed zero-cost call and still throws", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 403 }));
+      await expect(fetchYouTubeCommentsWithMeta({ videoIds: ["v1"], ctx })).rejects.toThrow("YouTube API 403 for video v1");
+      expect(mocks.recorded).toHaveLength(1);
+      expect(mocks.recorded[0]).toMatchObject({ provider: "youtube", action: "comment_threads", unitCostUsd: 0,
+        sourceKey: "src-key", workspaceId: "ws-1", ok: false });
+    });
+  });
+
   it("Product Hunt TinyFish path records search and fetch events under the source key", async () => {
     mocks.searchQuery.mockResolvedValue({
       results: [{ url: "https://www.producthunt.com/posts/foo", title: "Foo", snippet: "s", position: 1 }],

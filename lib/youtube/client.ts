@@ -362,6 +362,7 @@ async function fetchViaYouTubeApi(opts?: {
       ? opts.videoIds
       : [...new Set(fixtureComments().map((c) => c.videoId))];
 
+  const ctx = opts?.ctx ?? { sourceKey: "youtube" };
   const out: YouTubeComment[] = [];
   for (const videoId of videoIds) {
     const url = new URL("https://www.googleapis.com/youtube/v3/commentThreads");
@@ -370,7 +371,16 @@ async function fetchViaYouTubeApi(opts?: {
     url.searchParams.set("maxResults", "50");
     url.searchParams.set("textFormat", "plainText");
     url.searchParams.set("key", key);
-    const res = await fetch(url, { next: { revalidate: 0 } });
+    const res = await withCost(
+      {
+        sourceKey: ctx.sourceKey,
+        workspaceId: ctx.workspaceId,
+        provider: "youtube",
+        action: "comment_threads",
+        isFailure: (response) => !response.ok,
+      },
+      () => fetch(url, { next: { revalidate: 0 } }),
+    );
     if (!res.ok) {
       throw new Error(`YouTube API ${res.status} for video ${videoId}`);
     }

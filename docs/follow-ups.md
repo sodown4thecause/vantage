@@ -15,7 +15,7 @@ Valid review findings that were deliberately not fixed in PR #34 (each needs a m
 | Scheduled scans | Cadence is measured from source poll times. | A persisted scheduled-scan timestamp column (migration) would be cleaner. |
 | Plan page | Project limit for owners with workspaces on different plans. | Needs a `getPlanUsage` API change; rare case. |
 | Schema | Plain text columns (states, platforms) could be enums or check constraints. | New migration. |
-| YouTube Data API fallback | Calls are not recorded in the cost ledger. | Free quota, no per-call price; needs an agreed zero-cost price row first. |
+| YouTube Data API fallback | Done: each call is recorded in the cost ledger as `youtube` / `comment_threads` at $0. | Done. Uses the zero-cost fallback price (no `provider_price` row), as GitHub and Stack Overflow do. |
 | `scripts/gtm/summarize.ts` | No 7 Nov cutoff for treating un-activated rescues as pending. | Doc updated to say so; script change is small but wasn't asked for. |
 | Older casts | Many unsafe `as` casts outside this PR's files. | Separate cleanup. |
 
