@@ -1,3 +1,5 @@
+> **Superseded (Oct 2026):** CircleCI was later dropped and CI now runs on GitHub Actions; see `.github/workflows/`.
+
 # GitHub Delivery Source of Truth Design
 
 ## Purpose
