@@ -3,10 +3,11 @@ import Link from "next/link";
 import { Wordmark } from "@/components/wordmark";
 
 type NavKey = "queue" | "sources" | "profile" | "plan" | "digest";
-type PublicKey = "how" | "blog" | "launch";
+type PublicKey = "how" | "pricing" | "blog" | "launch";
 
 const PUBLIC_NAV: { key: PublicKey; label: string; href: string }[] = [
   { key: "how", label: "How it works", href: "/#how-it-works" },
+  { key: "pricing", label: "Pricing", href: "/pricing" },
   { key: "blog", label: "Blog", href: "/blog" },
   { key: "launch", label: "Launch catalog", href: "/launch" },
 ];
