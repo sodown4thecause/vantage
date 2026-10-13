@@ -8,6 +8,7 @@ import {
   type NewSource,
 } from "@/lib/db/schema";
 import { WEB_DISCUSSIONS_PROVIDER, bareHost } from "@/lib/collectors/web-provider";
+import { pickForumDomains } from "@/lib/communities/forum-packs";
 import { assertWithinCount } from "@/lib/plans/limits";
 import { PlanLimitError } from "@/lib/plans/types";
 import { retrieveProductMaterial } from "@/lib/profile/retrieve";
@@ -108,7 +109,8 @@ export async function saveMonitoringProfile(args: {
   if (!row) {
     throw new Error("failed to persist monitoring profile");
   }
-  await provisionProfileSources(args.workspaceId, args.input.topics, args.input.productUrl);
+  await provisionProfileSources(args.workspaceId, args.input.topics, args.input.productUrl,
+    [args.input.productDescription, args.input.targetCustomer, args.input.topics.join(" ")].join(" "));
   return toProfileView(row);
 }
 
@@ -118,8 +120,11 @@ export const PROFILE_WEB_SOURCE_NAME = "Profile: Dev forums & blogs";
 
 type ProfileSource = Pick<NewSource, "name" | "type" | "lane" | "config">;
 
-/** Keyed profile sources, only when an operator has configured a provider that can serve them. */
-export function keyedProfileSources(topics: string[], productUrl: string | undefined, env: Record<string, string | undefined> = process.env): ProfileSource[] {
+/**
+ * Keyed profile sources, only when an operator has configured a provider that can serve them.
+ * `profileText` (product and audience wording) picks the forum packs searched for the forums & blogs source.
+ */
+export function keyedProfileSources(topics: string[], productUrl: string | undefined, env: Record<string, string | undefined> = process.env, profileText?: string): ProfileSource[] {
   const queries = topics.slice(0, 3);
   if (!queries.length) return [];
   const tinyFish = Boolean(env.TINYFISH_API_KEY?.trim());
@@ -131,6 +136,7 @@ export function keyedProfileSources(topics: string[], productUrl: string | undef
     const ownHost = productUrl ? bareHost(productUrl) : undefined;
     rows.push({ name: PROFILE_WEB_SOURCE_NAME, type: "web_search", lane: "byok", config: {
       provider: WEB_DISCUSSIONS_PROVIDER, queries, kinds: ["forum", "blog"], maxResults: 10, lookbackHours: 168,
+      forumDomains: pickForumDomains([topics.join(" "), profileText ?? ""].join(" ")),
       // The owner's own site is never an opportunity.
       excludeHosts: ownHost ? [ownHost] : [],
     } });
@@ -138,7 +144,7 @@ export function keyedProfileSources(topics: string[], productUrl: string | undef
   return rows;
 }
 
-export async function provisionProfileSources(workspaceId: string, topics: string[], productUrl?: string): Promise<void> {
+export async function provisionProfileSources(workspaceId: string, topics: string[], productUrl?: string, profileText?: string): Promise<void> {
   const db = getDb();
   const config = { queries: topics.slice(0, 5), maxPages: 1, enrich: false };
   await db.insert(source).values({
@@ -148,7 +154,7 @@ export async function provisionProfileSources(workspaceId: string, topics: strin
     set: { config: sql`${source.config} || ${JSON.stringify(config)}::jsonb`, updatedAt: new Date() },
   });
 
-  const keyed = keyedProfileSources(topics, productUrl);
+  const keyed = keyedProfileSources(topics, productUrl, undefined, profileText);
   if (!keyed.length) return;
   const existing = await db.select({ name: source.name }).from(source).where(eq(source.workspaceId, workspaceId)).limit(100);
   let count = existing.length;

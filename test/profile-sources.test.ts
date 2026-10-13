@@ -45,6 +45,14 @@ describe("keyed profile sources", () => {
     expect(state.values[1]).toMatchObject({ type: "reddit", lane: "byok", config: { queries: topics.slice(0, 3), limit: 10 } });
     expect(state.values[2]).toMatchObject({ type: "web_search", lane: "byok", config: {
       provider: "tinyfish-web", queries: topics.slice(0, 3), kinds: ["forum", "blog"], excludeHosts: ["contextfor.dev"],
+      forumDomains: ["community.hubspot.com", "warriorforum.com", "webmasterworld.com", "indiehackers.com"],
+    } });
+  });
+
+  it("picks forum packs from the profile text as well as the topics", () => {
+    const [web] = keyedProfileSources(["launch week"], undefined, { FIRECRAWL_API_KEY: "fc" }, "We help Shopify store owners");
+    expect(web).toMatchObject({ name: "Profile: Dev forums & blogs", config: {
+      forumDomains: ["community.shopify.com", "indiehackers.com"],
     } });
   });
 

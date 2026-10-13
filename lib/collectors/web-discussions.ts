@@ -3,6 +3,7 @@ import { BrowserRunError, browserMarkdown } from "@/lib/browser/run";
 import { contentHash } from "@/lib/collectors/hash";
 import { parseValidDate } from "@/lib/collectors/date";
 import type { Collector, CollectorContext, CollectorResult } from "@/lib/collectors/types";
+import { ALL_FORUM_DOMAINS, DEVELOPER_FORUM_DOMAINS } from "@/lib/communities/forum-packs";
 import type { NewDocument } from "@/lib/db/schema";
 import { firecrawlSearch, firecrawlTbs, hasFirecrawlApiKey } from "@/lib/firecrawl/search";
 import { isPublicHttpUrl } from "@/lib/http/public-fetch";
@@ -13,28 +14,11 @@ import { tinyFishFetchMarkdown, tinyFishSearch } from "@/lib/tinyfish/search-fet
 import { bareHost } from "@/lib/collectors/web-provider";
 
 export { WEB_DISCUSSIONS_PROVIDER, bareHost } from "@/lib/collectors/web-provider";
+export { DEVELOPER_FORUM_DOMAINS };
 
 export type WebDiscussionKind = "forum" | "blog";
 
-/** Public developer and founder forums readable without an account. HN, Reddit and Stack Overflow have their own collectors. */
-export const DEVELOPER_FORUM_DOMAINS = [
-  "dev.to",
-  "indiehackers.com",
-  "lobste.rs",
-  "community.openai.com",
-  "discuss.huggingface.co",
-  "community.cloudflare.com",
-  "community.vercel.com",
-  "forum.cursor.com",
-  "community.n8n.io",
-  "discuss.python.org",
-  "users.rust-lang.org",
-  "forum.freecodecamp.org",
-  "community.fly.io",
-  "discuss.elastic.co",
-] as const;
-
-/** Never "blogs": social networks, video, Q&A, code hosts and the forums above. */
+/** Never "blogs": social networks, video, Q&A and code hosts. Known forums are added in the collector. */
 const NOT_BLOG_DOMAINS = [
   "reddit.com", "x.com", "twitter.com", "youtube.com", "linkedin.com", "facebook.com", "instagram.com",
   "tiktok.com", "pinterest.com", "quora.com", "news.ycombinator.com", "github.com", "stackoverflow.com",
@@ -97,7 +81,8 @@ export const webDiscussionsCollector: Collector = {
     const excludeHosts = strings(ctx.config.excludeHosts, 5).map(bareHost).filter((h): h is string => Boolean(h));
     const forumDomains = strings(ctx.config.forumDomains, 20).map(bareHost).filter((h): h is string => Boolean(h));
     const forums = forumDomains.length ? forumDomains : [...DEVELOPER_FORUM_DOMAINS];
-    const notBlogs = [...new Set([...NOT_BLOG_DOMAINS, ...forums, ...excludeHosts])];
+    // Every known forum, not only this source's, so a forum post from any pack never lands as a blog.
+    const notBlogs = [...new Set([...NOT_BLOG_DOMAINS, ...ALL_FORUM_DOMAINS, ...forums, ...excludeHosts])];
     const now = new Date();
     const since = windowStart(ctx, now);
     const lookbackHours = (now.getTime() - since.getTime()) / 3_600_000;
