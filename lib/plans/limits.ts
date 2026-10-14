@@ -1,5 +1,6 @@
 import { eq, inArray, sql } from "drizzle-orm";
 
+import { effectivePlanSql, userHasPaidPlan, userIsPaidSql } from "@/lib/billing/entitlement";
 import { getDb } from "@/lib/db/client";
 import { numericField, rowsOf } from "@/lib/db/rows";
 import { planLimit, workspace, workspaceUsage } from "@/lib/db/schema";
@@ -79,13 +80,18 @@ export async function getLimits(plan: string): Promise<Limits> {
   return mergeLimits(normalized, Array.isArray(rows) ? rows : []);
 }
 
+/**
+ * The workspace's effective plan, decided server-side: Pro when an operator granted it
+ * (`workspace.plan`) or the owner has a live Pro subscription (`billing_subscription`).
+ */
 export async function getWorkspacePlan(workspaceId: string): Promise<PlanId> {
   const rows = await getDb()
-    .select({ plan: workspace.plan })
+    .select({ plan: workspace.plan, paid: userIsPaidSql(sql`${workspace.ownerUserId}`) })
     .from(workspace)
     .where(eq(workspace.id, workspaceId))
     .limit(1);
-  return normalizePlan(Array.isArray(rows) ? rows[0]?.plan : undefined);
+  const row = Array.isArray(rows) ? rows[0] : undefined;
+  return row?.paid === true ? "pro" : normalizePlan(row?.plan);
 }
 
 async function readUsage(workspaceId: string, key: MeteredKey, now: Date): Promise<number> {
@@ -131,9 +137,11 @@ export async function consume(
   const qualified = sql.raw(`"workspace_usage"."${meta.column}"`);
   const period = usagePeriod(key, now);
   // Mirror getLimits(): a missing row falls back to the workspace plan's default, not always Free's.
-  const fallback = sql`case when (select "plan" from "workspace" where "id" = ${workspaceId}::uuid) = 'pro' then ${DEFAULT_LIMITS.pro[key]}::int else ${DEFAULT_LIMITS.free[key]}::int end`;
+  // The plan is the effective one (operator grant or live subscription), read inside the same statement.
+  const plan = effectivePlanSql(workspaceId);
+  const fallback = sql`case when ${plan} = 'pro' then ${DEFAULT_LIMITS.pro[key]}::int else ${DEFAULT_LIMITS.free[key]}::int end`;
   const limitExpr = sql`coalesce(
-    (select "value" from "plan_limit" where "plan" = (select "plan" from "workspace" where "id" = ${workspaceId}::uuid) and "key" = ${key}),
+    (select "value" from "plan_limit" where "plan" = ${plan} and "key" = ${key}),
     (select "value" from "plan_limit" where "plan" = 'free' and "key" = ${key}),
     ${fallback})`;
 
@@ -230,6 +238,8 @@ export async function assertCanCreateProject(ownerUserId: string): Promise<void>
   const rows = Array.isArray(owned) ? owned : [];
   const ownedCount = rows.reduce((sum, row) => sum + Number(row.n), 0);
   const plans = rows.length ? rows.map((row) => normalizePlan(row.plan)) : (["free"] as PlanId[]);
+  // A live Pro subscription belongs to the user, so it lifts the project limit for all their workspaces.
+  if (await userHasPaidPlan(ownerUserId)) plans.push("pro");
   let best = 0;
   let bestPlan: PlanId = "free";
   for (const plan of new Set(plans)) {

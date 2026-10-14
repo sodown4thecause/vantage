@@ -724,6 +724,61 @@ export const planLimit = pgTable(
 );
 
 /**
+ * Polar subscriptions, keyed by Polar's subscription id. `user_id` is the Neon Auth user id we
+ * pass to Polar as `external_customer_id`, so a purchase maps to the user, and through
+ * `workspace.owner_user_id` to every workspace they own. Rows are written only from the
+ * canonical subscription that the webhook handler re-fetches from Polar.
+ */
+export const billingSubscription = pgTable(
+  "billing_subscription",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    polarCustomerId: text("polar_customer_id").notNull(),
+    productId: text("product_id").notNull(),
+    /** Plan the product grants (`pro`), or null for products that grant no plan. */
+    plan: text("plan"),
+    status: text("status").notNull(),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    /** Polar's own modified time; a write never moves a row backwards. */
+    polarModifiedAt: timestamp("polar_modified_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("billing_subscription_user_idx").on(table.userId)],
+);
+
+/** Paid Polar orders (subscription renewals and one-time purchases), for receipts and future credits. */
+export const billingOrder = pgTable(
+  "billing_order",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id"),
+    polarCustomerId: text("polar_customer_id"),
+    productId: text("product_id"),
+    subscriptionId: text("subscription_id"),
+    status: text("status").notNull(),
+    totalAmount: integer("total_amount"),
+    currency: text("currency"),
+    paidAt: timestamp("paid_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("billing_order_user_idx").on(table.userId)],
+);
+
+/**
+ * Polar webhook deliveries by Standard Webhooks `webhook-id`, so a retried or replayed event is
+ * processed once. A row with `processed_at` null is a claim; a failed run deletes its claim.
+ */
+export const billingWebhookEvent = pgTable("billing_webhook_event", {
+  id: text("id").primaryKey(),
+  type: text("type").notNull(),
+  receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+  processedAt: timestamp("processed_at", { withTimezone: true }),
+});
+
+/**
  * Metered usage. `period` is the UTC day for per-day counters (scored_leads) and the
  * first UTC day of the month for per-month counters (deep_searches).
  */

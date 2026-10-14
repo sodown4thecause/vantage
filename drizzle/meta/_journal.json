@@ -162,6 +162,13 @@
       "when": 1791854007813,
       "tag": "0022_rich_giant_girl",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791859854685,
+      "tag": "0023_robust_peter_parker",
+      "breakpoints": true
     }
   ]
 }

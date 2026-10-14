@@ -25,6 +25,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })),
     ...getAllTags().map(({ tag }) => ({ url: `${base}/blog/tag/${tag}`, changeFrequency: "weekly" as const, priority: 0.4 })),
     { url: `${base}/launch`, changeFrequency: "weekly" },
+    { url: `${base}/pricing`, changeFrequency: "monthly", priority: 0.8 },
   ];
   try {
     for (const row of await listDestinations()) {

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { PageHead, Shell } from "@/components/shell";
@@ -72,8 +73,15 @@ export default async function PlanUsagePage({
         {view.limits.reply_briefs > 0 ? "" : " Reply Briefs and 3-hourly alerts are part of Pro."}
       </p>
       {view.plan === "free" ? (
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">Pro upgrades open soon.</p>
-      ) : null}
+        <p className="text-sm">
+          <Link href="/pricing" className="btn">Upgrade to Pro</Link>
+        </p>
+      ) : (
+        <p className="text-sm">
+          {/* A plain link: the portal route creates a Polar session, so it must never be prefetched. */}
+          <a href="/api/billing/portal" className="link">Manage or cancel your subscription</a>
+        </p>
+      )}
       {current ? (
         <section aria-labelledby="delete-workspace-heading" className="mt-12 border-t border-contour pt-10">
           <h2 id="delete-workspace-heading" className="mb-4 text-2xl font-bold tracking-tight">Delete workspace</h2>
