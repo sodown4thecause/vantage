@@ -41,7 +41,7 @@ export const BILLING_PLANS: readonly BillingPlan[] = [
     grants: "pro",
     productIds: {
       sandbox: "REPLACE_WITH_SANDBOX_PRO_YEARLY_PRODUCT_ID",
-      production: "REPLACE_WITH_PRODUCTION_PRO_YEARLY_PRODUCT_ID",
+      production: "9046f05b-e8da-4a30-862e-d886308cda2c",
     },
   },
 ];
