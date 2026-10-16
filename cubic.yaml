@@ -1,0 +1,85 @@
+# yaml-language-server: $schema=https://cubic.dev/schema/cubic-repository-config.schema.json
+# Cubic reads this file from the default branch only; changes apply after merge.
+
+version: 1
+
+reviews:
+  enabled: true
+  sensitivity: medium
+  incremental_commits: true
+  check_drafts: false
+  architecture_diagrams: false
+  resolve_threads_when_addressed: true
+  auto_approve_behavior: disabled
+  auto_approve: disabled
+  ultrareview: manual
+  custom_instructions: |
+    Vantage is a Next.js app on Cloudflare Workers (OpenNext) with Neon Postgres, Neon Auth and
+    Drizzle. Canonical docs live in docs/. Prioritise correctness, security, tenant isolation and
+    cost findings; lint, typecheck, tests and migration drift are enforced by CircleCI.
+
+  ignore:
+    files:
+      - '**/node_modules/**'
+      - '.next/**'
+      - '.open-next/**'
+      - pnpm-lock.yaml
+      - 'drizzle/meta/**'
+      - '*.log'
+    pr_labels:
+      - skip-review
+    max_changed_lines: 5000
+
+  custom_rules:
+    - name: Tenant isolation
+      description: >
+        Every database read/write of user-owned data (profiles, sources, opportunities, queue,
+        drafts, receipts) must be scoped by the authenticated user's id obtained server-side from
+        Neon Auth, never from a client-supplied id. Flag missing owner filters in Drizzle queries,
+        route handlers or server actions without an auth check, and joins that can cross users.
+      include:
+        - app/**
+        - lib/**
+      exclude:
+        - '**/*.test.*'
+        - test/**
+
+    - name: Migration safety
+      description: >
+        Drizzle migrations must be additive and safe to apply to a live database: no dropped or
+        renamed columns/tables without a multi-step plan, new NOT NULL columns need defaults or a
+        backfill, and large-table index changes should not lock writes. Schema changes must ship
+        with the generated migration in drizzle/.
+      include:
+        - drizzle/**
+        - lib/db/**
+
+    - name: Provider budgets and outbound safety
+      description: >
+        Calls to paid or rate-limited providers (Scavio, TinyFish, LLMs, Reddit/X/YouTube/Product
+        Hunt/HN/RSS collectors) must respect per-user budgets, timeouts, bounded retrieval,
+        scan leases/deadlines and caching, and be disabled by default in production unless
+        explicitly enabled. User-supplied URLs (RSS, sources) must pass public-URL validation to
+        prevent SSRF. Flag unbounded loops and calls made per request.
+      include:
+        - lib/**
+        - app/api/**
+
+    - name: Worker runtime and secrets
+      description: >
+        Code must run on the Cloudflare Workers runtime (no Node-only APIs on the request path
+        unless supported) and cron/scheduled handlers must keep schedules gated behind config.
+        Flag hardcoded secrets or tokens, secrets in wrangler.jsonc vars, committed production
+        data or fixtures, and logging of credentials or personal data.
+      include:
+        - wrangler.jsonc
+        - worker-entry.mjs
+        - lib/env/**
+        - lib/cron/**
+        - app/api/**
+
+pr_descriptions:
+  generate: true
+  instructions: |
+    Summarise behaviour change, migrations included, any new provider calls or cost impact,
+    and how it was verified (CircleCI, staging checks).
