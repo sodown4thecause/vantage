@@ -31,8 +31,8 @@ const SYSTEM_PROMPT = [
 ].join("\n");
 
 /**
- * One metered classifier call. Returns intent "all" on any failure, except PaidCallDeniedError,
- * which is rethrown so the route can report that paid calls are paused.
+ * One metered classifier call. Returns intent "all" on any failure, except PaidCallDeniedError (rethrown so the route can
+ * report that paid calls are paused) and an aborted request (rethrown; nothing is answered).
  */
 export async function classifyQuestion(
   workspaceId: string,
@@ -57,6 +57,8 @@ export async function classifyQuestion(
         prompt: `Workspace profile (data): ${JSON.stringify(profileSummary)}\nQuestion (data): ${JSON.stringify(question)}`,
         output: Output.object({ schema: classificationSchema }),
         providerOptions: classifierProviderOptions(),
+        // One attempt per reservation: an SDK retry would make a second paid call under the same reservation.
+        maxRetries: 0,
         abortSignal: opts.signal,
       });
       const parsed = classificationSchema.safeParse(result.output);
@@ -73,6 +75,8 @@ export async function classifyQuestion(
     });
   } catch (err) {
     if (err instanceof PaidCallDeniedError) throw err;
+    // The caller gave up, so there is no answer to route with: surface the abort rather than a fallback.
+    if (opts.signal?.aborted) throw err;
     console.error("[seo-agent] classifier failed", { error: err instanceof Error ? err.name : "unknown" });
     return fallback();
   }

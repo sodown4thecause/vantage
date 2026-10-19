@@ -158,6 +158,21 @@ describe("classifyQuestion", () => {
     expect(console.error).not.toHaveBeenCalled();
   });
 
+  it("makes one model attempt with no SDK retries, so each attempt is one reservation", async () => {
+    const { fn, deps } = fakeGenerate(async () => ({ output: validOutput, usage }));
+    await classifyQuestion("ws-1", "q", "p", { deps });
+    expect(fn.mock.calls[0]?.[0]).toMatchObject({ maxRetries: 0 });
+  });
+
+  it("rethrows the failure when the caller aborted, instead of answering intent all", async () => {
+    const controller = new AbortController();
+    const { deps } = fakeGenerate(async () => {
+      controller.abort();
+      throw new Error("aborted by client");
+    });
+    await expect(classifyQuestion("ws-1", "q", "p", { deps, signal: controller.signal })).rejects.toThrow("aborted by client");
+  });
+
   it("charges through runPaidCall with workspace attribution", async () => {
     const { deps } = fakeGenerate(async () => ({ output: validOutput, usage }));
     await classifyQuestion("ws-1", "q", "p", { deps });
