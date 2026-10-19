@@ -220,6 +220,12 @@ describe("fetchLlmResponse", () => {
     });
   });
 
+  it("asks the gate to charge an engine answer its two-credit weight", async () => {
+    mocks.runDataForSeo.mockResolvedValue({ value: { engine: "claude", model: null, text: "", citations: [] }, cached: false });
+    await fetchLlmResponse("ws-1", "claude", "q", "m", []);
+    expect(mocks.runDataForSeo.mock.calls[0][0]).toMatchObject({ credits: 2 });
+  });
+
   it("computes the brand verdict for each caller, even when the answer came from cache", async () => {
     const cached = {
       engine: "chat_gpt",

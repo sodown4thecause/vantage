@@ -16,6 +16,8 @@ type GateOptions = NonNullable<Parameters<typeof runDataForSeo>[1]>;
 
 const PROMPT_CAP = 500;
 const TEXT_CAP = 4_000;
+/** An engine answer costs two credits. */
+export const LLM_CREDITS = 2;
 // A brand name shorter than this matches too much text to mean anything.
 const BRAND_NAME_MIN = 3;
 // Labels that sit between the name and a country code, as in example.co.uk, so the name is the label before them.
@@ -133,6 +135,7 @@ export async function fetchLlmResponse(
     task: call.task,
     freshnessSeconds: FRESHNESS_SECONDS.llm,
     estimateUsd: call.estimateUsd,
+    credits: LLM_CREDITS,
     trim: (result) => trimLlmAnswer(result, engine),
   }, opts);
   return { value: withBrand(value, brandDomains), cached };

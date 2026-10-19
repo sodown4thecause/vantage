@@ -164,6 +164,39 @@ describe("DataForSEO spend gate", () => {
       expect(mocks.release).not.toHaveBeenCalled();
     });
 
+    it("charges the request's credit weight and releases the same weight on a failure", async () => {
+      configure("live");
+      const fetchImpl = makeFetch({ balance: 10 });
+      await expect(run({ credits: 2 }, { fetchImpl: asFetch(fetchImpl) })).rejects.toMatchObject({ code: "reserve_floor" });
+      expect(mocks.consume).toHaveBeenCalledExactlyOnceWith("ws-1", CREDIT, 2, now);
+      expect(mocks.release).toHaveBeenCalledExactlyOnceWith("ws-1", CREDIT, 2, now);
+    });
+
+    it("keeps a two-credit call's charge on success and does not release it", async () => {
+      configure("live");
+      const fetchImpl = makeFetch({ balance: 100 });
+      await expect(run({ credits: 2 }, { fetchImpl: asFetch(fetchImpl) })).resolves.toMatchObject({ cached: false });
+      expect(mocks.consume).toHaveBeenCalledExactlyOnceWith("ws-1", CREDIT, 2, now);
+      expect(mocks.release).not.toHaveBeenCalled();
+    });
+
+    it("refuses a two-credit call that does not fit the monthly credits, without fetching", async () => {
+      configure("live");
+      mocks.consume.mockResolvedValue({ allowed: false, limit: 10, used: 9, remaining: 1, consumed: 0 });
+      const fetchImpl = makeFetch();
+      await expect(run({ credits: 2 }, { fetchImpl: asFetch(fetchImpl) })).rejects.toMatchObject({ code: "credits_exhausted" });
+      expect(mocks.consume).toHaveBeenCalledExactlyOnceWith("ws-1", CREDIT, 2, now);
+      expect(mocks.release).not.toHaveBeenCalled();
+      expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it("charges one credit when the request names no weight", async () => {
+      configure("live");
+      const fetchImpl = makeFetch({ balance: 100 });
+      await run({}, { fetchImpl: asFetch(fetchImpl) });
+      expect(mocks.consume).toHaveBeenCalledExactlyOnceWith("ws-1", CREDIT, 1, now);
+    });
+
     it("denies as reserve_floor below the floor, releases the credit once and never POSTs", async () => {
       configure("live");
       const fetchImpl = makeFetch({ balance: 10 });

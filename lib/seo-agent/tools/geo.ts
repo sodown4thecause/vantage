@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   type LlmEngine,
   type LlmResponse,
+  LLM_CREDITS,
   LLM_ENGINES,
   fetchAiKeywordVolume,
   fetchLlmResponse,
@@ -27,8 +28,6 @@ import {
 } from "@/lib/seo-agent/tools/shared";
 
 const PROMPT_MAX_CHARS = 500;
-/** An engine answer costs two credits. */
-const LLM_CREDITS = 2;
 
 const ENGINE_LABELS: Record<LlmEngine, string> = {
   chat_gpt: "ChatGPT",

@@ -37,6 +37,8 @@ export type GateRequest<R, T> = {
   task: Record<string, unknown>;
   freshnessSeconds: number;
   estimateUsd: number;
+  /** Credits this call costs: a positive integer, one when omitted. */
+  credits?: number;
   trim: (result: R[]) => T;
 };
 
@@ -96,8 +98,8 @@ async function assertDailyCap(config: DataForSeoConfig, estimateUsd: number, now
  * Order (each step decides; the first refusal stops the call):
  *   1. config missing, or sandbox in production without ALLOW_FIXTURES -> not_configured
  *   2. cache hit -> return it (no credit, no fetch)
- *   3. consume one SEO credit; refused -> credits_exhausted
- *   4. from here, any throw releases that credit exactly once and rethrows
+ *   3. consume the call's SEO credits; refused -> credits_exhausted
+ *   4. from here, any throw releases those credits exactly once and rethrows
  *      5. live only: balance floor and alert threshold
  *      6. today's DataForSEO spend plus the estimate must fit the daily cap
  *      7. the paid call, through runPaidCall
@@ -110,13 +112,15 @@ export async function runDataForSeo<R, T>(
 ): Promise<{ value: T; cached: boolean }> {
   const config = usableDataForSeoConfig();
   if (!config) throw deny("not_configured");
+  const credits = req.credits ?? 1;
+  if (!Number.isInteger(credits) || credits < 1) throw new Error("credits must be a positive integer");
 
   const now = opts.now ?? new Date();
   const key = dataForSeoCacheKey(config.env, req.endpoint, req.task);
   const hit = await readDataForSeoCache<T>(key, req.freshnessSeconds, now);
   if (hit !== null) return { value: hit, cached: true };
 
-  const credit = await consume(req.workspaceId, CREDIT_KEY, 1, now);
+  const credit = await consume(req.workspaceId, CREDIT_KEY, credits, now);
   if (!credit.allowed) throw deny("credits_exhausted");
 
   let value: T;
@@ -143,7 +147,7 @@ export async function runDataForSeo<R, T>(
       }
     });
   } catch (err) {
-    await release(req.workspaceId, CREDIT_KEY, 1, now);
+    await release(req.workspaceId, CREDIT_KEY, credits, now);
     throw err;
   }
 
