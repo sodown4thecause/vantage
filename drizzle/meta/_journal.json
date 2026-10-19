@@ -169,6 +169,13 @@
       "when": 1791859854685,
       "tag": "0023_robust_peter_parker",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792377821445,
+      "tag": "0024_powerful_blonde_phantom",
+      "breakpoints": true
     }
   ]
 }

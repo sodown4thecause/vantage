@@ -89,6 +89,7 @@ describe("limit evaluation", () => {
     const now = new Date("2026-10-06T23:59:59.000Z");
     expect(usagePeriod("scored_leads_per_day", now)).toBe("2026-10-06");
     expect(usagePeriod("deep_searches_per_month", now)).toBe("2026-10-01");
+    expect(usagePeriod("seo_credits_per_month", new Date("2026-10-19T05:00:00Z"))).toBe("2026-10-01");
   });
 
   it("decides scan cadence from the plan interval", () => {
@@ -113,17 +114,25 @@ describe("limit evaluation", () => {
   });
 
   it("keeps the code defaults identical to the migration seed", () => {
-    // Find the migration by content, so renumbering it (merge order) cannot break this test.
+    // Collect seeds from every migration by content, so renumbering or adding seed files cannot break this test.
     const dir = resolve(process.cwd(), "drizzle");
-    const file = readdirSync(dir).find(
-      (name) => name.endsWith(".sql") && readFileSync(resolve(dir, name), "utf8").includes('INSERT INTO "plan_limit"'),
-    );
-    expect(file).toBeDefined();
-    const sqlText = readFileSync(resolve(dir, file as string), "utf8");
-    const seeded = [...sqlText.matchAll(/\('(\w+)', '(\w+)', (\d+)\)/g)].map((m) => [m[1], m[2], Number(m[3])] as const);
-    expect(seeded).toHaveLength(2 * LIMIT_KEYS.length);
-    for (const [plan, key, value] of seeded) {
-      expect(DEFAULT_LIMITS[plan as "free" | "pro"][key as (typeof LIMIT_KEYS)[number]]).toBe(value);
+    const files = readdirSync(dir)
+      .filter((name) => name.endsWith(".sql") && readFileSync(resolve(dir, name), "utf8").includes('INSERT INTO "plan_limit"'))
+      .sort();
+    expect(files.length).toBeGreaterThan(0);
+    // ON CONFLICT DO NOTHING: the first file to seed a plan:key pair wins.
+    const seeded = new Map<string, number>();
+    for (const file of files) {
+      const sqlText = readFileSync(resolve(dir, file), "utf8");
+      for (const m of sqlText.matchAll(/\('(\w+)', '(\w+)', (\d+)\)/g)) {
+        const id = `${m[1]}:${m[2]}`;
+        if (!seeded.has(id)) seeded.set(id, Number(m[3]));
+      }
+    }
+    expect(seeded.size).toBe(2 * LIMIT_KEYS.length);
+    for (const [id, value] of seeded) {
+      const [plan, key] = id.split(":");
+      expect(DEFAULT_LIMITS[plan as "free" | "pro"][key as (typeof LIMIT_KEYS)[number]], id).toBe(value);
     }
   });
 });

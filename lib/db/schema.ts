@@ -791,11 +791,28 @@ export const workspaceUsage = pgTable(
     period: date("period", { mode: "string" }).notNull(),
     scoredLeads: integer("scored_leads").notNull().default(0),
     deepSearches: integer("deep_searches").notNull().default(0),
+    seoCredits: integer("seo_credits").notNull().default(0),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
   },
   (table) => [primaryKey({ columns: [table.workspaceId, table.period] })],
+);
+
+/**
+ * Cache of DataForSEO responses keyed by a request hash. Rows are valid until `expires_at`.
+ * Not workspace-scoped: the cached payloads are shared across workspaces.
+ */
+export const dataforseoCache = pgTable(
+  "dataforseo_cache",
+  {
+    cacheKey: text("cache_key").primaryKey(),
+    endpoint: text("endpoint").notNull(),
+    responseJson: jsonb("response_json").notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("dataforseo_cache_expires_idx").on(table.expiresAt)],
 );
 
 /**
