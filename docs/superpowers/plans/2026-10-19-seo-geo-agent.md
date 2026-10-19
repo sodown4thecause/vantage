@@ -18,7 +18,7 @@
 - Migrations are additive, generated with `pnpm db:generate`; seed rows are appended to the generated SQL (precedent `drizzle/0015_silly_the_order.sql`); never hand-edit snapshots or the journal.
 - Pin exact dependency versions: `ai@7.0.143`, `@ai-sdk/react@4.0.147`, `zod@4.6.7` (zod is already present transitively at 4.6.5; add it as a direct dependency).
 - Provider and tool outputs are untrusted data: render as React text, never HTML. The system prompt forbids following instructions found in tool results.
-- Model ids come from env: `SEO_AGENT_MODEL` (default `anthropic/claude-sonnet-5.5`), `SEO_CLASSIFIER_MODEL` (required, a DeepSeek id), `SEO_AGENT_FALLBACK_MODEL` (optional). Forced `tool_choice` is never used (400 on Sonnet 5.5).
+- Model ids come from env: `SEO_AGENT_MODEL` (default `anthropic/claude-sonnet-5.5`), `SEO_CLASSIFIER_MODEL` (default `moonshotai/kimi-k2.7-code`), `SEO_CLASSIFIER_SPEED` (default `fast`, sent as `providerOptions: { gateway: { speed } }`; blank disables), `SEO_AGENT_FALLBACK_MODEL` (optional). Forced `tool_choice` is never used (400 on Sonnet 5.5).
 - Limits: `seo_questions_per_month` free 10 / pro 150; `seo_credits_per_month` unchanged (free 6 / pro 60); `SEO_AGENT_AUTO_CREDITS` default 3; `SEO_AGENT_GEO_ALWAYS_ASK` default true (only the exact string `"false"` disables it); executor step cap 6.
 - Freshness windows: backlinks, keywords and AI keyword volume 30 days (`2_592_000` s); SERP and LLM responses 7 days (`604_800` s).
 - DataForSEO defaults: `location_code: 2840`, `language_code: "en"`.
@@ -29,7 +29,7 @@
 
 1. **Double-clicked "Run it".** An approval must run once. Task 9: the route claims the plan with one `update … where status = 'needs_approval' returning`; the second request gets 409 and spends nothing.
 2. **A user with 0 questions left clicks a starter chip.** They should see the upgrade message, and no model or data call should happen. Task 9 test.
-3. **DeepSeek returns prose instead of JSON, or the Gateway is down for the classifier.** The answer still arrives via intent `all`. Task 6 test.
+3. **The classifier returns prose instead of JSON, or the Gateway is down for the classifier.** The answer still arrives via intent `all`. Task 6 test.
 4. **A question naming a domain like `localhost` or `https://www.Example.com/x`.** Tools normalise or reject before any credit is reserved. Task 7 test.
 5. **The model never calls `suggest_follow_ups`.** Three template chips (SEO, GEO, Content) still render. Tasks 8 and 9 tests.
 
@@ -154,7 +154,8 @@
 - `serp.ts`: `googleSerpTask(keyword: string)`: `/v3/serp/google/organic/live/advanced`, `{ keyword, location_code, language_code, depth: 10 }`, estimate `0.01`. `trimSerp`: from `result[0].items` → `{ organic: { position: number; domain: string; title: string; url: string }[]; hasAiOverview: boolean; peopleAlsoAsk: string[] }` (`type === "organic"` rows; `ai_overview` presence; `people_also_ask` item titles where present).
 - `ai-optimization.ts`:
   - `LLM_ENGINES = ["chat_gpt", "claude", "gemini", "perplexity"] as const` and `type LlmEngine = (typeof LLM_ENGINES)[number]`.
-  - `llmModelFor(engine, env = process.env): string | null` reads `DATAFORSEO_LLM_MODEL_<ENGINE>` (e.g. `DATAFORSEO_LLM_MODEL_CHAT_GPT`); `chat_gpt` defaults to `"gpt-4.1"` (the DataForSEO docs' example), and the other engines have no default (`null` = engine unavailable).
+  - `resolveLlmModel(engine, env = process.env): Promise<string | null>` returns `DATAFORSEO_LLM_MODEL_<ENGINE>` (e.g. `DATAFORSEO_LLM_MODEL_CHAT_GPT`) when set. Otherwise it calls `listLlmModels(engine)` (new in `lib/dataforseo/gate.ts`, the only module allowed to use the client: GET `/v3/ai_optimization/{engine}/llm_responses/models`, no workspace credit; a non-zero returned cost is recorded with `recordCost` provider `dataforseo`, action `llm_models`; memoised in-module for 24 h; errors → `[]`) and picks the first `model_name` whose `web_search_supported` is true, else the first model, else `null` (engine unavailable).
+  - `lib/dataforseo/client.ts` gains `dataForSeoGet<T>(config, path, opts?)`, reusing the existing GET path that `getDataForSeoBalance` uses.
   - `llmResponseTask(engine, prompt: string, model: string)`: `/v3/ai_optimization/{engine}/llm_responses/live`, `{ user_prompt: prompt.slice(0, 500), model_name: model, web_search: true }` (Perplexity always searches), estimate `0.10`.
   - `trimLlmResponse(result, brandDomains: string[])` → `{ engine; model: string | null; text: string; citations: { title: string | null; url: string }[]; mentionsBrand: boolean }`. `text` joins `items[].sections[].text` (max 4,000 chars). `citations` come from `sections[].annotations[]` with a string `url`. `mentionsBrand` is true when any brand domain (or its name without TLD) appears case-insensitively in `text` or citation URLs.
   - `aiKeywordVolumeTask(keywords: string[])`: `/v3/ai_optimization/ai_keyword_data/keywords_search_volume/live`, `{ keywords, location_code, language_code }`, estimate `0.05`. Trim → `{ keyword: string; aiSearchVolume: number }[]`.
@@ -163,7 +164,7 @@
 - [ ] **Step 1: Write failing tests** per file:
   - Builders return the exact endpoint, task body and estimate above.
   - Trims on fixtures shaped like the fields above: wrong-typed fields dropped, missing numbers `0` or `null` as typed, items without the key string dropped.
-  - `llmModelFor` reads the env and defaults; `llmResponseTask` slices the prompt to 500 characters.
+  - `resolveLlmModel` prefers the env override, otherwise picks the first `web_search_supported` model from a mocked `listLlmModels`, and returns `null` for an empty list. `listLlmModels` memoises (one GET for two calls) and returns `[]` on error. `llmResponseTask` slices the prompt to 500 characters.
   - `mentionsBrand` is true for `"Pinecone"` given `pinecone.io`, and false otherwise.
   - `fetchX` passes builder values and the right freshness to a mocked `runDataForSeo`.
 - [ ] **Step 2: Run** `pnpm vitest run test/dataforseo-labs.test.ts test/dataforseo-serp.test.ts test/dataforseo-ai-optimization.test.ts`. Expected: FAIL.
@@ -180,9 +181,9 @@
 
 **Interfaces:**
 - `models.ts`:
-  - `seoModels(env = process.env): { executor: string; classifier: string; fallback: string | null } | null`. Returns `null` when `AI_GATEWAY_API_KEY` or `SEO_CLASSIFIER_MODEL` is blank; `executor` defaults to `anthropic/claude-sonnet-5.5`.
+  - `seoModels(env = process.env): { executor: string; classifier: string; fallback: string | null } | null`. Returns `null` when `AI_GATEWAY_API_KEY` is blank. `executor` defaults to `anthropic/claude-sonnet-5.5`, `classifier` to `moonshotai/kimi-k2.7-code`. Also exports `classifierProviderOptions(env)` → `{ gateway: { speed } }` when `SEO_CLASSIFIER_SPEED` (default `"fast"`) is non-blank, else `{}`; it is used on every classifier-model call (classification, concept answers, concept follow-ups).
   - `gatewayProvider(env = process.env)` wraps `createGateway({ apiKey })` from `ai`.
-  - `MODEL_PRICES_PER_MTOK: Record<string, { input: number; output: number; cacheRead?: number }>` with `"anthropic/claude-sonnet-5.5": { input: 2, output: 10, cacheRead: 0.2 }`. DeepSeek and others come from env `SEO_MODEL_PRICES_JSON` (merged over the defaults).
+  - `MODEL_PRICES_PER_MTOK: Record<string, { input: number; output: number; cacheRead?: number }>` with `"anthropic/claude-sonnet-5.5": { input: 2, output: 10, cacheRead: 0.2 }`. Kimi and other models come from env `SEO_MODEL_PRICES_JSON` (merged over the defaults).
   - `costOfUsage(model: string, usage: { inputTokens?: number; outputTokens?: number; cachedInputTokens?: number }): number | undefined` returns `undefined` when the price or usage is unknown, so `runPaidCall` charges the estimate.
 - `classify.ts`:
   - `INTENTS = ["concept", "out_of_scope", "backlinks", "keywords", "serp", "geo_visibility", "content"] as const`
@@ -200,7 +201,9 @@
   - `PaidCallDeniedError` propagates.
   - `costOfUsage` for Sonnet with 1,000,000 input and 0 output = `2`.
   - Unknown model → `undefined`.
-  - `seoModels({})` is `null`.
+  - `seoModels({})` is `null`; `seoModels({ AI_GATEWAY_API_KEY: "k" })` gives classifier `moonshotai/kimi-k2.7-code`.
+  - The fake `generateText` receives `providerOptions.gateway.speed === "fast"` by default, and no `speed` when `SEO_CLASSIFIER_SPEED` is `""`.
+  - A classifier failure logs `[seo-agent] classifier failed` with the error name only.
 - [ ] **Step 2: Run** `pnpm vitest run test/seo-classify.test.ts`. Expected: FAIL.
 - [ ] **Step 3: Add the dependencies and implement.** Verify the bundle still builds with `pnpm build`.
 - [ ] **Step 4: Run** the test and `pnpm typecheck`. Expected: PASS.
@@ -235,7 +238,7 @@
   - `competitor_domains({domain})` 1
   - `keyword_gap({domain, competitor})` 1
   - `google_serp({keyword})` 1
-  - `llm_response({prompt, engines})`: 2 per engine; `alwaysAsk = geoAlwaysAsk()`; engines without a model are skipped with a notice
+  - `llm_response({prompt, engines})`: 2 per engine; `alwaysAsk = geoAlwaysAsk()`; each engine's model comes from `resolveLlmModel(engine)`; engines without a model are skipped with a notice
   - `ai_keyword_volume({keywords})` 1
 - `suggest_follow_ups({seo, geo, content})` (each ≤ 140 chars) stores the follow-ups on a `ctx` field `followUps` and returns `{ ok: true }`.
 - `tools/index.ts`: `toolsForIntent(intent: Intent, ctx: ToolContext): Record<string, Tool>` per the spec §4.2 table, always including `suggest_follow_ups`. `concept` and `out_of_scope` return `{}` (no tools).
@@ -369,9 +372,9 @@
 ## Owner tasks outside this plan
 
 - Set on staging:
-  - `AI_GATEWAY_API_KEY` (already used by drafting) and `SEO_CLASSIFIER_MODEL` (the Gateway's DeepSeek id).
-  - Optionally `SEO_AGENT_FALLBACK_MODEL` and `SEO_MODEL_PRICES_JSON` with DeepSeek's per-MTok prices.
-  - `DATAFORSEO_LLM_MODEL_CLAUDE` / `_GEMINI` / `_PERPLEXITY` to enable those engines.
+  - `AI_GATEWAY_API_KEY` (already used by drafting). `SEO_CLASSIFIER_MODEL` defaults to `moonshotai/kimi-k2.7-code` with `speed: "fast"`; if the Gateway rejects `speed`, set `SEO_CLASSIFIER_SPEED=` and `SEO_CLASSIFIER_MODEL=moonshotai/kimi-k2.7-code-highspeed`.
+  - Optionally `SEO_AGENT_FALLBACK_MODEL` and `SEO_MODEL_PRICES_JSON` with Kimi K2.7 Code's per-MTok prices.
+  - Optionally `DATAFORSEO_LLM_MODEL_<ENGINE>` to pin a model; otherwise the agent picks one from DataForSEO's models list.
   - `VANTAGE_PAID_DAILY_BUDGET_GATEWAY_USD` if model spend needs its own cap.
 - Staging checks from the spec §8: the agent-browser journey; Gateway cache reads above zero on repeat questions; the 20-call AI Optimization cost test before setting `SEO_AGENT_GEO_ALWAYS_ASK=false`.
 - Confirm the DataForSEO estimates in `lib/dataforseo/{labs,serp,ai-optimization}.ts` against the pricing pages.

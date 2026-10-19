@@ -29,7 +29,7 @@ Out of scope here: RAG, full blog drafts, GSC, scheduled GEO tracking, chat on o
 | Build order | Agent first (with cache retention), then RAG, then blog + humanizer |
 | Endpoint families in v1 | Backlinks, Labs keyword research, SERP (Google organic), AI Optimization (GEO) |
 | Runtime | Vercel AI SDK (`ai`, `@ai-sdk/gateway`) in a Next route handler; conversations in Neon. Not the Cloudflare Agents SDK (it uses the AI SDK underneath and adds Durable Objects and a second store) |
-| Models | Through Vercel AI Gateway, chosen by env var: main/executor Sonnet 5.5 (`anthropic/claude-sonnet-5.5`), cheap classifier DeepSeek (exact Gateway id set by `SEO_CLASSIFIER_MODEL`) |
+| Models | Through Vercel AI Gateway, chosen by env var: main/executor Sonnet 5.5 (`anthropic/claude-sonnet-5.5`), cheap classifier Kimi `moonshotai/kimi-k2.7-code` sent with Gateway option `speed: "fast"` |
 | Approach | Classify, then a scoped, capped tool loop |
 | Metering | A monthly agent-question limit plus the existing SEO data credits |
 | Approval | Ask above 3 data credits per question; AI Optimization calls always ask until the owner lifts it |
@@ -47,7 +47,7 @@ app/seo/chat/route.ts
    1 authorizeWorkspace → 403 generic
    2 consume seo_questions_per_month (atomic) → upgrade message if none left
    3 load conversation (workspace-scoped) + monitoring profile
-   4 classify (DeepSeek)  ──► concept / out_of_scope: answer with no data tools
+   4 classify (Kimi K2.7 Code, fast)  ──► concept / out_of_scope: answer with no data tools
    5 execute (Sonnet 5.5, intent's tools only, ≤6 steps, ≤3 credits)
    6 stream text + result cards + follow-ups + credits line
    7 persist assistant message (complete | incomplete | needs_approval)
@@ -104,7 +104,7 @@ All default to `location_code: 2840` (US) and `language_code: "en"`.
 | `competitor_domains` | `/v3/dataforseo_labs/google/competitors_domain/live` | 1 | 30 d |
 | `keyword_gap` | `/v3/dataforseo_labs/google/domain_intersection/live` | 1 | 30 d |
 | `google_serp` | `/v3/serp/google/organic/live/advanced` (depth 10) | 1 | 7 d |
-| `llm_response` | `/v3/ai_optimization/{chat_gpt,claude,gemini,perplexity}/llm_responses/live` | 2 per engine | 7 d per prompt + engine + location |
+| `llm_response` | `/v3/ai_optimization/{chat_gpt,claude,gemini,perplexity}/llm_responses/live`, model from `/llm_responses/models` (see §9) | 2 per engine | 7 d per prompt + engine + location |
 | `ai_keyword_volume` | `/v3/ai_optimization/ai_keyword_data/keywords_search_volume/live` | 1 | 30 d |
 | `suggest_follow_ups` | local | 0 | — |
 
@@ -127,7 +127,7 @@ Endpoint paths come from the official `dataforseo-client` 2.1.9 package. Per-cal
 
 **Follow-ups (after every answer).** The system prompt tells the executor to finish by calling `suggest_follow_ups` with `{ seo, geo, content }` (strict schema, each ≤ 140 chars), tied to what it just found.
 - Forced `tool_choice` is not used (it returns a 400 on Sonnet 5.5); the instruction lives in the prompt.
-- For `concept` and `out_of_scope` answers, which use no tools, follow-ups come from one extra structured-output call to the classifier model (`{ seo, geo, content }`). DeepSeek is never asked to call tools.
+- For `concept` and `out_of_scope` answers, which use no tools, follow-ups come from one extra structured-output call to the classifier model (`{ seo, geo, content }`). The classifier model is never asked to call tools.
 - If the call is missing or invalid, the template set fills in, so three chips always render.
 - Follow-ups carry the same cost labels.
 - Content chips in v1 promise a plan (topic, target keywords, outline, gap), never a finished post, until sub-project 4.
@@ -189,7 +189,8 @@ All migrations are additive and generated with `pnpm db:generate`. Workspace del
 |---|---|---|
 | `AI_GATEWAY_API_KEY` | — | Vercel AI Gateway (already used by drafting) |
 | `SEO_AGENT_MODEL` | `anthropic/claude-sonnet-5.5` | Executor |
-| `SEO_CLASSIFIER_MODEL` | — (required) | DeepSeek model id on the Gateway |
+| `SEO_CLASSIFIER_MODEL` | `moonshotai/kimi-k2.7-code` | Classifier and concept-answer model |
+| `SEO_CLASSIFIER_SPEED` | `fast` | Sent as `providerOptions.gateway.speed`; blank disables it |
 | `SEO_AGENT_FALLBACK_MODEL` | — | Refusal and outage fallback |
 | `SEO_AGENT_AUTO_CREDITS` | `3` | Credits per question before asking |
 | `SEO_AGENT_GEO_ALWAYS_ASK` | `true` | `llm_response` always needs approval |
@@ -214,7 +215,8 @@ All migrations are additive and generated with `pnpm db:generate`. Workspace del
 
 ## 9. Risks
 
-- DeepSeek's Gateway model id and tool-calling reliability are unverified; classification uses structured output, not tools, to limit that risk.
+- `speed: "fast"` is not a typed Gateway option in `ai@7.0.143` (its fast models are separate ids such as `moonshotai/kimi-k2.7-code-highspeed`); it is sent through the Gateway options' open index signature and validated by the Gateway. If staging shows it rejected, set `SEO_CLASSIFIER_SPEED=` and `SEO_CLASSIFIER_MODEL=moonshotai/kimi-k2.7-code-highspeed`. Classification uses structured output, not tools.
+- LLM Responses needs a `model_name` per engine. The agent reads DataForSEO's `/v3/ai_optimization/{engine}/llm_responses/models` list (assumed free; any returned cost is recorded) and picks the first model with `web_search_supported`, unless `DATAFORSEO_LLM_MODEL_<ENGINE>` overrides it.
 - DataForSEO prices are unconfirmed; estimates are conservative and recorded costs are real.
 - The AI SDK's server-side fallback beta header may not match the `"default"` form that Sonnet 5.5 requires; client-side retry covers refusals regardless.
 - Bundle size: `ai` and `@ai-sdk/gateway` are added to a Worker with a 10 MB limit; the CI job measures it.
