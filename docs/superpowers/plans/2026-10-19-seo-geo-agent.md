@@ -18,7 +18,7 @@
 - Migrations are additive, generated with `pnpm db:generate`; seed rows are appended to the generated SQL (precedent `drizzle/0015_silly_the_order.sql`); never hand-edit snapshots or the journal.
 - Pin exact dependency versions: `ai@7.0.143`, `@ai-sdk/react@4.0.147`, `zod@4.6.7` (zod is already present transitively at 4.6.5; add it as a direct dependency).
 - Provider and tool outputs are untrusted data: render as React text, never HTML. The system prompt forbids following instructions found in tool results.
-- Model ids come from env: `SEO_AGENT_MODEL` (default `anthropic/claude-sonnet-5.5`), `SEO_CLASSIFIER_MODEL` (default `moonshotai/kimi-k2.7-code`), `SEO_CLASSIFIER_SPEED` (default `fast`, sent as `providerOptions: { gateway: { speed } }`; blank disables), `SEO_AGENT_FALLBACK_MODEL` (optional). Forced `tool_choice` is never used (400 on Sonnet 5.5).
+- Model ids come from env: `SEO_AGENT_MODEL` (default `anthropic/claude-sonnet-5.5`), `SEO_CLASSIFIER_MODEL` (default `reflection/beam`), `SEO_CLASSIFIER_SPEED` (optional, no default; when set, sent as `providerOptions: { gateway: { speed } }`), `SEO_AGENT_FALLBACK_MODEL` (optional). Forced `tool_choice` is never used (400 on Sonnet 5.5).
 - Limits: `seo_questions_per_month` free 10 / pro 150; `seo_credits_per_month` unchanged (free 6 / pro 60); `SEO_AGENT_AUTO_CREDITS` default 3; `SEO_AGENT_GEO_ALWAYS_ASK` default true (only the exact string `"false"` disables it); executor step cap 6.
 - Freshness windows: backlinks, keywords and AI keyword volume 30 days (`2_592_000` s); SERP and LLM responses 7 days (`604_800` s).
 - DataForSEO defaults: `location_code: 2840`, `language_code: "en"`.
@@ -181,9 +181,9 @@
 
 **Interfaces:**
 - `models.ts`:
-  - `seoModels(env = process.env): { executor: string; classifier: string; fallback: string | null } | null`. Returns `null` when `AI_GATEWAY_API_KEY` is blank. `executor` defaults to `anthropic/claude-sonnet-5.5`, `classifier` to `moonshotai/kimi-k2.7-code`. Also exports `classifierProviderOptions(env)` → `{ gateway: { speed } }` when `SEO_CLASSIFIER_SPEED` (default `"fast"`) is non-blank, else `{}`; it is used on every classifier-model call (classification, concept answers, concept follow-ups).
+  - `seoModels(env = process.env): { executor: string; classifier: string; fallback: string | null } | null`. Returns `null` when `AI_GATEWAY_API_KEY` is blank. `executor` defaults to `anthropic/claude-sonnet-5.5`, `classifier` to `reflection/beam`. Also exports `classifierProviderOptions(env)` → `{ gateway: { models: [executor], ...(speed ? { speed } : {}) } }`, where `speed` is `SEO_CLASSIFIER_SPEED` when non-blank. It is used on every classifier-model call (classification, concept answers, concept follow-ups), so an unavailable classifier id falls back to the executor model.
   - `gatewayProvider(env = process.env)` wraps `createGateway({ apiKey })` from `ai`.
-  - `MODEL_PRICES_PER_MTOK: Record<string, { input: number; output: number; cacheRead?: number }>` with `"anthropic/claude-sonnet-5.5": { input: 2, output: 10, cacheRead: 0.2 }`. Kimi and other models come from env `SEO_MODEL_PRICES_JSON` (merged over the defaults).
+  - `MODEL_PRICES_PER_MTOK: Record<string, { input: number; output: number; cacheRead?: number }>` with `"anthropic/claude-sonnet-5.5": { input: 2, output: 10, cacheRead: 0.2 }`. `reflection/beam` and other models come from env `SEO_MODEL_PRICES_JSON` (no $0 default: an unpriced model is charged at the call's estimate) (merged over the defaults).
   - `costOfUsage(model: string, usage: { inputTokens?: number; outputTokens?: number; cachedInputTokens?: number }): number | undefined` returns `undefined` when the price or usage is unknown, so `runPaidCall` charges the estimate.
 - `classify.ts`:
   - `INTENTS = ["concept", "out_of_scope", "backlinks", "keywords", "serp", "geo_visibility", "content"] as const`
@@ -201,8 +201,8 @@
   - `PaidCallDeniedError` propagates.
   - `costOfUsage` for Sonnet with 1,000,000 input and 0 output = `2`.
   - Unknown model → `undefined`.
-  - `seoModels({})` is `null`; `seoModels({ AI_GATEWAY_API_KEY: "k" })` gives classifier `moonshotai/kimi-k2.7-code`.
-  - The fake `generateText` receives `providerOptions.gateway.speed === "fast"` by default, and no `speed` when `SEO_CLASSIFIER_SPEED` is `""`.
+  - `seoModels({})` is `null`; `seoModels({ AI_GATEWAY_API_KEY: "k" })` gives classifier `reflection/beam`.
+  - The fake `generateText` receives `providerOptions.gateway.models` equal to `["anthropic/claude-sonnet-5.5"]`, no `speed` by default, and `speed: "fast"` when `SEO_CLASSIFIER_SPEED=fast`.
   - A classifier failure logs `[seo-agent] classifier failed` with the error name only.
 - [ ] **Step 2: Run** `pnpm vitest run test/seo-classify.test.ts`. Expected: FAIL.
 - [ ] **Step 3: Add the dependencies and implement.** Verify the bundle still builds with `pnpm build`.
@@ -372,8 +372,8 @@
 ## Owner tasks outside this plan
 
 - Set on staging:
-  - `AI_GATEWAY_API_KEY` (already used by drafting). `SEO_CLASSIFIER_MODEL` defaults to `moonshotai/kimi-k2.7-code` with `speed: "fast"`; if the Gateway rejects `speed`, set `SEO_CLASSIFIER_SPEED=` and `SEO_CLASSIFIER_MODEL=moonshotai/kimi-k2.7-code-highspeed`.
-  - Optionally `SEO_AGENT_FALLBACK_MODEL` and `SEO_MODEL_PRICES_JSON` with Kimi K2.7 Code's per-MTok prices.
+  - `AI_GATEWAY_API_KEY` (already used by drafting). `SEO_CLASSIFIER_MODEL` defaults to `reflection/beam`; confirm the id exists on your Gateway (if not, calls quietly fall back to Sonnet and cost more).
+  - Optionally `SEO_AGENT_FALLBACK_MODEL` and `SEO_MODEL_PRICES_JSON` with per-MTok prices for any model you want costed exactly (e.g. `{"reflection/beam":{"input":0,"output":0}}` while it is free).
   - Optionally `DATAFORSEO_LLM_MODEL_<ENGINE>` to pin a model; otherwise the agent picks one from DataForSEO's models list.
   - `VANTAGE_PAID_DAILY_BUDGET_GATEWAY_USD` if model spend needs its own cap.
 - Staging checks from the spec §8: the agent-browser journey; Gateway cache reads above zero on repeat questions; the 20-call AI Optimization cost test before setting `SEO_AGENT_GEO_ALWAYS_ASK=false`.

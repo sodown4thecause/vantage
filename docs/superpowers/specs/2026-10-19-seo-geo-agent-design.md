@@ -29,7 +29,7 @@ Out of scope here: RAG, full blog drafts, GSC, scheduled GEO tracking, chat on o
 | Build order | Agent first (with cache retention), then RAG, then blog + humanizer |
 | Endpoint families in v1 | Backlinks, Labs keyword research, SERP (Google organic), AI Optimization (GEO) |
 | Runtime | Vercel AI SDK (`ai`, `@ai-sdk/gateway`) in a Next route handler; conversations in Neon. Not the Cloudflare Agents SDK (it uses the AI SDK underneath and adds Durable Objects and a second store) |
-| Models | Through Vercel AI Gateway, chosen by env var: main/executor Sonnet 5.5 (`anthropic/claude-sonnet-5.5`), cheap classifier Kimi `moonshotai/kimi-k2.7-code` sent with Gateway option `speed: "fast"` |
+| Models | Through Vercel AI Gateway, chosen by env var: main/executor Sonnet 5.5 (`anthropic/claude-sonnet-5.5`), cheap classifier `reflection/beam` (free on the Gateway at the time of writing), with the executor model as its Gateway fallback |
 | Approach | Classify, then a scoped, capped tool loop |
 | Metering | A monthly agent-question limit plus the existing SEO data credits |
 | Approval | Ask above 3 data credits per question; AI Optimization calls always ask until the owner lifts it |
@@ -47,7 +47,7 @@ app/seo/chat/route.ts
    1 authorizeWorkspace → 403 generic
    2 consume seo_questions_per_month (atomic) → upgrade message if none left
    3 load conversation (workspace-scoped) + monitoring profile
-   4 classify (Kimi K2.7 Code, fast)  ──► concept / out_of_scope: answer with no data tools
+   4 classify (reflection/beam)  ──► concept / out_of_scope: answer with no data tools
    5 execute (Sonnet 5.5, intent's tools only, ≤6 steps, ≤3 credits)
    6 stream text + result cards + follow-ups + credits line
    7 persist assistant message (complete | incomplete | needs_approval)
@@ -189,8 +189,8 @@ All migrations are additive and generated with `pnpm db:generate`. Workspace del
 |---|---|---|
 | `AI_GATEWAY_API_KEY` | — | Vercel AI Gateway (already used by drafting) |
 | `SEO_AGENT_MODEL` | `anthropic/claude-sonnet-5.5` | Executor |
-| `SEO_CLASSIFIER_MODEL` | `moonshotai/kimi-k2.7-code` | Classifier and concept-answer model |
-| `SEO_CLASSIFIER_SPEED` | `fast` | Sent as `providerOptions.gateway.speed`; blank disables it |
+| `SEO_CLASSIFIER_MODEL` | `reflection/beam` | Classifier and concept-answer model |
+| `SEO_CLASSIFIER_SPEED` | — | Optional; when set, sent as `providerOptions.gateway.speed` |
 | `SEO_AGENT_FALLBACK_MODEL` | — | Refusal and outage fallback |
 | `SEO_AGENT_AUTO_CREDITS` | `3` | Credits per question before asking |
 | `SEO_AGENT_GEO_ALWAYS_ASK` | `true` | `llm_response` always needs approval |
@@ -215,7 +215,7 @@ All migrations are additive and generated with `pnpm db:generate`. Workspace del
 
 ## 9. Risks
 
-- `speed: "fast"` is not a typed Gateway option in `ai@7.0.143` (its fast models are separate ids such as `moonshotai/kimi-k2.7-code-highspeed`); it is sent through the Gateway options' open index signature and validated by the Gateway. If staging shows it rejected, set `SEO_CLASSIFIER_SPEED=` and `SEO_CLASSIFIER_MODEL=moonshotai/kimi-k2.7-code-highspeed`. Classification uses structured output, not tools.
+- `reflection/beam` is not in `@ai-sdk/gateway@4.0.116`'s typed model list and could not be checked from the build container. Every classifier-model call therefore sets `providerOptions.gateway.models: [executor]`, so an unknown or unavailable id falls back to Sonnet 5.5 instead of failing. Its price is not hard-coded as $0 ("currently free" can change); without an entry in `SEO_MODEL_PRICES_JSON` each call is charged at the small estimate.
 - LLM Responses needs a `model_name` per engine. The agent reads DataForSEO's `/v3/ai_optimization/{engine}/llm_responses/models` list (assumed free; any returned cost is recorded) and picks the first model with `web_search_supported`, unless `DATAFORSEO_LLM_MODEL_<ENGINE>` overrides it.
 - DataForSEO prices are unconfirmed; estimates are conservative and recorded costs are real.
 - The AI SDK's server-side fallback beta header may not match the `"default"` form that Sonnet 5.5 requires; client-side retry covers refusals regardless.
