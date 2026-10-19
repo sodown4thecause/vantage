@@ -8,12 +8,12 @@ export async function createTinyFishClient(
   apiKey: string = process.env.TINYFISH_API_KEY ?? "",
   signal?: AbortSignal,
 ): Promise<TinyFish> {
-  const { TinyFish } = await import("@tiny-fish/sdk");
   const key = apiKey.trim();
   if (!key) {
     throw new Error("TINYFISH_API_KEY is not configured");
   }
   signal?.throwIfAborted();
+  const { TinyFish } = await import("@tiny-fish/sdk");
   return new TinyFish({ apiKey: key, timeout: 30_000, maxRetries: 0 });
 }
 
