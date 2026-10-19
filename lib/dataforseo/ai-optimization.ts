@@ -15,7 +15,8 @@ export type LlmResponse = LlmAnswer & { mentionsBrand: boolean };
 type GateOptions = NonNullable<Parameters<typeof runDataForSeo>[1]>;
 
 const PROMPT_CAP = 500;
-const TEXT_CAP = 4_000;
+/** Stored and cached answer text. The brand check reads all of it; the model and cards see a shorter cut (see geo tools). */
+const TEXT_CAP = 16_000;
 /** An engine answer costs two credits. */
 export const LLM_CREDITS = 2;
 // A brand name shorter than this matches too much text to mean anything.

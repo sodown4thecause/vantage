@@ -28,6 +28,12 @@ import {
 } from "@/lib/seo-agent/tools/shared";
 
 const PROMPT_MAX_CHARS = 500;
+/** The answer text the model reads and a card shows. The brand verdict was already computed on the full text. */
+const ANSWER_TEXT_MAX_CHARS = 4_000;
+
+function shortAnswer(answer: LlmResponse): LlmResponse {
+  return answer.text.length > ANSWER_TEXT_MAX_CHARS ? { ...answer, text: answer.text.slice(0, ANSWER_TEXT_MAX_CHARS) } : answer;
+}
 
 const ENGINE_LABELS: Record<LlmEngine, string> = {
   chat_gpt: "ChatGPT",
@@ -69,8 +75,9 @@ async function askEngines(ctx: ToolContext, rawPrompt: string, requested: LlmEng
   available.forEach((item, i) => {
     const hit = peeked[i];
     if (hit) {
-      answers.set(item.engine, { answer: hit, source: "cached" });
-      addCard(ctx, { tool: "llm_response", title: `AI answer — ${ENGINE_LABELS[item.engine]}`, cached: true, data: hit });
+      const short = shortAnswer(hit);
+      answers.set(item.engine, { answer: short, source: "cached" });
+      addCard(ctx, { tool: "llm_response", title: `AI answer — ${ENGINE_LABELS[item.engine]}`, cached: true, data: short });
     } else {
       misses.push(item);
     }
@@ -97,12 +104,13 @@ async function askEngines(ctx: ToolContext, rawPrompt: string, requested: LlmEng
       continue;
     }
     if (result.value.cached) refund += LLM_CREDITS;
-    answers.set(result.item.engine, { answer: result.value.value, source: result.value.cached ? "cached" : "live" });
+    const short = shortAnswer(result.value.value);
+    answers.set(result.item.engine, { answer: short, source: result.value.cached ? "cached" : "live" });
     addCard(ctx, {
       tool: "llm_response",
       title: `AI answer — ${ENGINE_LABELS[result.item.engine]}`,
       cached: result.value.cached,
-      data: result.value.value,
+      data: short,
     });
   }
   ctx.budget.refund(refund);

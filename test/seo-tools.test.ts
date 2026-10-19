@@ -495,6 +495,28 @@ describe("tool gating", () => {
     expect(ctx.budget.spent).toBe(2);
   });
 
+  it("trims the text the model and the card see to 4,000 characters, keeping the brand verdict", async () => {
+    const long = { ...answer, engine: "claude", text: `${"a".repeat(6_000)} Example`, mentionsBrand: true };
+    mocks.fetchLlmResponse.mockResolvedValue({ value: long, cached: false });
+    const ctx = makeCtx(new QuestionBudget(0, [{ tool: "llm_response", input: { prompt: "best seo tools", engines: ["claude"] }, credits: 2 }]));
+    const result = await run(toolsFor("geo_visibility", ctx), "llm_response", { prompt: "best seo tools", engines: ["claude"] }) as {
+      answers: { text: string; mentionsBrand: boolean }[];
+    };
+    expect(result.answers[0]!.text).toHaveLength(4_000);
+    expect(result.answers[0]!.mentionsBrand).toBe(true);
+    expect((ctx.cards[0]!.data as { text: string }).text).toHaveLength(4_000);
+  });
+
+  it("trims a cached answer the same way before the model and the card see it", async () => {
+    mocks.peekLlmResponse.mockImplementation(async (engine: string) => ({ ...answer, engine, text: "b".repeat(9_000) }));
+    const ctx = makeCtx();
+    const result = await run(toolsFor("geo_visibility", ctx), "llm_response", { prompt: "best crm", engines: ["claude"] }) as {
+      answers: { text: string }[];
+    };
+    expect(result.answers[0]!.text).toHaveLength(4_000);
+    expect((ctx.cards[0]!.data as { text: string }).text).toHaveLength(4_000);
+  });
+
   it("gives each engine answer its own source: cached when peeked, live when fetched", async () => {
     process.env.SEO_AGENT_GEO_ALWAYS_ASK = "false";
     mocks.peekLlmResponse.mockImplementation(async (engine: string) => (engine === "claude" ? { ...answer, engine } : null));

@@ -132,9 +132,16 @@ describe("trimLlmResponse", () => {
     });
   });
 
-  it("caps the text at 4,000 characters", () => {
-    const long = [{ items: [{ type: "message", sections: [{ text: "a".repeat(5_000) }] }] }];
-    expect(trimLlmResponse(long, [], "gemini").text).toHaveLength(4_000);
+  it("caps the stored text at 16,000 characters", () => {
+    const long = [{ items: [{ type: "message", sections: [{ text: "a".repeat(20_000) }] }] }];
+    expect(trimLlmResponse(long, [], "gemini").text).toHaveLength(16_000);
+  });
+
+  it("checks the brand against the full stored text, so a mention at character 6,000 is detected", () => {
+    const deep = [{ items: [{ type: "message", sections: [{ text: `${"a".repeat(6_000)} Pinecone is cited here.` }] }] }];
+    const answer = trimLlmResponse(deep, ["pinecone.io"], "claude");
+    expect(answer.mentionsBrand).toBe(true);
+    expect(answer.text.indexOf("Pinecone")).toBe(6_001);
   });
 
   it("reads only message items, so reasoning text and its citations never reach the answer", () => {
