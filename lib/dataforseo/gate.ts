@@ -5,7 +5,7 @@ import { getDb } from "@/lib/db/client";
 import { numericField, rowsOf } from "@/lib/db/rows";
 import { dataForSeoCacheKey, readDataForSeoCache, writeDataForSeoCache } from "@/lib/dataforseo/cache";
 import { DataForSeoApiError, dataForSeoPost, getDataForSeoBalance } from "@/lib/dataforseo/client";
-import { type DataForSeoConfig, dataForSeoConfig } from "@/lib/dataforseo/config";
+import { type DataForSeoConfig, usableDataForSeoConfig } from "@/lib/dataforseo/config";
 import { consume, release } from "@/lib/plans/limits";
 import { runPaidCall } from "@/lib/providers/paid-call";
 
@@ -92,7 +92,7 @@ async function assertDailyCap(config: DataForSeoConfig, estimateUsd: number, now
 
 /**
  * Order (each step decides; the first refusal stops the call):
- *   1. config missing -> not_configured
+ *   1. config missing, or sandbox in production without ALLOW_FIXTURES -> not_configured
  *   2. cache hit -> return it (no credit, no fetch)
  *   3. consume one SEO credit; refused -> credits_exhausted
  *   4. from here, any throw releases that credit exactly once and rethrows
@@ -106,7 +106,7 @@ export async function runDataForSeo<R, T>(
   req: GateRequest<R, T>,
   opts: GateOptions = {},
 ): Promise<{ value: T; cached: boolean }> {
-  const config = dataForSeoConfig();
+  const config = usableDataForSeoConfig();
   if (!config) throw deny("not_configured");
 
   const now = opts.now ?? new Date();
@@ -156,7 +156,7 @@ export async function runDataForSeo<R, T>(
 
 /** Cache-only read for the UI. Never consumes a credit, touches the budget or fetches. */
 export async function peekDataForSeo<T>(endpoint: string, task: Record<string, unknown>): Promise<T | null> {
-  const config = dataForSeoConfig();
+  const config = usableDataForSeoConfig();
   if (!config) return null;
   return readDataForSeoCache<T>(dataForSeoCacheKey(config.env, endpoint, task));
 }

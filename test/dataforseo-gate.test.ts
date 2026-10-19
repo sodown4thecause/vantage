@@ -323,6 +323,45 @@ describe("DataForSEO spend gate", () => {
     });
   });
 
+  describe("sandbox in production", () => {
+    beforeEach(() => {
+      vi.stubEnv("NODE_ENV", "production");
+    });
+
+    it("denies a sandbox call as not_configured before any cache read, credit or fetch without ALLOW_FIXTURES", async () => {
+      configure("sandbox");
+      const fetchImpl = makeFetch();
+      await expect(run({}, { fetchImpl: asFetch(fetchImpl) })).rejects.toMatchObject({ name: "DataForSeoDeniedError", code: "not_configured" });
+      expect(mocks.read).not.toHaveBeenCalled();
+      expect(mocks.consume).not.toHaveBeenCalled();
+      expect(mocks.release).not.toHaveBeenCalled();
+      expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it("runs the sandbox call when ALLOW_FIXTURES is true", async () => {
+      configure("sandbox");
+      vi.stubEnv("ALLOW_FIXTURES", "true");
+      const fetchImpl = makeFetch();
+      await expect(run({}, { fetchImpl: asFetch(fetchImpl) })).resolves.toMatchObject({ cached: false });
+      expect(mocks.consume).toHaveBeenCalledExactlyOnceWith("ws-1", CREDIT, 1, now);
+      expect(callsTo(fetchImpl, "https://sandbox.dataforseo.com/v3/backlinks/summary/live")).toHaveLength(1);
+    });
+
+    it("leaves live calls unaffected by ALLOW_FIXTURES being unset", async () => {
+      configure("live");
+      const fetchImpl = makeFetch({ balance: 100 });
+      await expect(run({}, { fetchImpl: asFetch(fetchImpl) })).resolves.toMatchObject({ cached: false });
+      expect(callsTo(fetchImpl, "https://api.dataforseo.com/v3/backlinks/summary/live")).toHaveLength(1);
+    });
+
+    it("peek returns null without reading the cache for a sandbox call without ALLOW_FIXTURES", async () => {
+      configure("sandbox");
+      mocks.read.mockResolvedValue([{ rank: 3 }]);
+      await expect(peekDataForSeo(ENDPOINT, TASK)).resolves.toBeNull();
+      expect(mocks.read).not.toHaveBeenCalled();
+    });
+  });
+
   describe("peekDataForSeo", () => {
     it("returns the cached value without consuming, querying the database or fetching", async () => {
       configure("live");

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { dataForSeoConfig } from "@/lib/dataforseo/config";
+import { dataForSeoAvailable, dataForSeoConfig } from "@/lib/dataforseo/config";
 import { DataForSeoApiError, dataForSeoPost, getDataForSeoBalance } from "@/lib/dataforseo/client";
 
 const LOGIN = "login-secret-user";
@@ -70,6 +70,28 @@ describe("dataForSeoConfig", () => {
     expect(dataForSeoConfig({ ...base, DATAFORSEO_RESERVE_FLOOR_USD: "-1" })?.reserveFloorUsd).toBe(15);
     expect(dataForSeoConfig({ ...base, DATAFORSEO_ALERT_BALANCE_USD: "" })?.alertBalanceUsd).toBe(30);
     expect(dataForSeoConfig({ ...base, DATAFORSEO_DAILY_BUDGET_USD: "2.5" })?.dailyBudgetUsd).toBe(2.5);
+  });
+});
+
+describe("dataForSeoAvailable", () => {
+  const creds = { DATAFORSEO_LOGIN: "u", DATAFORSEO_PASSWORD: "p" };
+
+  it("is false when unconfigured", () => {
+    expect(dataForSeoAvailable({ NODE_ENV: "development" })).toBe(false);
+  });
+
+  it("is true for sandbox outside production", () => {
+    expect(dataForSeoAvailable({ ...creds, NODE_ENV: "development" })).toBe(true);
+  });
+
+  it("is false for sandbox in production unless ALLOW_FIXTURES is true", () => {
+    expect(dataForSeoAvailable({ ...creds, NODE_ENV: "production" })).toBe(false);
+    expect(dataForSeoAvailable({ ...creds, NODE_ENV: "production", ALLOW_FIXTURES: "yes" })).toBe(false);
+    expect(dataForSeoAvailable({ ...creds, NODE_ENV: "production", ALLOW_FIXTURES: "true" })).toBe(true);
+  });
+
+  it("is true for live in production regardless of ALLOW_FIXTURES", () => {
+    expect(dataForSeoAvailable({ ...creds, NODE_ENV: "production", DATAFORSEO_ENV: "live" })).toBe(true);
   });
 });
 
