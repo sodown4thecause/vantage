@@ -3,7 +3,7 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
 import { ResultCardView } from "./cards";
 import {
@@ -62,17 +62,20 @@ function ChipButton({
   disabled: boolean;
   onSend: (text: string) => void;
 }) {
+  // The cost is described by the button, so screen readers announce it after the question.
+  const costId = useId();
   return (
     <button
       type="button"
       aria-label={`${CATEGORY_LABEL[category]} question: ${text}`}
+      aria-describedby={costLabel ? costId : undefined}
       disabled={disabled}
       onClick={() => onSend(text)}
       className="rounded-full px-3 py-1.5 text-left text-sm shadow-[inset_0_0_0_1px_var(--contour)] transition-colors hover:text-ink disabled:opacity-50"
     >
       <span className="mr-2 text-xs font-semibold uppercase tracking-wide text-ridge">{CATEGORY_LABEL[category]}</span>
       <span>{text}</span>
-      {costLabel && <span className="ml-2 text-xs text-ridge">{costLabel}</span>}
+      {costLabel && <span id={costId} className="ml-2 text-xs text-ridge">{costLabel}</span>}
     </button>
   );
 }
@@ -323,11 +326,9 @@ export function ChatClient({
         </ol>
       )}
 
-      {busy && (
-        <p role="status" className="text-sm text-ridge">
-          Working on it. Lookups that are already cached are free.
-        </p>
-      )}
+      <p role="status" className="text-sm text-ridge">
+        {busy ? "Working on it. Lookups that are already cached are free." : ""}
+      </p>
       {error && (
         <p role="alert" className="text-sm text-stop">
           That did not work. Try again.

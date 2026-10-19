@@ -350,6 +350,34 @@ describe("runAgent: tool path", () => {
     expect(chunks.filter((chunk) => chunk.type === "start-step")).toHaveLength(1);
   });
 
+  it("joins the text of separate steps with a blank line", async () => {
+    const streamText = fakeStreamText([{
+      chunks: [STEP_START, ...text("First step."), STEP_FINISH, STEP_START, ...text("Second step."), STEP_FINISH],
+      finishReason: "stop",
+    }]);
+    const run = await runAgent(input(), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } });
+    const { outcome } = await drain(run);
+    expect(outcome.content).toBe("First step.\n\nSecond step.");
+  });
+
+  it("reports an incomplete answer, not a complete one, when the request is aborted before the attempt finishes", async () => {
+    const controller = new AbortController();
+    const streamText = fakeStreamText([{
+      chunks: async () => {
+        controller.abort();
+        return text("Cut short.");
+      },
+      finishReason: "stop",
+    }]);
+    const run = await runAgent(input(), {
+      signal: controller.signal,
+      deps: { streamText: streamText as never, generateText: fakeGenerateText() as never },
+    });
+    const { outcome } = await drain(run);
+    expect(outcome.status).toBe("incomplete");
+    expect(outcome.content).toBe("Cut short.");
+  });
+
   it("reports a refusal when the fallback also refuses, and does not try a third model call", async () => {
     vi.stubEnv("SEO_AGENT_FALLBACK_MODEL", FALLBACK);
     const streamText = fakeStreamText([{ chunks: [STEP_START, STEP_FINISH], finishReason: "content-filter" }]);

@@ -313,6 +313,24 @@ describe("POST /seo/chat: asking a question", () => {
     ]);
   });
 
+  it("leaves the fixed failure and refusal replies out of the model history, but keeps other incomplete replies", async () => {
+    mocks.getConversation.mockResolvedValue(conversation([
+      storedMessage({ id: "11111111-aaaa-4aaa-8aaa-111111111111", role: "user", content: "First question.", status: "complete", parts: {} }),
+      storedMessage({ id: "22222222-aaaa-4aaa-8aaa-222222222222", role: "assistant", content: ERROR_COPY, status: "incomplete", parts: {} }),
+      storedMessage({ id: "33333333-aaaa-4aaa-8aaa-333333333333", role: "user", content: "Second question.", status: "complete", parts: {} }),
+      storedMessage({ id: "44444444-aaaa-4aaa-8aaa-444444444444", role: "assistant", content: REFUSAL, status: "incomplete", parts: {} }),
+      storedMessage({ id: "55555555-aaaa-4aaa-8aaa-555555555555", role: "user", content: "Third question.", status: "complete", parts: {} }),
+      storedMessage({ id: "66666666-aaaa-4aaa-8aaa-666666666666", role: "assistant", content: "Partial answer.", status: "incomplete", parts: {} }),
+    ]));
+    await postAndRead({ workspaceId: WS, conversationId: CONV, message: "Next question?" });
+    expect(mocks.runAgent.mock.calls[0]![0].history).toEqual([
+      { role: "user", content: "First question." },
+      { role: "user", content: "Second question." },
+      { role: "user", content: "Third question." },
+      { role: "assistant", content: "Partial answer." },
+    ]);
+  });
+
   it("maps a conversation that disappears during the question to 404 and releases the charge", async () => {
     mocks.getConversation.mockResolvedValue(conversation([]));
     mocks.appendMessage.mockRejectedValue(new mocks.ConversationNotFoundError());

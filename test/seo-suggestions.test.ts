@@ -169,8 +169,8 @@ describe("starterChips", () => {
 
   it("labels each starter chip with its tool's cost", () => {
     const chips = starterChips(FULL, OCT_19);
-    // SEO index 1 is referring_domains; GEO index 1 is llm_response (always asked); content index 1 is keyword_ideas.
-    expect(labels(chips)).toEqual(["~1 credit", "Needs approval", "~1 credit"]);
+    // SEO index 1 is backlink_gap (two sides, two credits); GEO index 1 is llm_response (always asked); content index 1 is keyword_ideas.
+    expect(labels(chips)).toEqual(["~2 credits", "Needs approval", "~1 credit"]);
   });
 
   it("labels GEO chips as two credits when the always-ask rule is off", () => {
@@ -192,7 +192,7 @@ describe("STARTER_TOOLS", () => {
   it("maps each profile template to the tool it runs and generic templates to none", () => {
     expect(STARTER_TOOLS).toEqual({
       "seo-0": "ranked_keywords",
-      "seo-1": "referring_domains",
+      "seo-1": "backlink_gap",
       "seo-2": "google_serp",
       "geo-0": "llm_response",
       "geo-1": "llm_response",
@@ -326,12 +326,31 @@ describe("withCacheLabels", () => {
     expect(labels(chips)).toEqual(["Free", "Free", "Free"]);
   });
 
-  it("probes the backlink referring-domains call for the competitor", async () => {
+  it("marks the backlink-gap chip Free only when both sides' referring-domains calls are cached", async () => {
     mocks.peekDataForSeo.mockResolvedValue([]);
     const chips = await withCacheLabels(starterChips(FULL, OCT_19), FULL);
-    const backlinks = referringDomainsTask("rival.io");
-    expect(mocks.peekDataForSeo).toHaveBeenCalledWith(backlinks.endpoint, backlinks.task, FRESHNESS_SECONDS.backlinks);
+    const rival = referringDomainsTask("rival.io");
+    const own = referringDomainsTask("contextfor.dev");
+    expect(mocks.peekDataForSeo).toHaveBeenCalledWith(rival.endpoint, rival.task, FRESHNESS_SECONDS.backlinks);
+    expect(mocks.peekDataForSeo).toHaveBeenCalledWith(own.endpoint, own.task, FRESHNESS_SECONDS.backlinks);
     expect(chips[0]!.costLabel).toBe("Free");
+  });
+
+  it("keeps the backlink-gap chip at its default when only the competitor side is cached", async () => {
+    const rival = referringDomainsTask("rival.io");
+    mocks.peekDataForSeo.mockImplementation(async (endpoint: string, task: Record<string, unknown>) =>
+      JSON.stringify(task) === JSON.stringify(rival.task) ? [] : null);
+    const chips = await withCacheLabels(starterChips(FULL, OCT_19), FULL);
+    expect(mocks.peekDataForSeo).toHaveBeenCalledTimes(2);
+    expect(chips[0]!.costLabel).toBe("~2 credits");
+  });
+
+  it("keeps the backlink-gap chip at its default when only the product side is cached", async () => {
+    const own = referringDomainsTask("contextfor.dev");
+    mocks.peekDataForSeo.mockImplementation(async (endpoint: string, task: Record<string, unknown>) =>
+      JSON.stringify(task) === JSON.stringify(own.task) ? [] : null);
+    const chips = await withCacheLabels(starterChips(FULL, OCT_19), FULL);
+    expect(chips[0]!.costLabel).toBe("~2 credits");
   });
 
   it("never peeks llm_response, so GEO chips keep their label even when other calls are cached", async () => {
@@ -343,14 +362,14 @@ describe("withCacheLabels", () => {
 
   it("keeps the default label on a cache miss", async () => {
     const chips = await withCacheLabels(starterChips(FULL, OCT_19), FULL);
-    expect(labels(chips)).toEqual(["~1 credit", "Needs approval", "~1 credit"]);
+    expect(labels(chips)).toEqual(["~2 credits", "Needs approval", "~1 credit"]);
   });
 
   it("keeps the default label when a peek throws", async () => {
     mocks.peekKeywordIdeas.mockRejectedValue(new Error("database unavailable"));
     mocks.peekDataForSeo.mockRejectedValue(new Error("database unavailable"));
     const chips = await withCacheLabels(starterChips(FULL, OCT_19), FULL);
-    expect(labels(chips)).toEqual(["~1 credit", "Needs approval", "~1 credit"]);
+    expect(labels(chips)).toEqual(["~2 credits", "Needs approval", "~1 credit"]);
   });
 
   it("leaves generic chips and unknown chips untouched", async () => {

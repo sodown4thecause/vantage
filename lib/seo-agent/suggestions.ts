@@ -52,7 +52,7 @@ const GENERIC_TEMPLATES: Record<Category, Template> = {
 /** Template id to the data tool its chip would run. Generic templates run no tool. */
 export const STARTER_TOOLS: Readonly<Record<string, string | null>> = {
   "seo-0": "ranked_keywords",
-  "seo-1": "referring_domains",
+  "seo-1": "backlink_gap",
   "seo-2": "google_serp",
   "geo-0": "llm_response",
   "geo-1": "llm_response",
@@ -179,6 +179,19 @@ function probeFor(tool: string, ctx: ProfileContext): (() => Promise<unknown>) |
       if (!competitor) return null;
       const call = referringDomainsTask(competitor);
       return () => peekDataForSeo(call.endpoint, call.task, FRESHNESS_SECONDS.backlinks);
+    }
+    case "backlink_gap": {
+      // The gap reads both sides' referring-domains calls, so the chip is free only when both are cached.
+      if (!productDomain || !competitor) return null;
+      const own = referringDomainsTask(productDomain);
+      const rival = referringDomainsTask(competitor);
+      return async () => {
+        const [ownHit, rivalHit] = await Promise.all([
+          peekDataForSeo(own.endpoint, own.task, FRESHNESS_SECONDS.backlinks),
+          peekDataForSeo(rival.endpoint, rival.task, FRESHNESS_SECONDS.backlinks),
+        ]);
+        return ownHit !== null && rivalHit !== null ? { ownHit, rivalHit } : null;
+      };
     }
     case "google_serp":
       return topic ? () => peekGoogleSerp(topic) : null;

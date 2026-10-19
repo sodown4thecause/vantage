@@ -168,6 +168,8 @@ async function runAttempt(a: AttemptArgs): Promise<Attempt> {
   const pending: UIMessageChunk[] = [];
   let flushed = false;
   let text = "";
+  // Text from a later step starts a new paragraph, so the steps do not run together.
+  let stepBreak = false;
   const fail = (): Attempt => {
     a.meter.erred = true;
     return { kind: "error", flushed, text };
@@ -202,7 +204,11 @@ async function runAttempt(a: AttemptArgs): Promise<Attempt> {
         await reader.cancel().catch(() => undefined);
         return fail();
       }
-      if (value.type === "text-delta") text += value.delta;
+      if (value.type === "start-step") stepBreak = text !== "";
+      if (value.type === "text-delta") {
+        text += stepBreak ? `\n\n${value.delta}` : value.delta;
+        stepBreak = false;
+      }
       if (!flushed && !LIFECYCLE_CHUNKS.has(value.type)) {
         flushed = true;
         for (const chunk of pending.splice(0)) a.writer.write(chunk);
@@ -434,7 +440,9 @@ export async function runAgent(
       return outcome("failed", "", ctx.followUps ?? fallbackChips());
     }
     const generated = concept && attempt.text.trim() !== "" ? await conceptFollowUps(attempt.text) : undefined;
-    return outcome("complete", attempt.text, ctx.followUps ?? generated ?? fallbackChips());
+    // A request aborted before the attempt finished leaves a cut-off answer, which is kept but not complete.
+    const status: AgentStatus = signal?.aborted ? "incomplete" : "complete";
+    return outcome(status, attempt.text, ctx.followUps ?? generated ?? fallbackChips());
   };
 
   return {

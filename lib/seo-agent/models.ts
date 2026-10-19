@@ -1,11 +1,11 @@
 import { createGateway } from "ai";
 
-export const DEFAULT_EXECUTOR_MODEL = "anthropic/claude-sonnet-5.5";
-export const DEFAULT_CLASSIFIER_MODEL = "reflection/beam";
+import { executorModel, nonBlank } from "@/lib/seo-agent/model-config";
+
+export { DEFAULT_CLASSIFIER_MODEL, DEFAULT_EXECUTOR_MODEL, seoModels, type SeoModels } from "@/lib/seo-agent/model-config";
 
 type Env = Record<string, string | undefined>;
 
-export type SeoModels = { executor: string; classifier: string; fallback: string | null };
 export type ModelPrice = { input: number; output: number; cacheRead?: number };
 export type UsageTokens = { inputTokens?: number; outputTokens?: number; cachedInputTokens?: number };
 
@@ -13,25 +13,6 @@ export type UsageTokens = { inputTokens?: number; outputTokens?: number; cachedI
 export const MODEL_PRICES_PER_MTOK: Record<string, ModelPrice> = {
   "anthropic/claude-sonnet-5.5": { input: 2, output: 10, cacheRead: 0.2 },
 };
-
-function nonBlank(value: string | undefined): string | null {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : null;
-}
-
-function executorModel(env: Env): string {
-  return nonBlank(env.SEO_AGENT_MODEL) ?? DEFAULT_EXECUTOR_MODEL;
-}
-
-/** Null when the gateway key is blank, so the agent is off rather than failing per request. */
-export function seoModels(env: Env = process.env): SeoModels | null {
-  if (!nonBlank(env.AI_GATEWAY_API_KEY)) return null;
-  return {
-    executor: executorModel(env),
-    classifier: nonBlank(env.SEO_CLASSIFIER_MODEL) ?? DEFAULT_CLASSIFIER_MODEL,
-    fallback: nonBlank(env.SEO_AGENT_FALLBACK_MODEL),
-  };
-}
 
 export function gatewayProvider(env: Env = process.env) {
   const apiKey = nonBlank(env.AI_GATEWAY_API_KEY);

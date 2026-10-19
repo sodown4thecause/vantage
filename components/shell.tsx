@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { Wordmark } from "@/components/wordmark";
 import { dataForSeoAvailable } from "@/lib/dataforseo/config";
-import { seoModels } from "@/lib/seo-agent/models";
+import { seoModels } from "@/lib/seo-agent/model-config";
 
 type NavKey = "queue" | "seo" | "sources" | "profile" | "plan" | "digest";
 type PublicKey = "how" | "pricing" | "blog" | "launch";

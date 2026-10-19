@@ -173,12 +173,23 @@ function toAgentProfile(profile: MonitoringProfileView | null): AgentProfile {
 }
 
 /**
+ * A reply the app wrote for a question that got no answer. Its copy is fixed, so the model would read it as its own
+ * answer; it is left out of the history.
+ */
+function isFixedFailureReply(message: SeoMessageRow): boolean {
+  return message.role === "assistant"
+    && message.status === "incomplete"
+    && (message.content === FAILURE_COPY || message.content === REFUSAL_COPY);
+}
+
+/**
  * Stored text messages as model history, oldest first. Empty messages are dropped (providers reject empty text), and so
  * are leading assistant turns left by the window, so the history always starts with a user turn.
  */
 function historyOf(messages: SeoMessageRow[] | undefined): ModelMessage[] {
   const kept = (messages ?? [])
     .filter((message) => message.content.trim() !== "")
+    .filter((message) => !isFixedFailureReply(message))
     .slice(-HISTORY_MAX_MESSAGES);
   const firstUser = kept.findIndex((message) => message.role === "user");
   return (firstUser === -1 ? [] : kept.slice(firstUser))
