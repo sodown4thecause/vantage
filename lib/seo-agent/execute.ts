@@ -76,8 +76,14 @@ export type AgentDeps = {
 type ProviderOptions = NonNullable<Parameters<typeof streamText>[0]["providerOptions"]>;
 
 const STEP_LIMIT = 6;
-const EXECUTOR_ESTIMATE_USD = 0.08;
+const EXECUTOR_ESTIMATE_USD = 0.15;
 const FOLLOW_UP_ESTIMATE_USD = 0.002;
+/** Output caps: the executor's answer, a concept answer, and the structured follow-ups. */
+const EXECUTOR_MAX_OUTPUT_TOKENS = 4096;
+const CONCEPT_MAX_OUTPUT_TOKENS = 2048;
+const FOLLOW_UP_MAX_OUTPUT_TOKENS = 512;
+/** Sent on every executor call; the classifier and follow-up calls do not use it. */
+const EXECUTOR_OPTIONS: ProviderOptions = { anthropic: { effort: "medium" } };
 const FOLLOW_UP_MAX_CHARS = 140;
 
 export const REFUSAL_COPY = "I can't answer that one. Try rephrasing.";
@@ -144,6 +150,7 @@ type AttemptArgs = {
   modelId: string;
   model: ReturnType<ReturnType<typeof gatewayProvider>>;
   providerOptions: ProviderOptions;
+  maxOutputTokens: number;
   system: SystemModelMessage;
   messages: ModelMessage[];
   tools: Record<string, Tool>;
@@ -174,6 +181,7 @@ async function runAttempt(a: AttemptArgs): Promise<Attempt> {
       stopWhen: stepCountIs(STEP_LIMIT),
       maxRetries: 0,
       providerOptions: a.providerOptions,
+      maxOutputTokens: a.maxOutputTokens,
       abortSignal: a.signal,
       onFinish: ({ usage }) => {
         a.meter.finished += 1;
@@ -281,7 +289,8 @@ export async function runAgent(
   const primary = concept ? classifier : executor;
   const primaryOptions: ProviderOptions = concept
     ? classifierProviderOptions()
-    : { gateway: models.fallback ? { models: [models.fallback] } : {} };
+    : { ...EXECUTOR_OPTIONS, gateway: models.fallback ? { models: [models.fallback] } : {} };
+  const primaryMaxTokens = concept ? CONCEPT_MAX_OUTPUT_TOKENS : EXECUTOR_MAX_OUTPUT_TOKENS;
   const system: SystemModelMessage = {
     role: "system",
     content: concept ? conceptPrompt(profile) : systemPrompt(profile),
@@ -312,6 +321,7 @@ export async function runAgent(
           prompt: `Answer (data): ${JSON.stringify(answerText)}\nQuestion (data): ${JSON.stringify(input.question)}`,
           output: Output.object({ schema: FOLLOW_UP_SCHEMA }),
           providerOptions: classifierProviderOptions(),
+          maxOutputTokens: FOLLOW_UP_MAX_OUTPUT_TOKENS,
           maxRetries: 0,
           abortSignal: signal,
         });
@@ -346,6 +356,7 @@ export async function runAgent(
       modelId: primary.id,
       model: primary.model,
       providerOptions: primaryOptions,
+      maxOutputTokens: primaryMaxTokens,
       writer,
     });
     if (attempt.kind === "refused" && !attempt.flushed && fallback) {
@@ -353,7 +364,8 @@ export async function runAgent(
         ...attemptArgs,
         modelId: fallback.id,
         model: fallback.model,
-        providerOptions: {},
+        providerOptions: concept ? {} : EXECUTOR_OPTIONS,
+        maxOutputTokens: primaryMaxTokens,
         writer,
       });
     }

@@ -57,6 +57,7 @@ export async function classifyQuestion(
         prompt: `Workspace profile (data): ${JSON.stringify(profileSummary)}\nQuestion (data): ${JSON.stringify(question)}`,
         output: Output.object({ schema: classificationSchema }),
         providerOptions: classifierProviderOptions(),
+        maxOutputTokens: 256,
         // One attempt per reservation: an SDK retry would make a second paid call under the same reservation.
         maxRetries: 0,
         abortSignal: opts.signal,

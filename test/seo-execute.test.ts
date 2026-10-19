@@ -208,7 +208,8 @@ describe("runAgent: tool path", () => {
     const options = streamText.mock.calls[0]![0] as FakeOptions;
     expect(options.model.modelId).toBe(EXECUTOR);
     expect(options.maxRetries).toBe(0);
-    expect(options.providerOptions).toEqual({ gateway: { models: [FALLBACK] } });
+    expect(options.providerOptions).toEqual({ gateway: { models: [FALLBACK] }, anthropic: { effort: "medium" } });
+    expect(options.maxOutputTokens).toBe(4096);
     expect(options.system).toMatchObject({
       role: "system",
       providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
@@ -295,7 +296,7 @@ describe("runAgent: tool path", () => {
       context: { workspaceId: WS, sourceKey: "seo" },
       provider: "gateway",
       action: "seo_execute",
-      estimateUsd: 0.08,
+      estimateUsd: 0.15,
     });
     expect(mocks.charged).toEqual([costOfUsage(EXECUTOR, { inputTokens: 1000, outputTokens: 100, cachedInputTokens: 0 })]);
   });
@@ -331,6 +332,7 @@ describe("runAgent: tool path", () => {
 
     expect(streamText).toHaveBeenCalledTimes(2);
     expect((streamText.mock.calls[1]![0] as FakeOptions).model.modelId).toBe(FALLBACK);
+    expect((streamText.mock.calls[1]![0] as FakeOptions).maxOutputTokens).toBe(4096);
     expect(outcome.status).toBe("complete");
     expect(textOf(chunks)).toBe("Here is the answer.");
     expect(chunks.filter((chunk) => chunk.type === "start-step")).toHaveLength(1);
@@ -400,12 +402,14 @@ describe("runAgent: concept and out-of-scope path", () => {
     expect(options.model.modelId).toBe(CLASSIFIER);
     expect(options.tools).toEqual({});
     expect(options.maxRetries).toBe(0);
+    expect(options.maxOutputTokens).toBe(2048);
     expect(textOf(chunks)).toBe("Crawl budget is the pages a bot will fetch.");
 
     expect(generateText).toHaveBeenCalledTimes(1);
     const structured = generateText.mock.calls[0]![0] as FakeOptions;
     expect(structured.output).toBeDefined();
     expect(structured.maxRetries).toBe(0);
+    expect(structured.maxOutputTokens).toBe(512);
     expect(mocks.paid.mock.calls.map((call) => (call[0] as { action: string }).action)).toEqual(["seo_execute", "seo_classify"]);
     expect(outcome.followUps).toEqual({
       seo: "Which keywords hold rank?", geo: "Does ChatGPT cite docs?", content: "Outline a comparison post.",

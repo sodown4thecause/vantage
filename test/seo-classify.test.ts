@@ -164,6 +164,12 @@ describe("classifyQuestion", () => {
     expect(fn.mock.calls[0]?.[0]).toMatchObject({ maxRetries: 0 });
   });
 
+  it("bounds the classifier's output to 256 tokens", async () => {
+    const { fn, deps } = fakeGenerate(async () => ({ output: validOutput, usage }));
+    await classifyQuestion("ws-1", "q", "p", { deps });
+    expect(fn.mock.calls[0]?.[0]).toMatchObject({ maxOutputTokens: 256 });
+  });
+
   it("rethrows the failure when the caller aborted, instead of answering intent all", async () => {
     const controller = new AbortController();
     const { deps } = fakeGenerate(async () => {
