@@ -10,6 +10,7 @@ import type { DataForSeoEnv } from "@/lib/dataforseo/config";
  * Deliberately global, not workspace-scoped: entries hold trimmed third-party public SEO data and are keyed only on
  * version, env, endpoint and normalized params (never a workspace or user id), so a shared hit reveals nothing private
  * and saves paid calls. Spend is still attributed per workspace in cost_event.
+ * Callers must pass only public provider params (never workspace or user data).
  */
 
 // Bump when a trim shape changes so stale entries are never read as the new shape.

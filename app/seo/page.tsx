@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: "SEO", robots: { index: false } };
 
 export const dynamic = "force-dynamic";
 
-const PAUSED = "SEO lookups are paused for today. Try again tomorrow.";
+const PAUSED = "SEO lookups are paused. Try again later.";
 const ERRORS: Record<string, string> = {
   forbidden: "Unable to load this page.",
   not_configured: "SEO data is not set up yet.",
@@ -74,7 +74,9 @@ export default async function SeoPage({
     creditsLeft(workspaceId),
   ]);
 
-  const summary = report?.summary && report.summary.target !== "" ? report.summary : null;
+  // A cached summary with an empty target is DataForSEO's "no data" answer: shown as such, not as a report.
+  const cachedSummary = report?.summary ?? null;
+  const summary = cachedSummary && cachedSummary.target !== "" ? cachedSummary : null;
   const gap =
     report?.referringDomains && rival?.referringDomains
       ? referringDomainGap(report.referringDomains, rival.referringDomains, target ?? "")
@@ -122,8 +124,12 @@ export default async function SeoPage({
         </div>
       </form>
 
-      {target && !summary && (
+      {target && !cachedSummary && (
         <p className="text-ridge" data-testid="seo-empty">No data yet for this domain. Run a lookup.</p>
+      )}
+
+      {target && cachedSummary && !summary && (
+        <p className="text-ridge" data-testid="seo-no-data">DataForSEO has no backlink data for this domain yet.</p>
       )}
 
       {target && summary && (

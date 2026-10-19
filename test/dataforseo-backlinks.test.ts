@@ -50,6 +50,7 @@ describe("normalizeTarget", () => {
     "[::1]",
     "a b.com",
     "printer.local",
+    "foo.localhost",
     "api.internal",
     "example",
     "-bad.com",

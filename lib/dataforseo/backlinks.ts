@@ -50,7 +50,7 @@ export function normalizeTarget(input: string): string | null {
 
   if (!host || host.length > 253 || !host.includes(".")) return null;
   if (host.includes(":") || host.startsWith("[") || IPV4.test(host)) return null;
-  if (host === "localhost" || host.endsWith(".local") || host.endsWith(".internal")) return null;
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) return null;
   if (!host.split(".").every(label => LABEL.test(label))) return null;
   return host;
 }

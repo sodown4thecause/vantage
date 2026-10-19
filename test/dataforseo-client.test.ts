@@ -113,9 +113,14 @@ describe("dataForSeoPost", () => {
     expect(JSON.parse(String(init.body))).toEqual([{ target: "example.com" }]);
   });
 
-  it("returns the task cost on success and 0 when the success cost is missing", async () => {
+  it("returns the task cost on success and undefined when no success cost is readable", async () => {
     const fetchImpl = stubFetch({ status_code: 20000, tasks: [{ status_code: 20000, result: [] }] });
-    await expect(dataForSeoPost(config, "/v3/x", {}, { fetchImpl })).resolves.toEqual({ result: [], costUsd: 0 });
+    await expect(dataForSeoPost(config, "/v3/x", {}, { fetchImpl })).resolves.toEqual({ result: [], costUsd: undefined });
+  });
+
+  it("falls back to the top-level cost when the success task has none", async () => {
+    const fetchImpl = stubFetch({ status_code: 20000, cost: 0.03, tasks: [{ status_code: 20000, result: [{ rank: 1 }] }] });
+    await expect(dataForSeoPost(config, "/v3/x", {}, { fetchImpl })).resolves.toEqual({ result: [{ rank: 1 }], costUsd: 0.03 });
   });
 
   it("rejects HTTP errors with the status code, no cost and no body echo", async () => {
