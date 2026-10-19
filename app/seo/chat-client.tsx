@@ -1,44 +1,30 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, type UIMessage } from "ai";
+import { DefaultChatTransport } from "ai";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
-import { ResultCardView, type CardView } from "./cards";
+import { ResultCardView } from "./cards";
+import {
+  buildRequestBody,
+  fromHistory,
+  textOf,
+  viewOf,
+  type Category,
+  type ChatMessage,
+  type HistoryMessage,
+  type PlannedCall,
+  type View,
+} from "./chat-wire";
 
 /*
- * The SEO chat. Client-safe: it imports no server modules. Its message shapes are declared here, and the server page
- * passes stored messages in as plain data.
+ * The SEO chat. Client-safe: it imports no server modules. Message shapes and the wire contract live in chat-wire.ts;
+ * the server page passes stored messages in as plain data.
  */
 
-type Category = "seo" | "geo" | "content";
 export type Chip = { category: Category; text: string; costLabel: string };
-type FollowUps = { seo: string; geo: string; content: string };
-type PlannedCall = { tool: string; input: Record<string, unknown>; credits: number };
-type MessageStatus = "complete" | "incomplete" | "needs_approval" | "approved";
-type StoredParts = { cards?: CardView[]; followUps?: FollowUps; plan?: PlannedCall[]; notices?: string[] };
-
-/** A stored message, as the server page reads it from the database. */
-export type HistoryMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  parts: StoredParts;
-  status: MessageStatus;
-  creditsUsed: number;
-  createdAt: string;
-};
-
-/** Streamed answers carry their parts here; stored messages carry them under `parts` (see `viewOf`). */
-type ChatMetadata = StoredParts & {
-  conversationId?: string;
-  messageId?: string;
-  status?: MessageStatus;
-  creditsUsed?: number;
-  parts?: StoredParts;
-};
-type ChatMessage = UIMessage<ChatMetadata>;
+export type { HistoryMessage };
 
 const CATEGORY_LABEL: Record<Category, string> = { seo: "SEO", geo: "GEO", content: "Content" };
 const TOOL_LABEL: Record<string, string> = {
@@ -56,47 +42,6 @@ const TOOL_LABEL: Record<string, string> = {
   ai_keyword_volume: "AI search volume",
 };
 const RUN_TEXT = "Run the planned lookups";
-
-function textOf(message: ChatMessage): string {
-  return message.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
-}
-
-/** A stored message as a chat message: its text and its stored parts, read back the same way a streamed one is. */
-function fromHistory(row: HistoryMessage): ChatMessage {
-  return {
-    id: row.id,
-    role: row.role,
-    parts: row.content ? [{ type: "text", text: row.content }] : [],
-    metadata: { messageId: row.id, status: row.status, creditsUsed: row.creditsUsed, parts: row.parts },
-  };
-}
-
-type View = {
-  messageId?: string;
-  status: MessageStatus;
-  creditsUsed: number;
-  text: string;
-  cards: CardView[];
-  followUps?: FollowUps;
-  plan: PlannedCall[];
-  notices: string[];
-};
-
-function viewOf(message: ChatMessage): View {
-  const meta: ChatMetadata = message.metadata ?? {};
-  // A stored message keeps its parts under `parts`; a streamed answer has them on its metadata.
-  const parts: StoredParts = meta.parts ?? meta;
-  return {
-    messageId: meta.messageId,
-    status: meta.status ?? "complete",
-    creditsUsed: meta.creditsUsed ?? 0,
-    text: textOf(message),
-    cards: parts.cards ?? [],
-    followUps: parts.followUps,
-    plan: parts.plan ?? [],
-    notices: parts.notices ?? [],
-  };
-}
 
 function inputSummary(input: Record<string, unknown>): string {
   return Object.values(input)
@@ -289,15 +234,14 @@ export function ChatClient({
       new DefaultChatTransport<ChatMessage>({
         api: "/seo/chat",
         // The conversation id arrives per request in `body`, read by the event handlers, so this closure reads no refs.
-        prepareSendMessagesRequest: ({ messages, body }) => {
-          const scope = {
+        prepareSendMessagesRequest: ({ messages, body }) => ({
+          body: buildRequestBody({
             workspaceId,
             conversationId: typeof body?.conversationId === "string" ? body.conversationId : undefined,
-          };
-          if (typeof body?.approvePlan === "string") return { body: { ...scope, approvePlan: body.approvePlan } };
-          const last = [...messages].reverse().find((message) => message.role === "user");
-          return { body: { ...scope, message: last ? textOf(last) : "" } };
-        },
+            messages,
+            body,
+          }),
+        }),
       }),
   );
 
