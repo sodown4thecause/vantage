@@ -66,13 +66,32 @@ export function failureCode(ctx: ToolContext, err: unknown): string {
   return "failed";
 }
 
+/** Rows the model sees from a list result; the rest is reported as `total`. */
+export const MODEL_ROW_LIMIT = 25;
+/** Rows a card keeps for the owner's view. */
+export const CARD_ROW_LIMIT = 100;
+
+/**
+ * What the model sees. A list becomes its first rows plus the full count, so a 1000-row result cannot flood the
+ * context. Objects (summaries, SERP and LLM answers) pass through unchanged.
+ */
+export function forModel(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  return { rows: value.slice(0, MODEL_ROW_LIMIT), total: value.length };
+}
+
+/** What a card keeps: a list is cut to CARD_ROW_LIMIT rows, anything else is stored unchanged. */
+export function forCard(value: unknown): unknown {
+  return Array.isArray(value) ? value.slice(0, CARD_ROW_LIMIT) : value;
+}
+
 export function addCard(ctx: ToolContext, card: { tool: string; title: string; cached: boolean; data: unknown }): void {
   ctx.cards.push({
     tool: card.tool,
     title: card.title,
     fetchedAt: card.cached ? null : new Date().toISOString(),
     cached: card.cached,
-    data: card.data,
+    data: forCard(card.data),
   });
 }
 
@@ -97,7 +116,7 @@ export async function runGated<T>(ctx: ToolContext, call: GatedCall<T>): Promise
     const hit = await call.peek();
     if (hit !== null) {
       addCard(ctx, { tool: call.tool, title: call.title, cached: true, data: hit });
-      return hit;
+      return forModel(hit);
     }
   } catch {
     return { error: "failed" };
@@ -112,7 +131,7 @@ export async function runGated<T>(ctx: ToolContext, call: GatedCall<T>): Promise
     const { value, cached } = await call.fetch();
     if (cached) ctx.budget.refund(call.credits);
     addCard(ctx, { tool: call.tool, title: call.title, cached, data: value });
-    return value;
+    return forModel(value);
   } catch (err) {
     ctx.budget.refund(call.credits);
     return { error: failureCode(ctx, err) };

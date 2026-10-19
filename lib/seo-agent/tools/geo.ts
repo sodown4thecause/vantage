@@ -40,10 +40,10 @@ const ENGINE_LABELS: Record<LlmEngine, string> = {
  * Asks each requested engine the prompt. Cached answers are served free; the rest share one reservation of two credits
  * each, and a failed engine gives its two credits back. Engines with no model are skipped with a notice.
  */
-async function askEngines(ctx: ToolContext, rawPrompt: string, requested?: LlmEngine[]): Promise<unknown> {
+async function askEngines(ctx: ToolContext, rawPrompt: string, requested: LlmEngine[]): Promise<unknown> {
   const prompt = rawPrompt.trim();
   if (!prompt || prompt.length > PROMPT_MAX_CHARS) return { error: "invalid_prompt" };
-  const wanted = new Set<string>(requested ?? LLM_ENGINES);
+  const wanted = new Set<string>(requested);
   const engines = LLM_ENGINES.filter((engine) => wanted.has(engine));
   if (engines.length === 0) return { error: "invalid_engines" };
   const input = { prompt, engines };
@@ -117,7 +117,7 @@ export function geoTools(ctx: ToolContext) {
       ].join(" "),
       inputSchema: z.object({
         prompt: z.string().trim().min(1).max(PROMPT_MAX_CHARS),
-        engines: z.array(z.enum(LLM_ENGINES)).min(1).max(LLM_ENGINES.length).optional(),
+        engines: z.array(z.enum(LLM_ENGINES)).min(1).max(LLM_ENGINES.length),
       }).strict(),
       strict: true,
       execute: async ({ prompt, engines }) => askEngines(ctx, prompt, engines),

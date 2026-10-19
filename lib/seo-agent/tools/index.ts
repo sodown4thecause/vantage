@@ -19,21 +19,8 @@ const TOOLS_BY_INTENT: Record<DataIntent, string[]> = {
   content: ["keyword_ideas", "keyword_overview", "google_serp", "ranked_keywords"],
 };
 
-/** Used when classification failed: every data tool, each once. */
-const ALL_DATA_TOOLS = [
-  "backlink_summary",
-  "referring_domains",
-  "backlink_gap",
-  "anchors",
-  "keyword_ideas",
-  "keyword_overview",
-  "ranked_keywords",
-  "competitor_domains",
-  "keyword_gap",
-  "google_serp",
-  "llm_response",
-  "ai_keyword_volume",
-];
+/** Used when classification failed: every data tool named by any intent, each once, in first-seen order. */
+const ALL_DATA_TOOLS = [...new Set(Object.values(TOOLS_BY_INTENT).flat())];
 
 /**
  * The tools one question may use. Concept and out-of-scope answers use none; their follow-ups come from a separate

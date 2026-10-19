@@ -345,6 +345,41 @@ describe("tool gating", () => {
     expect(ctx.budget.spent).toBe(1);
   });
 
+  it("shows the model the first 25 rows of a 1000-row result and the full total", async () => {
+    const rows = Array.from({ length: 1000 }, (_, i) => ({ domain: `site${i}.com`, rank: i, backlinks: 1, spamScore: 0, firstSeen: null }));
+    mocks.fetchReferringDomains.mockResolvedValue({ value: rows, cached: false });
+    const ctx = makeCtx(new QuestionBudget(3));
+    const result = await run(toolsFor("backlinks", ctx), "referring_domains", { domain: "example.com" }) as { rows: unknown[]; total: number };
+    expect(result.rows).toHaveLength(25);
+    expect(result.rows[0]).toEqual(rows[0]);
+    expect(result.total).toBe(1000);
+    expect(ctx.cards[0]?.data).toHaveLength(100);
+  });
+
+  it("applies the same model cap to a cache hit", async () => {
+    const rows = Array.from({ length: 1000 }, (_, i) => ({ domain: `site${i}.com`, rank: i, backlinks: 1, spamScore: 0, firstSeen: null }));
+    mocks.peekDataForSeo.mockImplementation(async (endpoint: string) => (endpoint === "/v3/backlinks/referring_domains/live" ? rows : null));
+    const ctx = makeCtx(new QuestionBudget(3));
+    const result = await run(toolsFor("backlinks", ctx), "referring_domains", { domain: "example.com" }) as { rows: unknown[]; total: number };
+    expect(result).toEqual({ rows: rows.slice(0, 25), total: 1000 });
+    expect(ctx.cards[0]?.data).toHaveLength(100);
+    expect(ctx.budget.spent).toBe(0);
+  });
+
+  it("passes a non-array result through unchanged", async () => {
+    const ctx = makeCtx(new QuestionBudget(3));
+    const result = await run(toolsFor("backlinks", ctx), "backlink_summary", { domain: "example.com" });
+    expect(result).toEqual(summary);
+    expect(ctx.cards[0]?.data).toEqual(summary);
+  });
+
+  it("requires engines on llm_response", () => {
+    const schema = toolsFor("geo_visibility", makeCtx()).llm_response!.inputSchema as z.ZodType;
+    expect(schema.safeParse({ prompt: "best crm" }).success).toBe(false);
+    expect(schema.safeParse({ prompt: "best crm", engines: [] }).success).toBe(false);
+    expect(schema.safeParse({ prompt: "best crm", engines: ["claude"] }).success).toBe(true);
+  });
+
   it("gives Google SERP a trimmed keyword and a card", async () => {
     mocks.fetchGoogleSerp.mockResolvedValue({ value: { organic: [], hasAiOverview: false, peopleAlsoAsk: [] }, cached: false });
     const ctx = makeCtx(new QuestionBudget(3));
@@ -361,10 +396,13 @@ describe("tool gating", () => {
     }));
     const ctx = makeCtx(new QuestionBudget(3));
     const result = await run(toolsFor("backlinks", ctx), "backlink_gap", { domain: "example.com", competitor: "rival.io" });
-    expect(result).toEqual([
-      { domain: "b.com", rank: 50, backlinks: 3, spamScore: 0, firstSeen: null },
-      { domain: "c.com", rank: 20, backlinks: 1, spamScore: 0, firstSeen: null },
-    ]);
+    expect(result).toEqual({
+      rows: [
+        { domain: "b.com", rank: 50, backlinks: 3, spamScore: 0, firstSeen: null },
+        { domain: "c.com", rank: 20, backlinks: 1, spamScore: 0, firstSeen: null },
+      ],
+      total: 2,
+    });
     expect(ctx.budget.spent).toBe(2);
     expect(ctx.cards[0]).toMatchObject({ tool: "backlink_gap", cached: false });
   });
@@ -403,7 +441,7 @@ describe("tool gating", () => {
   it("serves an all-cached llm_response with no reservation even when GEO always asks", async () => {
     mocks.peekLlmResponse.mockImplementation(async (engine: string) => ({ ...answer, engine }));
     const ctx = makeCtx(new QuestionBudget(3));
-    const result = await run(toolsFor("geo_visibility", ctx), "llm_response", { prompt: "best crm" });
+    const result = await run(toolsFor("geo_visibility", ctx), "llm_response", { prompt: "best crm", engines: ALL_ENGINES });
     expect(result).toEqual({ answers: ALL_ENGINES.map((engine) => ({ ...answer, engine })) });
     expect(ctx.cards).toHaveLength(4);
     expect(ctx.cards.every((card) => card.cached)).toBe(true);
@@ -413,7 +451,7 @@ describe("tool gating", () => {
 
   it("asks for approval on llm_response at two credits per engine when GEO always asks", async () => {
     const ctx = makeCtx(new QuestionBudget(20));
-    const result = await run(toolsFor("geo_visibility", ctx), "llm_response", { prompt: "best seo tools" });
+    const result = await run(toolsFor("geo_visibility", ctx), "llm_response", { prompt: "best seo tools", engines: ALL_ENGINES });
     expect(result).toEqual({ status: "needs_approval", credits: 8 });
     expect(mocks.fetchLlmResponse).not.toHaveBeenCalled();
     expect(ctx.budget.planned).toEqual([
@@ -424,7 +462,7 @@ describe("tool gating", () => {
   it("asks when the llm_response cost is over budget even if GEO no longer always asks", async () => {
     process.env.SEO_AGENT_GEO_ALWAYS_ASK = "false";
     const ctx = makeCtx(new QuestionBudget(3));
-    expect(await run(toolsFor("geo_visibility", ctx), "llm_response", { prompt: "best seo tools" })).toEqual({ status: "needs_approval", credits: 8 });
+    expect(await run(toolsFor("geo_visibility", ctx), "llm_response", { prompt: "best seo tools", engines: ALL_ENGINES })).toEqual({ status: "needs_approval", credits: 8 });
     expect(mocks.fetchLlmResponse).not.toHaveBeenCalled();
   });
 
@@ -440,7 +478,7 @@ describe("tool gating", () => {
     mocks.resolveLlmModel.mockImplementation(async (engine: string) => (engine === "gemini" ? null : "model-x"));
     process.env.SEO_AGENT_GEO_ALWAYS_ASK = "false";
     const ctx = makeCtx(new QuestionBudget(10));
-    const result = await run(toolsFor("geo_visibility", ctx), "llm_response", { prompt: "best seo tools" }) as { answers: unknown[] };
+    const result = await run(toolsFor("geo_visibility", ctx), "llm_response", { prompt: "best seo tools", engines: ALL_ENGINES }) as { answers: unknown[] };
     expect(result.answers).toHaveLength(3);
     expect(mocks.fetchLlmResponse).toHaveBeenCalledTimes(3);
     expect(ctx.budget.spent).toBe(6);
