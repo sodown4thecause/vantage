@@ -21,7 +21,7 @@ const ERRORS: Record<string, string> = {
   daily_cap: PAUSED,
   paused: PAUSED,
   invalid_target: "Enter a domain like example.com.",
-  failed: "That lookup failed. You were not charged a credit.",
+  failed: "That lookup failed. The failed request did not use a credit.",
 };
 
 function messageFor(code: string | undefined): string | undefined {
@@ -117,6 +117,7 @@ export default async function SeoPage({
         </label>
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3 sm:col-span-2">
           <button className="btn">Run lookup</button>
+          <p className="text-sm text-ridge">A lookup uses up to 3 credits (4 with a competitor). Domains looked up in the last 7 days are free.</p>
           {credits !== null && <p className="text-sm text-ridge">SEO credits left this month: {credits}</p>}
         </div>
       </form>
