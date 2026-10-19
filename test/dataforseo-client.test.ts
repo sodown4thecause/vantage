@@ -75,12 +75,43 @@ describe("dataForSeoPost", () => {
     expect(JSON.parse(String(init.body))).toEqual([{ target: "example.com" }]);
   });
 
-  it("rejects HTTP errors with the status code, zero cost and no body echo", async () => {
+  it("returns the task cost on success and 0 when the success cost is missing", async () => {
+    const fetchImpl = stubFetch({ status_code: 20000, tasks: [{ status_code: 20000, result: [] }] });
+    await expect(dataForSeoPost(config, "/v3/x", {}, { fetchImpl })).resolves.toEqual({ result: [], costUsd: 0 });
+  });
+
+  it("rejects HTTP errors with the status code, no cost and no body echo", async () => {
     const fetchImpl = stubFetch("upstream exploded with secret-body", 500);
     const error = await dataForSeoPost(config, "/v3/serp/x", {}, { fetchImpl }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(DataForSeoApiError);
-    expect(error).toMatchObject({ statusCode: 500, costUsd: 0 });
+    expect(error).toMatchObject({ statusCode: 500 });
+    expect((error as DataForSeoApiError).costUsd).toBeUndefined();
     expect((error as Error).message).not.toContain("secret-body");
+  });
+
+  it("reports the top-level cost on a failed envelope and leaves it undefined when absent", async () => {
+    const withCost = stubFetch({ status_code: 40100, status_message: "bad", cost: 0.01, tasks: [] });
+    const withCostError = await dataForSeoPost(config, "/v3/x", {}, { fetchImpl: withCost }).catch((e: unknown) => e);
+    expect(withCostError).toMatchObject({ statusCode: 40100, costUsd: 0.01 });
+
+    const noCost = stubFetch({ status_code: 40100, status_message: "bad", tasks: [] });
+    const noCostError = await dataForSeoPost(config, "/v3/x", {}, { fetchImpl: noCost }).catch((e: unknown) => e);
+    expect(noCostError).toMatchObject({ statusCode: 40100 });
+    expect((noCostError as DataForSeoApiError).costUsd).toBeUndefined();
+  });
+
+  it("leaves the cost undefined for a task error with no cost anywhere", async () => {
+    const fetchImpl = stubFetch({ status_code: 20000, tasks: [{ status_code: 40501, status_message: "Invalid Field." }] });
+    const error = await dataForSeoPost(config, "/v3/x", {}, { fetchImpl }).catch((e: unknown) => e);
+    expect(error).toMatchObject({ statusCode: 40501 });
+    expect((error as DataForSeoApiError).costUsd).toBeUndefined();
+  });
+
+  it("treats a missing status_code as an invalid response", async () => {
+    const fetchImpl = stubFetch({ tasks: [] });
+    const error = await dataForSeoPost(config, "/v3/x", {}, { fetchImpl }).catch((e: unknown) => e);
+    expect(error).toMatchObject({ statusCode: 0 });
+    expect((error as DataForSeoApiError).costUsd).toBeUndefined();
   });
 
   it("rejects a top-level failure status even on HTTP 200", async () => {
@@ -95,9 +126,11 @@ describe("dataForSeoPost", () => {
     expect(error).toMatchObject({ statusCode: 40501, costUsd: 0.02 });
   });
 
-  it("rejects a non-JSON body as an invalid response", async () => {
+  it("rejects a non-JSON body as an invalid response with no cost", async () => {
     const fetchImpl = stubFetch("<html>gateway</html>", 200);
-    await expect(dataForSeoPost(config, "/v3/serp/x", {}, { fetchImpl })).rejects.toMatchObject({ statusCode: 0 });
+    const error = await dataForSeoPost(config, "/v3/serp/x", {}, { fetchImpl }).catch((e: unknown) => e);
+    expect(error).toMatchObject({ statusCode: 0 });
+    expect((error as DataForSeoApiError).costUsd).toBeUndefined();
   });
 
   it("refuses paths outside /v3/ before fetching", async () => {

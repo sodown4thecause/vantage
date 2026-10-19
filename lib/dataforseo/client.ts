@@ -3,10 +3,14 @@ import { fetchPublicText } from "@/lib/http/public-fetch";
 
 const SUCCESS = 20000;
 const BALANCE_PATH = "/v3/appendix/user_data";
+const INVALID = "DataForSEO returned an invalid response";
 
-/** Upstream or envelope failure. statusCode 0 means the body was not a DataForSEO envelope. */
+/**
+ * Upstream or envelope failure. statusCode 0 means the body was not a DataForSEO envelope.
+ * costUsd is undefined when no cost could be read; the spend gate then charges its estimate.
+ */
 export class DataForSeoApiError extends Error {
-  constructor(readonly statusCode: number, message: string, readonly costUsd: number) {
+  constructor(readonly statusCode: number, message: string, readonly costUsd: number | undefined) {
     super(message);
     this.name = "DataForSeoApiError";
   }
@@ -19,8 +23,8 @@ type Envelope = Record<string, unknown>;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
-const usd = (value: unknown): number => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
-const code = (value: unknown): number => typeof value === "number" && Number.isFinite(value) ? value : 0;
+const reportedCost = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 
 // Returns the first task of a 20000 envelope; throws on any failure with the cost DataForSEO reported.
 async function sendTask(config: DataForSeoConfig, method: "GET" | "POST", path: string, task: Record<string, unknown> | undefined, opts: Options): Promise<Envelope> {
@@ -31,23 +35,29 @@ async function sendTask(config: DataForSeoConfig, method: "GET" | "POST", path: 
   if (task) headers["Content-Type"] = "application/json";
   const init: RequestInit = { method, headers, body: task ? JSON.stringify([task]) : undefined, cache: "no-store", signal: opts.signal };
   const { response, text } = await fetchPublicText(`${config.baseUrl}${path}`, init, 2_000_000, opts.fetchImpl ?? fetch, 60_000);
-  if (!response.ok) throw new DataForSeoApiError(response.status, `DataForSEO request failed (${response.status})`, 0);
+  if (!response.ok) throw new DataForSeoApiError(response.status, `DataForSEO request failed (${response.status})`, undefined);
 
   let payload: unknown;
-  try { payload = JSON.parse(text); } catch { throw new DataForSeoApiError(0, "DataForSEO returned an invalid response", 0); }
-  if (!isRecord(payload)) throw new DataForSeoApiError(0, "DataForSEO returned an invalid response", 0);
-  if (payload.status_code !== SUCCESS) throw new DataForSeoApiError(code(payload.status_code), `DataForSEO request failed (${code(payload.status_code)})`, usd(payload.cost));
+  try { payload = JSON.parse(text); } catch { throw new DataForSeoApiError(0, INVALID, undefined); }
+  if (!isRecord(payload)) throw new DataForSeoApiError(0, INVALID, undefined);
 
   const envelopeTask = Array.isArray(payload.tasks) && isRecord(payload.tasks[0]) ? payload.tasks[0] : undefined;
-  if (!envelopeTask) throw new DataForSeoApiError(0, "DataForSEO returned an invalid response", 0);
-  if (envelopeTask.status_code !== SUCCESS) throw new DataForSeoApiError(code(envelopeTask.status_code), `DataForSEO task failed (${code(envelopeTask.status_code)})`, usd(envelopeTask.cost));
+  const cost = reportedCost(envelopeTask?.cost) ?? reportedCost(payload.cost);
+  const status = payload.status_code;
+  if (typeof status !== "number") throw new DataForSeoApiError(0, INVALID, cost);
+  if (status !== SUCCESS) throw new DataForSeoApiError(status, `DataForSEO request failed (${status})`, cost);
+
+  if (!envelopeTask) throw new DataForSeoApiError(0, INVALID, cost);
+  const taskStatus = envelopeTask.status_code;
+  if (typeof taskStatus !== "number") throw new DataForSeoApiError(0, INVALID, cost);
+  if (taskStatus !== SUCCESS) throw new DataForSeoApiError(taskStatus, `DataForSEO task failed (${taskStatus})`, cost);
   return envelopeTask;
 }
 
 /** POSTs `[task]` to a /v3/ endpoint. Callers own spend control; this client does no budget logic. */
 export async function dataForSeoPost<T>(config: DataForSeoConfig, path: string, task: Record<string, unknown>, opts: Options = {}): Promise<DataForSeoResult<T>> {
   const envelopeTask = await sendTask(config, "POST", path, task, opts);
-  return { result: Array.isArray(envelopeTask.result) ? envelopeTask.result as T[] : [], costUsd: usd(envelopeTask.cost) };
+  return { result: Array.isArray(envelopeTask.result) ? envelopeTask.result as T[] : [], costUsd: reportedCost(envelopeTask.cost) ?? 0 };
 }
 
 /** Account balance in USD from GET /v3/appendix/user_data. */
