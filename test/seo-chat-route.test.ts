@@ -31,10 +31,15 @@ const mocks = vi.hoisted(() => {
     runAgent: vi.fn(),
     getLatestMonitoringProfile: vi.fn(),
     unclaimPlan: vi.fn(),
+    after: vi.fn(),
   };
 });
 
 vi.mock("@/lib/db/client", () => ({ getDb: () => ({}) }));
+vi.mock("next/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/server")>()),
+  after: mocks.after,
+}));
 vi.mock("@/lib/auth/workspace", () => ({ authorizeWorkspace: mocks.authorize }));
 vi.mock("@/lib/plans/limits", () => ({ consume: mocks.consume, release: mocks.release }));
 vi.mock("@/lib/profile/repository", () => ({ getLatestMonitoringProfile: mocks.getLatestMonitoringProfile }));
@@ -133,6 +138,7 @@ beforeEach(() => {
   mocks.classifyQuestion.mockReset().mockResolvedValue(CLASSIFICATION);
   mocks.runAgent.mockReset().mockResolvedValue(fakeRun());
   mocks.getLatestMonitoringProfile.mockReset().mockResolvedValue(null);
+  mocks.after.mockReset();
   vi.spyOn(console, "error").mockImplementation(() => undefined);
 });
 
@@ -421,3 +427,33 @@ describe("POST /seo/chat: workspace scoping", () => {
   });
 });
 
+describe("POST /seo/chat: settlement outlives the client", () => {
+  it("registers the answer's settlement with after() as one promise", async () => {
+    mocks.appendMessage.mockClear();
+    const { res } = await postAndRead({ workspaceId: WS, message: "Which keywords?" });
+    expect(res.status).toBe(200);
+    expect(mocks.after).toHaveBeenCalledTimes(1);
+    const registered = mocks.after.mock.calls[0]![0];
+    expect(registered).toBeInstanceOf(Promise);
+    await registered;
+    expect(mocks.appendMessage).toHaveBeenLastCalledWith(WS, NEW_CONV, expect.objectContaining({ id: RUN_MESSAGE, status: "complete" }));
+  });
+
+  it("still settles the turn when the stream consumer stops reading", async () => {
+    const { res } = await (async () => ({ res: await POST(request({ workspaceId: WS, message: "Which keywords?" })) }))();
+    expect(res.status).toBe(200);
+    await res.body!.cancel();
+    await mocks.after.mock.calls[0]![0];
+    expect(mocks.appendMessage).toHaveBeenLastCalledWith(WS, NEW_CONV, expect.objectContaining({ id: RUN_MESSAGE, status: "complete" }));
+    expect(mocks.release).not.toHaveBeenCalled();
+  });
+
+  it("registers approved-plan settlement with after() too", async () => {
+    mocks.getConversation.mockResolvedValue(conversation());
+    mocks.claimPlan.mockResolvedValue(PLAN);
+    const { res } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
+    expect(res.status).toBe(200);
+    expect(mocks.after).toHaveBeenCalledTimes(1);
+    await mocks.after.mock.calls[0]![0];
+  });
+});

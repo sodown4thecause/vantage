@@ -1,4 +1,5 @@
 import { createUIMessageStream, createUIMessageStreamResponse, type ModelMessage } from "ai";
+import { after } from "next/server";
 import { z } from "zod";
 
 import { authorizeWorkspace } from "@/lib/auth/workspace";
@@ -196,15 +197,40 @@ function answerResponse(args: {
   /** Set for an approved plan: the message whose plan this run belongs to. Its run is not a charged question. */
   approvedMessageId?: string;
 }): Response {
+  // The turn's work is registered with the platform, so a client that disconnects does not cancel its settlement
+  // (the ledger, in-flight lookup costs, the saved answer and the released charge). The stream streams unchanged.
+  let adopt!: (work: Promise<void>) => void;
+  const registered = new Promise<void>((resolve) => { adopt = resolve; });
   const stream = createUIMessageStream({
     onError: () => FAILURE_COPY,
-    execute: async ({ writer }) => {
-      writer.write({ type: "message-metadata", messageMetadata: { conversationId: args.conversationId } });
-      const outcome = await args.run.write(writer);
-      await settleTurn({ ...args, messageId: args.run.messageId }, outcome);
+    execute: ({ writer }) => {
+      const work = runTurn(args, writer);
+      adopt(work);
+      return work;
     },
   });
+  keepAlive(registered);
   return createUIMessageStreamResponse({ stream });
+}
+
+async function runTurn(
+  args: { workspaceId: string; conversationId: string; run: AgentRun; approvedMessageId?: string },
+  writer: Parameters<AgentRun["write"]>[0],
+): Promise<void> {
+  writer.write({ type: "message-metadata", messageMetadata: { conversationId: args.conversationId } });
+  const outcome = await args.run.write(writer);
+  await settleTurn({ ...args, messageId: args.run.messageId }, outcome);
+}
+
+/** Hands work to the platform's after(). Outside a request scope (tests, dev) the work still runs in the stream. */
+function keepAlive(work: Promise<void>): void {
+  try {
+    after(work.catch((err: unknown) => {
+      console.error("[seo-agent] turn failed", { error: err instanceof Error ? err.name : "unknown" });
+    }));
+  } catch {
+    // Not in a request scope: the stream's own execute keeps the work going.
+  }
 }
 
 async function settleTurn(
