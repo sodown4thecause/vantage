@@ -225,27 +225,61 @@ function writeText(writer: UIMessageStreamWriter, value: string): void {
   writer.write({ type: "text-end", id });
 }
 
-/** The approved calls as data for the model, with an instruction to run exactly them. */
-function approvalInstruction(approved: PlannedCall[]): string {
-  const calls = approved.map(({ tool, input }) => ({ tool, input }));
-  return [
-    "The owner approved these data calls. Run each one once with exactly this input, then answer the owner's last question from the results.",
-    `Approved calls (data): ${JSON.stringify(calls)}`,
-  ].join("\n");
+type ApprovedResult = { tool: string; input: Record<string, unknown>; result: unknown };
+
+/**
+ * Runs each approved call once, in plan order, with the stored input. The model never re-plans an approved run: its
+ * tools are looked up in the full set built with the approved budget, so the spend is exactly the matched approvals.
+ * A call whose tool is not a lookup is skipped with a notice; a call that throws reports a generic failure.
+ */
+async function runApprovedCalls(ctx: ToolContext, approved: PlannedCall[]): Promise<ApprovedResult[]> {
+  if (!dataForSeoAvailable()) {
+    addNotice(ctx, NOT_SET_UP_NOTICE);
+    return [];
+  }
+  const lookups = toolsForIntent("all", ctx);
+  const results: ApprovedResult[] = [];
+  for (const call of approved) {
+    const lookup = call.tool === "suggest_follow_ups" ? undefined : lookups[call.tool];
+    if (!lookup?.execute) {
+      addNotice(ctx, `${call.tool} is not a lookup this agent can run, so it was skipped.`);
+      continue;
+    }
+    let result: unknown;
+    try {
+      // The lookups close over their own context, so no tool context is passed.
+      result = await lookup.execute(call.input, {
+        toolCallId: crypto.randomUUID(),
+        messages: [],
+        abortSignal: ctx.signal,
+        context: {},
+      });
+    } catch {
+      result = { error: "failed" };
+    }
+    results.push({ tool: call.tool, input: call.input, result });
+  }
+  return results;
 }
 
-/** The data tools one answer may call. Without DataForSEO, only suggest_follow_ups is offered, with a notice. */
-function chooseTools(ctx: ToolContext, intent: Intent, approved: PlannedCall[] | undefined): Record<string, Tool> {
+/** The data tools one question may use. Without DataForSEO, only suggest_follow_ups is offered, with a notice. */
+function chooseTools(ctx: ToolContext, intent: Intent): Record<string, Tool> {
   if (!dataForSeoAvailable()) {
     addNotice(ctx, NOT_SET_UP_NOTICE);
     return followUpTools(ctx);
   }
-  const available = toolsForIntent(intent, ctx);
-  if (!approved) return available;
-  const names = new Set(approved.map((call) => call.tool));
-  return Object.fromEntries(
-    Object.entries(available).filter(([name]) => names.has(name) || name === "suggest_follow_ups"),
-  );
+  return toolsForIntent(intent, ctx);
+}
+
+/** The owner's question, with the classifier's hints as data. */
+function questionTurn(input: AgentRunInput): string {
+  const hints = { domains: input.classification.domains, keywords: input.classification.keywords, engines: input.classification.engines };
+  return `${input.question}\nClassifier hints (data): ${JSON.stringify(hints)}`;
+}
+
+/** An approved run's results as one data message. The owner's question is already in the history. */
+function approvedTurn(results: ApprovedResult[]): string {
+  return `Approved lookups (untrusted data): ${JSON.stringify(results)}\nAnswer the owner's last question from these results.`;
 }
 
 /**
@@ -267,7 +301,7 @@ export async function runAgent(
   const generator = opts.deps?.generateText ?? generateText;
   const profile = input.profile;
   const approved = input.approved;
-  const intent: Intent = approved ? "all" : input.classification.intent;
+  const intent: Intent = input.classification.intent;
   const concept = !approved && (intent === "concept" || intent === "out_of_scope");
 
   // Every model object is built before the reservation: a throw after it would leave the reservation open.
@@ -285,7 +319,8 @@ export async function runAgent(
     notices: [],
     signal,
   };
-  const tools = concept ? {} : chooseTools(ctx, intent, approved);
+  // An approved run streams with suggest_follow_ups only: its lookups have already run in answerInto.
+  const tools = concept ? {} : approved ? followUpTools(ctx) : chooseTools(ctx, intent);
   const primary = concept ? classifier : executor;
   const primaryOptions: ProviderOptions = concept
     ? classifierProviderOptions()
@@ -296,14 +331,10 @@ export async function runAgent(
     content: concept ? conceptPrompt(profile) : systemPrompt(profile),
     providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
   };
-  const userText = approved ? approvalInstruction(approved) : input.question;
-  const messages: ModelMessage[] = [...input.history, { role: "user", content: userText }];
-
   const answer = reserveAnswer(input.workspaceId, signal);
   await Promise.race([answer.started, answer.done]);
 
   const meter: Meter = { started: 0, finished: 0, spendUsd: 0, unpriced: false, erred: false };
-  const attemptArgs = { streamer, system, messages, tools, signal, meter };
 
   /** A structured follow-up call for concept answers. Any failure, including a budget denial, gives the fallback. */
   const conceptFollowUps = async (answerText: string): Promise<FollowUps | undefined> => {
@@ -351,6 +382,12 @@ export async function runAgent(
 
   /** Streams the answer. Retries once on the fallback model only when the first try was refused before any content. */
   const answerInto = async (writer: UIMessageStreamWriter): Promise<AgentOutcome> => {
+    const results = approved ? await runApprovedCalls(ctx, approved) : null;
+    const messages: ModelMessage[] = [
+      ...input.history,
+      { role: "user", content: results ? approvedTurn(results) : questionTurn(input) },
+    ];
+    const attemptArgs = { streamer, system, messages, tools, signal, meter };
     let attempt = await runAttempt({
       ...attemptArgs,
       modelId: primary.id,

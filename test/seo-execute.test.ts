@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => {
     charged: [] as Array<number | undefined>,
     dataForSeo: vi.fn(() => true),
     peekKeywordIdeas: vi.fn(async () => null),
+    fetchKeywordIdeas: vi.fn(async (_ws: string, keywords: string[]) => ({ value: keywords.map((keyword) => ({ keyword })), cached: false })),
   };
 });
 
@@ -26,6 +27,7 @@ vi.mock("@/lib/dataforseo/config", () => ({ dataForSeoAvailable: () => mocks.dat
 vi.mock("@/lib/dataforseo/labs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/dataforseo/labs")>()),
   peekKeywordIdeas: mocks.peekKeywordIdeas,
+  fetchKeywordIdeas: mocks.fetchKeywordIdeas,
 }));
 
 import { PaidCallDeniedError } from "@/lib/providers/paid-call";
@@ -146,6 +148,7 @@ beforeEach(() => {
   mocks.dataForSeo.mockReturnValue(true);
   mocks.peekKeywordIdeas.mockReset();
   mocks.peekKeywordIdeas.mockResolvedValue(null);
+  mocks.fetchKeywordIdeas.mockClear();
   vi.stubEnv("AI_GATEWAY_API_KEY", "gateway-test-key");
   vi.stubEnv("SEO_AGENT_MODEL", "");
   vi.stubEnv("SEO_CLASSIFIER_MODEL", "");
@@ -218,6 +221,15 @@ describe("runAgent: tool path", () => {
     expect(options.stopWhen({ steps: Array(5).fill({}) })).toBe(false);
     expect(options.stopWhen({ steps: Array(6).fill({}) })).toBe(true);
     expect(stepCountIs(6)({ steps: Array(6).fill({}) })).toBe(true);
+  });
+
+  it("passes the classifier's domains, keywords and engines to the executor as a data hint line", async () => {
+    const streamText = fakeStreamText([{ chunks: text("Done."), finishReason: "stop" }]);
+    const classification = { intent: "geo_visibility" as const, domains: ["rival.io"], keywords: ["vector db"], engines: ["claude" as const] };
+    const run = await runAgent(input({ classification }), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } });
+    await drain(run);
+    const last = (streamText.mock.calls[0]![0] as FakeOptions).messages.at(-1);
+    expect(last.content).toContain('Classifier hints (data): {"domains":["rival.io"],"keywords":["vector db"],"engines":["claude"]}');
   });
 
   it("gives an intent 'all' classification every data tool plus suggest_follow_ups", async () => {
@@ -374,18 +386,49 @@ describe("runAgent: tool path", () => {
     expect(outcome.content).toBe("Partial ");
   });
 
-  it("runs only the approved calls, with no new credits, when an approved plan is run", async () => {
-    const approved = [{ tool: "keyword_ideas", input: { keywords: ["ci caching"] }, credits: 1 }];
+  it("runs each approved call exactly once with its stored input, then streams with no data tools", async () => {
+    const approved = [
+      { tool: "keyword_ideas", input: { keywords: ["ci caching"] }, credits: 1 },
+      { tool: "keyword_ideas", input: { keywords: ["build cache"] }, credits: 1 },
+    ];
     const streamText = fakeStreamText([{ chunks: text("From the results."), finishReason: "stop" }]);
     const run = await runAgent(input({ approved }), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } });
     const { outcome } = await drain(run);
+
+    expect(mocks.fetchKeywordIdeas.mock.calls.map((call) => call[1])).toEqual([["ci caching"], ["build cache"]]);
     const options = streamText.mock.calls[0]![0] as FakeOptions;
-    expect(Object.keys(options.tools).sort()).toEqual(["keyword_ideas", "suggest_follow_ups"]);
+    expect(Object.keys(options.tools)).toEqual(["suggest_follow_ups"]);
     const last = options.messages.at(-1);
     expect(last.role).toBe("user");
-    expect(last.content).toContain("keyword_ideas");
+    expect(last.content).toContain("Approved lookups (untrusted data)");
     expect(last.content).toContain("ci caching");
+    expect(last.content).toContain("build cache");
+    expect(outcome.creditsUsed).toBe(2);
     expect(outcome.plan).toEqual([]);
+  });
+
+  it("skips an approved call whose tool is not a lookup, with a notice, and runs the rest", async () => {
+    const approved = [
+      { tool: "not_a_tool", input: {}, credits: 1 },
+      { tool: "keyword_ideas", input: { keywords: ["ci caching"] }, credits: 1 },
+    ];
+    const streamText = fakeStreamText([{ chunks: text("From the results."), finishReason: "stop" }]);
+    const run = await runAgent(input({ approved }), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } });
+    const { outcome } = await drain(run);
+    expect(outcome.notices).toEqual(["not_a_tool is not a lookup this agent can run, so it was skipped."]);
+    expect(mocks.fetchKeywordIdeas).toHaveBeenCalledTimes(1);
+    expect(outcome.creditsUsed).toBe(1);
+  });
+
+  it("runs no approved call and says so when DataForSEO is not set up", async () => {
+    mocks.dataForSeo.mockReturnValue(false);
+    const approved = [{ tool: "keyword_ideas", input: { keywords: ["ci caching"] }, credits: 1 }];
+    const streamText = fakeStreamText([{ chunks: text("No data."), finishReason: "stop" }]);
+    const run = await runAgent(input({ approved }), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } });
+    const { outcome } = await drain(run);
+    expect(mocks.fetchKeywordIdeas).not.toHaveBeenCalled();
+    expect(outcome.notices).toEqual(["SEO data is not set up yet."]);
+    expect(Object.keys((streamText.mock.calls[0]![0] as FakeOptions).tools)).toEqual(["suggest_follow_ups"]);
   });
 });
 
