@@ -1,0 +1,33 @@
+export type DataForSeoEnv = "sandbox" | "live";
+
+export type DataForSeoConfig = {
+  env: DataForSeoEnv;
+  baseUrl: string;
+  login: string;
+  password: string;
+  dailyBudgetUsd: number;
+  reserveFloorUsd: number;
+  alertBalanceUsd: number;
+};
+
+const usdSetting = (raw: string | undefined, fallback: number): number => {
+  const value = raw?.trim() ? Number(raw) : Number.NaN;
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+};
+
+/** Null until both credentials are set. Sandbox unless DATAFORSEO_ENV is exactly "live". */
+export function dataForSeoConfig(env: Record<string, string | undefined> = process.env): DataForSeoConfig | null {
+  const login = env.DATAFORSEO_LOGIN?.trim();
+  const password = env.DATAFORSEO_PASSWORD?.trim();
+  if (!login || !password) return null;
+  const live = env.DATAFORSEO_ENV === "live";
+  return {
+    env: live ? "live" : "sandbox",
+    baseUrl: live ? "https://api.dataforseo.com" : "https://sandbox.dataforseo.com",
+    login,
+    password,
+    dailyBudgetUsd: usdSetting(env.DATAFORSEO_DAILY_BUDGET_USD, 5),
+    reserveFloorUsd: usdSetting(env.DATAFORSEO_RESERVE_FLOOR_USD, 15),
+    alertBalanceUsd: usdSetting(env.DATAFORSEO_ALERT_BALANCE_USD, 30),
+  };
+}
