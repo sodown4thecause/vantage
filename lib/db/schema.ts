@@ -805,6 +805,7 @@ export const workspaceUsage = pgTable(
     scoredLeads: integer("scored_leads").notNull().default(0),
     deepSearches: integer("deep_searches").notNull().default(0),
     seoCredits: integer("seo_credits").notNull().default(0),
+    seoQuestions: integer("seo_questions").notNull().default(0),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

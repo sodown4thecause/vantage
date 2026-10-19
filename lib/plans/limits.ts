@@ -21,14 +21,15 @@ import {
 const METERED: Record<
   MeteredKey,
   {
-    column: "scored_leads" | "deep_searches" | "seo_credits";
-    field: "scoredLeads" | "deepSearches" | "seoCredits";
+    column: "scored_leads" | "deep_searches" | "seo_credits" | "seo_questions";
+    field: "scoredLeads" | "deepSearches" | "seoCredits" | "seoQuestions";
     window: "day" | "month";
   }
 > = {
   scored_leads_per_day: { column: "scored_leads", field: "scoredLeads", window: "day" },
   deep_searches_per_month: { column: "deep_searches", field: "deepSearches", window: "month" },
   seo_credits_per_month: { column: "seo_credits", field: "seoCredits", window: "month" },
+  seo_questions_per_month: { column: "seo_questions", field: "seoQuestions", window: "month" },
 };
 
 export function isMeteredKey(key: LimitKey): key is MeteredKey {
@@ -209,6 +210,7 @@ const LIMIT_LABELS: Record<LimitKey, string> = {
   alerts_3h: "3-hourly alerts",
   scan_interval_hours: "scan interval",
   seo_credits_per_month: "SEO credits per month",
+  seo_questions_per_month: "SEO agent questions per month",
 };
 
 const SINGULAR_LABELS: Partial<Record<LimitKey, string>> = { projects: "project", keywords: "keyword", sources: "source" };

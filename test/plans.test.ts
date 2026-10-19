@@ -61,11 +61,12 @@ import {
   consume,
   evaluateLimit,
   isScanDue,
+  limitMessage,
   mergeLimits,
   normalizePlan,
   usagePeriod,
 } from "@/lib/plans/limits";
-import { DEFAULT_LIMITS, LIMIT_KEYS, PlanLimitError } from "@/lib/plans/types";
+import { DEFAULT_LIMITS, LIMIT_KEYS, METERED_KEYS, PlanLimitError } from "@/lib/plans/types";
 
 beforeEach(() => {
   state.limitRows = [];
@@ -90,6 +91,14 @@ describe("limit evaluation", () => {
     expect(usagePeriod("scored_leads_per_day", now)).toBe("2026-10-06");
     expect(usagePeriod("deep_searches_per_month", now)).toBe("2026-10-01");
     expect(usagePeriod("seo_credits_per_month", new Date("2026-10-19T05:00:00Z"))).toBe("2026-10-01");
+    expect(usagePeriod("seo_questions_per_month", new Date("2026-10-19T05:00:00Z"))).toBe("2026-10-01");
+  });
+
+  it("meters SEO agent questions per month: free 10, pro 150", () => {
+    expect(METERED_KEYS).toContain("seo_questions_per_month");
+    expect(DEFAULT_LIMITS.free.seo_questions_per_month).toBe(10);
+    expect(DEFAULT_LIMITS.pro.seo_questions_per_month).toBe(150);
+    expect(limitMessage("free", "seo_questions_per_month", 10)).toContain("SEO agent questions per month");
   });
 
   it("decides scan cadence from the plan interval", () => {
