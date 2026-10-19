@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import type { SeoMessageParts, SeoMessageRole, SeoMessageStatus } from "@/lib/seo-agent/conversations";
 import {
   boolean,
   date,
@@ -1020,3 +1021,42 @@ export const play = pgTable(
 
 export type Play = typeof play.$inferSelect;
 export type NewPlay = typeof play.$inferInsert;
+
+/**
+ * SEO/GEO agent conversations (spec 4.9). Every row carries workspace_id; deleting a workspace
+ * cascades to its conversations and their messages.
+ */
+export const seoConversation = pgTable(
+  "seo_conversation",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    title: text("title").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("seo_conversation_workspace_updated_idx").on(table.workspaceId, table.updatedAt)],
+);
+
+export const seoMessage = pgTable(
+  "seo_message",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => seoConversation.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    role: text("role").$type<SeoMessageRole>().notNull(),
+    content: text("content").notNull().default(""),
+    /** Result cards, follow-up suggestions and the planned paid calls for this turn. */
+    parts: jsonb("parts").$type<SeoMessageParts>().notNull().default({}),
+    status: text("status").$type<SeoMessageStatus>().notNull().default("complete"),
+    creditsUsed: integer("credits_used").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("seo_message_conversation_created_idx").on(table.conversationId, table.createdAt)],
+);

@@ -197,6 +197,13 @@
       "when": 1792387674232,
       "tag": "0027_loud_molten_man",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1792388015228,
+      "tag": "0028_fluffy_naoko",
+      "breakpoints": true
     }
   ]
 }
