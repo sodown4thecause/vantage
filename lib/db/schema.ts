@@ -694,6 +694,19 @@ export const providerBudgetDay = pgTable("provider_budget_day", {
   reservationRef: text("reservation_ref"),
 });
 
+/** Per-provider paid budget per UTC day; `reservation_ref` is unused (concurrent reservations). */
+export const providerBudgetReservation = pgTable(
+  "provider_budget_reservation",
+  {
+    day: date("day").notNull(),
+    provider: text("provider").notNull(),
+    spentUsd: numeric("spent_usd", { precision: 12, scale: 6 }).notNull().default("0"),
+    capUsd: numeric("cap_usd", { precision: 12, scale: 6 }).notNull(),
+    reservationRef: text("reservation_ref"),
+  },
+  (table) => [primaryKey({ columns: [table.day, table.provider] })],
+);
+
 export const publicVisitor = pgTable(
   "public_visitor",
   {
