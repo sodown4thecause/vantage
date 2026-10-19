@@ -133,12 +133,43 @@ describe("trimLlmResponse", () => {
   });
 
   it("caps the text at 4,000 characters", () => {
-    const long = [{ items: [{ sections: [{ text: "a".repeat(5_000) }] }] }];
+    const long = [{ items: [{ type: "message", sections: [{ text: "a".repeat(5_000) }] }] }];
     expect(trimLlmResponse(long, [], "gemini").text).toHaveLength(4_000);
   });
 
+  it("reads only message items, so reasoning text and its citations never reach the answer", () => {
+    const mixed = [{
+      model_name: "claude-x",
+      items: [
+        {
+          type: "reasoning",
+          sections: [{
+            type: "text",
+            text: "Internal chain of thought that mentions pinecone.io",
+            annotations: [{ title: "Hidden source", url: "https://hidden.example/x" }],
+          }],
+        },
+        {
+          type: "message",
+          sections: [{
+            type: "text",
+            text: "Other options exist.",
+            annotations: [{ title: "Shown source", url: "https://shown.example/y" }],
+          }],
+        },
+      ],
+    }];
+    expect(trimLlmResponse(mixed, ["pinecone.io"], "claude")).toEqual({
+      engine: "claude",
+      model: "claude-x",
+      text: "Other options exist.",
+      citations: [{ title: "Shown source", url: "https://shown.example/y" }],
+      mentionsBrand: false,
+    });
+  });
+
   it("drops citations whose url is not http or https", () => {
-    const result = [{ items: [{ sections: [{ text: "t", annotations: [
+    const result = [{ items: [{ type: "message", sections: [{ text: "t", annotations: [
       { title: "bad", url: "javascript:alert(1)" },
       { title: "good", url: "https://example.com/" },
     ] }] }] }];
@@ -233,15 +264,22 @@ describe("AI keyword volume", () => {
   });
 
   it("copies keyword and AI search volume, dropping rows without a string keyword", () => {
-    expect(trimAiKeywordVolume([
+    expect(trimAiKeywordVolume([{ items: [
       { keyword: "crm", ai_search_volume: 500, extra: "ignored" },
       { keyword: 3, ai_search_volume: 9 },
       { ai_search_volume: 4 },
       { keyword: "x", ai_search_volume: "n" },
-    ])).toEqual([
+    ] }])).toEqual([
       { keyword: "crm", aiSearchVolume: 500 },
       { keyword: "x", aiSearchVolume: 0 },
     ]);
+  });
+
+  it("reads nothing from the flat row shape, which the API does not return", () => {
+    // The response nests rows under result[0].items; a flat array is not the real shape and must yield [].
+    expect(trimAiKeywordVolume([
+      { keyword: "crm", ai_search_volume: 500 },
+    ])).toEqual([]);
   });
 
   it("fetch uses the aiKeywords freshness; peek reads the cache only", async () => {

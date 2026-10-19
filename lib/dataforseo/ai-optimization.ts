@@ -53,11 +53,15 @@ function httpUrl(value: unknown): string | null {
   }
 }
 
-/** The brand-independent part of an answer: text, citations and the model name. */
+/**
+ * The brand-independent part of an answer: text, citations and the model name. Only `message` items are the answer;
+ * `reasoning` items carry the model's own reasoning text, which no user saw, so they are never read.
+ */
 export function trimLlmAnswer(result: unknown[], engine: LlmEngine): LlmAnswer {
   const texts: string[] = [];
   const citations: LlmCitation[] = [];
-  for (const section of itemsOf(result).flatMap((item) => recordsOf(item.sections))) {
+  const messages = itemsOf(result).filter((item) => item.type === "message");
+  for (const section of messages.flatMap((item) => recordsOf(item.sections))) {
     const text = str(section.text);
     if (text) texts.push(text);
     for (const annotation of recordsOf(section.annotations)) {
@@ -154,8 +158,9 @@ export function aiKeywordVolumeTask(keywords: string[]): DataForSeoCall {
   };
 }
 
+/** Rows sit under `result[0].items`, one per keyword. */
 export function trimAiKeywordVolume(result: unknown[]): { keyword: string; aiSearchVolume: number }[] {
-  return recordsOf(result).flatMap((row) => {
+  return itemsOf(result).flatMap((row) => {
     const keyword = str(row.keyword);
     if (!keyword) return [];
     return [{ keyword, aiSearchVolume: num(row.ai_search_volume) }];
