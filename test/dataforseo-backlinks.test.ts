@@ -22,7 +22,7 @@ import {
   type ReferringDomain,
 } from "@/lib/dataforseo/backlinks";
 
-const TTL = 604_800;
+const FRESHNESS = 2_592_000;
 const now = new Date("2026-10-19T12:00:00.000Z");
 
 beforeEach(() => {
@@ -258,7 +258,7 @@ describe("fetch wrappers", () => {
     mocks.runDataForSeo.mockResolvedValue(gateResult);
   });
 
-  it("fetchBacklinkSummary passes the summary call, TTL and opts to the gate", async () => {
+  it("fetchBacklinkSummary passes the summary call, freshness and opts to the gate", async () => {
     await expect(fetchBacklinkSummary("ws-1", "example.com", opts)).resolves.toBe(gateResult);
 
     const [req, passedOpts] = mocks.runDataForSeo.mock.calls[0];
@@ -266,7 +266,7 @@ describe("fetch wrappers", () => {
       workspaceId: "ws-1",
       endpoint: "/v3/backlinks/summary/live",
       task: summaryTask("example.com").task,
-      ttlSeconds: TTL,
+      freshnessSeconds: FRESHNESS,
       estimateUsd: 0.025,
     });
     expect(req.trim([{ target: "example.com", rank: 1 }])).toMatchObject({ target: "example.com", rank: 1 });
@@ -281,7 +281,7 @@ describe("fetch wrappers", () => {
       workspaceId: "ws-1",
       endpoint: "/v3/backlinks/referring_domains/live",
       task: referringDomainsTask("example.com").task,
-      ttlSeconds: TTL,
+      freshnessSeconds: FRESHNESS,
       estimateUsd: 0.0625,
     });
     expect(req.trim([{ items: [{ domain: "a.com", rank: 2 }] }])).toEqual([
@@ -298,7 +298,7 @@ describe("fetch wrappers", () => {
       workspaceId: "ws-1",
       endpoint: "/v3/backlinks/anchors/live",
       task: anchorsTask("example.com").task,
-      ttlSeconds: TTL,
+      freshnessSeconds: FRESHNESS,
       estimateUsd: 0.03,
     });
     expect(req.trim([{ items: [{ anchor: "x", backlinks: 3, referring_domains: 2 }] }])).toEqual([
@@ -325,9 +325,9 @@ describe("peekBacklinkReport", () => {
     });
 
     expect(mocks.peekDataForSeo).toHaveBeenCalledTimes(3);
-    expect(mocks.peekDataForSeo).toHaveBeenCalledWith(summaryTask("example.com").endpoint, summaryTask("example.com").task);
-    expect(mocks.peekDataForSeo).toHaveBeenCalledWith(referringDomainsTask("example.com").endpoint, referringDomainsTask("example.com").task);
-    expect(mocks.peekDataForSeo).toHaveBeenCalledWith(anchorsTask("example.com").endpoint, anchorsTask("example.com").task);
+    expect(mocks.peekDataForSeo).toHaveBeenCalledWith(summaryTask("example.com").endpoint, summaryTask("example.com").task, FRESHNESS);
+    expect(mocks.peekDataForSeo).toHaveBeenCalledWith(referringDomainsTask("example.com").endpoint, referringDomainsTask("example.com").task, FRESHNESS);
+    expect(mocks.peekDataForSeo).toHaveBeenCalledWith(anchorsTask("example.com").endpoint, anchorsTask("example.com").task, FRESHNESS);
   });
 
   it("returns nulls when nothing is cached", async () => {

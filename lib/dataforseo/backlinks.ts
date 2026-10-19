@@ -1,5 +1,5 @@
 import { peekDataForSeo, runDataForSeo } from "@/lib/dataforseo/gate";
-import { TTL_SECONDS } from "@/lib/dataforseo/cache";
+import { FRESHNESS_SECONDS } from "@/lib/dataforseo/cache";
 
 export type BacklinkSummary = {
   target: string;
@@ -145,7 +145,7 @@ export function fetchBacklinkSummary(workspaceId: string, target: string, opts?:
     workspaceId,
     endpoint: call.endpoint,
     task: call.task,
-    ttlSeconds: TTL_SECONDS.backlinks,
+    freshnessSeconds: FRESHNESS_SECONDS.backlinks,
     estimateUsd: call.estimateUsd,
     trim: trimSummary,
   }, opts);
@@ -158,7 +158,7 @@ export function fetchReferringDomains(workspaceId: string, target: string, opts?
     workspaceId,
     endpoint: call.endpoint,
     task: call.task,
-    ttlSeconds: TTL_SECONDS.backlinks,
+    freshnessSeconds: FRESHNESS_SECONDS.backlinks,
     estimateUsd: call.estimateUsd,
     trim: trimReferringDomains,
   }, opts);
@@ -171,7 +171,7 @@ export function fetchAnchors(workspaceId: string, target: string, opts?: GateOpt
     workspaceId,
     endpoint: call.endpoint,
     task: call.task,
-    ttlSeconds: TTL_SECONDS.backlinks,
+    freshnessSeconds: FRESHNESS_SECONDS.backlinks,
     estimateUsd: call.estimateUsd,
     trim: trimAnchors,
   }, opts);
@@ -187,9 +187,9 @@ export async function peekBacklinkReport(target: string): Promise<{
   const r = referringDomainsTask(target);
   const a = anchorsTask(target);
   const [summary, referringDomains, anchors] = await Promise.all([
-    peekDataForSeo<BacklinkSummary>(s.endpoint, s.task),
-    peekDataForSeo<ReferringDomain[]>(r.endpoint, r.task),
-    peekDataForSeo<Anchor[]>(a.endpoint, a.task),
+    peekDataForSeo<BacklinkSummary>(s.endpoint, s.task, FRESHNESS_SECONDS.backlinks),
+    peekDataForSeo<ReferringDomain[]>(r.endpoint, r.task, FRESHNESS_SECONDS.backlinks),
+    peekDataForSeo<Anchor[]>(a.endpoint, a.task, FRESHNESS_SECONDS.backlinks),
   ]);
   return { summary, referringDomains, anchors };
 }

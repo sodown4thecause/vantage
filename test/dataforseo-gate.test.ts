@@ -38,7 +38,7 @@ import { PaidCallDeniedError } from "@/lib/providers/paid-call";
 const CREDIT = "seo_credits_per_month";
 const ENDPOINT = "/v3/backlinks/summary/live";
 const TASK = { target: "example.com" };
-const TTL = 604_800;
+const FRESHNESS = 604_800;
 const ESTIMATE = 0.05;
 const now = new Date("2026-10-19T12:00:00.000Z");
 const MINUTE = 60_000;
@@ -53,7 +53,7 @@ const request = (overrides: Partial<GateRequest<Row, Trimmed[]>> = {}): GateRequ
   workspaceId: "ws-1",
   endpoint: ENDPOINT,
   task: TASK,
-  ttlSeconds: TTL,
+  freshnessSeconds: FRESHNESS,
   estimateUsd: ESTIMATE,
   trim,
   ...overrides,
@@ -127,6 +127,13 @@ describe("DataForSEO spend gate", () => {
       expect(mocks.read).not.toHaveBeenCalled();
       expect(mocks.consume).not.toHaveBeenCalled();
       expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it("reads the cache with the request's freshnessSeconds", async () => {
+      configure("live");
+      mocks.read.mockResolvedValue([{ rank: 7 }]);
+      await run({ freshnessSeconds: 2_592_000 });
+      expect(mocks.read).toHaveBeenCalledExactlyOnceWith(dataForSeoCacheKey("live", ENDPOINT, TASK), 2_592_000, now);
     });
 
     it("returns a cache hit with no credit, no release and no fetch", async () => {
@@ -262,8 +269,6 @@ describe("DataForSEO spend gate", () => {
         dataForSeoCacheKey("live", ENDPOINT, TASK),
         ENDPOINT,
         [{ rank: 1 }],
-        TTL,
-        now,
       );
       expect(mocks.release).not.toHaveBeenCalled();
     });
@@ -357,7 +362,7 @@ describe("DataForSEO spend gate", () => {
     it("peek returns null without reading the cache for a sandbox call without ALLOW_FIXTURES", async () => {
       configure("sandbox");
       mocks.read.mockResolvedValue([{ rank: 3 }]);
-      await expect(peekDataForSeo(ENDPOINT, TASK)).resolves.toBeNull();
+      await expect(peekDataForSeo(ENDPOINT, TASK, FRESHNESS)).resolves.toBeNull();
       expect(mocks.read).not.toHaveBeenCalled();
     });
   });
@@ -366,21 +371,28 @@ describe("DataForSEO spend gate", () => {
     it("returns the cached value without consuming, querying the database or fetching", async () => {
       configure("live");
       mocks.read.mockResolvedValue([{ rank: 3 }]);
-      await expect(peekDataForSeo(ENDPOINT, TASK)).resolves.toEqual([{ rank: 3 }]);
-      expect(mocks.read).toHaveBeenCalledWith(dataForSeoCacheKey("live", ENDPOINT, TASK));
+      await expect(peekDataForSeo(ENDPOINT, TASK, FRESHNESS)).resolves.toEqual([{ rank: 3 }]);
+      expect(mocks.read).toHaveBeenCalledWith(dataForSeoCacheKey("live", ENDPOINT, TASK), FRESHNESS);
       expect(mocks.consume).not.toHaveBeenCalled();
       expect(mocks.execute).not.toHaveBeenCalled();
       expect(mocks.release).not.toHaveBeenCalled();
     });
 
+    it("uses the freshness window it is given", async () => {
+      configure("live");
+      mocks.read.mockResolvedValue([{ rank: 3 }]);
+      await peekDataForSeo(ENDPOINT, TASK, 2_592_000);
+      expect(mocks.read).toHaveBeenCalledWith(dataForSeoCacheKey("live", ENDPOINT, TASK), 2_592_000);
+    });
+
     it("returns null on a cache miss", async () => {
       configure("live");
-      await expect(peekDataForSeo(ENDPOINT, TASK)).resolves.toBeNull();
+      await expect(peekDataForSeo(ENDPOINT, TASK, FRESHNESS)).resolves.toBeNull();
     });
 
     it("returns null without reading the cache when unconfigured", async () => {
       configure("unconfigured");
-      await expect(peekDataForSeo(ENDPOINT, TASK)).resolves.toBeNull();
+      await expect(peekDataForSeo(ENDPOINT, TASK, FRESHNESS)).resolves.toBeNull();
       expect(mocks.read).not.toHaveBeenCalled();
     });
   });

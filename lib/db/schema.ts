@@ -816,6 +816,22 @@ export const dataforseoCache = pgTable(
 );
 
 /**
+ * Append-only history of DataForSEO responses, one dated row per paid fetch. Reads take the newest row inside a
+ * freshness window; rows are never updated or deleted. `dataforseo_cache` is kept only as a read fallback.
+ */
+export const dataforseoSnapshot = pgTable(
+  "dataforseo_snapshot",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    cacheKey: text("cache_key").notNull(),
+    endpoint: text("endpoint").notNull(),
+    responseJson: jsonb("response_json").notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("dataforseo_snapshot_key_fetched_idx").on(table.cacheKey, table.fetchedAt)],
+);
+
+/**
  * S75 destination catalog (docs/slices/PLAN-distribution-engine.md section 5).
  * Global, curated, dated facts about places a developer tool can be listed or launched.
  * Per-workspace fit lives in a later slice (S76). "unknown" is always allowed and preferred

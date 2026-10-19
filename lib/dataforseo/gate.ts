@@ -33,7 +33,7 @@ export type GateRequest<R, T> = {
   workspaceId: string;
   endpoint: string;
   task: Record<string, unknown>;
-  ttlSeconds: number;
+  freshnessSeconds: number;
   estimateUsd: number;
   trim: (result: R[]) => T;
 };
@@ -99,7 +99,7 @@ async function assertDailyCap(config: DataForSeoConfig, estimateUsd: number, now
  *      5. live only: balance floor and alert threshold
  *      6. today's DataForSEO spend plus the estimate must fit the daily cap
  *      7. the paid call, through runPaidCall
- *   8. cache the trimmed value (a failed write never releases the credit)
+ *   8. append the trimmed value as a dated snapshot (a failed write never releases the credit)
  * runPaidCall charges its estimate for any throw that is not a DataForSeoApiError with a known cost.
  */
 export async function runDataForSeo<R, T>(
@@ -111,7 +111,7 @@ export async function runDataForSeo<R, T>(
 
   const now = opts.now ?? new Date();
   const key = dataForSeoCacheKey(config.env, req.endpoint, req.task);
-  const hit = await readDataForSeoCache<T>(key, now);
+  const hit = await readDataForSeoCache<T>(key, req.freshnessSeconds, now);
   if (hit !== null) return { value: hit, cached: true };
 
   const credit = await consume(req.workspaceId, CREDIT_KEY, 1, now);
@@ -147,7 +147,7 @@ export async function runDataForSeo<R, T>(
 
   // The paid result is kept even if the cache write fails. writeDataForSeoCache is designed never to throw; this guards the contract.
   try {
-    await writeDataForSeoCache(key, req.endpoint, value, req.ttlSeconds, now);
+    await writeDataForSeoCache(key, req.endpoint, value);
   } catch (err) {
     console.error("[dataforseo] cache write failed", { error: err instanceof Error ? err.name : "unknown" });
   }
@@ -155,8 +155,12 @@ export async function runDataForSeo<R, T>(
 }
 
 /** Cache-only read for the UI. Never consumes a credit, touches the budget or fetches. */
-export async function peekDataForSeo<T>(endpoint: string, task: Record<string, unknown>): Promise<T | null> {
+export async function peekDataForSeo<T>(
+  endpoint: string,
+  task: Record<string, unknown>,
+  freshnessSeconds: number,
+): Promise<T | null> {
   const config = usableDataForSeoConfig();
   if (!config) return null;
-  return readDataForSeoCache<T>(dataForSeoCacheKey(config.env, endpoint, task));
+  return readDataForSeoCache<T>(dataForSeoCacheKey(config.env, endpoint, task), freshnessSeconds);
 }
