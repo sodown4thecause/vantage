@@ -85,6 +85,17 @@ export function forCard(value: unknown): unknown {
   return Array.isArray(value) ? value.slice(0, CARD_ROW_LIMIT) : value;
 }
 
+/** Where a data result came from. "cached" results may be up to the cache window old; "live" results were just fetched. */
+export type DataSource = "live" | "cached";
+
+/**
+ * What the model sees of a data result: its source and the value, shaped by forModel. The source lets the model call
+ * the figures live or cached without inventing a date. Errors and approval requests are control results, not data.
+ */
+export function forModelData(source: DataSource, value: unknown): { source: DataSource; data: unknown } {
+  return { source, data: forModel(value) };
+}
+
 export function addCard(ctx: ToolContext, card: { tool: string; title: string; cached: boolean; data: unknown }): void {
   ctx.cards.push({
     tool: card.tool,
@@ -116,7 +127,7 @@ export async function runGated<T>(ctx: ToolContext, call: GatedCall<T>): Promise
     const hit = await call.peek();
     if (hit !== null) {
       addCard(ctx, { tool: call.tool, title: call.title, cached: true, data: hit });
-      return forModel(hit);
+      return forModelData("cached", hit);
     }
   } catch {
     return { error: "failed" };
@@ -131,7 +142,7 @@ export async function runGated<T>(ctx: ToolContext, call: GatedCall<T>): Promise
     const { value, cached } = await call.fetch();
     if (cached) ctx.budget.refund(call.credits);
     addCard(ctx, { tool: call.tool, title: call.title, cached, data: value });
-    return forModel(value);
+    return forModelData(cached ? "cached" : "live", value);
   } catch (err) {
     ctx.budget.refund(call.credits);
     return { error: failureCode(ctx, err) };

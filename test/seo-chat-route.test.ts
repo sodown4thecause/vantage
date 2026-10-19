@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => {
     classifyQuestion: vi.fn(),
     runAgent: vi.fn(),
     getLatestMonitoringProfile: vi.fn(),
+    unclaimPlan: vi.fn(),
   };
 });
 
@@ -47,9 +48,11 @@ vi.mock("@/lib/seo-agent/conversations", () => ({
   getConversation: mocks.getConversation,
   appendMessage: mocks.appendMessage,
   claimPlan: mocks.claimPlan,
+  unclaimPlan: mocks.unclaimPlan,
 }));
 
 import { POST } from "@/app/seo/chat/route";
+import { FAILURE_COPY as FAILURE, REFUSAL_COPY as REFUSAL } from "@/lib/seo-agent/execute";
 
 const PLAN = [{ tool: "keyword_ideas", input: { keywords: ["ci caching"] }, credits: 1 }];
 const CLASSIFICATION = { intent: "keywords", domains: [], keywords: [], engines: [] };
@@ -124,6 +127,7 @@ beforeEach(() => {
   mocks.getConversation.mockReset().mockResolvedValue(null);
   mocks.appendMessage.mockReset().mockResolvedValue({ id: "msg-new" });
   mocks.claimPlan.mockReset().mockResolvedValue(null);
+  mocks.unclaimPlan.mockReset().mockResolvedValue(true);
   mocks.classifyQuestion.mockReset().mockResolvedValue(CLASSIFICATION);
   mocks.runAgent.mockReset().mockResolvedValue(fakeRun());
   mocks.getLatestMonitoringProfile.mockReset().mockResolvedValue(null);
@@ -246,29 +250,56 @@ describe("POST /seo/chat: asking a question", () => {
     expect(mocks.release).not.toHaveBeenCalled();
   });
 
-  it("releases the question and saves nothing when the answer fails before any text", async () => {
+  it("releases the question and saves the error reply as incomplete when the answer fails before any text", async () => {
     mocks.runAgent.mockResolvedValue(fakeRun({ status: "failed", content: "", creditsUsed: 0 }, ERROR_COPY));
     const { text } = await postAndRead({ workspaceId: WS, message: "Which keywords?" });
     expect(text).toContain(ERROR_COPY);
     expect(mocks.release).toHaveBeenCalledWith(WS, "seo_questions_per_month");
-    expect(mocks.appendMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.appendMessage.mock.calls.map((call) => call[2].role)).toEqual(["user", "assistant"]);
+    expect(mocks.appendMessage).toHaveBeenLastCalledWith(WS, NEW_CONV, {
+      role: "assistant",
+      content: FAILURE,
+      status: "incomplete",
+    });
   });
 
-  it("releases the question when the model refuses twice", async () => {
-    mocks.runAgent.mockResolvedValue(fakeRun({ status: "refused", content: "" }, "I can't answer that one. Try rephrasing."));
+  it("releases the question and saves the refusal reply as incomplete when the model refuses twice", async () => {
+    mocks.runAgent.mockResolvedValue(fakeRun({ status: "refused", content: "" }, REFUSAL));
     const { text } = await postAndRead({ workspaceId: WS, message: "Which keywords?" });
-    expect(text).toContain("I can't answer that one. Try rephrasing.");
+    expect(text).toContain(REFUSAL);
     expect(mocks.release).toHaveBeenCalledWith(WS, "seo_questions_per_month");
-    expect(mocks.appendMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.appendMessage).toHaveBeenLastCalledWith(WS, NEW_CONV, { role: "assistant", content: REFUSAL, status: "incomplete" });
   });
 
-  it("releases the question and streams the generic error when the agent throws before streaming", async () => {
+  it("releases the question and saves the error reply when the agent throws before streaming", async () => {
     mocks.runAgent.mockRejectedValue(new Error("provider down"));
     const { res, text } = await postAndRead({ workspaceId: WS, message: "Which keywords?" });
     expect(res.status).toBe(200);
     expect(text).toContain(ERROR_COPY);
     expect(mocks.release).toHaveBeenCalledWith(WS, "seo_questions_per_month");
+    expect(mocks.appendMessage).toHaveBeenLastCalledWith(WS, NEW_CONV, { role: "assistant", content: FAILURE, status: "incomplete" });
+  });
+
+  it("saves no reply when the question itself could not be saved, and still releases the charge", async () => {
+    mocks.appendMessage.mockRejectedValueOnce(new Error("db down"));
+    const { text } = await postAndRead({ workspaceId: WS, message: "Which keywords?" });
+    expect(text).toContain(ERROR_COPY);
+    expect(mocks.release).toHaveBeenCalledWith(WS, "seo_questions_per_month");
     expect(mocks.appendMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.runAgent).not.toHaveBeenCalled();
+  });
+
+  it("starts the model history on a user turn when the window begins with an assistant reply", async () => {
+    mocks.getConversation.mockResolvedValue(conversation([
+      storedMessage({ id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", role: "assistant", content: "Old reply.", status: "complete", parts: {} }),
+      storedMessage({ id: "ffffffff-ffff-4fff-8fff-ffffffffffff", role: "user", content: "First question.", status: "complete", parts: {} }),
+      storedMessage({ id: "99999999-9999-4999-8999-999999999999", role: "assistant", content: "First answer.", status: "complete", parts: {} }),
+    ]));
+    await postAndRead({ workspaceId: WS, conversationId: CONV, message: "Second question?" });
+    expect(mocks.runAgent.mock.calls[0]![0].history).toEqual([
+      { role: "user", content: "First question." },
+      { role: "assistant", content: "First answer." },
+    ]);
   });
 
   it("maps a conversation that disappears during the question to 404 and releases the charge", async () => {
@@ -326,13 +357,53 @@ describe("POST /seo/chat: approving a plan", () => {
     expect(mocks.claimPlan).not.toHaveBeenCalled();
   });
 
-  it("does not release a question on a failed approved run, because none was charged", async () => {
+  it("returns the plan without charging or releasing a question when the approved run fails before any text", async () => {
     mocks.getConversation.mockResolvedValue(conversation());
     mocks.claimPlan.mockResolvedValue(PLAN);
     mocks.runAgent.mockResolvedValue(fakeRun({ status: "failed", content: "", creditsUsed: 0 }, ERROR_COPY));
     const { text } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
     expect(text).toContain(ERROR_COPY);
+    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN);
+    expect(mocks.consume).not.toHaveBeenCalled();
     expect(mocks.release).not.toHaveBeenCalled();
+    expect(mocks.appendMessage).not.toHaveBeenCalled();
+  });
+
+  it("returns the plan when the approved run is refused", async () => {
+    mocks.getConversation.mockResolvedValue(conversation());
+    mocks.claimPlan.mockResolvedValue(PLAN);
+    mocks.runAgent.mockResolvedValue(fakeRun({ status: "refused", content: "" }, REFUSAL));
+    await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
+    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN);
+    expect(mocks.release).not.toHaveBeenCalled();
+  });
+
+  it("returns the plan, without charging, when the approved run throws before streaming", async () => {
+    mocks.getConversation.mockResolvedValue(conversation());
+    mocks.claimPlan.mockResolvedValue(PLAN);
+    mocks.runAgent.mockRejectedValue(new Error("gateway key missing"));
+    const { res, text } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
+    expect(res.status).toBe(200);
+    expect(text).toContain(ERROR_COPY);
+    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN);
+    expect(mocks.release).not.toHaveBeenCalled();
+  });
+
+  it("keeps the plan claimed when the approved run produced a partial answer", async () => {
+    mocks.getConversation.mockResolvedValue(conversation());
+    mocks.claimPlan.mockResolvedValue(PLAN);
+    mocks.runAgent.mockResolvedValue(fakeRun({ status: "incomplete", content: "Partial" }, "Partial"));
+    await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
+    expect(mocks.unclaimPlan).not.toHaveBeenCalled();
+    expect(mocks.appendMessage).toHaveBeenLastCalledWith(WS, CONV, expect.objectContaining({ status: "incomplete", content: "Partial" }));
+  });
+
+  it("keeps the plan claimed after a successful approved run", async () => {
+    mocks.getConversation.mockResolvedValue(conversation());
+    mocks.claimPlan.mockResolvedValue(PLAN);
+    mocks.runAgent.mockResolvedValue(fakeRun({ status: "complete", creditsUsed: 1 }, "Done."));
+    await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
+    expect(mocks.unclaimPlan).not.toHaveBeenCalled();
   });
 });
 

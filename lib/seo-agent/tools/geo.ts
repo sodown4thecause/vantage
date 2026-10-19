@@ -16,6 +16,7 @@ import {
   type ToolContext,
   addCard,
   addNotice,
+  type DataSource,
   failureCode,
   gateOptions,
   keywordLabel,
@@ -57,7 +58,8 @@ async function askEngines(ctx: ToolContext, rawPrompt: string, requested: LlmEng
   });
   if (available.length === 0) return { error: "unavailable" };
 
-  const answers = new Map<LlmEngine, LlmResponse>();
+  // Each engine's answer keeps where it came from, so the model can tell live answers from cached ones.
+  const answers = new Map<LlmEngine, { answer: LlmResponse; source: DataSource }>();
   let peeked: (LlmResponse | null)[];
   try {
     peeked = await Promise.all(available.map(({ engine, model }) => peekLlmResponse(engine, prompt, model, ctx.brandDomains)));
@@ -68,15 +70,15 @@ async function askEngines(ctx: ToolContext, rawPrompt: string, requested: LlmEng
   available.forEach((item, i) => {
     const hit = peeked[i];
     if (hit) {
-      answers.set(item.engine, hit);
+      answers.set(item.engine, { answer: hit, source: "cached" });
       addCard(ctx, { tool: "llm_response", title: `AI answer — ${ENGINE_LABELS[item.engine]}`, cached: true, data: hit });
     } else {
       misses.push(item);
     }
   });
   const inOrder = () => available.flatMap(({ engine }) => {
-    const answer = answers.get(engine);
-    return answer ? [answer] : [];
+    const found = answers.get(engine);
+    return found ? [{ ...found.answer, source: found.source }] : [];
   });
   if (misses.length === 0) return { answers: inOrder() };
 
@@ -96,7 +98,7 @@ async function askEngines(ctx: ToolContext, rawPrompt: string, requested: LlmEng
       continue;
     }
     if (result.value.cached) refund += LLM_CREDITS;
-    answers.set(result.item.engine, result.value.value);
+    answers.set(result.item.engine, { answer: result.value.value, source: result.value.cached ? "cached" : "live" });
     addCard(ctx, {
       tool: "llm_response",
       title: `AI answer — ${ENGINE_LABELS[result.item.engine]}`,

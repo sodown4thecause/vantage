@@ -258,7 +258,7 @@ describe("tool gating", () => {
     mocks.peekDataForSeo.mockImplementation(async (endpoint: string) => (endpoint === "/v3/backlinks/summary/live" ? summary : null));
     const ctx = makeCtx(new QuestionBudget(3));
     const result = await run(toolsFor("backlinks", ctx), "backlink_summary", { domain: "example.com" });
-    expect(result).toEqual(summary);
+    expect(result).toEqual({ source: "cached", data: summary });
     expect(ctx.cards).toEqual([{ tool: "backlink_summary", title: expect.any(String), fetchedAt: null, cached: true, data: summary }]);
     expect(ctx.budget.spent).toBe(0);
     expect(mocks.fetchBacklinkSummary).not.toHaveBeenCalled();
@@ -282,7 +282,7 @@ describe("tool gating", () => {
   it("matches an approved plan by its normalised input", async () => {
     const ctx = makeCtx(new QuestionBudget(0, [{ tool: "backlink_summary", input: { domain: "example.com" }, credits: 1 }]));
     const result = await run(toolsFor("backlinks", ctx), "backlink_summary", { domain: "EXAMPLE.com" });
-    expect(result).toEqual(summary);
+    expect(result).toEqual({ source: "live", data: summary });
     expect(mocks.fetchBacklinkSummary).toHaveBeenCalledWith(WORKSPACE, "example.com", expect.anything());
     expect(ctx.budget.spent).toBe(1);
   });
@@ -349,10 +349,11 @@ describe("tool gating", () => {
     const rows = Array.from({ length: 1000 }, (_, i) => ({ domain: `site${i}.com`, rank: i, backlinks: 1, spamScore: 0, firstSeen: null }));
     mocks.fetchReferringDomains.mockResolvedValue({ value: rows, cached: false });
     const ctx = makeCtx(new QuestionBudget(3));
-    const result = await run(toolsFor("backlinks", ctx), "referring_domains", { domain: "example.com" }) as { rows: unknown[]; total: number };
-    expect(result.rows).toHaveLength(25);
-    expect(result.rows[0]).toEqual(rows[0]);
-    expect(result.total).toBe(1000);
+    const result = await run(toolsFor("backlinks", ctx), "referring_domains", { domain: "example.com" }) as { source: string; data: { rows: unknown[]; total: number } };
+    expect(result.source).toBe("live");
+    expect(result.data.rows).toHaveLength(25);
+    expect(result.data.rows[0]).toEqual(rows[0]);
+    expect(result.data.total).toBe(1000);
     expect(ctx.cards[0]?.data).toHaveLength(100);
   });
 
@@ -360,16 +361,16 @@ describe("tool gating", () => {
     const rows = Array.from({ length: 1000 }, (_, i) => ({ domain: `site${i}.com`, rank: i, backlinks: 1, spamScore: 0, firstSeen: null }));
     mocks.peekDataForSeo.mockImplementation(async (endpoint: string) => (endpoint === "/v3/backlinks/referring_domains/live" ? rows : null));
     const ctx = makeCtx(new QuestionBudget(3));
-    const result = await run(toolsFor("backlinks", ctx), "referring_domains", { domain: "example.com" }) as { rows: unknown[]; total: number };
-    expect(result).toEqual({ rows: rows.slice(0, 25), total: 1000 });
+    const result = await run(toolsFor("backlinks", ctx), "referring_domains", { domain: "example.com" });
+    expect(result).toEqual({ source: "cached", data: { rows: rows.slice(0, 25), total: 1000 } });
     expect(ctx.cards[0]?.data).toHaveLength(100);
     expect(ctx.budget.spent).toBe(0);
   });
 
-  it("passes a non-array result through unchanged", async () => {
+  it("passes a non-array result through unchanged, labelled with its source", async () => {
     const ctx = makeCtx(new QuestionBudget(3));
     const result = await run(toolsFor("backlinks", ctx), "backlink_summary", { domain: "example.com" });
-    expect(result).toEqual(summary);
+    expect(result).toEqual({ source: "live", data: summary });
     expect(ctx.cards[0]?.data).toEqual(summary);
   });
 
@@ -384,7 +385,7 @@ describe("tool gating", () => {
     mocks.fetchGoogleSerp.mockResolvedValue({ value: { organic: [], hasAiOverview: false, peopleAlsoAsk: [] }, cached: false });
     const ctx = makeCtx(new QuestionBudget(3));
     const result = await run(toolsFor("serp", ctx), "google_serp", { keyword: "  crm software " });
-    expect(result).toEqual({ organic: [], hasAiOverview: false, peopleAlsoAsk: [] });
+    expect(result).toEqual({ source: "live", data: { organic: [], hasAiOverview: false, peopleAlsoAsk: [] } });
     expect(mocks.fetchGoogleSerp).toHaveBeenCalledWith(WORKSPACE, "crm software", expect.anything());
     expect(ctx.cards[0]).toMatchObject({ tool: "google_serp", cached: false });
   });
@@ -397,14 +398,34 @@ describe("tool gating", () => {
     const ctx = makeCtx(new QuestionBudget(3));
     const result = await run(toolsFor("backlinks", ctx), "backlink_gap", { domain: "example.com", competitor: "rival.io" });
     expect(result).toEqual({
-      rows: [
-        { domain: "b.com", rank: 50, backlinks: 3, spamScore: 0, firstSeen: null },
-        { domain: "c.com", rank: 20, backlinks: 1, spamScore: 0, firstSeen: null },
-      ],
-      total: 2,
+      source: "live",
+      data: {
+        rows: [
+          { domain: "b.com", rank: 50, backlinks: 3, spamScore: 0, firstSeen: null },
+          { domain: "c.com", rank: 20, backlinks: 1, spamScore: 0, firstSeen: null },
+        ],
+        total: 2,
+      },
     });
     expect(ctx.budget.spent).toBe(2);
     expect(ctx.cards[0]).toMatchObject({ tool: "backlink_gap", cached: false });
+  });
+
+  it("labels a backlink_gap built only from cache as cached data, with no reservation", async () => {
+    mocks.peekDataForSeo.mockImplementation(async (_endpoint: string, task: Record<string, unknown>) => (task.target === "example.com" ? ownDomains : rivalDomains));
+    const ctx = makeCtx(new QuestionBudget(3));
+    const result = await run(toolsFor("backlinks", ctx), "backlink_gap", { domain: "example.com", competitor: "rival.io" }) as { source: string };
+    expect(result.source).toBe("cached");
+    expect(ctx.budget.spent).toBe(0);
+    expect(mocks.fetchReferringDomains).not.toHaveBeenCalled();
+  });
+
+  it("labels a backlink_gap with one fetched side as live data", async () => {
+    mocks.peekDataForSeo.mockImplementation(async (_endpoint: string, task: Record<string, unknown>) => (task.target === "example.com" ? ownDomains : null));
+    mocks.fetchReferringDomains.mockImplementation(async () => ({ value: rivalDomains, cached: false }));
+    const ctx = makeCtx(new QuestionBudget(3));
+    const result = await run(toolsFor("backlinks", ctx), "backlink_gap", { domain: "example.com", competitor: "rival.io" }) as { source: string };
+    expect(result.source).toBe("live");
   });
 
   it("charges backlink_gap only for the uncached side", async () => {
@@ -442,7 +463,7 @@ describe("tool gating", () => {
     mocks.peekLlmResponse.mockImplementation(async (engine: string) => ({ ...answer, engine }));
     const ctx = makeCtx(new QuestionBudget(3));
     const result = await run(toolsFor("geo_visibility", ctx), "llm_response", { prompt: "best crm", engines: ALL_ENGINES });
-    expect(result).toEqual({ answers: ALL_ENGINES.map((engine) => ({ ...answer, engine })) });
+    expect(result).toEqual({ answers: ALL_ENGINES.map((engine) => ({ ...answer, engine, source: "cached" })) });
     expect(ctx.cards).toHaveLength(4);
     expect(ctx.cards.every((card) => card.cached)).toBe(true);
     expect(ctx.budget.spent).toBe(0);
@@ -469,9 +490,22 @@ describe("tool gating", () => {
   it("runs an approved llm_response for the planned engine and charges two credits", async () => {
     const ctx = makeCtx(new QuestionBudget(0, [{ tool: "llm_response", input: { prompt: "best seo tools", engines: ["claude"] }, credits: 2 }]));
     const result = await run(toolsFor("geo_visibility", ctx), "llm_response", { prompt: "best seo tools", engines: ["claude"] });
-    expect(result).toEqual({ answers: [answer] });
+    expect(result).toEqual({ answers: [{ ...answer, source: "live" }] });
     expect(mocks.fetchLlmResponse.mock.calls[0]?.slice(0, 5)).toEqual([WORKSPACE, "claude", "best seo tools", "model-x", ["example.com"]]);
     expect(ctx.budget.spent).toBe(2);
+  });
+
+  it("gives each engine answer its own source: cached when peeked, live when fetched", async () => {
+    process.env.SEO_AGENT_GEO_ALWAYS_ASK = "false";
+    mocks.peekLlmResponse.mockImplementation(async (engine: string) => (engine === "claude" ? { ...answer, engine } : null));
+    mocks.fetchLlmResponse.mockImplementation(async (_ws: string, engine: string) => ({ value: { ...answer, engine }, cached: false }));
+    const ctx = makeCtx(new QuestionBudget(10));
+    const result = await run(toolsFor("geo_visibility", ctx), "llm_response", { prompt: "best seo tools", engines: ["claude", "chat_gpt"] }) as { answers: { engine: string; source: string }[] };
+    // Answers follow the canonical engine order, not the request order.
+    expect(result.answers.map(({ engine, source }) => ({ engine, source }))).toEqual([
+      { engine: "chat_gpt", source: "live" },
+      { engine: "claude", source: "cached" },
+    ]);
   });
 
   it("skips an engine with no model and says so", async () => {
@@ -493,7 +527,7 @@ describe("tool gating", () => {
     });
     const ctx = makeCtx(new QuestionBudget(10));
     const result = await run(toolsFor("geo_visibility", ctx), "llm_response", { prompt: "best seo tools", engines: ["claude", "chat_gpt"] });
-    expect(result).toEqual({ answers: [{ ...answer, engine: "chat_gpt" }], error: "reserve_floor" });
+    expect(result).toEqual({ answers: [{ ...answer, engine: "chat_gpt", source: "live" }], error: "reserve_floor" });
     expect(ctx.budget.spent).toBe(2);
     expect(ctx.notices).toEqual([DATAFORSEO_PAUSED]);
   });

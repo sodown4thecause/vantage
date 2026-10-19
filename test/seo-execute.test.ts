@@ -171,6 +171,24 @@ describe("systemPrompt", () => {
     expect(prompt).toContain("25");
   });
 
+  it("tells the model how to label live and cached data, and never to invent a date", () => {
+    const prompt = systemPrompt(PROFILE);
+    expect(prompt).toContain("data: { rows, total }");
+    expect(prompt).toContain('For source "live", call the figures live data (as of today).');
+    expect(prompt).toContain(
+      'For source "cached", call the figures cached data (up to 30 days old for backlinks, keywords and AI search volume; up to 7 days for Google results and AI answers).',
+    );
+    expect(prompt).toContain("Never invent a specific date.");
+    expect(prompt).not.toContain("data date");
+    expect(prompt).not.toContain("fetched");
+  });
+
+  it("asks llm_response prompts to be neutral questions that never carry the company or profile", () => {
+    const prompt = systemPrompt(PROFILE);
+    expect(prompt).toContain("neutral question a real user would ask");
+    expect(prompt).toContain("Never put the workspace's own company name or profile text in it.");
+  });
+
   it("puts the profile block last so the static instructions stay cacheable", () => {
     const prompt = systemPrompt(PROFILE);
     const block = prompt.indexOf("Workspace profile");

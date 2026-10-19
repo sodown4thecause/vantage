@@ -13,8 +13,16 @@ import {
   createConversation,
   getConversation,
   type SeoMessageRow,
+  unclaimPlan,
 } from "@/lib/seo-agent/conversations";
-import { FAILURE_COPY, runAgent, type AgentOutcome, type AgentProfile, type AgentRun } from "@/lib/seo-agent/execute";
+import {
+  FAILURE_COPY,
+  REFUSAL_COPY,
+  runAgent,
+  type AgentOutcome,
+  type AgentProfile,
+  type AgentRun,
+} from "@/lib/seo-agent/execute";
 import { seoModels } from "@/lib/seo-agent/models";
 import { profileSummary } from "@/lib/seo-agent/prompt";
 import { profileContext } from "@/lib/seo-agent/suggestions";
@@ -91,11 +99,13 @@ async function askQuestion(
   if (!allowance.allowed) return textResponse(UPGRADE_COPY, existing?.id);
 
   let knownConversation = existing?.id;
+  let userSaved = false;
   try {
     // A new conversation is created only after the charge, so an exhausted allowance leaves no empty chat behind.
     const id = existing?.id ?? (await createConversation(workspaceId, message.slice(0, TITLE_MAX_CHARS))).id;
     knownConversation = id;
     await appendMessage(workspaceId, id, { role: "user", content: message });
+    userSaved = true;
 
     const profile = toAgentProfile(await getLatestMonitoringProfile(workspaceId));
     const classification = await classifyQuestion(workspaceId, message, profileSummary(profile), { signal: req.signal });
@@ -107,11 +117,13 @@ async function askQuestion(
       classification,
       profile,
     }, { signal: req.signal });
-    return answerResponse({ workspaceId, conversationId: id, run, charged: true });
+    return answerResponse({ workspaceId, conversationId: id, run });
   } catch (err) {
     await release(workspaceId, QUESTION_LIMIT);
     if (err instanceof ConversationNotFoundError) return json({ error: "not_found" }, 404);
     console.error("[seo-agent] question failed", { error: err instanceof Error ? err.name : "unknown" });
+    // Keep the history paired: the question is saved, so its reply is saved too.
+    if (userSaved && knownConversation) await saveFailure(workspaceId, knownConversation, FAILURE_COPY);
     return textResponse(FAILURE_COPY, knownConversation);
   }
 }
@@ -142,9 +154,10 @@ async function approvePlan(
       profile,
       approved: plan,
     }, { signal: req.signal });
-    return answerResponse({ workspaceId, conversationId, run, charged: false });
+    return answerResponse({ workspaceId, conversationId, run, approvedMessageId: messageId });
   } catch (err) {
     console.error("[seo-agent] approved plan failed", { error: err instanceof Error ? err.name : "unknown" });
+    await returnPlan(workspaceId, messageId);
     return textResponse(FAILURE_COPY, conversationId);
   }
 }
@@ -157,19 +170,31 @@ function toAgentProfile(profile: MonitoringProfileView | null): AgentProfile {
   };
 }
 
-/** Stored text messages as model history, oldest first. Empty messages are dropped: providers reject empty text. */
+/**
+ * Stored text messages as model history, oldest first. Empty messages are dropped (providers reject empty text), and so
+ * are leading assistant turns left by the window, so the history always starts with a user turn.
+ */
 function historyOf(messages: SeoMessageRow[] | undefined): ModelMessage[] {
-  return (messages ?? [])
+  const kept = (messages ?? [])
     .filter((message) => message.content.trim() !== "")
-    .slice(-HISTORY_MAX_MESSAGES)
+    .slice(-HISTORY_MAX_MESSAGES);
+  const firstUser = kept.findIndex((message) => message.role === "user");
+  return (firstUser === -1 ? [] : kept.slice(firstUser))
     .map((message) => ({ role: message.role, content: message.content }));
 }
 
 /**
- * Streams the answer and saves it when it ends. A failed or refused answer that cost a question gives the question back;
- * a partial answer is kept as incomplete. The stream is held open until the save finishes.
+ * Streams the answer and settles the turn when it ends. A question that produced no answer gives its charge back and
+ * saves the reply copy as incomplete; a plan that produced no answer goes back to needs_approval. A partial answer is
+ * kept as incomplete. The stream is held open until the save finishes.
  */
-function answerResponse(args: { workspaceId: string; conversationId: string; run: AgentRun; charged: boolean }): Response {
+function answerResponse(args: {
+  workspaceId: string;
+  conversationId: string;
+  run: AgentRun;
+  /** Set for an approved plan: the message whose plan this run belongs to. Its run is not a charged question. */
+  approvedMessageId?: string;
+}): Response {
   const stream = createUIMessageStream({
     onError: () => FAILURE_COPY,
     execute: async ({ writer }) => {
@@ -182,12 +207,17 @@ function answerResponse(args: { workspaceId: string; conversationId: string; run
 }
 
 async function settleTurn(
-  args: { workspaceId: string; conversationId: string; charged: boolean },
+  args: { workspaceId: string; conversationId: string; approvedMessageId?: string },
   outcome: AgentOutcome,
 ): Promise<void> {
   try {
     if (outcome.status === "failed" || outcome.status === "refused") {
-      if (args.charged) await release(args.workspaceId, QUESTION_LIMIT);
+      if (args.approvedMessageId) {
+        await returnPlan(args.workspaceId, args.approvedMessageId);
+        return;
+      }
+      await release(args.workspaceId, QUESTION_LIMIT);
+      await saveFailure(args.workspaceId, args.conversationId, outcome.status === "refused" ? REFUSAL_COPY : FAILURE_COPY);
       return;
     }
     const status = outcome.status === "incomplete"
@@ -202,6 +232,24 @@ async function settleTurn(
     });
   } catch (err) {
     console.error("[seo-agent] saving the answer failed", { error: err instanceof Error ? err.name : "unknown" });
+  }
+}
+
+/** Saves the reply copy for a question that got no answer, so the history shows a reply. Best effort. */
+async function saveFailure(workspaceId: string, conversationId: string, copy: string): Promise<void> {
+  try {
+    await appendMessage(workspaceId, conversationId, { role: "assistant", content: copy, status: "incomplete" });
+  } catch (err) {
+    console.error("[seo-agent] saving the failure reply failed", { error: err instanceof Error ? err.name : "unknown" });
+  }
+}
+
+/** Returns an approved plan to needs_approval after a run that produced no answer. Best effort. */
+async function returnPlan(workspaceId: string, messageId: string): Promise<void> {
+  try {
+    await unclaimPlan(workspaceId, messageId);
+  } catch (err) {
+    console.error("[seo-agent] returning the plan failed", { error: err instanceof Error ? err.name : "unknown" });
   }
 }
 

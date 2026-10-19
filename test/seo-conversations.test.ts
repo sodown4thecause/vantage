@@ -149,6 +149,7 @@ vi.mock("@/lib/db/client", async () => {
 import {
   appendMessage,
   claimPlan,
+  unclaimPlan,
   createConversation,
   getConversation,
   listConversations,
@@ -292,6 +293,39 @@ describe("appendMessage", () => {
     expect(store.batches).toBe(0);
     expect(store.messages).toHaveLength(2);
     expect(store.conversations[1]!.updatedAt).toBe(NOW);
+  });
+});
+
+describe("unclaimPlan", () => {
+  it("returns an approved plan to needs_approval with one conditional UPDATE", async () => {
+    await claimPlan(WS_A, MSG_A);
+    store.calls.length = 0;
+
+    expect(await unclaimPlan(WS_A, MSG_A)).toBe(true);
+
+    const updates = callsOf("update", "seo_message");
+    expect(updates).toHaveLength(1);
+    expect(updates[0]!.values).toEqual({ status: "needs_approval" });
+    expect(updates[0]!.returning).toBe(true);
+    const { sql: text, params } = sqlOf(updates[0]!.where!);
+    expect(text).toContain('"status" = $');
+    expect(params).toEqual(expect.arrayContaining([MSG_A, WS_A, "approved"]));
+    expect(store.messages[0]!.status).toBe("needs_approval");
+  });
+
+  it("lets the owner claim the plan again after it was returned", async () => {
+    await claimPlan(WS_A, MSG_A);
+    await unclaimPlan(WS_A, MSG_A);
+    expect(await claimPlan(WS_A, MSG_A)).toHaveLength(1);
+  });
+
+  it("does nothing to a plan that is not approved, or that belongs to another workspace", async () => {
+    expect(await unclaimPlan(WS_A, MSG_A)).toBe(false);
+    expect(store.messages[0]!.status).toBe("needs_approval");
+
+    await claimPlan(WS_A, MSG_A);
+    expect(await unclaimPlan(WS_A, MSG_B)).toBe(false);
+    expect(store.messages[0]!.status).toBe("approved");
   });
 });
 

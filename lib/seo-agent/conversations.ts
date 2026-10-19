@@ -168,3 +168,22 @@ export async function claimPlan(workspaceId: string, messageId: string): Promise
   if (!row) return null;
   return row.parts.plan ?? [];
 }
+
+/**
+ * Returns an approved plan to `needs_approval` when its run produced no answer, so the owner can run it again. One
+ * conditional UPDATE: only a message that is still `approved` in this workspace changes. Returns whether it did.
+ */
+export async function unclaimPlan(workspaceId: string, messageId: string): Promise<boolean> {
+  const rows = await getDb()
+    .update(seoMessage)
+    .set({ status: "needs_approval" })
+    .where(
+      and(
+        eq(seoMessage.id, messageId),
+        eq(seoMessage.workspaceId, workspaceId),
+        eq(seoMessage.status, "approved"),
+      ),
+    )
+    .returning({ id: seoMessage.id });
+  return rows.length > 0;
+}
