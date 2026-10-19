@@ -29,7 +29,7 @@ vi.mock("@/lib/dataforseo/labs", async (importOriginal) => ({
 }));
 
 import { PaidCallDeniedError } from "@/lib/providers/paid-call";
-import { runAgent, type AgentOutcome, type AgentProfile, type AgentRunInput } from "@/lib/seo-agent/execute";
+import { runAgent, storedStatus, type AgentOutcome, type AgentProfile, type AgentRunInput } from "@/lib/seo-agent/execute";
 import { costOfUsage } from "@/lib/seo-agent/models";
 import { systemPrompt } from "@/lib/seo-agent/prompt";
 import { fallbackFollowUps, profileContext } from "@/lib/seo-agent/suggestions";
@@ -420,5 +420,59 @@ describe("runAgent: concept and out-of-scope path", () => {
     });
     const { outcome } = await drain(run);
     expect(outcome.followUps).toEqual(fallbackFollowUps(PROFILE, "concept"));
+  });
+});
+
+describe("runAgent: the final message metadata", () => {
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+  it("ends the stream with the run's message id, stored status and the answer's parts", async () => {
+    const streamText = fakeStreamText([{ chunks: text("Here are the keywords.") }]);
+    const run = await runAgent(input(), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } });
+    const { outcome, chunks } = await drain(run);
+
+    const metadata = chunks.filter((chunk) => chunk.type === "message-metadata").at(-1);
+    expect(metadata).toEqual({
+      type: "message-metadata",
+      messageMetadata: {
+        conversationId: CONV,
+        messageId: run.messageId,
+        status: "complete",
+        cards: outcome.cards,
+        followUps: outcome.followUps,
+        plan: outcome.plan,
+        notices: outcome.notices,
+        creditsUsed: outcome.creditsUsed,
+      },
+    });
+  });
+
+  it("gives every run its own uuid message id", async () => {
+    const streamText = fakeStreamText([{ chunks: text("One.") }, { chunks: text("Two.") }]);
+    const deps = { streamText: streamText as never, generateText: fakeGenerateText() as never };
+    const first = await runAgent(input(), { deps });
+    const second = await runAgent(input(), { deps });
+    expect(first.messageId).toMatch(UUID);
+    expect(second.messageId).toMatch(UUID);
+    expect(second.messageId).not.toBe(first.messageId);
+  });
+});
+
+describe("storedStatus", () => {
+  const base: AgentOutcome = { status: "complete", content: "Answer.", cards: [], followUps: { seo: "a", geo: "b", content: "c" }, plan: [], notices: [], creditsUsed: 0 };
+
+  it("is complete for an answer with no plan", () => {
+    expect(storedStatus(base)).toBe("complete");
+  });
+
+  it("is needs_approval for an answer that holds a plan", () => {
+    expect(storedStatus({ ...base, plan: [{ tool: "llm_response", input: {}, credits: 2 }] })).toBe("needs_approval");
+  });
+
+  it("is incomplete for a partial, failed or refused answer, even if it held a plan", () => {
+    const plan = [{ tool: "llm_response", input: {}, credits: 2 }];
+    expect(storedStatus({ ...base, status: "incomplete", plan })).toBe("incomplete");
+    expect(storedStatus({ ...base, status: "failed", content: "", plan })).toBe("incomplete");
+    expect(storedStatus({ ...base, status: "refused", content: "" })).toBe("incomplete");
   });
 });

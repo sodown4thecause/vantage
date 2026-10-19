@@ -15,25 +15,34 @@ function configure(env: Record<string, string>): void {
   vi.stubEnv("DATAFORSEO_PASSWORD", env.DATAFORSEO_PASSWORD ?? "");
   vi.stubEnv("NODE_ENV", env.NODE_ENV ?? "test");
   vi.stubEnv("ALLOW_FIXTURES", env.ALLOW_FIXTURES ?? "");
+  vi.stubEnv("AI_GATEWAY_API_KEY", env.AI_GATEWAY_API_KEY ?? "");
 }
+
+const DATAFORSEO = { DATAFORSEO_LOGIN: "u", DATAFORSEO_PASSWORD: "p" };
+const AGENT = { AI_GATEWAY_API_KEY: "gateway-test-key" };
 
 describe("workspace nav SEO item", () => {
   afterEach(() => vi.unstubAllEnvs());
 
   it("is hidden when DataForSEO is not configured", () => {
-    configure({});
+    configure({ ...AGENT });
     expect(renderNav()).not.toContain(SEO_HREF);
   });
 
-  it("is shown when sandbox is configured outside production", () => {
-    configure({ DATAFORSEO_LOGIN: "u", DATAFORSEO_PASSWORD: "p" });
+  it("is hidden when the agent model is not configured, even if DataForSEO is available", () => {
+    configure({ ...DATAFORSEO });
+    expect(renderNav()).not.toContain(SEO_HREF);
+  });
+
+  it("is shown when sandbox and the agent are configured outside production", () => {
+    configure({ ...DATAFORSEO, ...AGENT });
     expect(renderNav()).toContain(SEO_HREF);
   });
 
   it("is hidden for sandbox in production unless ALLOW_FIXTURES is true", () => {
-    configure({ DATAFORSEO_LOGIN: "u", DATAFORSEO_PASSWORD: "p", NODE_ENV: "production" });
+    configure({ ...DATAFORSEO, ...AGENT, NODE_ENV: "production" });
     expect(renderNav()).not.toContain(SEO_HREF);
-    configure({ DATAFORSEO_LOGIN: "u", DATAFORSEO_PASSWORD: "p", NODE_ENV: "production", ALLOW_FIXTURES: "true" });
+    configure({ ...DATAFORSEO, ...AGENT, NODE_ENV: "production", ALLOW_FIXTURES: "true" });
     expect(renderNav()).toContain(SEO_HREF);
   });
 });

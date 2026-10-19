@@ -19,6 +19,7 @@ import {
   FAILURE_COPY,
   REFUSAL_COPY,
   runAgent,
+  storedStatus,
   type AgentOutcome,
   type AgentProfile,
   type AgentRun,
@@ -200,14 +201,14 @@ function answerResponse(args: {
     execute: async ({ writer }) => {
       writer.write({ type: "message-metadata", messageMetadata: { conversationId: args.conversationId } });
       const outcome = await args.run.write(writer);
-      await settleTurn(args, outcome);
+      await settleTurn({ ...args, messageId: args.run.messageId }, outcome);
     },
   });
   return createUIMessageStreamResponse({ stream });
 }
 
 async function settleTurn(
-  args: { workspaceId: string; conversationId: string; approvedMessageId?: string },
+  args: { workspaceId: string; conversationId: string; messageId: string; approvedMessageId?: string },
   outcome: AgentOutcome,
 ): Promise<void> {
   try {
@@ -217,17 +218,20 @@ async function settleTurn(
         return;
       }
       await release(args.workspaceId, QUESTION_LIMIT);
-      await saveFailure(args.workspaceId, args.conversationId, outcome.status === "refused" ? REFUSAL_COPY : FAILURE_COPY);
+      await saveFailure(
+        args.workspaceId,
+        args.conversationId,
+        outcome.status === "refused" ? REFUSAL_COPY : FAILURE_COPY,
+        args.messageId,
+      );
       return;
     }
-    const status = outcome.status === "incomplete"
-      ? "incomplete"
-      : outcome.plan.length > 0 ? "needs_approval" : "complete";
     await appendMessage(args.workspaceId, args.conversationId, {
+      id: args.messageId,
       role: "assistant",
       content: outcome.content,
       parts: { cards: outcome.cards, followUps: outcome.followUps, plan: outcome.plan, notices: outcome.notices },
-      status,
+      status: storedStatus(outcome),
       creditsUsed: outcome.creditsUsed,
     });
   } catch (err) {
@@ -235,10 +239,18 @@ async function settleTurn(
   }
 }
 
-/** Saves the reply copy for a question that got no answer, so the history shows a reply. Best effort. */
-async function saveFailure(workspaceId: string, conversationId: string, copy: string): Promise<void> {
+/**
+ * Saves the reply copy for a question that got no answer, so the history shows a reply. `messageId` is the id the stream
+ * already named, when the run has one. Best effort.
+ */
+async function saveFailure(workspaceId: string, conversationId: string, copy: string, messageId?: string): Promise<void> {
   try {
-    await appendMessage(workspaceId, conversationId, { role: "assistant", content: copy, status: "incomplete" });
+    await appendMessage(workspaceId, conversationId, {
+      ...(messageId ? { id: messageId } : {}),
+      role: "assistant",
+      content: copy,
+      status: "incomplete",
+    });
   } catch (err) {
     console.error("[seo-agent] saving the failure reply failed", { error: err instanceof Error ? err.name : "unknown" });
   }

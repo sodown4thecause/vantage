@@ -263,6 +263,15 @@ describe("getConversation", () => {
 });
 
 describe("appendMessage", () => {
+  it("stores the message under the id the caller passes, so a run can save its answer under a known id", async () => {
+    const MSG = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const { id } = await appendMessage(WS_A, CONV_A, { id: MSG, role: "assistant", content: "Answer." });
+    expect(id).toBe(MSG);
+    expect(callsOf("insert", "seo_message")).toEqual([
+      expect.objectContaining({ values: expect.objectContaining({ id: MSG, role: "assistant", content: "Answer." }) }),
+    ]);
+  });
+
   it("inserts the message and bumps the conversation's updated_at in one batch", async () => {
     const { id } = await appendMessage(WS_A, CONV_A, { role: "user", content: "Find keyword gaps" });
 

@@ -112,6 +112,8 @@ export async function appendMessage(
   workspaceId: string,
   conversationId: string,
   msg: {
+    /** Set when the caller needs the row's id before it saves (the run names its message in the stream). */
+    id?: string;
     role: SeoMessageRole;
     content: string;
     parts?: SeoMessageParts;
@@ -131,6 +133,7 @@ export async function appendMessage(
     db
       .insert(seoMessage)
       .values({
+        ...(msg.id ? { id: msg.id } : {}),
         workspaceId,
         conversationId,
         role: msg.role,

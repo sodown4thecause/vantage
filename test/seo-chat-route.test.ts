@@ -6,6 +6,7 @@ const OTHER_WS = "22222222-2222-4222-8222-222222222222";
 const CONV = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const MSG_PLAN = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const NEW_CONV = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+const RUN_MESSAGE = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const UPGRADE = "You've used this month's SEO agent questions. Upgrade to Pro for more.";
 const ERROR_COPY = "Something went wrong. You weren't charged a question.";
 const FOLLOW_UPS = { seo: "Which keywords hold rank?", geo: "Does ChatGPT cite docs?", content: "Outline a comparison post." };
@@ -75,6 +76,7 @@ function conversation(messages = [storedMessage()]) {
 /** A fake run that writes `answer` through the real writer and returns `outcome`. */
 function fakeRun(outcome: Record<string, unknown> = {}, answer = "Answer.") {
   return {
+    messageId: RUN_MESSAGE,
     write: vi.fn(async (writer: { write: (chunk: UIMessageChunk) => void }) => {
       if (answer) {
         writer.write({ type: "text-start", id: "t1" });
@@ -225,6 +227,7 @@ describe("POST /seo/chat: asking a question", () => {
     mocks.runAgent.mockResolvedValue(fakeRun({ cards, notices: ["SEO data is not set up yet."], creditsUsed: 2 }, "Use these keywords."));
     await postAndRead({ workspaceId: WS, message: "Which keywords?" });
     expect(mocks.appendMessage).toHaveBeenLastCalledWith(WS, NEW_CONV, {
+      id: RUN_MESSAGE,
       role: "assistant",
       content: "Use these keywords.",
       parts: { cards, followUps: FOLLOW_UPS, plan: [], notices: ["SEO data is not set up yet."] },
@@ -234,10 +237,11 @@ describe("POST /seo/chat: asking a question", () => {
     expect(mocks.release).not.toHaveBeenCalled();
   });
 
-  it("saves a produced plan with status needs_approval", async () => {
+  it("saves a produced plan with status needs_approval under the run's message id, so Run it can name it", async () => {
     mocks.runAgent.mockResolvedValue(fakeRun({ plan: PLAN, creditsUsed: 0 }, "I need approval for one call."));
     await postAndRead({ workspaceId: WS, message: "Which keywords?" });
     expect(mocks.appendMessage).toHaveBeenLastCalledWith(WS, NEW_CONV, expect.objectContaining({
+      id: RUN_MESSAGE,
       status: "needs_approval",
       parts: expect.objectContaining({ plan: PLAN }),
     }));
@@ -257,6 +261,7 @@ describe("POST /seo/chat: asking a question", () => {
     expect(mocks.release).toHaveBeenCalledWith(WS, "seo_questions_per_month");
     expect(mocks.appendMessage.mock.calls.map((call) => call[2].role)).toEqual(["user", "assistant"]);
     expect(mocks.appendMessage).toHaveBeenLastCalledWith(WS, NEW_CONV, {
+      id: RUN_MESSAGE,
       role: "assistant",
       content: FAILURE,
       status: "incomplete",
@@ -268,7 +273,7 @@ describe("POST /seo/chat: asking a question", () => {
     const { text } = await postAndRead({ workspaceId: WS, message: "Which keywords?" });
     expect(text).toContain(REFUSAL);
     expect(mocks.release).toHaveBeenCalledWith(WS, "seo_questions_per_month");
-    expect(mocks.appendMessage).toHaveBeenLastCalledWith(WS, NEW_CONV, { role: "assistant", content: REFUSAL, status: "incomplete" });
+    expect(mocks.appendMessage).toHaveBeenLastCalledWith(WS, NEW_CONV, { id: RUN_MESSAGE, role: "assistant", content: REFUSAL, status: "incomplete" });
   });
 
   it("releases the question and saves the error reply when the agent throws before streaming", async () => {

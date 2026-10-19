@@ -15,7 +15,7 @@ import { dataForSeoAvailable } from "@/lib/dataforseo/config";
 import { runPaidCall } from "@/lib/providers/paid-call";
 import { QuestionBudget, autoCreditsFromEnv } from "@/lib/seo-agent/budget";
 import type { Classification, Intent } from "@/lib/seo-agent/classify";
-import type { FollowUps, PlannedCall, ResultCard } from "@/lib/seo-agent/conversations";
+import type { FollowUps, PlannedCall, ResultCard, SeoMessageStatus } from "@/lib/seo-agent/conversations";
 import { classifierProviderOptions, costOfUsage, gatewayProvider, seoModels } from "@/lib/seo-agent/models";
 import { conceptPrompt, systemPrompt, type PromptProfile } from "@/lib/seo-agent/prompt";
 import { fallbackFollowUps } from "@/lib/seo-agent/suggestions";
@@ -51,11 +51,20 @@ export type AgentOutcome = {
   creditsUsed: number;
 };
 
+/** How an answer is stored and shown: a plan waits for approval; a partial, failed or refused answer is incomplete. */
+export function storedStatus(outcome: AgentOutcome): SeoMessageStatus {
+  if (outcome.status === "incomplete" || outcome.status === "failed" || outcome.status === "refused") return "incomplete";
+  return outcome.plan.length > 0 ? "needs_approval" : "complete";
+}
+
 /**
- * One answer. `write` streams the answer and metadata into the writer and resolves with the outcome once the answer
- * has ended. It never rejects: failures come back as an outcome with status "failed", "incomplete" or "refused".
+ * One answer. `messageId` is the id its assistant message is saved under; the final metadata carries it too, so the
+ * owner's Run it names a row that exists. `write` streams the answer and metadata into the writer and resolves with the
+ * outcome once the answer has ended. It never rejects: failures come back as an outcome with status "failed",
+ * "incomplete" or "refused".
  */
 export type AgentRun = {
+  messageId: string;
   write(writer: UIMessageStreamWriter): Promise<AgentOutcome>;
 };
 
@@ -258,6 +267,7 @@ export async function runAgent(
   const classifier = { id: models.classifier, model: gatewayProvider()(models.classifier) };
   const fallback = models.fallback ? { id: models.fallback, model: gatewayProvider()(models.fallback) } : null;
 
+  const messageId = crypto.randomUUID();
   const budget = new QuestionBudget(approved ? 0 : autoCreditsFromEnv(), approved ?? []);
   const ctx: ToolContext = {
     workspaceId: input.workspaceId,
@@ -379,6 +389,7 @@ export async function runAgent(
   };
 
   return {
+    messageId,
     async write(writer) {
       let result: AgentOutcome;
       try {
@@ -399,6 +410,8 @@ export async function runAgent(
         type: "message-metadata",
         messageMetadata: {
           conversationId: input.conversationId,
+          messageId,
+          status: storedStatus(result),
           cards: result.cards,
           followUps: result.followUps,
           plan: result.plan,
