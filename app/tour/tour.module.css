@@ -1,0 +1,991 @@
+/*
+ * /tour: a live-surface page driven by the vendored scrollcraft engine.
+ * Colours and type are the product's own tokens from globals.css, so the tour
+ * looks like the workspace it demonstrates and follows dark mode for free.
+ * The engine's device rules are restated here, scoped under .tour, instead of
+ * importing upstream scrollcraft.css (which styles html and body globally).
+ */
+
+.tour {
+  --side: 15rem;
+  --bar: 0px;
+  --gutter: clamp(1.25rem, 4vw, 3.5rem);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --raise: 0 2px 4px color-mix(in oklab, var(--ink) 8%, transparent),
+    0 18px 40px -12px color-mix(in oklab, var(--ink) 22%, transparent);
+  flex: 1;
+}
+
+/* Numerals line up in columns; set only on figures, since this face's tnum also widens punctuation. */
+.funnel dd,
+.sourceTable td,
+.gscTable td,
+.editCount {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------- engine devices -- */
+
+.tour :global(.sc-stage) {
+  position: sticky;
+  top: var(--bar);
+  height: calc(100vh - var(--bar));
+  height: calc(100svh - var(--bar));
+  overflow: clip;
+}
+
+:global(.sc-ready) .tour [data-sc-cue] {
+  opacity: 0;
+}
+
+.tour [data-sc-pan] {
+  display: flex;
+  will-change: transform;
+}
+
+.tour [data-sc-parallax] {
+  will-change: transform;
+}
+
+.tour [data-sc-reveal] {
+  will-change: clip-path;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tour [data-sc-reveal] {
+    clip-path: none !important;
+  }
+  .tour [data-sc-parallax],
+  .tour [data-sc-pan] {
+    transform: none !important;
+  }
+  /* The rail's travel is its navigation: hand it back as a normal scroll region. */
+  .tour [data-sc-act="pan"] :global(.sc-stage) {
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+  }
+}
+
+/* ------------------------------------------------------------ chrome -- */
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.side {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 30;
+  width: var(--side);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.25rem 1rem 1.5rem;
+  background: var(--sheet);
+  border-right: 1px solid var(--contour);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 1.0625rem;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.tld {
+  color: var(--ridge);
+  font-weight: 600;
+}
+
+.ws {
+  display: grid;
+  gap: 0.125rem;
+  padding: 0.75rem;
+  border: 1px solid var(--contour);
+  border-radius: 0.5rem;
+  background: var(--paper);
+}
+
+.ws span {
+  font-size: 0.8125rem;
+  color: var(--ridge);
+}
+
+.navList {
+  display: grid;
+  gap: 0.125rem;
+  margin: 0 -0.25rem;
+}
+
+.navItem {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 0.375rem;
+  font-weight: 500;
+  color: var(--ridge);
+  transition: background-color 160ms var(--ease-out), color 160ms var(--ease-out);
+}
+
+.navItem:hover {
+  color: var(--ink);
+}
+
+.navItem[aria-current] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.preview {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--flag-ink);
+  white-space: nowrap;
+}
+
+.navItem[aria-current] .preview {
+  color: var(--flag);
+}
+
+.sample {
+  margin-top: auto;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--ridge);
+}
+
+.sideCta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+
+.bar {
+  display: none;
+}
+
+.main {
+  margin-left: var(--side);
+}
+
+/* ------------------------------------------------------- shared type -- */
+
+.panelTitle {
+  font-size: clamp(1.6rem, 1.2rem + 1.4vw, 2.4rem);
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.panelLede {
+  max-width: 54ch;
+  margin-top: 0.75rem;
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  color: var(--ridge);
+  text-wrap: pretty;
+}
+
+.minorHead {
+  display: block;
+  margin-top: 1.75rem;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.qMeta {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--ridge);
+}
+
+.flowAct {
+  padding: clamp(4.5rem, 9vw, 8rem) var(--gutter);
+}
+
+/* ------------------------------------------------------- 1. the queue -- */
+
+.heroStage {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--gutter);
+}
+
+/* Back plane: the raw stream, small and far, moving faster than the list. */
+.stream {
+  position: absolute;
+  inset: -12% -4% auto 54%;
+  display: grid;
+  gap: 1.15rem;
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  line-height: 1.3;
+  color: var(--ridge);
+  opacity: calc(0.42 - var(--sc-p, 0) * 0.22);
+  filter: blur(0.6px);
+  pointer-events: none;
+  user-select: none;
+}
+
+.stream span {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-right: 0.35rem;
+}
+
+.heroInner {
+  position: relative;
+  width: 100%;
+  max-width: 68rem;
+}
+
+.status {
+  font-size: 0.875rem;
+  color: var(--ridge);
+}
+
+.heroTitle {
+  max-width: 18ch;
+  margin-top: 0.5rem;
+  font-size: clamp(2.2rem, 1.4rem + 3vw, 4rem);
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.help {
+  max-width: 48ch;
+  margin-top: 0.9rem;
+  font-size: 1.0625rem;
+  line-height: 1.5;
+  color: var(--ridge);
+}
+
+.heroPlanes {
+  position: relative;
+  margin-top: clamp(1.25rem, 3.5vh, 2.5rem);
+}
+
+/* Middle plane: the ranked list, on the sheet. */
+.queue {
+  width: min(40rem, 64%);
+  background: var(--sheet);
+  border: 1px solid var(--contour);
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--ink) 8%, transparent);
+}
+
+.queue li {
+  display: flex;
+  gap: 0.85rem;
+  align-items: center;
+  padding: 0.7rem 1rem;
+}
+
+.queue li + li {
+  border-top: 1px solid var(--contour);
+}
+
+.queueFirst {
+  background: color-mix(in oklab, var(--signal) 9%, transparent);
+  border-radius: 0.75rem 0.75rem 0 0;
+}
+
+.qTitle {
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/* Front plane: the top conversation lifted off the list, nearest the reader. */
+.lift {
+  position: absolute;
+  top: -1.5rem;
+  right: 0;
+  width: min(22rem, 38%);
+  padding: 1.1rem 1.25rem 1.35rem;
+  background: var(--sheet);
+  border: 1px solid var(--signal);
+  border-radius: 0.75rem;
+  box-shadow: var(--raise);
+}
+
+.lift svg {
+  margin: -0.5rem auto 0.25rem;
+}
+
+.liftQuote {
+  margin-top: 0.4rem;
+  font-size: 1.2rem;
+  line-height: 1.35;
+}
+
+/* ----------------------------------------------------- 2. the sources -- */
+
+.sourcesGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: clamp(2rem, 5vw, 5rem);
+  align-items: start;
+  max-width: 68rem;
+}
+
+.funnel {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  justify-content: start;
+  gap: 0 2.25rem;
+  margin-top: 2.25rem;
+}
+
+.funnel dt {
+  font-size: 0.875rem;
+  color: var(--ridge);
+}
+
+.funnel dd {
+  font-size: clamp(2rem, 1.5rem + 2vw, 3.25rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.funnelLast dd {
+  color: var(--signal);
+}
+
+.sourceTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.sourceTable thead th {
+  padding-bottom: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ridge);
+  text-align: left;
+}
+
+.sourceTable thead th:last-child {
+  text-align: right;
+}
+
+.sourceTable tbody th,
+.sourceTable td {
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--contour);
+  font-weight: 500;
+  text-align: left;
+}
+
+.sourceTable td {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.meter {
+  display: block;
+  width: 8rem;
+  height: 0.375rem;
+  border-radius: 999px;
+  background: linear-gradient(var(--ridge), var(--ridge)) left / calc(var(--w) * 100%) 100% no-repeat,
+    color-mix(in oklab, var(--contour) 70%, transparent);
+}
+
+.sourceTable td span:last-child {
+  min-width: 3ch;
+  text-align: right;
+}
+
+/* -------------------------------------------------- 3. the opportunity -- */
+
+.oppStage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(2rem, 4vw, 4rem);
+  align-content: center;
+  padding: 0 var(--gutter);
+  max-width: calc(72rem + 2 * var(--gutter));
+}
+
+.oppHead {
+  display: grid;
+  gap: 1.25rem;
+  align-content: center;
+}
+
+/* The score shape grows from the centre as the act advances: the ranking assembling itself. */
+.oppGlyph svg > polygon:nth-of-type(3),
+.oppGlyph svg > circle {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  transform: scale(clamp(0.04, (var(--sc-p, 1) - 0.04) * 1.6, 1));
+}
+
+.oppTitle {
+  margin-top: 0.35rem;
+  font-size: clamp(1.5rem, 1.15rem + 1.3vw, 2.25rem);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.oppBody {
+  display: grid;
+  gap: 1.5rem;
+  align-content: center;
+}
+
+.evidence {
+  display: grid;
+  gap: 1rem;
+}
+
+.evidence li {
+  padding: 0.9rem 1.1rem;
+  background: var(--sheet);
+  border: 1px solid var(--contour);
+  border-radius: 0.5rem;
+}
+
+.evidence blockquote {
+  margin-top: 0.3rem;
+  font-size: 1.08rem;
+  line-height: 1.45;
+}
+
+.why h3 {
+  font-weight: 600;
+}
+
+.why ul {
+  margin-top: 0.4rem;
+  display: grid;
+  gap: 0.3rem;
+  padding-left: 1.1rem;
+  list-style: disc;
+  color: var(--ridge);
+}
+
+.why li::marker {
+  color: var(--signal);
+}
+
+/* ------------------------------------------------------- 4. the reply -- */
+
+.replyGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: clamp(2rem, 5vw, 5rem);
+  align-items: start;
+  max-width: 68rem;
+}
+
+.approach {
+  display: grid;
+  gap: 0.4rem;
+  padding-left: 1.1rem;
+  list-style: disc;
+}
+
+.approach li::marker {
+  color: var(--signal);
+}
+
+.composer {
+  padding: 1.25rem;
+  background: var(--sheet);
+  border: 1px solid var(--contour);
+  border-radius: 0.75rem;
+  box-shadow: var(--raise);
+}
+
+.composer .minorHead {
+  margin-top: 0.75rem;
+}
+
+.composer textarea,
+.start textarea {
+  display: block;
+  width: 100%;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--contour);
+  font: inherit;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.composerFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin-top: 0.9rem;
+}
+
+.composerFoot button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ------------------------------------------------------ 5. the search -- */
+
+.panStage {
+  display: flex;
+  align-items: center;
+}
+
+.rail {
+  align-items: stretch;
+  gap: 1.25rem;
+  padding: 0 calc(var(--gutter) + var(--side)) 0 var(--gutter);
+}
+
+.railLead {
+  flex: 0 0 min(26rem, 80vw);
+  align-self: center;
+}
+
+.railPanel {
+  flex: 0 0 min(22rem, 80vw);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1.25rem;
+  background: var(--sheet);
+  border: 1px solid var(--contour);
+  border-radius: 0.75rem;
+}
+
+.railPanel h3 {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.gscPanel {
+  flex-basis: min(36rem, 88vw);
+}
+
+.gscTable {
+  width: 100%;
+  margin-top: 0.4rem;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.gscTable th,
+.gscTable td {
+  padding: 0.55rem 0.5rem 0.55rem 0;
+  border-top: 1px solid var(--contour);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.gscTable th:first-child {
+  text-align: left;
+  white-space: normal;
+  font-weight: 500;
+}
+
+.gscTable thead th {
+  border-top: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ridge);
+}
+
+.gapRow {
+  background: color-mix(in oklab, var(--flag) 22%, transparent);
+}
+
+.prompt {
+  font-family: var(--font-serif);
+  font-size: 1.1rem;
+  line-height: 1.4;
+}
+
+.cited {
+  margin-top: auto;
+  font-weight: 600;
+}
+
+.gapPanel {
+  border-color: var(--signal);
+  justify-content: space-between;
+}
+
+.gapPanel .btn {
+  align-self: flex-start;
+}
+
+/* ---------------------------------------------- 6. the edit pass, peak -- */
+
+.editStage {
+  display: grid;
+  align-content: center;
+  gap: clamp(1.5rem, 4vh, 2.75rem);
+  padding: 0 var(--gutter);
+  max-width: calc(74rem + 2 * var(--gutter));
+}
+
+.editBody {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(15rem, 0.42fr);
+  gap: clamp(1.5rem, 4vw, 4rem);
+  align-items: start;
+}
+
+.draft {
+  padding: clamp(1.25rem, 3vw, 2.25rem);
+  background: var(--sheet);
+  border: 1px solid var(--contour);
+  border-radius: 0.75rem;
+  box-shadow: var(--raise);
+}
+
+.draftText {
+  max-width: 60ch;
+  margin-top: 0.85rem;
+  font-size: clamp(1.15rem, 1rem + 0.6vw, 1.5rem);
+  line-height: 1.55;
+  letter-spacing: -0.01em;
+}
+
+.marked {
+  background: color-mix(in oklab, var(--flag) 40%, transparent);
+  text-decoration: underline wavy var(--flag-ink);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.3em;
+  border-radius: 2px;
+  transition: background-color 200ms var(--ease-out);
+}
+
+.fixed {
+  text-decoration: underline var(--signal);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.28em;
+}
+
+.editCount {
+  font-size: clamp(1.6rem, 1.2rem + 1.4vw, 2.4rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.editLog ol {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  list-style: decimal;
+  padding-left: 1.4rem;
+}
+
+.editLog li {
+  color: color-mix(in oklab, var(--ridge) 55%, transparent);
+  transition: color 200ms var(--ease-out);
+}
+
+.editLog li[data-state="marked"] {
+  color: var(--flag-ink);
+  font-weight: 600;
+}
+
+.editLog li[data-state="fixed"] {
+  color: var(--ink);
+}
+
+.editLog li[data-state="fixed"]::marker {
+  color: var(--signal);
+}
+
+/* ------------------------------------------------------- 7. the start -- */
+
+.startAct {
+  display: grid;
+  gap: 4rem;
+}
+
+.start {
+  max-width: 42rem;
+}
+
+.watch {
+  min-height: 4.5rem;
+  margin-top: 1rem;
+}
+
+.watch p + p {
+  line-height: 1.5;
+}
+
+.watch .minorHead {
+  margin: 0 0 0.25rem;
+}
+
+.startCta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  margin-top: 1.5rem;
+}
+
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--contour);
+  font-size: 0.875rem;
+  color: var(--ridge);
+}
+
+/* ------------------------------------------------------------ phones -- */
+
+@media (max-width: 960px) {
+  .tour {
+    --side: 0px;
+    --bar: 3.25rem;
+  }
+
+  .side {
+    display: none;
+  }
+
+  .bar {
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 30;
+    height: var(--bar);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0 1rem;
+    background: var(--sheet);
+    border-bottom: 1px solid var(--contour);
+  }
+
+  .main {
+    padding-top: var(--bar);
+  }
+
+  .menu {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .menu summary {
+    overflow: hidden;
+    padding: 0.4rem 0;
+    font-weight: 600;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    cursor: pointer;
+  }
+
+  .menu ol {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    left: -0.5rem;
+    width: min(16rem, 80vw);
+    display: grid;
+    padding: 0.4rem;
+    background: var(--sheet);
+    border: 1px solid var(--contour);
+    border-radius: 0.5rem;
+    box-shadow: var(--raise);
+  }
+
+  .menu a {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.6rem 0.75rem;
+    font-weight: 500;
+  }
+
+  .barCta {
+    flex: none;
+    padding: 0.4rem 0.75rem;
+    border-radius: 0.375rem;
+    background: var(--signal);
+    color: var(--signal-ink);
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  .stream {
+    inset: 34% -10% auto 30%;
+    font-size: 0.95rem;
+    opacity: calc(0.26 - var(--sc-p, 0) * 0.14);
+  }
+
+  .heroTitle {
+    font-size: clamp(2rem, 1.4rem + 3.4vw, 2.6rem);
+  }
+
+  .help {
+    font-size: 1rem;
+  }
+
+  /* Phones: the list shows the first three, and the lifted card sits over the top of it. */
+  .heroPlanes {
+    display: flex;
+    flex-direction: column-reverse;
+  }
+
+  .queue {
+    width: 100%;
+    margin-top: -0.75rem;
+  }
+
+  .queue li:nth-child(n + 4) {
+    display: none;
+  }
+
+  .lift {
+    position: relative;
+    top: auto;
+    z-index: 1;
+    width: auto;
+    margin: 0 0.75rem;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0 0.75rem;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    /* Cancels the parallax offset at the start, so the card opens below the help text and lifts over the list. */
+    translate: 0 4.4rem;
+  }
+
+  .lift svg {
+    grid-row: span 2;
+    width: 76px;
+    margin: 0;
+  }
+
+  .lift text {
+    display: none;
+  }
+
+  .liftQuote {
+    font-size: 1rem;
+  }
+
+  .sourcesGrid,
+  .replyGrid,
+  .editBody {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .funnel {
+    gap: 0 1.5rem;
+  }
+
+  .gscPanel {
+    flex-basis: 88vw;
+  }
+
+  .gscTable th:nth-child(3),
+  .gscTable td:nth-child(3) {
+    display: none;
+  }
+
+  .meter {
+    width: 5rem;
+  }
+
+  .oppStage {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+  }
+
+  .oppHead {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.9rem;
+  }
+
+  .oppGlyph svg {
+    width: 92px;
+  }
+
+  .oppGlyph text {
+    display: none;
+  }
+
+  .oppTitle {
+    font-size: 1.2rem;
+  }
+
+  .evidence {
+    gap: 0.6rem;
+  }
+
+  .evidence li {
+    padding: 0.6rem 0.8rem;
+  }
+
+  .evidence blockquote {
+    font-size: 0.98rem;
+  }
+
+  .why ul {
+    font-size: 0.9375rem;
+  }
+
+  .editStage {
+    gap: 1rem;
+  }
+
+  .editHead .panelLede {
+    font-size: 0.95rem;
+  }
+
+  .draftText {
+    font-size: 1.05rem;
+  }
+
+  .editLog ol {
+    grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+    gap: 0.25rem 1.5rem;
+    margin-top: 0.4rem;
+    font-size: 0.875rem;
+  }
+
+  .editCount {
+    font-size: 1.3rem;
+  }
+}
+
+@media (max-width: 960px) and (max-height: 760px) {
+  .why {
+    display: none;
+  }
+}
+
+@media (max-width: 960px) and (prefers-reduced-motion: reduce) {
+  /* No parallax to cancel, so the card stays where it is laid out. */
+  .lift {
+    translate: none;
+  }
+}
