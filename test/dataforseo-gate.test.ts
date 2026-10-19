@@ -10,12 +10,17 @@ const mocks = vi.hoisted(() => ({
   runPaidCall: vi.fn(),
   meta: undefined as unknown,
   settled: undefined as unknown,
+  recordCost: vi.fn(),
 }));
 
 vi.mock("@/lib/plans/limits", () => ({ consume: mocks.consume, release: mocks.release }));
 vi.mock("@/lib/providers/paid-call", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/providers/paid-call")>(),
   runPaidCall: mocks.runPaidCall,
+}));
+vi.mock("@/lib/costs/ledger", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/costs/ledger")>(),
+  recordCost: mocks.recordCost,
 }));
 vi.mock("@/lib/dataforseo/cache", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/dataforseo/cache")>(),
@@ -29,8 +34,10 @@ import { dataForSeoCacheKey } from "@/lib/dataforseo/cache";
 import {
   DataForSeoDeniedError,
   type GateRequest,
+  listLlmModels,
   peekDataForSeo,
   resetBalanceCacheForTests,
+  resetLlmModelsCacheForTests,
   runDataForSeo,
 } from "@/lib/dataforseo/gate";
 import { PaidCallDeniedError } from "@/lib/providers/paid-call";
@@ -395,5 +402,115 @@ describe("DataForSEO spend gate", () => {
       await expect(peekDataForSeo(ENDPOINT, TASK, FRESHNESS)).resolves.toBeNull();
       expect(mocks.read).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("listLlmModels", () => {
+  const modelsPath = "https://api.dataforseo.com/v3/ai_optimization/chat_gpt/llm_responses/models";
+  const modelsBody = (result: unknown[], cost = 0) =>
+    JSON.stringify({ status_code: 20000, cost, tasks: [{ status_code: 20000, cost, result }] });
+  const modelsFetch = (body: () => Response = () => new Response(modelsBody([{ model_name: "gpt-4o", web_search_supported: true }]))) =>
+    vi.fn(async () => body());
+  const DAY = 24 * 60 * MINUTE;
+
+  beforeEach(() => {
+    resetLlmModelsCacheForTests();
+    mocks.recordCost.mockReset().mockResolvedValue(true);
+    error.mockClear();
+  });
+
+  it("returns an empty list without any request when DataForSEO is unconfigured", async () => {
+    configure("unconfigured");
+    const fetchImpl = modelsFetch();
+    await expect(listLlmModels("chat_gpt", { fetchImpl: asFetch(fetchImpl) })).resolves.toEqual([]);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("GETs the models endpoint once for two calls and trims each model to name and web search", async () => {
+    configure("live");
+    const fetchImpl = modelsFetch(() => new Response(modelsBody([
+      { model_name: "gpt-4o", web_search_supported: true, extra: "ignored" },
+      { model_name: "gpt-mini", web_search_supported: "yes" },
+      { web_search_supported: true },
+    ])));
+    const first = await listLlmModels("chat_gpt", { fetchImpl: asFetch(fetchImpl), now });
+    const second = await listLlmModels("chat_gpt", { fetchImpl: asFetch(fetchImpl), now: new Date(now.getTime() + MINUTE) });
+
+    const expected = [
+      { modelName: "gpt-4o", webSearch: true },
+      { modelName: "gpt-mini", webSearch: false },
+    ];
+    expect(first).toEqual(expected);
+    expect(second).toEqual(expected);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(modelsPath);
+    expect(init.method).toBe("GET");
+  });
+
+  it("memoises per engine, so another engine is fetched separately", async () => {
+    configure("live");
+    const fetchImpl = modelsFetch();
+    await listLlmModels("chat_gpt", { fetchImpl: asFetch(fetchImpl), now });
+    await listLlmModels("claude", { fetchImpl: asFetch(fetchImpl), now });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(String((fetchImpl.mock.calls[1] as unknown as [string])[0])).toContain("/v3/ai_optimization/claude/llm_responses/models");
+  });
+
+  it("looks the models up again after 24 hours", async () => {
+    configure("live");
+    const fetchImpl = modelsFetch();
+    await listLlmModels("chat_gpt", { fetchImpl: asFetch(fetchImpl), now });
+    await listLlmModels("chat_gpt", { fetchImpl: asFetch(fetchImpl), now: new Date(now.getTime() + DAY - MINUTE) });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    await listLlmModels("chat_gpt", { fetchImpl: asFetch(fetchImpl), now: new Date(now.getTime() + DAY + MINUTE) });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns an empty list on an upstream error, logs without the body, and does not memoise the failure", async () => {
+    configure("live");
+    const fetchImpl = modelsFetch(() => new Response("upstream secret-body", { status: 500 }));
+    await expect(listLlmModels("chat_gpt", { fetchImpl: asFetch(fetchImpl), now })).resolves.toEqual([]);
+    expect(error).toHaveBeenCalled();
+    expect(JSON.stringify(error.mock.calls)).not.toContain("secret-body");
+
+    fetchImpl.mockImplementation(async () => new Response(modelsBody([{ model_name: "gpt-4o", web_search_supported: true }])));
+    await expect(listLlmModels("chat_gpt", { fetchImpl: asFetch(fetchImpl), now })).resolves.toEqual([
+      { modelName: "gpt-4o", webSearch: true },
+    ]);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not memoise an empty successful list, so a transient empty answer heals on the next call", async () => {
+    configure("live");
+    const fetchImpl = modelsFetch(() => new Response(modelsBody([])));
+    await expect(listLlmModels("chat_gpt", { fetchImpl: asFetch(fetchImpl), now })).resolves.toEqual([]);
+    await expect(listLlmModels("chat_gpt", { fetchImpl: asFetch(fetchImpl), now })).resolves.toEqual([]);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("records a non-zero cost under dataforseo and the llm_models action with the seo source", async () => {
+    configure("live");
+    const fetchImpl = modelsFetch(() => new Response(modelsBody([{ model_name: "m", web_search_supported: false }], 0.002)));
+    await listLlmModels("chat_gpt", { fetchImpl: asFetch(fetchImpl), now });
+    expect(mocks.recordCost).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      sourceKey: "seo",
+      provider: "dataforseo",
+      action: "llm_models",
+      unitCostUsd: 0.002,
+    }));
+  });
+
+  it("records no cost for a zero-cost models call", async () => {
+    configure("live");
+    await listLlmModels("chat_gpt", { fetchImpl: asFetch(modelsFetch()), now });
+    expect(mocks.recordCost).not.toHaveBeenCalled();
+  });
+
+  it("records a cost that the provider reports on a failed call", async () => {
+    configure("live");
+    const fetchImpl = modelsFetch(() => new Response(JSON.stringify({ status_code: 40501, cost: 0.003, tasks: [] }), { status: 200 }));
+    await expect(listLlmModels("chat_gpt", { fetchImpl: asFetch(fetchImpl), now })).resolves.toEqual([]);
+    expect(mocks.recordCost).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ provider: "dataforseo", action: "llm_models", unitCostUsd: 0.003 }));
   });
 });

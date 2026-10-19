@@ -1,11 +1,13 @@
 import { sql } from "drizzle-orm";
 
-import { roundUsd } from "@/lib/costs/ledger";
+import { recordCost, roundUsd } from "@/lib/costs/ledger";
 import { getDb } from "@/lib/db/client";
 import { numericField, rowsOf } from "@/lib/db/rows";
 import { dataForSeoCacheKey, readDataForSeoCache, writeDataForSeoCache } from "@/lib/dataforseo/cache";
-import { DataForSeoApiError, dataForSeoPost, getDataForSeoBalance } from "@/lib/dataforseo/client";
+import type { LlmEngine } from "@/lib/dataforseo/ai-optimization";
+import { DataForSeoApiError, dataForSeoGet, dataForSeoPost, getDataForSeoBalance } from "@/lib/dataforseo/client";
 import { type DataForSeoConfig, usableDataForSeoConfig } from "@/lib/dataforseo/config";
+import { isRecord } from "@/lib/dataforseo/shared";
 import { consume, release } from "@/lib/plans/limits";
 import { runPaidCall } from "@/lib/providers/paid-call";
 
@@ -163,4 +165,60 @@ export async function peekDataForSeo<T>(
   const config = usableDataForSeoConfig();
   if (!config) return null;
   return readDataForSeoCache<T>(dataForSeoCacheKey(config.env, endpoint, task), freshnessSeconds);
+}
+
+export type LlmModel = { modelName: string; webSearch: boolean };
+
+const LLM_MODELS_TTL_MS = 24 * 60 * 60_000;
+// Module-level memo per engine. Failed lookups and empty lists are never stored, so an outage or a blank answer heals on the next call.
+const llmModelsMemo = new Map<LlmEngine, { value: LlmModel[]; expiresAt: number }>();
+
+export function resetLlmModelsCacheForTests(): void {
+  llmModelsMemo.clear();
+}
+
+function trimLlmModels(result: unknown[]): LlmModel[] {
+  return result.flatMap((item) => {
+    if (!isRecord(item) || typeof item.model_name !== "string" || item.model_name.trim() === "") return [];
+    return [{ modelName: item.model_name, webSearch: item.web_search_supported === true }];
+  });
+}
+
+async function recordModelsCost(costUsd: number | undefined): Promise<void> {
+  if (costUsd === undefined || costUsd <= 0) return;
+  await recordCost({ sourceKey: "seo", provider: "dataforseo", action: "llm_models", unitCostUsd: costUsd });
+}
+
+/**
+ * The models one engine offers. Not workspace-scoped and not charged to a credit, because it is reference data.
+ * Any error, or no usable config, yields []. Only a non-zero reported cost is recorded.
+ */
+export async function listLlmModels(
+  engine: LlmEngine,
+  opts: { signal?: AbortSignal; fetchImpl?: typeof fetch; now?: Date } = {},
+): Promise<LlmModel[]> {
+  const config = usableDataForSeoConfig();
+  if (!config) return [];
+
+  const now = opts.now ?? new Date();
+  const memo = llmModelsMemo.get(engine);
+  if (memo && memo.expiresAt > now.getTime()) return memo.value;
+
+  let fetched: { result: unknown[]; costUsd: number | undefined };
+  try {
+    fetched = await dataForSeoGet<unknown>(config, `/v3/ai_optimization/${engine}/llm_responses/models`, {
+      signal: opts.signal,
+      fetchImpl: opts.fetchImpl,
+    });
+  } catch (err) {
+    // A failed call can still have been charged; the reported cost is recorded and the caller gets [].
+    if (err instanceof DataForSeoApiError) await recordModelsCost(err.costUsd);
+    console.error("[dataforseo] llm models lookup failed", { engine, error: err instanceof Error ? err.name : "unknown" });
+    return [];
+  }
+
+  await recordModelsCost(fetched.costUsd);
+  const value = trimLlmModels(fetched.result);
+  if (value.length > 0) llmModelsMemo.set(engine, { value, expiresAt: now.getTime() + LLM_MODELS_TTL_MS });
+  return value;
 }

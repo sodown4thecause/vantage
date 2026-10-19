@@ -63,6 +63,15 @@ export async function dataForSeoPost<T>(config: DataForSeoConfig, path: string, 
   return { result: Array.isArray(envelopeTask.result) ? envelopeTask.result as T[] : [], costUsd: cost };
 }
 
+/**
+ * GETs a /v3/ endpoint with no body. Callers own spend control; this client does no budget logic.
+ * costUsd follows the same rules as dataForSeoPost.
+ */
+export async function dataForSeoGet<T>(config: DataForSeoConfig, path: string, opts: Options = {}): Promise<DataForSeoResult<T>> {
+  const { task: envelopeTask, cost } = await sendTask(config, "GET", path, undefined, opts);
+  return { result: Array.isArray(envelopeTask.result) ? envelopeTask.result as T[] : [], costUsd: cost };
+}
+
 /** Account balance in USD from GET /v3/appendix/user_data. */
 export async function getDataForSeoBalance(config: DataForSeoConfig, opts: Options = {}): Promise<number> {
   const { task: envelopeTask } = await sendTask(config, "GET", BALANCE_PATH, undefined, opts);

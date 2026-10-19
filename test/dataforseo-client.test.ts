@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { dataForSeoAvailable, dataForSeoConfig } from "@/lib/dataforseo/config";
-import { DataForSeoApiError, dataForSeoPost, getDataForSeoBalance } from "@/lib/dataforseo/client";
+import { DataForSeoApiError, dataForSeoGet, dataForSeoPost, getDataForSeoBalance } from "@/lib/dataforseo/client";
 
 const LOGIN = "login-secret-user";
 const PASSWORD = "pw-secret-value";
@@ -213,5 +213,45 @@ describe("getDataForSeoBalance", () => {
   it("rejects when the balance is missing", async () => {
     const fetchImpl = stubFetch(balanceEnvelope({}));
     await expect(getDataForSeoBalance(config, { fetchImpl })).rejects.toThrow(/balance/i);
+  });
+});
+
+describe("dataForSeoGet", () => {
+  const MODELS_PATH = "/v3/ai_optimization/chat_gpt/llm_responses/models";
+
+  it("GETs the path with Basic auth and no body or content type, returning result and cost", async () => {
+    const fetchImpl = stubFetch(envelope({ cost: 0.01, result: [{ model_name: "gpt-4o", web_search_supported: true }] }));
+    const out = await dataForSeoGet<{ model_name: string }>(config, MODELS_PATH, { fetchImpl });
+
+    expect(out).toEqual({ result: [{ model_name: "gpt-4o", web_search_supported: true }], costUsd: 0.01 });
+    const [url, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`https://sandbox.dataforseo.com${MODELS_PATH}`);
+    expect(init.method).toBe("GET");
+    expect(init.body).toBeUndefined();
+    expect(init.headers).toEqual({ Authorization: `Basic ${btoa(`${LOGIN}:${PASSWORD}`)}` });
+  });
+
+  it("returns an empty result when the task has none", async () => {
+    const fetchImpl = stubFetch(envelope({ result: null }));
+    await expect(dataForSeoGet(config, MODELS_PATH, { fetchImpl })).resolves.toEqual({ result: [], costUsd: 0 });
+  });
+
+  it("rejects a non-JSON body as an invalid response", async () => {
+    const fetchImpl = stubFetch("<html>gateway</html>", 200);
+    await expect(dataForSeoGet(config, MODELS_PATH, { fetchImpl })).rejects.toMatchObject({ statusCode: 0 });
+  });
+
+  it("refuses paths outside /v3/ before fetching", async () => {
+    const fetchImpl = stubFetch(envelope({}));
+    await expect(dataForSeoGet(config, "/v2/x", { fetchImpl })).rejects.toThrow(/\/v3\//);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("never puts the login or password in an error message", async () => {
+    const fetchImpl = stubFetch("nope", 401);
+    const error = await dataForSeoGet(config, MODELS_PATH, { fetchImpl }).catch((e: unknown) => e) as Error;
+    expect(error).toBeInstanceOf(DataForSeoApiError);
+    expect(error.message).not.toContain(LOGIN);
+    expect(error.message).not.toContain(PASSWORD);
   });
 });
