@@ -30,6 +30,22 @@ describe("dataForSeoConfig", () => {
     expect(dataForSeoConfig({ DATAFORSEO_LOGIN: "u" })).toBeNull();
   });
 
+  it("accepts DATAFORSEO_USERNAME as an alias for the login", () => {
+    expect(dataForSeoConfig({ DATAFORSEO_USERNAME: "alias-user", DATAFORSEO_PASSWORD: "p" })).toMatchObject({ login: "alias-user" });
+  });
+
+  it("prefers DATAFORSEO_LOGIN when both login names are set", () => {
+    expect(dataForSeoConfig({ DATAFORSEO_LOGIN: "login-user", DATAFORSEO_USERNAME: "alias-user", DATAFORSEO_PASSWORD: "p" })).toMatchObject({ login: "login-user" });
+  });
+
+  it("falls back to DATAFORSEO_USERNAME when DATAFORSEO_LOGIN is blank", () => {
+    expect(dataForSeoConfig({ DATAFORSEO_LOGIN: "  ", DATAFORSEO_USERNAME: "alias-user", DATAFORSEO_PASSWORD: "p" })).toMatchObject({ login: "alias-user" });
+  });
+
+  it("is null when only DATAFORSEO_USERNAME is set without a password", () => {
+    expect(dataForSeoConfig({ DATAFORSEO_USERNAME: "alias-user" })).toBeNull();
+  });
+
   it("defaults to sandbox with the documented USD settings", () => {
     expect(dataForSeoConfig({ DATAFORSEO_LOGIN: "u", DATAFORSEO_PASSWORD: "p" })).toEqual({
       env: "sandbox",

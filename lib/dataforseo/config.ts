@@ -15,9 +15,12 @@ const usdSetting = (raw: string | undefined, fallback: number): number => {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 };
 
-/** Null until both credentials are set. Sandbox unless DATAFORSEO_ENV is exactly "live". */
+/**
+ * Null until both credentials are set. Sandbox unless DATAFORSEO_ENV is exactly "live".
+ * DATAFORSEO_USERNAME is accepted as an alias for the login; `||` lets a blank LOGIN fall through to it.
+ */
 export function dataForSeoConfig(env: Record<string, string | undefined> = process.env): DataForSeoConfig | null {
-  const login = env.DATAFORSEO_LOGIN?.trim();
+  const login = env.DATAFORSEO_LOGIN?.trim() || env.DATAFORSEO_USERNAME?.trim();
   const password = env.DATAFORSEO_PASSWORD?.trim();
   if (!login || !password) return null;
   const live = env.DATAFORSEO_ENV === "live";

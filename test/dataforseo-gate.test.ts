@@ -62,6 +62,7 @@ const run = (overrides?: Partial<GateRequest<Row, Trimmed[]>>, opts: { signal?: 
   runDataForSeo<Row, Trimmed[]>(request(overrides), { now, ...opts });
 
 function configure(mode: "live" | "sandbox" | "unconfigured") {
+  vi.stubEnv("DATAFORSEO_USERNAME", "");
   vi.stubEnv("DATAFORSEO_LOGIN", mode === "unconfigured" ? "" : "gate-user");
   vi.stubEnv("DATAFORSEO_PASSWORD", mode === "unconfigured" ? "" : "gate-password");
   vi.stubEnv("DATAFORSEO_ENV", mode === "live" ? "live" : "");
