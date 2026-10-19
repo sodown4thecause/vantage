@@ -201,7 +201,7 @@ async function fetchViaScavio(opts?: {
   videoIds?: string[];
   ctx?: CostContext;
 }): Promise<YouTubeComment[]> {
-  const client = createScavioClient();
+  const client = await createScavioClient();
   const seeds =
     opts?.videoIds?.length
       ? opts.videoIds

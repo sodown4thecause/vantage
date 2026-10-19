@@ -1,4 +1,3 @@
-import { XMLParser } from "fast-xml-parser";
 
 import { contentHash, sha256Hex } from "@/lib/collectors/hash";
 import { parseValidDate } from "@/lib/collectors/date";
@@ -10,11 +9,7 @@ import type {
 import type { NewDocument } from "@/lib/db/schema";
 import { fetchPublicText } from "@/lib/http/public-fetch";
 
-const parser = new XMLParser({
-  ignoreAttributes: false,
-  attributeNamePrefix: "@_",
-  textNodeName: "#text",
-});
+// Parser is constructed lazily on first use to avoid loading fast-xml-parser at module load.
 
 function asArray<T>(v: T | T[] | undefined | null): T[] {
   if (!v) return [];
@@ -74,6 +69,12 @@ export const rssCollector: Collector = {
       throw new Error(`RSS fetch ${res.status} for ${safeUrlForError(url)}`);
     }
 
+    const { XMLParser } = await import("fast-xml-parser");
+    const parser = new XMLParser({
+      ignoreAttributes: false,
+      attributeNamePrefix: "@_",
+      textNodeName: "#text",
+    });
     const parsed = parser.parse(xml);
     const channel = parsed?.rss?.channel ?? parsed?.feed;
     const items = asArray(

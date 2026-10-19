@@ -5,3 +5,6 @@ allowBuilds:
   unrs-resolver: false
   workerd: true
 nodeLinker: hoisted
+
+overrides:
+  esbuild: 0.25.0
