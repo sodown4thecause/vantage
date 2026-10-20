@@ -98,6 +98,10 @@ jobs:
             files=$((files + 1))
           done < <(find "$dir" -type f ! -name '*.map' ! -name 'README.md')
           echo "$files module(s): raw $raw bytes ($((raw / 1024)) KiB), gzip $gz bytes ($((gz / 1024)) KiB), limit 10485760"
+          if [ "$files" -eq 0 ]; then
+            echo "::error::No uploaded modules found under $dir; the size gate cannot pass without a bundle"
+            exit 1
+          fi
           if [ "$gz" -gt 10485760 ]; then
             echo "::error::The Worker upload is over the 10 MB compressed script limit"
             exit 1
