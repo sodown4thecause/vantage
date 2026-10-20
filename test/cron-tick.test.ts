@@ -12,6 +12,8 @@ vi.mock("@/lib/collectors/run", () => ({ runCollector: vi.fn() }));
 vi.mock("@/lib/cron/lease", () => ({ withWorkspaceScanLease: async (_id: string, run: (signal: AbortSignal) => Promise<unknown>) => run(new AbortController().signal) }));
 vi.mock("@/lib/pipeline/run", () => ({ runPipeline: async () => { state.order.push("legacy"); return {}; } }));
 vi.mock("@/lib/profile/repository", () => ({ getLatestMonitoringProfile: async () => ({ version: 1 }) }));
+vi.mock("@/lib/costs/rollup", () => ({ rollupRecent: async () => {} }));
+vi.mock("@/lib/digest/dispatch", () => ({ runDueDigests: async () => [] }));
 vi.mock("@/lib/opportunities/run", () => ({ buildOpportunities: async ({ workspaceId }: { workspaceId: string }) => {
   state.order.push(`opportunities:${workspaceId}`);
   if (state.fail) throw new Error("database failed");
