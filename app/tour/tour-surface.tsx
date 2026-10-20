@@ -236,9 +236,11 @@ export function TourSurface() {
                   <tr key={r.source}>
                     <th scope="row">{r.source}</th>
                     <td>
-                      <span className={s.meter} style={{ "--w": r.read / MAX_READ } as React.CSSProperties} aria-hidden="true" />
-                      <span data-sc-count={`0 ${r.read}`} data-sc-count-at="0.1 0.34">
-                        {r.read}
+                      <span className={s.meterWrap}>
+                        <span className={s.meter} style={{ "--w": r.read / MAX_READ } as React.CSSProperties} aria-hidden="true" />
+                        <span data-sc-count={`0 ${r.read}`} data-sc-count-at="0.1 0.34">
+                          {r.read}
+                        </span>
                       </span>
                     </td>
                   </tr>

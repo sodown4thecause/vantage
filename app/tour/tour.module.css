@@ -418,6 +418,10 @@
 }
 
 .sourceTable td {
+  text-align: right;
+}
+
+.sourceTable td .meterWrap {
   display: flex;
   align-items: center;
   justify-content: flex-end;

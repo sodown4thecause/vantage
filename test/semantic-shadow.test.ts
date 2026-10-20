@@ -29,9 +29,13 @@ vi.mock("@/lib/costs/prices", () => ({
 vi.mock("@/lib/embeddings/index-documents", () => ({
   embedPendingDocuments: (...args: unknown[]) => state.embedPending(...args),
 }));
-vi.mock("@/lib/embeddings/index-profile", () => ({
-  indexProfile: (...args: unknown[]) => state.indexProfile(...args),
-}));
+vi.mock("@/lib/embeddings/index-profile", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/embeddings/index-profile")>("@/lib/embeddings/index-profile");
+  return {
+    ...actual,
+    indexProfile: (...args: unknown[]) => state.indexProfile(...args),
+  };
+});
 vi.mock("@/lib/profile/repository", () => ({
   getLatestMonitoringProfile: async () => state.profile,
 }));
@@ -179,11 +183,18 @@ beforeEach(() => {
   state.docs = [0, 1, 2].map(docRow);
   state.profile = {
     id: "22222222-2222-4222-8222-222222222222",
+    workspaceId: WORKSPACE,
     version: 3,
+    productUrl: "https://example.com",
+    docsUrls: [],
     productDescription: "Social listening and brand monitoring",
     targetCustomer: "Teams",
-    topics: ["social listening"],
     competitors: [],
+    topics: ["social listening"],
+    productMaterialStatus: "empty",
+    productMaterialText: "",
+    retrievalNotes: "",
+    createdAt: NOW.toISOString(),
   };
   state.shadow = [];
   state.opportunityWrites = [];
@@ -267,7 +278,10 @@ describe("runSemanticStage", () => {
   it("indexes the current profile before recording a shadow row", async () => {
     state.mode = "shadow";
     state.ai = createFakeAi().binding;
-    state.vectorize = createFakeVectorize().binding;
+    // No getByIds: the stage cannot tell the profile is indexed, so it indexes.
+    const vectorize = createFakeVectorize().binding;
+    delete vectorize.getByIds;
+    state.vectorize = vectorize;
     let rowsWhenIndexed = -1;
     state.indexProfile.mockImplementation(async () => {
       rowsWhenIndexed = state.shadow.length;
@@ -285,6 +299,21 @@ describe("runSemanticStage", () => {
       undefined,
     );
     expect(rowsWhenIndexed).toBe(0);
+    expect(state.shadow).toHaveLength(3);
+  });
+
+  it("does not re-embed a profile whose vectors are already stored", async () => {
+    state.mode = "shadow";
+    state.ai = createFakeAi().binding;
+    const vectorize = createFakeVectorize();
+    state.vectorize = {
+      ...vectorize.binding,
+      getByIds: async (ids: string[]) => ids.map((id) => ({ id })),
+    };
+
+    await runSemanticStage(WORKSPACE, DOCS);
+
+    expect(state.indexProfile).not.toHaveBeenCalled();
     expect(state.shadow).toHaveLength(3);
   });
 
