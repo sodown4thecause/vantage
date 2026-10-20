@@ -14,6 +14,7 @@ type DigestWorkspace = {
   digestLeaseToken: string | null;
   digestLeaseUntil: Date | null;
   digestLastAttemptAt: Date | null;
+  scanLeaseUntil: Date | null;
 };
 
 const state = vi.hoisted(() => ({
@@ -40,8 +41,13 @@ vi.mock("@/lib/db/client", () => ({
       from: () => ({
         where: (where: unknown) => ({
           limit: async () => {
-            const params = toSql(where).params;
+            const { sql: text, params } = toSql(where);
             const ws = state.workspaces.find((row) => row.id === params[0]);
+            // The scoped retry probe: a due workspace still holding a digest claim.
+            if (!/digest_lease_token\s*=/.test(text)) {
+              return ws && isDue(ws) && ws.digestLeaseUntil && ws.digestLeaseUntil > state.dbNow
+                ? [{ id: ws.id }] : [];
+            }
             return ws && ws.digestLeaseToken === params[1] && ws.digestLeaseUntil && ws.digestLeaseUntil > state.dbNow
               ? [{ id: ws.id }] : [];
           },
@@ -54,8 +60,9 @@ vi.mock("@/lib/db/client", () => ({
               return state.workspaces
                 .filter((ws) => ws.digestEnabled && !!ws.digestEmail?.trim()
                   && (!workspaceScope || ws.id === workspaceScope)
-                  && isDigestDue({ digestHourUtc: ws.digestHourUtc, lastSentAt: ws.digestLastSentAt, now: state.dbNow })
-                  && (!ws.digestLeaseUntil || ws.digestLeaseUntil < state.dbNow))
+                  && isDue(ws)
+                  && (!ws.digestLeaseUntil || ws.digestLeaseUntil < state.dbNow)
+                  && (!ws.scanLeaseUntil || ws.scanLeaseUntil < state.dbNow))
                 .sort((a, b) => (a.digestLastAttemptAt?.getTime() ?? -Infinity) - (b.digestLastAttemptAt?.getTime() ?? -Infinity) || a.id.localeCompare(b.id))
                 .slice(0, limit)
                 .map(({ id }) => ({ id }));
@@ -79,7 +86,7 @@ vi.mock("@/lib/db/client", () => ({
               if (!ws) return [];
               if (typeof values.digestLeaseToken === "string") {
                 if (!ws.digestEnabled || !ws.digestEmail?.trim()
-                  || !isDigestDue({ digestHourUtc: ws.digestHourUtc, lastSentAt: ws.digestLastSentAt, now: state.dbNow })
+                  || !isDue(ws)
                   || (ws.digestLeaseUntil && ws.digestLeaseUntil >= state.dbNow)) return [];
                 ws.digestLeaseToken = values.digestLeaseToken;
                 ws.digestLeaseUntil = new Date(state.dbNow.getTime() + 120_000);
@@ -112,6 +119,9 @@ import { markDigestSent } from "@/lib/digest/send";
 
 const dialect = new PgDialect();
 const toSql = (value: unknown) => dialect.sqlToQuery(value as Parameters<PgDialect["sqlToQuery"]>[0]);
+function isDue(ws: DigestWorkspace) {
+  return isDigestDue({ digestHourUtc: ws.digestHourUtc, lastSentAt: ws.digestLastSentAt, now: state.dbNow });
+}
 const now = new Date("2026-10-10T13:00:00.000Z");
 const opportunities: DigestOpportunity[] = [{
   opportunityId: "opportunity-1",
@@ -132,6 +142,7 @@ function workspace(id: string, overrides: Partial<DigestWorkspace> = {}): Digest
     digestLeaseToken: null,
     digestLeaseUntil: null,
     digestLastAttemptAt: null,
+    scanLeaseUntil: null,
     ...overrides,
   };
 }
@@ -333,6 +344,60 @@ describe("runDueDigests", () => {
     expect(summary.checked).toBe(1);
     expect(summary.hasMore).toBe(true);
     expect(state.workspaces[1]?.digestLastAttemptAt).toBeNull();
+  });
+
+  it("reports a scoped workspace held by an unexpired claim as retryable instead of success", async () => {
+    state.workspaces = [workspace("leased", {
+      digestLeaseToken: "other-claim",
+      digestLeaseUntil: new Date(now.getTime() + 60_000),
+    })];
+    await expect(runDueDigests(now, "leased")).resolves.toEqual({
+      checked: 0, sent: 0, skipped: 0, failed: 1, hasMore: false,
+    });
+    expect(state.fetch).not.toHaveBeenCalled();
+  });
+
+  it("does not report an expired claim as retryable", async () => {
+    state.workspaces = [workspace("expired-claim", {
+      digestLeaseToken: "stale",
+      digestLeaseUntil: new Date(now.getTime() - 1_000),
+    })];
+    expect((await runDueDigests(now, "expired-claim")).sent).toBe(1);
+  });
+
+  it("does not report a workspace that is not due as retryable", async () => {
+    state.workspaces = [workspace("not-due", {
+      digestLastSentAt: new Date("2026-10-09T18:00:00.000Z"),
+      digestLeaseToken: "other-claim",
+      digestLeaseUntil: new Date(now.getTime() + 60_000),
+    })];
+    await expect(runDueDigests(now, "not-due")).resolves.toEqual({
+      checked: 0, sent: 0, skipped: 0, failed: 0, hasMore: false,
+    });
+  });
+
+  it("leaves a sweep's busy workspace to the next tick rather than failing", async () => {
+    state.workspaces = [workspace("leased", {
+      digestLeaseToken: "workflow-step",
+      digestLeaseUntil: new Date(now.getTime() + 60_000),
+    })];
+    await expect(runDueDigests(now, undefined, { skipActiveScans: true })).resolves.toEqual({
+      checked: 0, sent: 0, skipped: 0, failed: 0, hasMore: false,
+    });
+  });
+
+  it("sweeps a workspace whose scan is still running only when asked not to skip it", async () => {
+    state.workspaces = [workspace("scanning", { scanLeaseUntil: new Date(now.getTime() + 60_000) })];
+    await expect(runDueDigests(now, undefined, { skipActiveScans: true })).resolves.toEqual({
+      checked: 0, sent: 0, skipped: 0, failed: 0, hasMore: false,
+    });
+    expect(state.fetch).not.toHaveBeenCalled();
+    expect((await runDueDigests(now, undefined)).sent).toBe(1);
+  });
+
+  it("sweeps a workspace once its scan lease has lapsed", async () => {
+    state.workspaces = [workspace("scan-done", { scanLeaseUntil: new Date(now.getTime() - 1_000) })];
+    expect((await runDueDigests(now, undefined, { skipActiveScans: true })).sent).toBe(1);
   });
 
   it.each(["selection", "recording", "sending"] as const)("isolates %s errors and logs no private payload or recipient", async (failure) => {

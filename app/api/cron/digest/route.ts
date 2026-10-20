@@ -6,7 +6,11 @@ import { runDueDigests } from "@/lib/digest/dispatch";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Workspace-scoped digest entry called after each scan Workflow builds its queue. */
+/**
+ * Digest entry for both digest paths. A body naming a `workspaceId` scopes the dispatch
+ * to that workspace and is what a scan Workflow step sends. An empty body runs the due
+ * sweep for workspaces with no scan in flight, so delivery never depends on scan cadence.
+ */
 export async function POST(req: Request) {
   if (!process.env.CRON_SECRET || !isCronAuthorized(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -14,14 +18,17 @@ export async function POST(req: Request) {
 
   try {
     const body: unknown = await req.json().catch(() => null);
-    const workspaceId = body && typeof body === "object" && "workspaceId" in body
-      ? body.workspaceId
+    const requested = body && typeof body === "object" && "workspaceId" in body
+      ? (body as { workspaceId: unknown }).workspaceId
       : undefined;
-    if (typeof workspaceId !== "string" || !workspaceId.trim()) {
+    if (requested !== undefined && (typeof requested !== "string" || !requested.trim())) {
       return NextResponse.json({ error: "invalid request" }, { status: 400 });
     }
 
-    const digest = await runDueDigests(new Date(), workspaceId.trim());
+    const workspaceId = typeof requested === "string" ? requested.trim() : undefined;
+    const digest = await runDueDigests(new Date(), workspaceId, {
+      skipActiveScans: workspaceId === undefined,
+    });
     return NextResponse.json({ ok: digest.failed === 0, digest }, {
       status: digest.failed === 0 ? 200 : 503,
     });

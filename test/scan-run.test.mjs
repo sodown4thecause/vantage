@@ -158,6 +158,31 @@ test("a plan failure propagates without finishing, because no lease was handed b
   assert.deepEqual(names(step), ["plan"]);
 });
 
+test("a transient digest 503 is retried and succeeds without repeating the lease release", async () => {
+  const step = fakeStep();
+  let attempts = 0;
+  const fake = fakeCall({
+    "/api/cron/digest": () => {
+      attempts += 1;
+      return attempts === 1 ? json({ ok: false }, 503) : json({ ok: true });
+    },
+  });
+  const result = await runScan(PARAMS, step, fake.call);
+  assert.equal(record(step, "digest").attempts, 2);
+  assert.equal(record(step, "finish").attempts, 1, "the lease is released once, before digest retries");
+  assert.deepEqual(names(step).slice(-2), ["finish", "digest"]);
+  assert.deepEqual(result, { status: "done", failures: 0 });
+});
+
+test("an exhausted digest retry surfaces the failure after the run already finished", async () => {
+  const step = fakeStep();
+  const fake = fakeCall({ "/api/cron/digest": () => json({ ok: false }, 503) });
+  await assert.rejects(runScan(PARAMS, step, fake.call), /\/api\/cron\/digest failed: HTTP 503/);
+  assert.equal(record(step, "digest").attempts, 4, "limit 3 means four attempts");
+  assert.equal(record(step, "finish").attempts, 1, "digest retries never re-run the lease release");
+  assert.deepEqual(names(step).slice(-1), ["digest"]);
+});
+
 test("collect steps are launched concurrently", async () => {
   const step = fakeStep();
   await runScan(PARAMS, step, fakeCall().call);

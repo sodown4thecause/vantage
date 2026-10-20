@@ -45,7 +45,7 @@ describe("digest cron route", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, digest });
     expect(dispatch).toHaveBeenCalledOnce();
-    expect(dispatch).toHaveBeenCalledWith(expect.any(Date), "ws-1");
+    expect(dispatch).toHaveBeenCalledWith(expect.any(Date), "ws-1", { skipActiveScans: false });
   });
 
   it("returns a retryable status when a workspace digest fails", async () => {
@@ -56,9 +56,25 @@ describe("digest cron route", () => {
     expect(await response.json()).toEqual({ ok: false, digest });
   });
 
-  it("requires an authenticated workspace scope", async () => {
+  it("sweeps every due workspace when no scope is named, leaving scanning workspaces to their Workflow", async () => {
+    const digest = { checked: 2, sent: 2, skipped: 0, failed: 0, hasMore: false };
+    dispatch.mockResolvedValue(digest);
     const response = await call("Bearer secret", {});
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, digest });
+    expect(dispatch).toHaveBeenCalledWith(expect.any(Date), undefined, { skipActiveScans: true });
+  });
+
+  it("sweeps when the body is absent entirely", async () => {
+    dispatch.mockResolvedValue({ checked: 0, sent: 0, skipped: 0, failed: 0, hasMore: false });
+    expect((await call("Bearer secret")).status).toBe(200);
+    expect(dispatch).toHaveBeenCalledWith(expect.any(Date), undefined, { skipActiveScans: true });
+  });
+
+  it("rejects a malformed scope instead of falling back to the sweep", async () => {
+    for (const workspaceId of [42, "", "   ", null]) {
+      expect((await call("Bearer secret", { workspaceId })).status).toBe(400);
+    }
     expect(dispatch).not.toHaveBeenCalled();
   });
 

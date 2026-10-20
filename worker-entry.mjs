@@ -28,7 +28,9 @@ export { ScanWorkspace } from "./worker/workflows.mjs";
 const TICK_PATH = "/api/cron/tick";
 const SCAN_DUE_PATH = "/api/internal/scan/due";
 const COST_ROLLUP_PATH = "/api/internal/scan/rollup";
+const DIGEST_PATH = "/api/cron/digest";
 const ROLLUP_TIMEOUT_MS = 30_000;
+const DIGEST_TIMEOUT_MS = 90_000;
 // Workflows reject a duplicate instance ID when `create` runs. The docs say it throws but do not
 // quote the message, so this wording match is unverified; both documented phrasings are accepted.
 const DUPLICATE_INSTANCE = /already (exist|used)/i;
@@ -90,6 +92,30 @@ async function triggerCostRollup(env) {
   }
 }
 
+/**
+ * Sweep digests that are due for workspaces no scan is running. A scan Workflow sends
+ * its own workspace digest, but scan cadence is a Free/Pro plan setting: a workspace on
+ * a daily scan would otherwise wait up to a day for a digest that came due that morning.
+ * The route skips workspaces with an active scan, and the digest lease keeps the sweep
+ * and a Workflow step from sending the same digest twice.
+ * Best effort: a failure is logged by status only and never rejects the scheduled invocation.
+ */
+async function triggerDigestSweep(env) {
+  try {
+    const response = await env.WORKER_SELF_REFERENCE.fetch(
+      new Request(`https://vantage.internal${DIGEST_PATH}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${env.CRON_SECRET}`, "content-type": "application/json" },
+        body: "{}",
+        signal: AbortSignal.timeout(DIGEST_TIMEOUT_MS),
+      }),
+    );
+    if (!response.ok) console.error(`[cron] digest sweep failed: HTTP ${response.status}`);
+  } catch (error) {
+    console.error("[cron] digest sweep threw", error instanceof Error ? error.name : "unknown");
+  }
+}
+
 const worker = {
 	fetch(request, env, ctx) {
 		return openNextWorker.fetch(request, env, ctx);
@@ -121,6 +147,7 @@ const worker = {
 				await startScanInstances(controller, env);
 			} finally {
 				await triggerCostRollup(env);
+				await triggerDigestSweep(env);
 			}
 			return;
 		}

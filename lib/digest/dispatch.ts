@@ -21,14 +21,27 @@ export type DigestDispatchSummary = {
   hasMore: boolean;
 };
 
+export type DigestDispatchOptions = {
+  /**
+   * Leave workspaces whose scan is still running to their own Workflow step, so a
+   * sweep never sends a digest built from a half-finished scan.
+   */
+  skipActiveScans?: boolean;
+};
+
 /**
  * Rotate a bounded oldest-attempt-first due batch. Empty or failed digests
  * advance, while deferred work is picked up by a later cron invocation.
  * The claim returns current preferences; discovery is never trusted for send.
+ *
+ * A scoped call additionally reports a lease-blocked workspace as failed, so the
+ * Workflow step retries once the two-minute claim expires. A sweep deliberately
+ * does not: the next tick is its retry.
  */
 export async function runDueDigests(
   now: Date = new Date(),
   workspaceId?: string,
+  options: DigestDispatchOptions = {},
 ): Promise<DigestDispatchSummary> {
   const startedAt = Date.now();
   const db = getDb();
@@ -51,10 +64,19 @@ export async function runDueDigests(
     isNull(workspace.digestLeaseUntil),
     lt(workspace.digestLeaseUntil, sql`now()`),
   );
+  const scanIdle = or(
+    isNull(workspace.scanLeaseUntil),
+    lt(workspace.scanLeaseUntil, sql`now()`),
+  );
   const candidates = await db
     .select({ id: workspace.id })
     .from(workspace)
-    .where(and(eligible, available, workspaceId ? eq(workspace.id, workspaceId) : undefined))
+    .where(and(
+      eligible,
+      available,
+      workspaceId ? eq(workspace.id, workspaceId) : undefined,
+      options.skipActiveScans ? scanIdle : undefined,
+    ))
     .orderBy(sql`${workspace.digestLastAttemptAt} asc nulls first`, asc(workspace.id))
     .limit(DIGEST_BATCH_SIZE + 1);
 
@@ -65,6 +87,18 @@ export async function runDueDigests(
     failed: 0,
     hasMore: candidates.length > DIGEST_BATCH_SIZE,
   };
+
+  // A scoped caller is a Workflow step that retries this request. A workspace that is
+  // due but still holding a digest claim would otherwise yield an empty batch, which
+  // reads as success and silently drops the digest for the rest of its slot.
+  if (workspaceId && candidates.length === 0) {
+    const blocked = await db
+      .select({ id: workspace.id })
+      .from(workspace)
+      .where(and(eligible, eq(workspace.id, workspaceId), gt(workspace.digestLeaseUntil, sql`now()`)))
+      .limit(1);
+    if (blocked.length) summary.failed += 1;
+  }
 
   for (const candidate of candidates.slice(0, DIGEST_BATCH_SIZE)) {
     if (Date.now() - startedAt > DISPATCH_BUDGET_MS - WORKSPACE_BUDGET_MS) {
