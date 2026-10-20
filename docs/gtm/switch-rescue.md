@@ -9,7 +9,7 @@ Source: Astra's report and the 6 Oct 2026 competitor review (dates below are as 
 |---|---|
 | Completed rescues (their keywords running in Vantage, first leads delivered) | 3 |
 | Activations (they opened leads or acted on one in the first week) | 2 |
-| Founders paying (Pro $5 or credits) | 2 |
+| Founders paying (Pro $19 or credits) | 2 |
 
 If fewer than 3 rescues are completed by 14 Nov, stop building acquisition features and revisit the offer.
 
@@ -28,7 +28,7 @@ Write each message yourself, specific to the person. Cover these points, **but o
 
 - **Who you are and that you built it** ("I made this, so I'm biased").
 - **What it does today.** List only the sources you have personally seen running in production that day. As of 6 Oct 2026 the scheduled scan only runs Hacker News, RSS and Substack; Reddit, GitHub and Stack Overflow are planned (slices S11, S13, S14), so do not promise them until they are live. If some are still being added, say so.
-- **"Free to start".** Do not say "free" and "$5 Pro" as if they were one offer. Say what is free now and that a paid plan is planned or available.
+- **"Free to start".** Do not say "free" and "$19 Pro" as if they were one offer. Say what is free now and that a paid plan is planned or available.
 - **"Open source"** only if the repository is public and has a LICENSE file when you send the message (there is none as of 6 Oct 2026). Otherwise leave the word out.
 - **Payment.** Stripe billing (slice S40) is not built yet. If you want to test the "paying" gate before it ships, say plainly that you will take payment manually (for example a payment link) and record it as such. Otherwise the paying gate cannot be met.
 - **What you will do for them:** set up their keywords and send the first leads within 24 hours.
@@ -38,7 +38,7 @@ Write each message yourself, specific to the person. Cover these points, **but o
 2. Create their workspace or Monitor Pack (use the keyword importer once S15 ships; before that, enter keywords by hand and note every format or syntax problem; those notes drive the importer).
 3. Run a scan; check the top results yourself; send them the top 5 with the evidence sentence.
 4. Ask them to reply with which ones were useful (this feeds the outcomes metric).
-5. Offer Pro only after they have seen leads. Pro is $5/month; credits are optional.
+5. Offer Pro only after they have seen leads. Pro is $19/month; credits are optional.
 6. Record everything in the tracking sheet the same day.
 
 ## Tracking sheet
