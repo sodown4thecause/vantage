@@ -82,8 +82,14 @@
 @layer base {
   html {
     background: var(--paper);
-    /* The site header is sticky; keep anchored headings clear of it. */
-    scroll-padding-top: 5.5rem;
+  }
+
+  /* The header is sticky only from lg up; keep anchored headings clear of it
+     there, and leave small screens without a needless gap. */
+  @media (min-width: 64rem) {
+    html {
+      scroll-padding-top: 5.5rem;
+    }
   }
 
   body {
