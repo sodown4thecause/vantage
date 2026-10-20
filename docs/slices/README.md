@@ -4,15 +4,27 @@
 **Earlier plan (context, still valid):** `../superpowers/plans/2026-10-06-five-changes-on-cloudflare.md`.
 **This folder supersedes its phase list.** Each `Sxx-*.md` file is one independently shippable vertical slice (database + library + API + UI + tests + docs) that one agent can finish in one pull request.
 
-## 1. Current state (6 Oct 2026, end of day)
+## 1. Current state (20 Oct 2026)
+
+The 6 Oct snapshot below is history. What is true on `main` now:
 
 | Area | State |
 |---|---|
-| Cloudflare | Account `eb1a55a5…`. Worker `dontkillmyvibe` (production, exists), `vantage-staging` (deployed today at `https://vantage-staging.liam-wilson1990.workers.dev`). Cron triggers are **off** in both (`crons: []`). |
-| Staging secrets | `CRON_SECRET`, `NEON_AUTH_COOKIE_SECRET`, `NEON_AUTH_BASE_URL` and `DATABASE_URL` set on `vantage-staging` (H1 done 6 Oct). `/api/cron/tick` returns 200 (slice S00). |
-| Neon | Project `vantage` (`super-river-31229994`). Branches: `main` (production) and `staging` (`br-quiet-pine-b7ukjr3b`, child of main). Staging has 12 migrations (0000 to 0011) and Neon Auth works there (test sign-up succeeded). `main` has 11 migrations (0011 not applied). |
-| Code | Next.js 16 on OpenNext/Cloudflare, Drizzle over neon-http, Neon Auth. Phase 1 foundations committed on the PR branch (not yet on the default branch): `cost_event`, `provider_price`, `source_switch`, `shared_post`, `shared_sweep_run`, `lib/costs/ledger.ts`, `lib/sources/switch.ts`, switch check in `runCollector`. 135 tests pass. |
-| Known gaps | No GitHub collector; scheduled scan only runs `hn`/`rss`/`substack`; `runCollector` blocks every non-free lane and any type outside hn/rss/substack in production (see "free pilot" guard, `lib/collectors/run.ts`); no Stripe/credits; no public pages; no MCP/CLI. |
+| Cloudflare | Worker `dontkillmyvibe` serves `contextfor.dev`. Production cron is hourly (`0 * * * *`, #76). Staging cron is every 3 hours. `VANTAGE_SEMANTIC_MODE` is `shadow` in staging and, once this change deploys, in production too. |
+| Billing | Polar is the merchant of record (#75, `docs/billing/polar.md`). Checkout, webhooks, portal and server-side Pro gating are in code. Stripe slices S40/S41 are superseded for the subscription; credits (S41) are still open. Polar sandbox products, tokens and webhook secrets are an owner step. |
+| Scheduled scans | `SCHEDULED_SOURCE_TYPES` is `hn`, `rss`, `substack`, `github`, `stackoverflow`. Keyed types `reddit` and `web_search` run only on an owner's "Scan now" (`MANUAL_KEYED_SOURCE_TYPES` in `lib/cron/scan.ts`). |
+| Sources shipped since the slice plan | GitHub and Stack Overflow collectors, dev forums and blogs, subreddit suggestions, forum packs (#71, #73), SEO/GEO agent (#78). |
+| Still open, and dated | S10–S12 (Reddit chain) before Reddit stops new public API requests on **31 Oct** and RSS ends **13 Nov**. S16 (access tracker) before 13 Nov. |
+
+### Snapshot from 6 Oct 2026 (historical)
+
+| Area | State then |
+|---|---|
+| Cloudflare | Account `eb1a55a5…`. Worker `dontkillmyvibe` (production, exists), `vantage-staging` (deployed that day at `https://vantage-staging.liam-wilson1990.workers.dev`). Cron triggers were **off** in both (`crons: []`). |
+| Staging secrets | `CRON_SECRET`, `NEON_AUTH_COOKIE_SECRET`, `NEON_AUTH_BASE_URL` and `DATABASE_URL` set on `vantage-staging` (H1 done 6 Oct). `/api/cron/tick` returned 200 (slice S00). |
+| Neon | Project `vantage` (`super-river-31229994`). Branches: `main` (production) and `staging` (`br-quiet-pine-b7ukjr3b`, child of main). Staging had 12 migrations (0000 to 0011). `main` had 11 (0011 not applied). Migrations now run through `drizzle/0028_fluffy_naoko.sql`. |
+| Code | Next.js 16.3.8 on OpenNext/Cloudflare (16.4 is ignored until OpenNext boots it, #63), Drizzle over neon-http, Neon Auth. Phase 1 foundations are on `main`. |
+| Known gaps then | No GitHub collector; scheduled scan only ran `hn`/`rss`/`substack`; no billing; no public pages; no MCP/CLI. GitHub, public pages and Polar billing have since landed. MCP/CLI (S50–S52) has not. |
 
 ## 2. How to work a slice (the agent contract)
 
@@ -91,17 +103,17 @@ Size: S = under a day, M = 1 to 3 days, L = 3 to 5 days of agent work. "Idea" re
 
 | ID | Slice | Idea | Size | Depends on | Human gate | Status |
 |---|---|---|---|---|---|---|
-| [S00](S00-staging-live.md) | Staging live end to end | base | S | none | H1 | [ ] |
-| [S01](S01-production-and-rollback.md) | Production promotion, rollback, CI deploy | base | M | S00 | H2 | [ ] |
-| [S02](S02-cloudflare-resources.md) | Queues, R2, rate-limit, Browser, Workflow bindings | base | S | S00 | H3 | [ ] |
+| [S00](S00-staging-live.md) | Staging live end to end | base | S | none | H1 | [x] staging tick and first document (6 Oct); 24–48 h soak still open |
+| [S01](S01-production-and-rollback.md) | Production promotion, rollback, CI deploy | base | M | S00 | H2 | [~] production serves contextfor.dev and cron is on (#76); rollback rehearsal and migration apply are owner steps |
+| [S02](S02-cloudflare-resources.md) | Queues, R2, rate-limit, Browser, Workflow bindings | base | S | S00 | H3 | [x] bindings declared and used (semantic queue, R2, Browser, Workflows, #52) |
 | [S03](S03-cost-ledger-wiring.md) | Wire cost ledger into every provider + rollups | 5 | M | none | none | [x] merged to plan branch (6 Oct) |
 | [S04](S04-source-switch-admin.md) | Source switch admin + paused-state UI | 1 | S | none | H11 | [x] merged to plan branch (6 Oct) |
 | [S05](S05-plans-and-entitlements.md) | Plans and entitlement enforcement | 5 | M | none | none | [x] merged to plan branch (6 Oct) |
 | [S06](S06-public-route-guard.md) | Public endpoint guard (rate limit, Turnstile, budget) | 2 | M | none | H8 | [x] merged to plan branch (6 Oct) |
 | [S07](S07-browser-run-helper.md) | Browser Run helper with cost + SSRF guard | 2 | S | none | none | [x] merged to plan branch (6 Oct) |
-| [S10](S10-tinyfish-reddit-spike.md) | TinyFish-on-Reddit spike | 1 | S | none | H4 | [ ] |
-| [S11](S11-reddit-shared-sweep.md) | Reddit provider chain + shared sweep | 1 | L | S02,S03,S04 | none | [ ] |
-| [S12](S12-reddit-search-and-deep.md) | Reddit keyword search + deep search quota | 1 | M | S10,S11 | none | [ ] |
+| [S10](S10-tinyfish-reddit-spike.md) | TinyFish-on-Reddit spike | 1 | S | none | H4 | [ ] **next**, before 31 Oct |
+| [S11](S11-reddit-shared-sweep.md) | Reddit provider chain + shared sweep | 1 | L | S02,S03,S04 | none | [ ] after S10; keyed Reddit is manual-only today |
+| [S12](S12-reddit-search-and-deep.md) | Reddit keyword search + deep search quota | 1 | M | S10,S11 | none | [ ] after S11 |
 | [S13](S13-github-collector.md) | GitHub issues/discussions + competitor repo watch | 1,2 | M | S03,S04 | H5 | [ ] |
 | [S14](S14-developer-source-collectors.md) | Stack Overflow, DEV.to, Lobsters, Bluesky, Discourse | 1 | L | S03,S04 | none | [ ] |
 | [S15](S15-keyword-importer.md) | GummySearch / F5Bot / Syften keyword importer | 1 | M | S20 | none | [ ] |
@@ -114,7 +126,7 @@ Size: S = under a day, M = 1 to 3 days, L = 3 to 5 days of agent work. "Idea" re
 | [S31](S31-reply-briefs.md) | Reply Brief generation and UI (replaces drafts) | 3 | L | S20,S30 | none | [ ] |
 | [S32](S32-voice-check-and-ledger.md) | Voice-check editor + contribution ledger | 3 | M | S31 | none | [ ] |
 | [S33](S33-never-posts-guard.md) | "Never writes or posts" guard test + brand copy | 3 | S | S31,S32 | none | [ ] |
-| [S40](S40-stripe-pro.md) | Stripe Pro subscription, portal, webhooks | 5 | L | none | H7 | [ ] |
+| [S40](S40-stripe-pro.md) | Stripe Pro subscription, portal, webhooks | 5 | L | none | H7 | superseded: Polar checkout, webhooks and portal shipped in #75 (`docs/billing/polar.md`). Do not build Stripe for the subscription. |
 | [S41](S41-credits-ledger.md) | Credits ledger, top-ups, atomic debit | 5 | L | S03,S40 | H7 | [ ] |
 | [S42](S42-paid-sources-on-credits.md) | X (Grok) and ScrapeCreators sources on credits | 5 | L | S04,S41 | H6 | [ ] |
 | [S43](S43-pricing-page-calculator.md) | Pricing page + calculator | 5 | M | S03 | none | [ ] |
@@ -137,4 +149,13 @@ Size: S = under a day, M = 1 to 3 days, L = 3 to 5 days of agent work. "Idea" re
 
 ## 8. Calendar anchors (from the review)
 
-31 Oct: Reddit stops accepting new public API requests (have S10, S11, S43, S40/S41 core ready). 13 Nov: Reddit RSS ends (S16 tracker live). 30 Nov: GummySearch lifetime access ends (S21/S22 homepage preview, S15 importer). Early Dec: launch (S50/S51/S52, S61). 12 Jan: unregistered Reddit apps lose access (S31/S30 shipped). March 2027: Reddit public API closes.
+As of 20 Oct 2026, eleven days remain before the first Reddit cutoff.
+
+| Date | What ends | What has to exist |
+|---|---|---|
+| **31 Oct** | Reddit stops new public API requests | S10 spike done, S11 shared sweep in progress. S40 is no longer the billing path (Polar, #75). |
+| **13 Nov** | Reddit RSS ends | S16 access tracker live, so the product can say which lanes still work. |
+| **30 Nov** | GummySearch lifetime access ends | S15 importer, S21/S22 homepage preview. |
+| Early Dec | Launch window | S50/S51/S52, S61. |
+| 12 Jan | Unregistered Reddit apps lose access | S30/S31 shipped. |
+| March 2027 | Reddit public API closes | TinyFish (or the chosen chain) is the only Reddit lane. |
