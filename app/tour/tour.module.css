@@ -46,6 +46,18 @@
   overflow: clip;
 }
 
+/* A pinned, clipped stage hides text once content is taller than the screen (short phones,
+   enlarged text). Let the reader scroll the content instead of moving the whole stage. */
+@media (max-height: 760px) {
+  .tour :global(.sc-stage) {
+    position: relative;
+    top: auto;
+    height: auto;
+    min-height: calc(100svh - var(--bar));
+    overflow: visible;
+  }
+}
+
 :global(.sc-ready) .tour [data-sc-cue] {
   opacity: 0;
 }
