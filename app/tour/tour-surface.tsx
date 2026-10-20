@@ -490,7 +490,8 @@ function EditPass() {
             <p className={s.draftText}>{pieces}</p>
           </article>
           <div className={s.editLog}>
-            <p className={s.editCount} aria-live="polite">
+            <p className={s.editCount}>
+              <span className="tour-clip">Edit progress: </span>
               {done} of {EDIT_COUNT} edits
             </p>
             <ol>

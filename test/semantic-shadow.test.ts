@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   opportunityWrites: [] as Row[],
   evidence: [] as Row[],
   embedPending: vi.fn<(...args: unknown[]) => Promise<{ embedded: number }>>(async () => ({ embedded: 0 })),
+  indexProfile: vi.fn<(...args: unknown[]) => Promise<{ indexed: number; skipped?: string }>>(async () => ({ indexed: 1 })),
 }));
 
 vi.mock("@/lib/cf/env", () => ({
@@ -27,6 +28,9 @@ vi.mock("@/lib/costs/prices", () => ({
 }));
 vi.mock("@/lib/embeddings/index-documents", () => ({
   embedPendingDocuments: (...args: unknown[]) => state.embedPending(...args),
+}));
+vi.mock("@/lib/embeddings/index-profile", () => ({
+  indexProfile: (...args: unknown[]) => state.indexProfile(...args),
 }));
 vi.mock("@/lib/profile/repository", () => ({
   getLatestMonitoringProfile: async () => state.profile,
@@ -174,7 +178,8 @@ beforeEach(() => {
   state.vectorize = null;
   state.docs = [0, 1, 2].map(docRow);
   state.profile = {
-    version: 1,
+    id: "22222222-2222-4222-8222-222222222222",
+    version: 3,
     productDescription: "Social listening and brand monitoring",
     targetCustomer: "Teams",
     topics: ["social listening"],
@@ -254,6 +259,40 @@ describe("runSemanticStage", () => {
     state.mode = "shadow";
     state.ai = createFakeAi().binding;
     state.vectorize = null;
+
+    await expect(runSemanticStage(WORKSPACE, DOCS)).resolves.toBeNull();
+    expect(state.shadow).toHaveLength(0);
+  });
+
+  it("indexes the current profile before recording a shadow row", async () => {
+    state.mode = "shadow";
+    state.ai = createFakeAi().binding;
+    state.vectorize = createFakeVectorize().binding;
+    let rowsWhenIndexed = -1;
+    state.indexProfile.mockImplementation(async () => {
+      rowsWhenIndexed = state.shadow.length;
+      return { indexed: 1 };
+    });
+
+    await runSemanticStage(WORKSPACE, DOCS);
+
+    expect(state.indexProfile).toHaveBeenCalledWith(
+      WORKSPACE,
+      "22222222-2222-4222-8222-222222222222",
+      3,
+      state.profile,
+      undefined,
+      undefined,
+    );
+    expect(rowsWhenIndexed).toBe(0);
+    expect(state.shadow).toHaveLength(3);
+  });
+
+  it("records nothing when the profile index is unavailable", async () => {
+    state.mode = "shadow";
+    state.ai = createFakeAi().binding;
+    state.vectorize = createFakeVectorize().binding;
+    state.indexProfile.mockResolvedValueOnce({ indexed: 0, skipped: "unavailable" });
 
     await expect(runSemanticStage(WORKSPACE, DOCS)).resolves.toBeNull();
     expect(state.shadow).toHaveLength(0);

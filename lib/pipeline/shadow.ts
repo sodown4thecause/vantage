@@ -5,6 +5,8 @@ import { getDb } from "@/lib/db/client";
 import { semanticShadow } from "@/lib/db/schema";
 import { embedTexts } from "@/lib/embeddings/embed";
 import { embedPendingDocuments } from "@/lib/embeddings/index-documents";
+import { indexProfile } from "@/lib/embeddings/index-profile";
+import { getLatestMonitoringProfile } from "@/lib/profile/repository";
 import { classifyIntent } from "@/lib/pipeline/intent-ladder";
 import type { NormalizedDocument } from "@/lib/pipeline/normalize";
 import { semanticSignals, type SemanticSignal } from "@/lib/pipeline/semantic";
@@ -109,6 +111,21 @@ export async function runSemanticStageDetailed(
       const vector = vectorById.get(doc.id) ?? [];
       return vector.length > 0 ? [{ id: doc.id, vector }] : [];
     });
+    // Profiles saved while the mode was off never queued an index job, and a shadow row is
+    // written once. Index the current profile first, or every fit for those workspaces is 0 forever.
+    const profile = await getLatestMonitoringProfile(workspaceId);
+    if (profile) {
+      const indexedProfile = await indexProfile(
+        workspaceId,
+        profile.id,
+        profile.version,
+        profile,
+        undefined,
+        signal,
+      );
+      if (indexedProfile.skipped) return null;
+    }
+
     const signals = await semanticSignals(workspaceId, embedded);
     if (signals === null) return null;
 
