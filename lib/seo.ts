@@ -1,5 +1,5 @@
 /** Signed-in app surfaces and APIs: nothing there is public content. */
-export const PRIVATE_PATHS = ["/api/", "/auth/", "/admin/", "/queue", "/seo", "/review", "/onboarding", "/opportunities/", "/settings/"];
+export const PRIVATE_PATHS = ["/api/", "/auth/", "/admin/", "/queue", "/seo", "/review", "/onboarding", "/setup", "/opportunities/", "/settings/"];
 
 /**
  * Answer engines named explicitly so the marketing pages, blog and launch

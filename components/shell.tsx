@@ -21,6 +21,7 @@ export function Shell({
   active,
   section,
   wide = false,
+  signedIn = false,
 }: {
   children: React.ReactNode;
   workspaceId?: string;
@@ -28,6 +29,7 @@ export function Shell({
   /** Highlights a public nav item on marketing pages. */
   section?: PublicKey;
   wide?: boolean;
+  signedIn?: boolean;
 }) {
   const q = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
   // Read per render, never at module scope: the SEO item appears only once DataForSEO can serve lookups and the agent
@@ -91,12 +93,18 @@ export function Shell({
                   {n.label}
                 </Link>
               ))}
-              <Link href="/auth/sign-in" className="rounded px-3 py-1.5 font-medium text-ridge hover:text-ink">
-                Sign in
-              </Link>
-              <Link href="/auth/sign-up" className="btn ml-1">
-                Create a free account
-              </Link>
+              {signedIn ? (
+                <Link href="/auth/sign-out" prefetch={false} className="rounded px-3 py-1.5 font-medium text-ridge hover:text-ink">Sign out</Link>
+              ) : (
+                <>
+                  <Link href="/auth/sign-in" className="rounded px-3 py-1.5 font-medium text-ridge hover:text-ink">
+                    Sign in
+                  </Link>
+                  <Link href="/auth/sign-up" className="btn ml-1">
+                    Create a free account
+                  </Link>
+                </>
+              )}
             </nav>
           )}
         </div>
