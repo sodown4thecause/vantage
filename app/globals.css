@@ -16,7 +16,9 @@
   --ink: #f2f5f3;
   --ridge: #8a9490;
   --contour: #262b29;
+  --contour-strong: #343a37;
   --hair-soft: #1e2321;
+  --ink-bright: #ffffff;
   --signal: #7d9bff;
   --signal-ink: #0a0b0b;
   --sage: #86a092;
@@ -51,6 +53,7 @@
   --color-sheet: var(--sheet);
   --color-sheet-2: var(--sheet-2);
   --color-sage: var(--sage);
+  --color-contour-strong: var(--contour-strong);
   --color-ink: var(--ink);
   --color-ridge: var(--ridge);
   --color-contour: var(--contour);
@@ -201,7 +204,7 @@
     transition: background 150ms ease, transform 150ms ease;
     white-space: nowrap;
   }
-  .btn:hover { background: #ffffff; }
+  .btn:hover { background: var(--ink-bright); }
   .btn:active { transform: scale(0.98); }
 
   .btn-lg { font-size: 1.0625rem; padding: 0.95rem 1.6rem; }
@@ -211,7 +214,7 @@
     color: var(--ink);
     box-shadow: inset 0 0 0 1px var(--contour);
   }
-  .btn-quiet:hover { background: var(--sheet-2); box-shadow: inset 0 0 0 1px #343a37; }
+  .btn-quiet:hover { background: var(--sheet-2); box-shadow: inset 0 0 0 1px var(--contour-strong); }
 
   .link {
     color: var(--ink);
@@ -331,7 +334,7 @@
 }
 .bg-zinc-900.text-white:hover:not(:disabled),
 .bg-zinc-950.text-white:hover:not(:disabled) {
-  background: #ffffff;
+  background: var(--ink-bright);
 }
 
 /* The theme is dark whatever the browser prefers, so fixed white and black
