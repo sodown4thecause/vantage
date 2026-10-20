@@ -11,13 +11,20 @@ export const LIMIT_KEYS = [
   "reply_briefs",
   "alerts_3h",
   "scan_interval_hours",
+  "seo_credits_per_month",
+  "seo_questions_per_month",
 ] as const;
 export type LimitKey = (typeof LIMIT_KEYS)[number];
 
 export type Limits = Record<LimitKey, number>;
 
 /** Limit keys that are tracked in `workspace_usage` and consumed atomically. */
-export const METERED_KEYS = ["scored_leads_per_day", "deep_searches_per_month"] as const;
+export const METERED_KEYS = [
+  "scored_leads_per_day",
+  "deep_searches_per_month",
+  "seo_credits_per_month",
+  "seo_questions_per_month",
+] as const;
 export type MeteredKey = (typeof METERED_KEYS)[number];
 
 /**
@@ -36,6 +43,8 @@ export const DEFAULT_LIMITS: Record<PlanId, Limits> = {
     reply_briefs: 0,
     alerts_3h: 0,
     scan_interval_hours: 24,
+    seo_credits_per_month: 6,
+    seo_questions_per_month: 10,
   },
   pro: {
     projects: 3,
@@ -47,6 +56,8 @@ export const DEFAULT_LIMITS: Record<PlanId, Limits> = {
     reply_briefs: 1,
     alerts_3h: 1,
     scan_interval_hours: 3,
+    seo_credits_per_month: 60,
+    seo_questions_per_month: 150,
   },
 };
 

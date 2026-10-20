@@ -1,6 +1,6 @@
 # S12 — Reddit keyword search and deep-search quota
 
-**Track:** Reddit · **Wave:** 3 · **Size:** M · **Owner:** agent · **Depends on:** S10, S11 · **Unblocks:** S16 (copy), signup report
+**Track:** Reddit · **Wave:** 3 · **Size:** M · **Owner:** agent · **Depends on:** S10, S11 · **Unblocks:** S16 (copy), signup report · **Status:** not started (blocked on S10, then S11; start only after the 31 Oct spike)
 
 ## Outcome
 Workspaces can search all of Reddit by keyword for free, and Pro (and the signup report) can run quota-limited Agent "deep searches".

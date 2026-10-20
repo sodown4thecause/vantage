@@ -1,0 +1,44 @@
+import type { Tool } from "ai";
+
+import type { Intent } from "@/lib/seo-agent/classify";
+import { backlinkTools } from "@/lib/seo-agent/tools/backlinks";
+import { followUpTools } from "@/lib/seo-agent/tools/follow-ups";
+import { geoTools } from "@/lib/seo-agent/tools/geo";
+import { keywordTools } from "@/lib/seo-agent/tools/keywords";
+import { serpTools } from "@/lib/seo-agent/tools/serp";
+import type { ToolContext } from "@/lib/seo-agent/tools/shared";
+
+type DataIntent = Exclude<Intent, "all" | "concept" | "out_of_scope">;
+
+/** Spec 4.2: which data tools each intent may call. Follow-ups are added to every set. */
+const TOOLS_BY_INTENT: Record<DataIntent, string[]> = {
+  backlinks: ["backlink_summary", "referring_domains", "backlink_gap", "anchors"],
+  keywords: ["keyword_ideas", "keyword_overview", "ranked_keywords", "competitor_domains", "keyword_gap"],
+  serp: ["google_serp", "keyword_overview"],
+  geo_visibility: ["llm_response", "ai_keyword_volume", "google_serp"],
+  content: ["keyword_ideas", "keyword_overview", "google_serp", "ranked_keywords"],
+};
+
+/** Used when classification failed: every data tool named by any intent, each once, in first-seen order. */
+const ALL_DATA_TOOLS = [...new Set(Object.values(TOOLS_BY_INTENT).flat())];
+
+/**
+ * The tools one question may use. Concept and out-of-scope answers use none; their follow-ups come from a separate
+ * classifier call.
+ */
+export function toolsForIntent(intent: Intent, ctx: ToolContext): Record<string, Tool> {
+  if (intent === "concept" || intent === "out_of_scope") return {};
+  const names = intent === "all" ? ALL_DATA_TOOLS : TOOLS_BY_INTENT[intent];
+  const available: Record<string, Tool> = {
+    ...backlinkTools(ctx),
+    ...keywordTools(ctx),
+    ...serpTools(ctx),
+    ...geoTools(ctx),
+    ...followUpTools(ctx),
+  };
+  const selected: Record<string, Tool> = {};
+  for (const name of [...names, "suggest_follow_ups"]) {
+    selected[name] = available[name]!;
+  }
+  return selected;
+}

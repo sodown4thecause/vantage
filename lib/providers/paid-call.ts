@@ -17,16 +17,36 @@ export function isPaidCallDenied(error: unknown): error is PaidCallDeniedError {
 type PaidResult<T> = { value: T; costUsd?: number; error?: never }
   | { error: Error; costUsd?: number; value?: never };
 
-/** One reservation and ledger row per outbound paid attempt; ambiguous failures stay charged. */
+/**
+ * VANTAGE_PAID_DAILY_BUDGET_<PROVIDER>_USD when it is a positive number (provider upper-cased,
+ * non-alphanumerics to `_`), else the global VANTAGE_PAID_DAILY_BUDGET_USD. Read on every call.
+ */
+function providerCapUsd(provider: string): number {
+  const key = provider.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+  const own = Number(process.env[`VANTAGE_PAID_DAILY_BUDGET_${key}_USD`]);
+  if (Number.isFinite(own) && own > 0) return own;
+  return Number(process.env.VANTAGE_PAID_DAILY_BUDGET_USD);
+}
+
+/**
+ * One reservation and ledger row per outbound paid attempt; ambiguous failures stay charged.
+ *
+ * Budgets are per provider and per UTC day, and concurrent: reserve and settle are each one atomic
+ * statement on provider_budget_reservation keyed (day, provider). Calls to other providers never wait
+ * on this one, and overlapping calls to the same provider all run while their total fits the cap.
+ * Settlement is best effort. If it fails, the estimate stays counted, which only over-counts spend.
+ */
 export async function runPaidCall<T>(meta: {
   context: CostContext; provider: string; action: string; estimateUsd: number; signal?: AbortSignal;
+  /** A caller's own daily cap. The reservation uses the lower of it and the provider cap, in the same atomic statement. */
+  capUsd?: number;
 }, work: () => Promise<PaidResult<T>>): Promise<T> {
   meta.signal?.throwIfAborted();
   if (process.env.VANTAGE_PAID_PROVIDERS_ENABLED !== "true") {
     throw new PaidCallDeniedError("provider_disabled", "Paid providers are disabled.");
   }
   if (!meta.context.workspaceId) throw new PaidCallDeniedError("access_pending", "Paid calls require workspace attribution.");
-  const cap = Number(process.env.VANTAGE_PAID_DAILY_BUDGET_USD);
+  const cap = meta.capUsd === undefined ? providerCapUsd(meta.provider) : Math.min(providerCapUsd(meta.provider), meta.capUsd);
   const estimate = roundUsd(meta.estimateUsd);
   if (!Number.isFinite(cap) || cap <= 0 || !Number.isFinite(estimate) || estimate <= 0) {
     throw new PaidCallDeniedError("budget_exhausted", "An explicit positive provider budget and estimate are required.");
@@ -39,34 +59,33 @@ export async function runPaidCall<T>(meta: {
   let reserved: boolean;
   try {
     reserved = rowsOf(await db.execute(sql`
-      insert into provider_budget_day (day, spent_usd, cap_usd, reservation_ref)
-      select ${day}::date, ${estimate.toFixed(6)}::numeric, ${cap.toFixed(6)}::numeric, ${reservationRef}
+      insert into provider_budget_reservation (day, provider, spent_usd, cap_usd)
+      select ${day}::date, ${meta.provider}::text, ${estimate.toFixed(6)}::numeric, ${cap.toFixed(6)}::numeric
       where ${estimate.toFixed(6)}::numeric <= ${cap.toFixed(6)}::numeric
-      on conflict (day) do update
-        set spent_usd = provider_budget_day.spent_usd + excluded.spent_usd,
-            cap_usd = excluded.cap_usd, reservation_ref = excluded.reservation_ref
-        where provider_budget_day.reservation_ref is null
-          and provider_budget_day.spent_usd + excluded.spent_usd <= excluded.cap_usd
+      on conflict (day, provider) do update
+        set spent_usd = provider_budget_reservation.spent_usd + excluded.spent_usd,
+            cap_usd = excluded.cap_usd
+      where provider_budget_reservation.spent_usd + excluded.spent_usd <= excluded.cap_usd
       returning day
     `)).length > 0;
   } catch {
     throw new PaidCallDeniedError("budget_exhausted", "Provider budget could not be reserved.");
   }
-  if (!reserved) throw new PaidCallDeniedError("budget_exhausted", "Daily provider budget exhausted or another reservation needs reconciliation.");
+  if (!reserved) throw new PaidCallDeniedError("budget_exhausted", "Daily provider budget exhausted.");
   const record = (cost: number, ok: boolean) => recordCost({
     ...meta.context, provider: meta.provider, action: meta.action,
     units: 1, unitCostUsd: cost, ok, chargedOnFailure: !ok,
     requestRef: reservationRef,
   });
-  // ponytail: serialize paid calls per UTC day; a durable token blocks unsafe spending after settlement failures.
   const settle = async (cost: number) => {
     try {
-      const settled = rowsOf(await db.execute(sql`update provider_budget_day
-        set spent_usd = greatest(0, spent_usd + ${(roundUsd(cost) - estimate).toFixed(6)}::numeric), reservation_ref = null
-        where day = ${day}::date and reservation_ref = ${reservationRef}
-        returning day`));
-      if (settled.length !== 1) throw new Error("Provider reservation was not settled.");
-    } catch { throw new PaidCallDeniedError("budget_exhausted", "Provider cost reconciliation is pending; further paid calls are blocked."); }
+      const delta = (roundUsd(cost) - estimate).toFixed(6);
+      await db.execute(sql`update provider_budget_reservation
+        set spent_usd = greatest(0, spent_usd + ${delta}::numeric)
+        where day = ${day}::date and provider = ${meta.provider}::text`);
+    } catch (err) {
+      console.error("[paid] settle failed", { provider: meta.provider, error: err instanceof Error ? err.name : "unknown" });
+    }
   };
   let result: PaidResult<T>;
   let started = false;

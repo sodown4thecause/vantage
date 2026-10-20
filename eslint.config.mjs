@@ -16,6 +16,8 @@ const eslintConfig = defineConfig([
     ".open-next/**",
     ".wrangler/**",
     "cloudflare-env.d.ts",
+    // Third-party code vendored verbatim; see lib/vendor/scrollcraft/README.md.
+    "lib/vendor/**",
     // Claude Code agent worktrees: full checkouts of this repo, linted in their own right.
     ".claude/worktrees/**",
   ]),

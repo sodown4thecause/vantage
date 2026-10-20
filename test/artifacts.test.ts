@@ -102,6 +102,14 @@ describe("wrangler bindings", () => {
     expect(config.env.production.r2_buckets).toEqual(bucket("vantage-artifacts"));
     expect(config.env.staging.r2_buckets).toEqual(bucket("vantage-artifacts-staging"));
   });
+
+  it("records semantic shadow rows in production without changing the unscoped default", () => {
+    const config = JSON.parse(readFileSync(join(process.cwd(), "wrangler.jsonc"), "utf8"));
+    // Top level stays off: a deploy that omits --env production must not start embedding.
+    expect(config.vars.VANTAGE_SEMANTIC_MODE).toBe("off");
+    expect(config.env.staging.vars.VANTAGE_SEMANTIC_MODE).toBe("shadow");
+    expect(config.env.production.vars.VANTAGE_SEMANTIC_MODE).toBe("shadow");
+  });
 });
 
 describe("single entry point", () => {
