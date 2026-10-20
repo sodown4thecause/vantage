@@ -50,4 +50,19 @@ describe("workspace creation boundary", () => {
     expect(await createWorkspaceForCurrentUser("Retry")).toEqual(mocks.existing);
     expect(mocks.getDb).not.toHaveBeenCalled();
   });
+
+  it("allows a second workspace only after checking the current owner's plan cap", async () => {
+    mocks.userId = "owner-a";
+    mocks.existing = { id: "owned-workspace", name: "Acme" };
+    await createWorkspaceForCurrentUser("Product two", true);
+    expect(mocks.assertCanCreateProject).toHaveBeenCalledExactlyOnceWith("owner-a");
+    expect(mocks.values).toHaveBeenCalledExactlyOnceWith({ name: "Product two", ownerUserId: "owner-a", plan: "free" });
+  });
+
+  it("does not insert an additional workspace when the plan cap refuses", async () => {
+    mocks.userId = "owner-a";
+    mocks.assertCanCreateProject.mockRejectedValue(new Error("cap reached"));
+    await expect(createWorkspaceForCurrentUser("Product two", true)).rejects.toThrow("cap reached");
+    expect(mocks.getDb).not.toHaveBeenCalled();
+  });
 });

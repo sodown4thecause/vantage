@@ -60,6 +60,7 @@ export function Shell({
           </Link>
           {workspaceId ? (
             <nav aria-label="Workspace" className="-mx-3 flex flex-wrap gap-1 text-[0.9375rem]">
+              <Link href="/workspaces" className="rounded px-3 py-1.5 font-medium text-ridge hover:text-ink">Workspaces</Link>
               {nav.map((n) => (
                 <Link
                   key={n.key}
@@ -94,7 +95,10 @@ export function Shell({
                 </Link>
               ))}
               {signedIn ? (
-                <Link href="/auth/sign-out" prefetch={false} className="rounded px-3 py-1.5 font-medium text-ridge hover:text-ink">Sign out</Link>
+                <>
+                  <Link href="/workspaces" className="rounded px-3 py-1.5 font-medium text-ridge hover:text-ink">Workspaces</Link>
+                  <Link href="/auth/sign-out" prefetch={false} className="rounded px-3 py-1.5 font-medium text-ridge hover:text-ink">Sign out</Link>
+                </>
               ) : (
                 <>
                   <Link href="/auth/sign-in" className="rounded px-3 py-1.5 font-medium text-ridge hover:text-ink">

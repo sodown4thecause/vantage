@@ -11,7 +11,7 @@ import { WorkspaceForm } from "./workspace-form";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Workspace setup", robots: { index: false, follow: false } };
 
-export default async function SetupPage() {
+export default async function SetupPage({ searchParams }: { searchParams?: Promise<{ new?: string }> } = {}) {
   const { data: session } = await auth.getSession();
   if (!session?.user?.id) {
     return (
@@ -24,7 +24,8 @@ export default async function SetupPage() {
   }
 
   const workspace = await getCurrentWorkspace();
-  if (workspace) {
+  const additional = (await searchParams)?.new === "1";
+  if (workspace && !additional) {
     const profile = await getLatestMonitoringProfile(workspace.id);
     redirect(`/${profile ? "queue" : "onboarding"}?workspaceId=${encodeURIComponent(workspace.id)}`);
   }
@@ -32,12 +33,13 @@ export default async function SetupPage() {
   return (
     <Shell signedIn>
       <div className="mx-auto max-w-lg">
-        <p className="eyebrow mb-4">Account ready · Step 1 of 2</p>
+        <p className="eyebrow mb-4">{additional ? "Another product, a separate workspace" : "Account ready · Step 1 of 2"}</p>
         <PageHead title="Create your workspace" lede="You’re signed in. Give your workspace a name, then tell us about the product you want to monitor." />
         <div className="panel p-6 sm:p-8">
-          <WorkspaceForm />
+          <WorkspaceForm additional={additional} />
         </div>
         <p className="mt-6 text-sm text-ridge">Next: set up your monitoring profile. No payment details needed.</p>
+        {workspace && <Link href="/workspaces" className="link mt-4 inline-block">Back to your workspaces</Link>}
       </div>
     </Shell>
   );

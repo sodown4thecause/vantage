@@ -11,7 +11,7 @@ import type { SourcePlatform } from "@/lib/db/schema";
  * Creates a workspace row for the signed-in Neon Auth user.
  * Requires DATABASE_URL + Neon Auth env vars.
  */
-export async function createWorkspaceForCurrentUser(name: string) {
+export async function createWorkspaceForCurrentUser(name: string, additional = false) {
   name = name.trim();
   if (!name || name.length > 100) throw new Error("Workspace name must contain 1–100 characters.");
   const { data: session } = await auth.getSession();
@@ -19,8 +19,10 @@ export async function createWorkspaceForCurrentUser(name: string) {
     throw new Error("Unauthorized");
   }
 
-  const existing = await getCurrentWorkspace();
-  if (existing) return existing;
+  if (!additional) {
+    const existing = await getCurrentWorkspace();
+    if (existing) return existing;
+  }
   await assertCanCreateProject(String(session.user.id));
   const db = getDb();
   const [row] = await db

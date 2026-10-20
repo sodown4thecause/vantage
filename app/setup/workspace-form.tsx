@@ -5,11 +5,12 @@ import { useActionState } from "react";
 
 import { startWorkspace } from "./actions";
 
-export function WorkspaceForm() {
+export function WorkspaceForm({ additional = false }: { additional?: boolean }) {
   const [state, action, pending] = useActionState(startWorkspace, { error: "" });
 
   return (
     <form action={action} className="space-y-5">
+      <input type="hidden" name="additional" value={String(additional)} />
       <div className="space-y-2">
         <label htmlFor="workspace-name" className="block font-semibold">Workspace name</label>
         <input
@@ -29,7 +30,7 @@ export function WorkspaceForm() {
       <button type="submit" className="btn" disabled={pending}>
         {pending ? "Creating workspace…" : "Create workspace"}
       </button>
-      {state.error && <p className="text-sm text-ridge">Need to sign in again? <Link className="link" href="/auth/sign-in">Sign in</Link></p>}
+      {state.error && <p className="text-sm text-ridge"><Link className="link" href="/workspaces">Open your workspaces</Link> or <Link className="link" href="/auth/sign-in">sign in again</Link>.</p>}
     </form>
   );
 }

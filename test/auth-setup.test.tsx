@@ -6,10 +6,12 @@ const mocks = vi.hoisted(() => ({
   getCurrentWorkspace: vi.fn(),
   getLatestMonitoringProfile: vi.fn(),
   createWorkspaceForCurrentUser: vi.fn(),
+  setCurrentWorkspace: vi.fn(),
+  listOwnedWorkspaces: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/server", () => ({ auth: { getSession: mocks.getSession } }));
-vi.mock("@/lib/auth/workspace", () => ({ getCurrentWorkspace: mocks.getCurrentWorkspace }));
+vi.mock("@/lib/auth/workspace", () => ({ getCurrentWorkspace: mocks.getCurrentWorkspace, setCurrentWorkspace: mocks.setCurrentWorkspace, listOwnedWorkspaces: mocks.listOwnedWorkspaces }));
 vi.mock("@/lib/profile/repository", () => ({ getLatestMonitoringProfile: mocks.getLatestMonitoringProfile }));
 vi.mock("@/lib/db/actions", () => ({ createWorkspaceForCurrentUser: mocks.createWorkspaceForCurrentUser }));
 vi.mock("next/navigation", () => ({
@@ -23,6 +25,8 @@ vi.mock("@/components/shell", () => ({
 import SetupPage, { dynamic, metadata } from "@/app/setup/page";
 import { startWorkspace } from "@/app/setup/actions";
 import { PRIVATE_PATHS } from "@/lib/seo";
+import { PlanLimitError } from "@/lib/plans/types";
+import WorkspacesPage from "@/app/workspaces/page";
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -30,6 +34,31 @@ beforeEach(() => {
   mocks.getCurrentWorkspace.mockResolvedValue(null);
   mocks.getLatestMonitoringProfile.mockResolvedValue(null);
   mocks.createWorkspaceForCurrentUser.mockResolvedValue({ id: "workspace-1" });
+  mocks.setCurrentWorkspace.mockResolvedValue(true);
+  mocks.listOwnedWorkspaces.mockResolvedValue([]);
+});
+
+describe("workspace chooser", () => {
+  it("does not list workspaces without a confirmed session", async () => {
+    mocks.getSession.mockResolvedValue({ data: null });
+    await expect(WorkspacesPage()).rejects.toThrow("REDIRECT:/setup");
+    expect(mocks.listOwnedWorkspaces).not.toHaveBeenCalled();
+  });
+
+  it("offers creation to an authenticated account without workspaces", async () => {
+    const html = renderToStaticMarkup(await WorkspacesPage());
+    expect(html).toContain("You haven’t created a workspace yet.");
+    expect(html).toContain("/setup?new=1");
+  });
+
+  it("lists owned workspaces and identifies the persisted selection", async () => {
+    mocks.listOwnedWorkspaces.mockResolvedValue([{ id: "first", name: "First product" }, { id: "second", name: "Second product" }]);
+    mocks.getCurrentWorkspace.mockResolvedValue({ id: "second", name: "Second product" });
+    const html = renderToStaticMarkup(await WorkspacesPage());
+    expect(html).toContain("First product");
+    expect(html).toContain("Second product");
+    expect(html.match(/Selected workspace/g)).toHaveLength(1);
+  });
 });
 
 describe("post-login setup", () => {
@@ -52,6 +81,14 @@ describe("post-login setup", () => {
     expect(html).toContain("Create your workspace");
     expect(html).toContain('name="name"');
     expect(mocks.createWorkspaceForCurrentUser).not.toHaveBeenCalled();
+  });
+
+  it("allows existing owners to explicitly request an additional workspace", async () => {
+    mocks.getCurrentWorkspace.mockResolvedValue({ id: "workspace-1", name: "Acme" });
+    const html = renderToStaticMarkup(await SetupPage({ searchParams: Promise.resolve({ new: "1" }) }));
+    expect(html).toContain("Create your workspace");
+    expect(html).toContain('name="additional" value="true"');
+    expect(mocks.getLatestMonitoringProfile).not.toHaveBeenCalled();
   });
 
   it.each([[null, "onboarding"], [{ id: "profile-1" }, "queue"]])(
@@ -89,11 +126,28 @@ describe("post-login setup", () => {
     expect(result.error).not.toContain("private database details");
   });
 
+  it("explains the plan cap without leaking internal errors", async () => {
+    mocks.createWorkspaceForCurrentUser.mockRejectedValue(new PlanLimitError("projects", 3, "internal detail"));
+    const form = new FormData();
+    form.set("name", "Acme");
+    expect((await startWorkspace({ error: "" }, form)).error).toContain("workspace limit for your plan");
+    expect(mocks.setCurrentWorkspace).not.toHaveBeenCalled();
+  });
+
   it("creates through the existing authenticated action and redirects after success", async () => {
     const form = new FormData();
     form.set("name", "  Acme  ");
     form.set("ownerUserId", "someone-else");
-    await expect(startWorkspace({ error: "" }, form)).rejects.toThrow("REDIRECT:/onboarding?workspaceId=workspace-1");
-    expect(mocks.createWorkspaceForCurrentUser).toHaveBeenCalledExactlyOnceWith("Acme");
+    await expect(startWorkspace({ error: "" }, form)).rejects.toThrow("REDIRECT:/setup");
+    expect(mocks.createWorkspaceForCurrentUser).toHaveBeenCalledExactlyOnceWith("Acme", false);
+    expect(mocks.setCurrentWorkspace).toHaveBeenCalledExactlyOnceWith("workspace-1");
+  });
+
+  it("requests additional creation only through the same plan-capped action", async () => {
+    const form = new FormData();
+    form.set("name", "Product two");
+    form.set("additional", "true");
+    await expect(startWorkspace({ error: "" }, form)).rejects.toThrow("REDIRECT:/setup");
+    expect(mocks.createWorkspaceForCurrentUser).toHaveBeenCalledExactlyOnceWith("Product two", true);
   });
 });

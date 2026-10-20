@@ -1,4 +1,6 @@
 import { and, eq } from "drizzle-orm";
+import { cookies } from "next/headers";
+import { z } from "zod";
 
 import { auth } from "@/lib/auth/server";
 import { getDb } from "@/lib/db/client";
@@ -8,12 +10,34 @@ export type WorkspaceAuthorization =
   | { ok: true; userId: string }
   | { ok: false; status: 401 | 403; error: "unauthorized" | "forbidden" };
 
-export async function getCurrentWorkspace(): Promise<{ id: string; name: string } | null> {
+export const WORKSPACE_COOKIE = "vantage-workspace";
+
+export async function listOwnedWorkspaces(): Promise<Array<{ id: string; name: string }>> {
   const { data: session } = await auth.getSession();
-  if (!session?.user?.id) return null;
-  const [owned] = await getDb().select({ id: workspace.id, name: workspace.name })
-    .from(workspace).where(eq(workspace.ownerUserId, String(session.user.id))).limit(1);
-  return owned ?? null;
+  if (!session?.user?.id) return [];
+  return getDb().select({ id: workspace.id, name: workspace.name })
+    .from(workspace).where(eq(workspace.ownerUserId, String(session.user.id)));
+}
+
+export async function getCurrentWorkspace(): Promise<{ id: string; name: string } | null> {
+  const owned = await listOwnedWorkspaces();
+  if (!owned.length) return null;
+  const selected = (await cookies()).get(WORKSPACE_COOKIE)?.value;
+  return owned.find((row) => row.id === selected) ?? owned[0];
+}
+
+export async function setCurrentWorkspace(workspaceId: string): Promise<boolean> {
+  if (!z.uuid().safeParse(workspaceId).success) return false;
+  const authorization = await authorizeWorkspace(workspaceId);
+  if (!authorization.ok) return false;
+  (await cookies()).set(WORKSPACE_COOKIE, workspaceId, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365,
+  });
+  return true;
 }
 
 /** Require an authenticated Neon Auth user who owns the requested workspace. */
