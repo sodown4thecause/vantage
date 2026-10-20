@@ -5,20 +5,10 @@ import { JsonLd } from "@/components/json-ld";
 import { Shell } from "@/components/shell";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth/server";
-import { getCurrentWorkspace } from "@/lib/auth/workspace";
 import { formatDate, getAllPosts } from "@/lib/blog";
-import { createWorkspaceForCurrentUser } from "@/lib/db/actions";
-import { getLatestMonitoringProfile } from "@/lib/profile/repository";
 import { SITE_DESCRIPTION, SITE_NAME, SOURCES, absoluteUrl } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
-
-async function startWorkspace(form: FormData) {
-  "use server";
-  const workspace = await createWorkspaceForCurrentUser(String(form.get("name") ?? ""));
-  if (!workspace) throw new Error("Workspace could not be created.");
-  redirect(`/onboarding?workspaceId=${encodeURIComponent(workspace.id)}`);
-}
 
 const STEPS: { title: string; body: string }[] = [
   {
@@ -74,11 +64,7 @@ const FAQ: { q: string; a: string }[] = [
 
 export default async function Home() {
   const { data: session } = await auth.getSession();
-  const workspace = session?.user ? await getCurrentWorkspace() : null;
-  if (workspace) {
-    const profile = await getLatestMonitoringProfile(workspace.id);
-    redirect(`/${profile ? "queue" : "onboarding"}?workspaceId=${encodeURIComponent(workspace.id)}`);
-  }
+  if (session?.user) redirect("/setup");
   const example = { fit: 0.86, intent: 0.78, evidence: 0.64, momentum: 0.45, timing: 0.9 };
   const latest = getAllPosts().slice(0, 3);
 
@@ -135,37 +121,19 @@ export default async function Home() {
             asking for what you build. You get a short ranked list with the
             posts that prove it. You write the reply. It never posts for you.
           </p>
-          {session?.user ? (
-            <form action={startWorkspace} className="max-w-md space-y-3">
-              <label htmlFor="workspace-name" className="block font-semibold">
-                Name your workspace
-              </label>
-              <input
-                id="workspace-name"
-                name="name"
-                required
-                maxLength={100}
-                autoComplete="organization"
-                placeholder="Acme Analytics"
-                className="w-full rounded-md border border-contour bg-sheet px-3.5 py-3"
-              />
-              <button className="btn">Create workspace</button>
-            </form>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex flex-wrap gap-3">
-                <Link href="/auth/sign-up" className="btn btn-lg">
-                  Create a free account
-                </Link>
-                <Link href="#how-it-works" className="btn btn-lg btn-quiet">
-                  See how it works
-                </Link>
-              </div>
-              <p className="text-sm text-ridge">
-                Already have an account? <Link href="/auth/sign-in" className="link">Sign in</Link>
-              </p>
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-3">
+              <Link href="/auth/sign-up" className="btn btn-lg">
+                Create a free account
+              </Link>
+              <Link href="#how-it-works" className="btn btn-lg btn-quiet">
+                See how it works
+              </Link>
             </div>
-          )}
+            <p className="text-sm text-ridge">
+              Already have an account? <Link href="/auth/sign-in" className="link">Sign in</Link>
+            </p>
+          </div>
         </section>
 
         <aside aria-label="Example opportunity" className="panel space-y-5 p-6 sm:p-8">

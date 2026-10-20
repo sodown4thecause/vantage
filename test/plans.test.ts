@@ -183,7 +183,7 @@ describe("keyword and source limits", () => {
 describe("project limit", () => {
   it("lets a free user create their first project but not a second", async () => {
     state.workspaceRows = [];
-    await expect(assertCanCreateProject("user")).resolves.toBeUndefined();
+    await expect(assertCanCreateProject("user")).resolves.toBe(1);
     state.workspaceRows = [{ plan: "free" }];
     const error = await assertCanCreateProject("user").catch((e) => e);
     expect(error).toBeInstanceOf(PlanLimitError);
@@ -192,7 +192,7 @@ describe("project limit", () => {
 
   it("lets a Pro user own three projects", async () => {
     state.workspaceRows = [{ plan: "pro" }, { plan: "free" }];
-    await expect(assertCanCreateProject("user")).resolves.toBeUndefined();
+    await expect(assertCanCreateProject("user")).resolves.toBe(3);
     state.workspaceRows = [{ plan: "pro" }, { plan: "pro" }, { plan: "pro" }];
     await expect(assertCanCreateProject("user")).rejects.toBeInstanceOf(PlanLimitError);
   });

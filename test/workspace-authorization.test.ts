@@ -17,13 +17,15 @@ vi.mock("@/lib/db/client", () => ({
   getDb: () => ({
     select: () => ({
       from: () => ({
-        where: () => ({
+        where: () => Object.assign(Promise.resolve(state.workspaceFound ? [{ id: "workspace-1" }] : []), {
           limit: async () => (state.workspaceFound ? [{ id: "workspace-1" }] : []),
         }),
       }),
     }),
   }),
 }));
+
+vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined }) }));
 
 import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
 

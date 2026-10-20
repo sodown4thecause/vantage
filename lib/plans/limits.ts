@@ -239,7 +239,7 @@ export async function assertWithinCount(
 }
 
 /** A user may own up to the highest `projects` limit among their workspaces' plans. */
-export async function assertCanCreateProject(ownerUserId: string): Promise<void> {
+export async function assertCanCreateProject(ownerUserId: string): Promise<number> {
   // One row per distinct plan (at most a handful), not one per workspace.
   const owned = await getDb()
     .select({ plan: workspace.plan, n: sql<number>`count(*)::int` })
@@ -260,6 +260,7 @@ export async function assertCanCreateProject(ownerUserId: string): Promise<void>
   if (!checkCountLimit(best, ownedCount).allowed) {
     throw new PlanLimitError("projects", best, limitMessage(bestPlan, "projects", best));
   }
+  return best;
 }
 
 export type PlanUsageView = {

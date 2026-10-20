@@ -1,0 +1,44 @@
+# Auth workspace handoff
+
+Production has registered users and sessions but no workspaces. Email verification
+is disabled in Neon, so signup currently sends no verification email. Keep those
+settings unchanged; this change fixes the application handoff, not email policy.
+
+1. Add regression coverage for missing sessions, new accounts, existing workspace
+   owners, failed workspace creation, and authenticated workspace ownership.
+2. Send successful authentication to a dynamic `/setup` page with a fresh document
+   navigation. Route existing owners to their queue or monitoring profile. Give
+   accounts without a workspace an explicit setup form and visible submission state.
+3. Replace the homepage's embedded workspace form with the same setup handoff.
+   Keep workspace creation behind the existing authenticated, owner-scoped action.
+4. Run lint, typecheck, Vitest, Worker node tests, and build. Inspect the rendered
+   setup and recovery screens in a browser. Verify real authentication and workspace
+   creation only against a configured environment; do not claim mocked checks are
+   a successful production login.
+
+Sailer expanded the scope to support additional workspaces up to the existing plan
+cap and a workspace switcher. Persist the selection in an HTTP-only cookie, validate
+ownership on every selection, and ignore cookies pointing to another owner's or a
+deleted workspace. Keep first-workspace retries idempotent.
+
+No schema changes, automatic workspace creation, email-policy changes, or production
+data edits are needed. Publish one PR against main under the crew rules. Staging-only
+verification with disposable account data is approved; shared auth settings stay unchanged.
+
+## PR #89 concurrency review follow-up
+
+Both first-workspace reuse and additional-workspace plan limits can race across
+tabs. Serialize creation per authenticated owner using a transaction-scoped
+advisory lock followed by a guarded insert in one Neon HTTP batch. The insert's
+fresh read-committed snapshot counts owned workspaces after acquiring the lock.
+First-workspace submissions require an owned count of zero; additional submissions
+use the existing server-resolved plan limit. Losing initial submissions reread
+the owner's workspace, including when a concurrent winner causes the preliminary
+plan check to refuse. Losing additional submissions return a plan-limit error.
+No migration or production data edits are needed.
+
+Verify the actual action queries against isolated PostgreSQL with twenty
+concurrent first-workspace submissions and twenty submissions for the final Pro
+slot. Run the full local checks again after changing the transaction path.
+The optional database tests use TEST_DATABASE_URL, create their own temporary
+schema, and clean it up afterwards.
