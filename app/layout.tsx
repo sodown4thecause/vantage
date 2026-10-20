@@ -33,7 +33,16 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${grotesk.variable} ${newsreader.variable} h-full antialiased`}
+      className={`dark ${grotesk.variable} ${newsreader.variable} h-full antialiased`}
+      style={{ colorScheme: "dark" }}
+      // next-themes' pre-hydration script rewrites these same attributes: it
+      // does classList.remove("light","dark") then add("dark"), which moves
+      // `dark` to the end of the class list, and re-serialises the inline
+      // color-scheme. Both differ textually from this server render even
+      // though they resolve identically, so the warning is suppressed on
+      // <html> alone. Nothing below it is suppressed, so real mismatches
+      // still surface.
+      suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
         <Providers>{children}</Providers>
