@@ -82,6 +82,8 @@
 @layer base {
   html {
     background: var(--paper);
+    /* The site header is sticky; keep anchored headings clear of it. */
+    scroll-padding-top: 5.5rem;
   }
 
   body {
@@ -90,7 +92,6 @@
     font-family: var(--font-sans);
     font-size: 1rem;
     line-height: 1.55;
-    -webkit-font-smoothing: antialiased;
   }
 
   :focus-visible {
@@ -162,8 +163,9 @@
   /* One atmospheric moment: a cobalt wash behind the hero. */
   .aurora {
     position: absolute;
-    inset: -30% -10% auto -10%;
+    inset: -30% 0 auto 0;
     height: 34rem;
+    max-width: 100%;
     pointer-events: none;
     background:
       radial-gradient(45% 50% at 72% 30%, color-mix(in oklab, var(--signal) 16%, transparent), transparent 70%),
@@ -326,27 +328,42 @@
   background: #ffffff;
 }
 
+/* The theme is dark whatever the browser prefers, so fixed white and black
+   surfaces in existing pages would carry near-white ink on white. Pull them
+   onto the palette unconditionally. */
+.bg-white {
+  background-color: var(--sheet);
+}
+.bg-white\/70 {
+  background-color: color-mix(in oklab, var(--sheet) 70%, transparent);
+}
+.text-black {
+  color: var(--ink);
+}
+
 /* Existing pages put dark: variants on the zinc ramp, which is already
    theme-aware here (dark ink is light, dark sheet is dark); neutralise the
-   ones that would double-invert. */
-@media (prefers-color-scheme: dark) {
-  .dark\:bg-black,
-  .dark\:bg-zinc-950 {
-    background-color: transparent;
-  }
-  .dark\:bg-zinc-900 {
-    background-color: var(--sheet);
-  }
-  .dark\:text-zinc-50,
-  .dark\:text-zinc-100,
-  .dark\:text-zinc-200,
-  .dark\:text-zinc-300 {
-    color: var(--ink);
-  }
-  .dark\:border-zinc-700,
-  .dark\:border-zinc-800 {
-    border-color: var(--contour);
-  }
+   ones that would double-invert. These apply regardless of the browser's
+   preference, because the palette no longer follows it. */
+.dark\:bg-black,
+.dark\:bg-zinc-950 {
+  background-color: transparent;
+}
+.dark\:bg-zinc-900 {
+  background-color: var(--sheet);
+}
+.dark\:bg-black\/30 {
+  background-color: color-mix(in oklab, var(--sheet) 70%, transparent);
+}
+.dark\:text-zinc-50,
+.dark\:text-zinc-100,
+.dark\:text-zinc-200,
+.dark\:text-zinc-300 {
+  color: var(--ink);
+}
+.dark\:border-zinc-700,
+.dark\:border-zinc-800 {
+  border-color: var(--contour);
 }
 
 /* The one orchestrated moment: the score glyph draws itself in on load. */

@@ -40,7 +40,9 @@ export function Shell({
       <a href="#main" className="skip-link">
         Skip to content
       </a>
-      <header className="sticky top-0 z-10 border-b border-contour/60 bg-paper/85 backdrop-blur-md">
+      {/* Sticky only where the nav fits on one row: a wrapped header would eat
+          a phone's viewport and hide anchored headings. */}
+      <header className="relative z-10 border-b border-contour/60 bg-paper/85 backdrop-blur-md lg:sticky lg:top-0">
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-x-8 gap-y-2 px-5 py-3 sm:px-8">
           <Link href="/" aria-label="contextfor.dev home">
             <Wordmark />

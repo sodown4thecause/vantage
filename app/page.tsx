@@ -202,7 +202,7 @@ export default async function Home() {
         </ul>
       </section>
 
-      <section id="how-it-works" aria-labelledby="how-heading" className="mt-20 scroll-mt-8">
+      <section id="how-it-works" aria-labelledby="how-heading" className="mt-20 scroll-mt-24">
         <h2 id="how-heading" className="display mb-10 text-3xl sm:text-4xl">
           How it works
         </h2>
@@ -276,7 +276,7 @@ export default async function Home() {
         </section>
       )}
 
-      <section id="faq" aria-labelledby="faq-heading" className="mt-20 grid scroll-mt-8 gap-x-12 gap-y-6 sm:grid-cols-[1fr_1.6fr]">
+      <section id="faq" aria-labelledby="faq-heading" className="mt-20 grid scroll-mt-24 gap-x-12 gap-y-6 sm:grid-cols-[1fr_1.6fr]">
         <h2 id="faq-heading" className="display text-3xl sm:text-4xl">Questions</h2>
         <div className="divide-y divide-contour/60 border-y border-contour/60">
           {FAQ.map(({ q, a }) => (
