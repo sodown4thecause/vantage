@@ -175,7 +175,7 @@ export default async function BlogPost({ params }: Props) {
 
           {post.toc.length > 1 && (
             <nav aria-label="On this page" className="order-first lg:order-none">
-              <div className="space-y-2 text-sm lg:sticky lg:top-8">
+              <div className="space-y-2 text-sm lg:sticky lg:top-24">
                 <p className="font-semibold">On this page</p>
                 <ul className="space-y-1.5 border-l border-contour">
                   {post.toc.map((h) => (
