@@ -5,17 +5,13 @@ import { notFound } from "next/navigation";
 import { JsonLd } from "@/components/json-ld";
 import { TagLinks } from "@/components/post-list";
 import { Shell } from "@/components/shell";
-import { formatDate, getAdjacentPosts, getAllPosts, getPost, getRelatedPosts, tagLabel } from "@/lib/blog";
+import { formatDate, getAdjacentPosts, getPost, getRelatedPosts, tagLabel } from "@/lib/blog";
 import { SITE_NAME, absoluteUrl } from "@/lib/site";
 import styles from "../blog.module.css";
 
-export const dynamicParams = false;
+export const dynamic = "force-dynamic";
 
 type Props = { params: Promise<{ slug: string }> };
-
-export function generateStaticParams() {
-  return getAllPosts().map((p) => ({ slug: p.slug }));
-}
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;

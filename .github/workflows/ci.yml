@@ -76,6 +76,8 @@ jobs:
           fi
       - name: Build Cloudflare Worker bundle
         run: pnpm cf:build
+      - name: Test blog routes in Cloudflare Worker runtime
+        run: pnpm test:blog-worker
       - name: Check Worker size (10 MB paid-plan limit)
         run: |
           size=$(stat -c%s .open-next/worker.js)
