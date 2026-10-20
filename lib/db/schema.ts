@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import type { SeoMessageParts, SeoMessageRole, SeoMessageStatus } from "@/lib/seo-agent/conversations";
 import {
   boolean,
   date,
@@ -694,6 +695,19 @@ export const providerBudgetDay = pgTable("provider_budget_day", {
   reservationRef: text("reservation_ref"),
 });
 
+/** Per-provider paid budget per UTC day; `reservation_ref` is unused (concurrent reservations). */
+export const providerBudgetReservation = pgTable(
+  "provider_budget_reservation",
+  {
+    day: date("day").notNull(),
+    provider: text("provider").notNull(),
+    spentUsd: numeric("spent_usd", { precision: 12, scale: 6 }).notNull().default("0"),
+    capUsd: numeric("cap_usd", { precision: 12, scale: 6 }).notNull(),
+    reservationRef: text("reservation_ref"),
+  },
+  (table) => [primaryKey({ columns: [table.day, table.provider] })],
+);
+
 export const publicVisitor = pgTable(
   "public_visitor",
   {
@@ -791,11 +805,45 @@ export const workspaceUsage = pgTable(
     period: date("period", { mode: "string" }).notNull(),
     scoredLeads: integer("scored_leads").notNull().default(0),
     deepSearches: integer("deep_searches").notNull().default(0),
+    seoCredits: integer("seo_credits").notNull().default(0),
+    seoQuestions: integer("seo_questions").notNull().default(0),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
   },
   (table) => [primaryKey({ columns: [table.workspaceId, table.period] })],
+);
+
+/**
+ * Cache of DataForSEO responses keyed by a request hash. Rows are valid until `expires_at`.
+ * Not workspace-scoped: the cached payloads are shared across workspaces.
+ */
+export const dataforseoCache = pgTable(
+  "dataforseo_cache",
+  {
+    cacheKey: text("cache_key").primaryKey(),
+    endpoint: text("endpoint").notNull(),
+    responseJson: jsonb("response_json").notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("dataforseo_cache_expires_idx").on(table.expiresAt)],
+);
+
+/**
+ * Append-only history of DataForSEO responses, one dated row per paid fetch. Reads take the newest row inside a
+ * freshness window; rows are never updated or deleted. `dataforseo_cache` is kept only as a read fallback.
+ */
+export const dataforseoSnapshot = pgTable(
+  "dataforseo_snapshot",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    cacheKey: text("cache_key").notNull(),
+    endpoint: text("endpoint").notNull(),
+    responseJson: jsonb("response_json").notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("dataforseo_snapshot_key_fetched_idx").on(table.cacheKey, table.fetchedAt)],
 );
 
 /**
@@ -973,3 +1021,42 @@ export const play = pgTable(
 
 export type Play = typeof play.$inferSelect;
 export type NewPlay = typeof play.$inferInsert;
+
+/**
+ * SEO/GEO agent conversations (spec 4.9). Every row carries workspace_id; deleting a workspace
+ * cascades to its conversations and their messages.
+ */
+export const seoConversation = pgTable(
+  "seo_conversation",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    title: text("title").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("seo_conversation_workspace_updated_idx").on(table.workspaceId, table.updatedAt)],
+);
+
+export const seoMessage = pgTable(
+  "seo_message",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => seoConversation.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    role: text("role").$type<SeoMessageRole>().notNull(),
+    content: text("content").notNull().default(""),
+    /** Result cards, follow-up suggestions and the planned paid calls for this turn. */
+    parts: jsonb("parts").$type<SeoMessageParts>().notNull().default({}),
+    status: text("status").$type<SeoMessageStatus>().notNull().default("complete"),
+    creditsUsed: integer("credits_used").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("seo_message_conversation_created_idx").on(table.conversationId, table.createdAt)],
+);

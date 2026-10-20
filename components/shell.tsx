@@ -1,8 +1,10 @@
 import Link from "next/link";
 
 import { Wordmark } from "@/components/wordmark";
+import { dataForSeoAvailable } from "@/lib/dataforseo/config";
+import { seoModels } from "@/lib/seo-agent/model-config";
 
-type NavKey = "queue" | "sources" | "profile" | "plan" | "digest";
+type NavKey = "queue" | "seo" | "sources" | "profile" | "plan" | "digest";
 type PublicKey = "how" | "pricing" | "blog" | "launch";
 
 const PUBLIC_NAV: { key: PublicKey; label: string; href: string }[] = [
@@ -27,8 +29,14 @@ export function Shell({
   wide?: boolean;
 }) {
   const q = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : "";
+  // Read per render, never at module scope: the SEO item appears only once DataForSEO can serve lookups and the agent
+  // has its gateway key.
+  const seo: { key: NavKey; label: string; href: string }[] = dataForSeoAvailable() && seoModels() !== null
+    ? [{ key: "seo", label: "SEO", href: `/seo${q}` }]
+    : [];
   const nav: { key: NavKey; label: string; href: string }[] = [
     { key: "queue", label: "Queue", href: `/queue${q}` },
+    ...seo,
     { key: "sources", label: "Sources", href: `/settings/sources${q}` },
     { key: "profile", label: "Profile", href: `/onboarding${q}` },
     { key: "plan", label: "Plan", href: `/settings/plan${q}` },

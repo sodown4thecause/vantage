@@ -32,6 +32,8 @@ function features(plan: "free" | "pro"): string[] {
     l.scan_interval_hours === 24 ? "Daily scans" : `Scans every ${l.scan_interval_hours} hours`,
     ...(l.reply_briefs ? ["Reply briefs"] : []),
     ...(l.deep_searches_per_month ? [`${l.deep_searches_per_month} deep searches a month`] : []),
+    ...(l.seo_questions_per_month ? [`${l.seo_questions_per_month} SEO agent questions a month`] : []),
+    ...(l.seo_credits_per_month ? [`${l.seo_credits_per_month} SEO data credits a month`] : []),
   ];
 }
 
