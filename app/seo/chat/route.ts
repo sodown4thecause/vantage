@@ -159,8 +159,8 @@ async function approvePlan(
     return answerResponse({ workspaceId, conversationId, run, approvedMessageId: messageId });
   } catch (err) {
     console.error("[seo-agent] approved plan failed", { error: err instanceof Error ? err.name : "unknown" });
-    await returnPlan(workspaceId, messageId);
-    return textResponse(FAILURE_COPY, conversationId);
+    const returned = await returnPlan(workspaceId, messageId);
+    return textResponse(FAILURE_COPY, conversationId, returned);
   }
 }
 
@@ -243,7 +243,9 @@ async function runTurn(
       status: "failed", content: "", cards: [], followUps: { seo: "", geo: "", content: "" }, plan: [], notices: [], creditsUsed: 0,
     };
   }
-  await settleTurn({ ...args, messageId: args.run.messageId }, outcome);
+  const returned = await settleTurn({ ...args, messageId: args.run.messageId }, outcome);
+  // Run it comes back only when the plan really went back to needs_approval; a partial run keeps it claimed.
+  if (returned) writer.write({ type: "message-metadata", messageMetadata: { planReturned: true } });
 }
 
 /** Hands work to the platform's after(). Outside a request scope (tests, dev) the work still runs in the stream. */
@@ -257,16 +259,14 @@ function keepAlive(work: Promise<void>): void {
   }
 }
 
+/** Settles a finished turn. True when an approved plan was handed back to needs_approval. */
 async function settleTurn(
   args: { workspaceId: string; conversationId: string; messageId: string; approvedMessageId?: string },
   outcome: AgentOutcome,
-): Promise<void> {
+): Promise<boolean> {
   try {
     if (outcome.status === "failed" || outcome.status === "refused") {
-      if (args.approvedMessageId) {
-        await returnPlan(args.workspaceId, args.approvedMessageId);
-        return;
-      }
+      if (args.approvedMessageId) return await returnPlan(args.workspaceId, args.approvedMessageId);
       await release(args.workspaceId, QUESTION_LIMIT);
       await saveFailure(
         args.workspaceId,
@@ -274,7 +274,7 @@ async function settleTurn(
         outcome.status === "refused" ? REFUSAL_COPY : FAILURE_COPY,
         args.messageId,
       );
-      return;
+      return false;
     }
     await appendMessage(args.workspaceId, args.conversationId, {
       id: args.messageId,
@@ -287,6 +287,7 @@ async function settleTurn(
   } catch (err) {
     console.error("[seo-agent] saving the answer failed", { error: err instanceof Error ? err.name : "unknown" });
   }
+  return false;
 }
 
 /**
@@ -306,20 +307,21 @@ async function saveFailure(workspaceId: string, conversationId: string, copy: st
   }
 }
 
-/** Returns an approved plan to needs_approval after a run that produced no answer. Best effort. */
-async function returnPlan(workspaceId: string, messageId: string): Promise<void> {
+/** Returns an approved plan to needs_approval after a run that produced no answer. Best effort; true when it went back. */
+async function returnPlan(workspaceId: string, messageId: string): Promise<boolean> {
   try {
-    await unclaimPlan(workspaceId, messageId);
+    return await unclaimPlan(workspaceId, messageId);
   } catch (err) {
     console.error("[seo-agent] returning the plan failed", { error: err instanceof Error ? err.name : "unknown" });
+    return false;
   }
 }
 
 /** A fixed reply with no model call: the upgrade notice, or the generic failure. */
-function textResponse(value: string, conversationId?: string): Response {
+function textResponse(value: string, conversationId?: string, planReturned = false): Response {
   const stream = createUIMessageStream({
     execute: ({ writer }) => {
-      writer.write({ type: "message-metadata", messageMetadata: { conversationId } });
+      writer.write({ type: "message-metadata", messageMetadata: planReturned ? { conversationId, planReturned } : { conversationId } });
       const id = crypto.randomUUID();
       writer.write({ type: "text-start", id });
       writer.write({ type: "text-delta", id, delta: value });

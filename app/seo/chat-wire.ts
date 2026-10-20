@@ -31,6 +31,8 @@ export type ChatMetadata = StoredParts & {
   status?: MessageStatus;
   creditsUsed?: number;
   parts?: StoredParts;
+  /** Set on an approved run whose plan the server handed back to needs_approval, so Run it can show again. */
+  planReturned?: boolean;
 };
 export type ChatMessage = UIMessage<ChatMetadata>;
 

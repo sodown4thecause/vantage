@@ -231,7 +231,7 @@ export function ChatClient({
   const [draft, setDraft] = useState("");
   // Plans the owner has run or cancelled; their approval box is hidden.
   const [closedPlans, setClosedPlans] = useState<ReadonlySet<string>>(() => new Set());
-  // The plan whose Run it request is in flight. A run that errors or ends without a full answer reopens its box.
+  // The plan whose Run it request is in flight. Its box reopens only when the server says the plan went back.
   const runningPlan = useRef<string | null>(null);
   const reopenPlan = () => {
     const ran = runningPlan.current;
@@ -263,9 +263,8 @@ export function ChatClient({
   const { messages, sendMessage, status, error } = useChat<ChatMessage>({
     transport,
     messages: initial,
-    onError: reopenPlan,
-    onFinish: ({ message, isError }) => {
-      if (isError || message.metadata?.status === "incomplete") reopenPlan();
+    onFinish: ({ message }) => {
+      if (message.metadata?.planReturned) reopenPlan();
       else runningPlan.current = null;
       const id = message.metadata?.conversationId ?? conversationRef.current;
       if (!id) return;

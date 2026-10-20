@@ -411,6 +411,16 @@ describe("POST /seo/chat: approving a plan", () => {
     expect(mocks.consume).not.toHaveBeenCalled();
     expect(mocks.release).not.toHaveBeenCalled();
     expect(mocks.appendMessage).not.toHaveBeenCalled();
+    expect(text).toContain('"planReturned":true');
+  });
+
+  it("does not say the plan went back when it was no longer claimed", async () => {
+    mocks.getConversation.mockResolvedValue(conversation());
+    mocks.claimPlan.mockResolvedValue(PLAN);
+    mocks.unclaimPlan.mockResolvedValue(false);
+    mocks.runAgent.mockResolvedValue(fakeRun({ status: "failed", content: "", creditsUsed: 0 }, ERROR_COPY));
+    const { text } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
+    expect(text).not.toContain("planReturned");
   });
 
   it("returns the plan when the approved run is refused", async () => {
@@ -443,15 +453,17 @@ describe("POST /seo/chat: approving a plan", () => {
     expect(text).toContain(ERROR_COPY);
     expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN);
     expect(mocks.release).not.toHaveBeenCalled();
+    expect(text).toContain('"planReturned":true');
   });
 
   it("keeps the plan claimed when the approved run produced a partial answer", async () => {
     mocks.getConversation.mockResolvedValue(conversation());
     mocks.claimPlan.mockResolvedValue(PLAN);
     mocks.runAgent.mockResolvedValue(fakeRun({ status: "incomplete", content: "Partial" }, "Partial"));
-    await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
+    const { text } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
     expect(mocks.unclaimPlan).not.toHaveBeenCalled();
     expect(mocks.appendMessage).toHaveBeenLastCalledWith(WS, CONV, expect.objectContaining({ status: "incomplete", content: "Partial" }));
+    expect(text).not.toContain("planReturned");
   });
 
   it("keeps the plan claimed after a successful approved run", async () => {
