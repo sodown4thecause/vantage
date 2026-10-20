@@ -13,6 +13,8 @@ export type ResultCard = {
   fetchedAt: string | null;
   cached: boolean;
   data: unknown;
+  /** True when the data came from the DataForSEO sandbox. Older cards have no value; the page's environment applies. */
+  sandbox?: boolean;
 };
 
 export type FollowUps = { seo: string; geo: string; content: string };

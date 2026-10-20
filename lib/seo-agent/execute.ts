@@ -425,7 +425,8 @@ export async function runAgent(
     const fallbackChips = () => fallbackFollowUps(profile, intent);
 
     if (attempt.kind === "error") {
-      if (!attempt.flushed) {
+      // A tool call may have been shown, but with no answer text the question got no answer.
+      if (attempt.text.trim() === "") {
         writeText(writer, FAILURE_COPY);
         return outcome("failed", "", ctx.followUps ?? fallbackChips());
       }

@@ -62,7 +62,7 @@ export function buildRequestBody({
 }): ChatRequestBody {
   const scope = { workspaceId, conversationId };
   if (typeof body?.approvePlan === "string") return { ...scope, approvePlan: body.approvePlan };
-  const last = [...messages].reverse().find((message) => message.role === "user");
+  const last = messages.findLast((message) => message.role === "user");
   return { ...scope, message: last ? textOf(last) : "" };
 }
 

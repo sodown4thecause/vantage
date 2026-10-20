@@ -243,6 +243,22 @@ describe("paid provider reservations", () => {
     expect(work).not.toHaveBeenCalled();
   });
 
+  it("reserves against the caller's cap when it is lower than the provider cap", async () => {
+    vi.stubEnv("VANTAGE_PAID_DAILY_BUDGET_DATAFORSEO_USD", "10");
+    fakeReservations();
+    const first = deferred();
+    const held = runPaidCall({ ...meta, provider: "dataforseo", capUsd: 0.15 }, async () => {
+      await first.promise;
+      return { value: "first", costUsd: 0.1 };
+    });
+    const second = vi.fn();
+    await expect(runPaidCall({ ...meta, provider: "dataforseo", capUsd: 0.15 }, second)).rejects.toBeInstanceOf(PaidCallDeniedError);
+    expect(second).not.toHaveBeenCalled();
+    first.resolve();
+    await expect(held).resolves.toBe("first");
+    expect(reserveQueries()[0].params).toEqual(expect.arrayContaining(["0.150000"]));
+  });
+
   it("enforces each provider cap on its own, without spending another provider's budget", async () => {
     vi.stubEnv("VANTAGE_PAID_DAILY_BUDGET_DATAFORSEO_USD", "0.15");
     fakeReservations();

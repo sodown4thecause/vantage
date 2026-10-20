@@ -11,6 +11,8 @@ export type CardView = {
   fetchedAt: string | null;
   cached: boolean;
   data: unknown;
+  /** The environment that produced the card. When absent, the page's environment applies. */
+  sandbox?: boolean;
 };
 
 type Props = { card: CardView; sandbox: boolean };
@@ -302,7 +304,8 @@ const RENDERERS: Record<string, (props: Props) => ReactNode> = {
   ai_keyword_volume: aiKeywordVolume,
 };
 
-export function ResultCardView({ card, sandbox }: Props) {
+export function ResultCardView({ card, sandbox: pageSandbox }: Props) {
+  const sandbox = card.sandbox ?? pageSandbox;
   const render = Object.prototype.hasOwnProperty.call(RENDERERS, card.tool) ? RENDERERS[card.tool]! : fallback;
   const cachedLabel = card.cached ? (card.fetchedAt ? `Cached ${day(card.fetchedAt)}` : "Cached") : null;
   return (

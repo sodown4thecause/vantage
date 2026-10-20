@@ -291,6 +291,21 @@ describe("POST /seo/chat: asking a question", () => {
     expect(mocks.appendMessage).toHaveBeenLastCalledWith(WS, NEW_CONV, { role: "assistant", content: FAILURE, status: "incomplete" });
   });
 
+  it("releases the question and saves the error reply when the run's stream throws", async () => {
+    const run = fakeRun();
+    run.write.mockRejectedValue(new Error("stream broke"));
+    mocks.runAgent.mockResolvedValue(run);
+    const { text } = await postAndRead({ workspaceId: WS, message: "Which keywords?" });
+    expect(text).toContain(ERROR_COPY);
+    expect(mocks.release).toHaveBeenCalledWith(WS, "seo_questions_per_month");
+    expect(mocks.appendMessage).toHaveBeenLastCalledWith(WS, NEW_CONV, {
+      id: RUN_MESSAGE,
+      role: "assistant",
+      content: FAILURE,
+      status: "incomplete",
+    });
+  });
+
   it("saves no reply when the question itself could not be saved, and still releases the charge", async () => {
     mocks.appendMessage.mockRejectedValueOnce(new Error("db down"));
     const { text } = await postAndRead({ workspaceId: WS, message: "Which keywords?" });
@@ -403,6 +418,18 @@ describe("POST /seo/chat: approving a plan", () => {
     mocks.claimPlan.mockResolvedValue(PLAN);
     mocks.runAgent.mockResolvedValue(fakeRun({ status: "refused", content: "" }, REFUSAL));
     await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
+    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN);
+    expect(mocks.release).not.toHaveBeenCalled();
+  });
+
+  it("returns the plan when the approved run's stream throws", async () => {
+    mocks.getConversation.mockResolvedValue(conversation());
+    mocks.claimPlan.mockResolvedValue(PLAN);
+    const run = fakeRun();
+    run.write.mockRejectedValue(new Error("stream broke"));
+    mocks.runAgent.mockResolvedValue(run);
+    const { text } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
+    expect(text).toContain(ERROR_COPY);
     expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN);
     expect(mocks.release).not.toHaveBeenCalled();
   });

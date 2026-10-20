@@ -133,6 +133,8 @@ export async function runDataForSeo<R, T>(
       action: req.endpoint,
       estimateUsd: req.estimateUsd,
       signal: opts.signal,
+      // Overlapping calls each pass the spend check above, so the reservation enforces the DataForSEO cap too.
+      capUsd: config.dailyBudgetUsd,
     }, async () => {
       try {
         const { result, costUsd } = await dataForSeoPost<R>(config, req.endpoint, req.task, {

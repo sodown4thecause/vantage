@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { PageHead, Shell } from "@/components/shell";
 import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
+import { dataForSeoConfig } from "@/lib/dataforseo/config";
 import { getLatestMonitoringProfile } from "@/lib/profile/repository";
 import { getConversation, listConversations } from "@/lib/seo-agent/conversations";
 import { seoModels } from "@/lib/seo-agent/models";
@@ -64,7 +65,7 @@ export default async function SeoPage({
 
   const context = profileContext(profile);
   const starters = await withCacheLabels(starterChips(context), context);
-  const sandbox = process.env.DATAFORSEO_ENV !== "live";
+  const sandbox = dataForSeoConfig()?.env !== "live";
 
   return (
     <Shell workspaceId={workspaceId} active="seo" wide>

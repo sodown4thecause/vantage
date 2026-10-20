@@ -23,7 +23,7 @@ vi.mock("@/lib/providers/paid-call", () => ({
   runPaidCall: mocks.paid,
   PaidCallDeniedError: mocks.PaidCallDeniedError,
 }));
-vi.mock("@/lib/dataforseo/config", () => ({ dataForSeoAvailable: () => mocks.dataForSeo() }));
+vi.mock("@/lib/dataforseo/config", () => ({ dataForSeoAvailable: () => mocks.dataForSeo(), dataForSeoConfig: () => null }));
 vi.mock("@/lib/dataforseo/labs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/dataforseo/labs")>()),
   peekKeywordIdeas: mocks.peekKeywordIdeas,
@@ -404,6 +404,16 @@ describe("runAgent: tool path", () => {
     expect(outcome.content).toBe("");
     expect(textOf(chunks)).toBe("Something went wrong. You weren't charged a question.");
     expect(mocks.charged).toEqual([undefined]);
+  });
+
+  it("fails, and says so, when the model errors after a tool call but before any answer text", async () => {
+    const toolCall = { type: "tool-input-start", toolCallId: "c1", toolName: "keyword_ideas" } as UIMessageChunk;
+    const streamText = fakeStreamText([{ chunks: [STEP_START, toolCall, ERROR] }]);
+    const run = await runAgent(input(), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } });
+    const { outcome, chunks } = await drain(run);
+    expect(outcome.status).toBe("failed");
+    expect(outcome.content).toBe("");
+    expect(textOf(chunks)).toBe("Something went wrong. You weren't charged a question.");
   });
 
   it("keeps the partial answer as incomplete when the model errors after text started", async () => {

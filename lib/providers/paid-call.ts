@@ -38,13 +38,15 @@ function providerCapUsd(provider: string): number {
  */
 export async function runPaidCall<T>(meta: {
   context: CostContext; provider: string; action: string; estimateUsd: number; signal?: AbortSignal;
+  /** A caller's own daily cap. The reservation uses the lower of it and the provider cap, in the same atomic statement. */
+  capUsd?: number;
 }, work: () => Promise<PaidResult<T>>): Promise<T> {
   meta.signal?.throwIfAborted();
   if (process.env.VANTAGE_PAID_PROVIDERS_ENABLED !== "true") {
     throw new PaidCallDeniedError("provider_disabled", "Paid providers are disabled.");
   }
   if (!meta.context.workspaceId) throw new PaidCallDeniedError("access_pending", "Paid calls require workspace attribution.");
-  const cap = providerCapUsd(meta.provider);
+  const cap = meta.capUsd === undefined ? providerCapUsd(meta.provider) : Math.min(providerCapUsd(meta.provider), meta.capUsd);
   const estimate = roundUsd(meta.estimateUsd);
   if (!Number.isFinite(cap) || cap <= 0 || !Number.isFinite(estimate) || estimate <= 0) {
     throw new PaidCallDeniedError("budget_exhausted", "An explicit positive provider budget and estimate are required.");

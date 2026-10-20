@@ -229,7 +229,20 @@ async function runTurn(
   writer: Parameters<AgentRun["write"]>[0],
 ): Promise<void> {
   writer.write({ type: "message-metadata", messageMetadata: { conversationId: args.conversationId } });
-  const outcome = await args.run.write(writer);
+  let outcome: AgentOutcome;
+  try {
+    outcome = await args.run.write(writer);
+  } catch (err) {
+    // The run settles its own failures, so this is a fault outside it. The turn still settles as failed.
+    console.error("[seo-agent] answer stream failed", { error: err instanceof Error ? err.name : "unknown" });
+    const id = crypto.randomUUID();
+    writer.write({ type: "text-start", id });
+    writer.write({ type: "text-delta", id, delta: FAILURE_COPY });
+    writer.write({ type: "text-end", id });
+    outcome = {
+      status: "failed", content: "", cards: [], followUps: { seo: "", geo: "", content: "" }, plan: [], notices: [], creditsUsed: 0,
+    };
+  }
   await settleTurn({ ...args, messageId: args.run.messageId }, outcome);
 }
 

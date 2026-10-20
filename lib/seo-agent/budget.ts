@@ -33,6 +33,7 @@ const sameCall = (a: PlannedCall, b: PlannedCall) => a.tool === b.tool && canoni
  * asked; the monthly credits are charged by the DataForSEO gate per real call.
  *
  * An approved call runs once, even over budget. Its approval is used up when it matches, so a repeated call asks again.
+ * An approval covers at most the credits the owner saw: a call that now costs more (a cached side expired) asks again.
  */
 export class QuestionBudget {
   spent = 0;
@@ -44,7 +45,7 @@ export class QuestionBudget {
   }
 
   tryReserve(call: PlannedCall, alwaysAsk: boolean): "go" | "ask" {
-    const index = this.approved.findIndex((approval) => sameCall(approval, call));
+    const index = this.approved.findIndex((approval) => sameCall(approval, call) && call.credits <= approval.credits);
     if (index !== -1) {
       this.approved.splice(index, 1);
       this.spent += call.credits;

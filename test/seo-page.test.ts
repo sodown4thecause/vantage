@@ -140,6 +140,12 @@ describe("result cards", () => {
     expect(await render(card("keyword_overview", data), false)).not.toContain("Sandbox data");
   });
 
+  it("labels a card by the environment that produced it, not the page's current one", async () => {
+    const data = [{ keyword: "ci caching", searchVolume: 880, cpc: null, difficulty: 22, intent: "informational" }];
+    expect(await render({ ...card("keyword_overview", data), sandbox: true }, false)).toContain("Sandbox data: not real figures.");
+    expect(await render({ ...card("keyword_overview", data), sandbox: false }, true)).not.toContain("Sandbox data");
+  });
+
   it("renders provider text as text, never as markup", async () => {
     const html = await render(card("referring_domains", [
       { domain: "<img src=x onerror=alert(1)>", rank: 1, backlinks: 1, spamScore: 0, firstSeen: null },

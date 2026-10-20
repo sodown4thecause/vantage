@@ -96,7 +96,7 @@ import { DataForSeoDeniedError } from "@/lib/dataforseo/gate";
 import { PaidCallDeniedError } from "@/lib/providers/paid-call";
 import { QuestionBudget, autoCreditsFromEnv, geoAlwaysAsk } from "@/lib/seo-agent/budget";
 import { toolsForIntent } from "@/lib/seo-agent/tools";
-import type { ToolContext } from "@/lib/seo-agent/tools/shared";
+import { addCard, type ToolContext } from "@/lib/seo-agent/tools/shared";
 
 type Runnable = { execute: (input: unknown, options: unknown) => Promise<unknown>; strict?: boolean; inputSchema: unknown };
 
@@ -198,6 +198,19 @@ describe("QuestionBudget", () => {
     expect(budget.tryReserve(call(1, { competitor: "rival.io", domain: "example.com" }), false)).toBe("go");
   });
 
+  it("asks again when an approved call now costs more credits than the owner approved", () => {
+    const budget = new QuestionBudget(0, [call(1, { domain: "example.com", competitor: "rival.io" })]);
+    expect(budget.tryReserve(call(2, { domain: "example.com", competitor: "rival.io" }), false)).toBe("ask");
+    expect(budget.spent).toBe(0);
+    expect(budget.planned).toEqual([call(2, { domain: "example.com", competitor: "rival.io" })]);
+  });
+
+  it("runs an approved call that now costs fewer credits than approved", () => {
+    const budget = new QuestionBudget(0, [call(2, { domain: "example.com", competitor: "rival.io" })]);
+    expect(budget.tryReserve(call(1, { domain: "example.com", competitor: "rival.io" }), false)).toBe("go");
+    expect(budget.spent).toBe(1);
+  });
+
   it("does not match an approved call with different input", () => {
     const budget = new QuestionBudget(0, [call(1, { keywords: ["crm"] })]);
     expect(budget.tryReserve(call(1, { keywords: ["erp"] }), false)).toBe("ask");
@@ -259,7 +272,7 @@ describe("tool gating", () => {
     const ctx = makeCtx(new QuestionBudget(3));
     const result = await run(toolsFor("backlinks", ctx), "backlink_summary", { domain: "example.com" });
     expect(result).toEqual({ source: "cached", data: summary });
-    expect(ctx.cards).toEqual([{ tool: "backlink_summary", title: expect.any(String), fetchedAt: null, cached: true, data: summary }]);
+    expect(ctx.cards).toEqual([{ tool: "backlink_summary", title: expect.any(String), fetchedAt: null, cached: true, data: summary, sandbox: true }]);
     expect(ctx.budget.spent).toBe(0);
     expect(mocks.fetchBacklinkSummary).not.toHaveBeenCalled();
   });
@@ -277,6 +290,19 @@ describe("tool gating", () => {
     const ctx = makeCtx(new QuestionBudget(0));
     await run(toolsFor("backlinks", ctx), "backlink_summary", { domain: "https://www.Example.com/page" });
     expect(ctx.budget.planned[0]?.input).toEqual({ domain: "example.com" });
+  });
+
+  it("labels a card with the environment that produced it", async () => {
+    vi.stubEnv("DATAFORSEO_LOGIN", "login");
+    vi.stubEnv("DATAFORSEO_PASSWORD", "password");
+    vi.stubEnv("DATAFORSEO_ENV", "live");
+    const ctx = makeCtx();
+    addCard(ctx, { tool: "keyword_ideas", title: "Ideas", cached: false, data: [] });
+    expect(ctx.cards[0]?.sandbox).toBe(false);
+    vi.stubEnv("DATAFORSEO_ENV", "sandbox");
+    addCard(ctx, { tool: "keyword_ideas", title: "Ideas", cached: false, data: [] });
+    expect(ctx.cards[1]?.sandbox).toBe(true);
+    vi.unstubAllEnvs();
   });
 
   it("matches an approved plan by its normalised input", async () => {

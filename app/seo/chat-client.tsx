@@ -231,6 +231,18 @@ export function ChatClient({
   const [draft, setDraft] = useState("");
   // Plans the owner has run or cancelled; their approval box is hidden.
   const [closedPlans, setClosedPlans] = useState<ReadonlySet<string>>(() => new Set());
+  // The plan whose Run it request is in flight. A run that errors or ends without a full answer reopens its box.
+  const runningPlan = useRef<string | null>(null);
+  const reopenPlan = () => {
+    const ran = runningPlan.current;
+    runningPlan.current = null;
+    if (!ran) return;
+    setClosedPlans((closed) => {
+      const next = new Set(closed);
+      next.delete(ran);
+      return next;
+    });
+  };
 
   const [transport] = useState(
     () =>
@@ -251,7 +263,10 @@ export function ChatClient({
   const { messages, sendMessage, status, error } = useChat<ChatMessage>({
     transport,
     messages: initial,
-    onFinish: ({ message }) => {
+    onError: reopenPlan,
+    onFinish: ({ message, isError }) => {
+      if (isError || message.metadata?.status === "incomplete") reopenPlan();
+      else runningPlan.current = null;
       const id = message.metadata?.conversationId ?? conversationRef.current;
       if (!id) return;
       conversationRef.current = id;
@@ -261,7 +276,7 @@ export function ChatClient({
   });
 
   useEffect(() => {
-    const latest = [...messages].reverse().find((message) => message.metadata?.conversationId);
+    const latest = messages.findLast((message) => message.metadata?.conversationId);
     if (latest?.metadata?.conversationId) conversationRef.current = latest.metadata.conversationId;
   }, [messages]);
 
@@ -281,6 +296,7 @@ export function ChatClient({
   };
 
   const runPlan = (messageId: string) => {
+    runningPlan.current = messageId;
     setClosedPlans((closed) => new Set(closed).add(messageId));
     void sendMessage(
       { text: RUN_TEXT },

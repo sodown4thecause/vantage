@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { dataForSeoConfig } from "@/lib/dataforseo/config";
 import { DataForSeoDeniedError } from "@/lib/dataforseo/gate";
 import { PaidCallDeniedError } from "@/lib/providers/paid-call";
 import type { QuestionBudget } from "@/lib/seo-agent/budget";
@@ -103,6 +104,7 @@ export function addCard(ctx: ToolContext, card: { tool: string; title: string; c
     fetchedAt: card.cached ? null : new Date().toISOString(),
     cached: card.cached,
     data: forCard(card.data),
+    sandbox: dataForSeoConfig()?.env !== "live",
   });
 }
 
