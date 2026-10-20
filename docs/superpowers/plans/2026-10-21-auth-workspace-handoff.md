@@ -24,3 +24,21 @@ deleted workspace. Keep first-workspace retries idempotent.
 No schema changes, automatic workspace creation, email-policy changes, or production
 data edits are needed. Publish one PR against main under the crew rules. Staging-only
 verification with disposable account data is approved; shared auth settings stay unchanged.
+
+## PR #89 concurrency review follow-up
+
+Both first-workspace reuse and additional-workspace plan limits can race across
+tabs. Serialize creation per authenticated owner using a transaction-scoped
+advisory lock followed by a guarded insert in one Neon HTTP batch. The insert's
+fresh read-committed snapshot counts owned workspaces after acquiring the lock.
+First-workspace submissions require an owned count of zero; additional submissions
+use the existing server-resolved plan limit. Losing initial submissions reread
+the owner's workspace, including when a concurrent winner causes the preliminary
+plan check to refuse. Losing additional submissions return a plan-limit error.
+No migration or production data edits are needed.
+
+Verify the actual action queries against isolated PostgreSQL with twenty
+concurrent first-workspace submissions and twenty submissions for the final Pro
+slot. Run the full local checks again after changing the transaction path.
+The optional database tests use TEST_DATABASE_URL, create their own temporary
+schema, and clean it up afterwards.

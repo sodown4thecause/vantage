@@ -28,7 +28,16 @@ export async function createWorkspaceForCurrentUser(name: string, additional = f
     if (existing) return existing;
   }
   const ownerUserId = String(session.user.id);
-  const limit = await assertCanCreateProject(ownerUserId);
+  let limit: number;
+  try {
+    limit = await assertCanCreateProject(ownerUserId);
+  } catch (error) {
+    if (!additional) {
+      const existing = await getCurrentWorkspace();
+      if (existing) return existing;
+    }
+    throw error;
+  }
   const db = getDb();
   const [, result] = await db.batch([
     db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${ownerUserId}, 0))`),

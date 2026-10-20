@@ -109,4 +109,14 @@ describe("workspace creation boundary", () => {
     });
     expect(await createWorkspaceForCurrentUser("Acme")).toEqual({ id: "concurrent-workspace", name: "Acme" });
   });
+
+  it("reuses the winner when a concurrent first creation reaches the plan cap before the check", async () => {
+    mocks.userId = "owner-a";
+    mocks.assertCanCreateProject.mockImplementation(async () => {
+      mocks.existing = { id: "winning-workspace", name: "Other tab" };
+      throw new Error("cap reached");
+    });
+    expect(await createWorkspaceForCurrentUser("Acme")).toEqual(mocks.existing);
+    expect(mocks.getDb).not.toHaveBeenCalled();
+  });
 });
