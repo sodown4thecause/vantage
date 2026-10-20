@@ -20,7 +20,7 @@ import {
 } from "@/app/tour/tour-data";
 import { Glyph, Mark } from "@/components/glyph";
 import { pickForumDomains } from "@/lib/communities/forum-packs";
-import { DRAFT, EDIT_COUNT, editState, stepForProgress } from "@/lib/tour/edit-pass";
+import { DRAFT, EDIT_COUNT, LAST_STEP, editState, shortScreen, stepForProgress } from "@/lib/tour/edit-pass";
 import type { ScrollCraftApi } from "@/lib/vendor/scrollcraft/scrollcraft.js";
 
 import s from "./tour.module.css";
@@ -205,20 +205,23 @@ export function TourSurface() {
               <dl className={s.funnel}>
                 <div>
                   <dt>Read</dt>
-                  <dd data-sc-count={`0 ${fmt.format(TOTAL_READ)}`} data-sc-count-at="0.12 0.34">
-                    {fmt.format(TOTAL_READ)}
+                  <dd>
+                    <span data-sc-count={`0 ${fmt.format(TOTAL_READ)}`} data-sc-count-at="0.12 0.34">{fmt.format(TOTAL_READ)}</span>
+                    <span className={s.finalOnly}>{fmt.format(TOTAL_READ)}</span>
                   </dd>
                 </div>
                 <div>
                   <dt>Relevant</dt>
-                  <dd data-sc-count={`0 ${RELEVANT}`} data-sc-count-at="0.32 0.44">
-                    {RELEVANT}
+                  <dd>
+                    <span data-sc-count={`0 ${RELEVANT}`} data-sc-count-at="0.32 0.44">{RELEVANT}</span>
+                    <span className={s.finalOnly}>{RELEVANT}</span>
                   </dd>
                 </div>
                 <div className={s.funnelLast}>
                   <dt>Worth joining</dt>
-                  <dd data-sc-count={`0 ${QUEUE.length}`} data-sc-count-at="0.42 0.52">
-                    {QUEUE.length}
+                  <dd>
+                    <span data-sc-count={`0 ${QUEUE.length}`} data-sc-count-at="0.42 0.52">{QUEUE.length}</span>
+                    <span className={s.finalOnly}>{QUEUE.length}</span>
                   </dd>
                 </div>
               </dl>
@@ -238,9 +241,8 @@ export function TourSurface() {
                     <td>
                       <span className={s.meterWrap}>
                         <span className={s.meter} style={{ "--w": r.read / MAX_READ } as React.CSSProperties} aria-hidden="true" />
-                        <span data-sc-count={`0 ${r.read}`} data-sc-count-at="0.1 0.34">
-                          {r.read}
-                        </span>
+                        <span data-sc-count={`0 ${r.read}`} data-sc-count-at="0.1 0.34">{r.read}</span>
+                        <span className={s.finalOnly}>{r.read}</span>
                       </span>
                     </td>
                   </tr>
@@ -443,6 +445,12 @@ function EditPass() {
     let frame = 0;
     const update = () => {
       frame = 0;
+      // On a short screen the stage is not pinned, so the scroll would reveal edits after the
+      // draft has already left the viewport. Show the finished draft instead.
+      if (shortScreen()) {
+        setStep(LAST_STEP);
+        return;
+      }
       if (actRef.current) setStep(stepForProgress(pinnedProgress(actRef.current)));
     };
     const onScroll = () => {

@@ -49,17 +49,53 @@
 /* A pinned, clipped stage hides text once content is taller than the screen (short phones,
    enlarged text). Let the reader scroll the content instead of moving the whole stage. */
 @media (max-height: 760px) {
+  /* Pinning hides the text, and the scroll timing keeps running after the panel has left the
+     screen. Drop both: each act is its own height, counters and cues show their final state,
+     and the search rail scrolls sideways on its own. */
   .tour :global(.sc-stage) {
     position: relative;
     top: auto;
     height: auto;
-    min-height: calc(100svh - var(--bar));
+    min-height: 0;
     overflow: visible;
+  }
+
+  .tour [data-sc-act] {
+    height: auto !important;
+  }
+
+  .tour [data-sc-cue] {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  /* The engine overwrites [data-sc-count] as the page scrolls. Show the final figure instead. */
+  .tour [data-sc-count] {
+    display: none;
+  }
+
+  .tour .finalOnly {
+    display: inline;
+  }
+
+  .tour [data-sc-parallax],
+  .tour [data-sc-pan] {
+    transform: none !important;
+  }
+
+  .tour [data-sc-act="pan"] :global(.sc-stage) {
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
   }
 }
 
 :global(.sc-ready) .tour [data-sc-cue] {
   opacity: 0;
+}
+
+.finalOnly {
+  display: none;
 }
 
 .tour [data-sc-pan] {
@@ -814,6 +850,11 @@
 
   .main {
     padding-top: var(--bar);
+  }
+
+  /* Hash jumps land the heading under the fixed bar without this. */
+  .main section {
+    scroll-margin-top: var(--bar);
   }
 
   .menu {

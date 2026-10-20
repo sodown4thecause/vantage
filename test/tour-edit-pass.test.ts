@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { EDIT_COUNT, LAST_STEP, draftText, editState, stepForProgress } from "@/lib/tour/edit-pass";
+import { EDIT_COUNT, LAST_STEP, draftText, editState, shortScreen, stepForProgress } from "@/lib/tour/edit-pass";
 
 describe("tour edit pass", () => {
   it("starts on the untouched draft and ends with every tell replaced", () => {
@@ -33,5 +33,9 @@ describe("tour edit pass", () => {
     const mid = stepForProgress(0.47);
     expect(mid).toBeGreaterThan(0);
     expect(mid).toBeLessThan(LAST_STEP);
+  });
+
+  it("treats a missing window as not a short screen", () => {
+    expect(shortScreen()).toBe(false);
   });
 });

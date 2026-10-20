@@ -46,6 +46,11 @@ export const EDIT_COUNT = DRAFT.filter((p) => p.kind === "edit").length;
 /** Each edit takes two steps: marked, then fixed. Step 0 is the untouched draft. */
 export const LAST_STEP = EDIT_COUNT * 2;
 
+/** True when the viewport is too short to pin a stage without hiding what the scroll reveals. */
+export function shortScreen(): boolean {
+  return typeof window !== "undefined" && window.matchMedia("(max-height: 760px)").matches;
+}
+
 /** Maps act progress (0..1) to a step, leaving a short lead-in and a hold on the finished draft. */
 export function stepForProgress(p: number, from = 0.1, to = 0.84): number {
   if (!Number.isFinite(p)) return 0;
