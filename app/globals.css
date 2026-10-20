@@ -2,22 +2,27 @@
 @import "@neondatabase/auth-ui/tailwind";
 
 /*
- * contextfor.dev design tokens: "survey sheet".
- * Paper and ink are tinted toward conifer green; signal ultramarine is the
- * only accent. Existing pages use Tailwind's zinc utilities, so the zinc ramp
+ * contextfor.dev design tokens: "night survey".
+ * Near-black conifer paper, soft graphite type, hairline rules and a single
+ * cobalt signal. Existing pages use Tailwind's zinc utilities, so the zinc ramp
  * below is remapped onto the same paper-to-ink scale and they inherit the look.
  */
 :root {
-  --paper: #e9ede7;
-  --sheet: #f4f6f1;
-  --ink: #0f1b1a;
-  --ridge: #4f6159;
-  --contour: #c3ccc1;
-  --signal: #2b3be8;
-  --signal-ink: #ffffff;
+  color-scheme: dark;
+
+  --paper: #0a0b0b;
+  --sheet: #121514;
+  --sheet-2: #171b19;
+  --ink: #f2f5f3;
+  --ridge: #8a9490;
+  --contour: #262b29;
+  --hair-soft: #1e2321;
+  --signal: #7d9bff;
+  --signal-ink: #0a0b0b;
+  --sage: #86a092;
   --flag: #e8b923;
-  --flag-ink: #6b4a00;
-  --stop: #b3261e;
+  --flag-ink: #f2cf5b;
+  --stop: #ff8a80;
 
   /* auth-ui (shadcn-style) variables */
   --background: var(--paper);
@@ -41,24 +46,11 @@
   --radius: 0.5rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --paper: #0e1615;
-    --sheet: #152120;
-    --ink: #e4ebe5;
-    --ridge: #96a99f;
-    --contour: #2a3a36;
-    --signal: #8c9bff;
-    --signal-ink: #0e1615;
-    --flag: #e8b923;
-    --flag-ink: #f2cf5b;
-    --stop: #ff8a80;
-  }
-}
-
 @theme inline {
   --color-paper: var(--paper);
   --color-sheet: var(--sheet);
+  --color-sheet-2: var(--sheet-2);
+  --color-sage: var(--sage);
   --color-ink: var(--ink);
   --color-ridge: var(--ridge);
   --color-contour: var(--contour);
@@ -71,7 +63,9 @@
   --font-sans: var(--font-grotesk), ui-sans-serif, system-ui, sans-serif;
   --font-serif: var(--font-newsreader), ui-serif, Georgia, serif;
 
-  /* Remap the zinc ramp used by existing pages onto the paper/ink scale. */
+  /* Remap the zinc ramp used by existing pages onto the paper/ink scale.
+     The ramp is inverted: zinc-50 is the lightest utility but the darkest
+     surface here, so dark-first pages inherit the night palette. */
   --color-zinc-50: var(--sheet);
   --color-zinc-100: color-mix(in oklab, var(--sheet) 70%, var(--contour));
   --color-zinc-200: var(--contour);
@@ -96,12 +90,13 @@
     font-family: var(--font-sans);
     font-size: 1rem;
     line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
   }
 
   :focus-visible {
     outline: 2px solid var(--signal);
-    outline-offset: 2px;
-    border-radius: 2px;
+    outline-offset: 3px;
+    border-radius: 4px;
   }
 
   ::selection {
@@ -130,10 +125,51 @@
 
 @layer components {
   .display {
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: -0.03em;
-    line-height: 1.02;
+    line-height: 1.04;
     text-wrap: balance;
+  }
+
+  .eyebrow {
+    font-size: 0.8125rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    font-weight: 500;
+    color: var(--sage);
+  }
+
+  /* A hairline grid: one pixel of rule between cards, no shadows. */
+  .hair-grid {
+    display: grid;
+    gap: 1px;
+    background: var(--hair-soft);
+    border: 1px solid var(--hair-soft);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .hair-cell {
+    background: var(--sheet);
+    padding: 1.6rem 1.5rem;
+  }
+
+  .panel {
+    background: var(--sheet);
+    border: 1px solid var(--hair-soft);
+    border-radius: 12px;
+  }
+
+  /* One atmospheric moment: a cobalt wash behind the hero. */
+  .aurora {
+    position: absolute;
+    inset: -30% -10% auto -10%;
+    height: 34rem;
+    pointer-events: none;
+    background:
+      radial-gradient(45% 50% at 72% 30%, color-mix(in oklab, var(--signal) 16%, transparent), transparent 70%),
+      radial-gradient(40% 45% at 18% 10%, color-mix(in oklab, var(--sage) 10%, transparent), transparent 70%);
+    filter: blur(8px);
+    z-index: -1;
   }
 
   .quote {
@@ -146,24 +182,28 @@
   .btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 1.125rem;
-    border-radius: 0.375rem;
-    font-weight: 600;
+    gap: 0.55rem;
+    padding: 0.7rem 1.15rem;
+    border-radius: 999px;
+    font-weight: 500;
     font-size: 0.9375rem;
     line-height: 1.2;
-    background: var(--signal);
-    color: var(--signal-ink);
-    transition: filter 120ms ease;
+    background: var(--ink);
+    color: var(--paper);
+    transition: background 150ms ease, transform 150ms ease;
+    white-space: nowrap;
   }
-  .btn:hover { filter: brightness(1.08); }
+  .btn:hover { background: #ffffff; }
+  .btn:active { transform: scale(0.98); }
+
+  .btn-lg { font-size: 1.0625rem; padding: 0.95rem 1.6rem; }
 
   .btn-quiet {
     background: transparent;
     color: var(--ink);
     box-shadow: inset 0 0 0 1px var(--contour);
   }
-  .btn-quiet:hover { filter: none; box-shadow: inset 0 0 0 1px var(--ridge); }
+  .btn-quiet:hover { background: var(--sheet-2); box-shadow: inset 0 0 0 1px #343a37; }
 
   .link {
     color: var(--ink);
@@ -182,8 +222,8 @@
     z-index: 50;
     padding: 0.5rem 0.875rem;
     border-radius: 0.375rem;
-    background: var(--signal);
-    color: var(--signal-ink);
+    background: var(--ink);
+    color: var(--paper);
     font-weight: 600;
   }
   .skip-link:focus { top: 0.75rem; }
@@ -271,18 +311,19 @@
 
 /* These overrides sit outside @layer so they beat Tailwind's layered utilities. */
 
-/* Primary buttons in existing pages are "bg-zinc-900|950 text-white": make them signal. */
+/* Primary buttons in existing pages are "bg-zinc-900|950 text-white": make them
+   the same ink pill the marketing pages use. */
 .bg-zinc-900.text-white,
 .bg-zinc-950.text-white {
-  background: var(--signal);
-  color: var(--signal-ink);
-  border-radius: 0.375rem;
-  font-weight: 600;
-  transition: filter 120ms ease;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 999px;
+  font-weight: 500;
+  transition: background 150ms ease;
 }
 .bg-zinc-900.text-white:hover:not(:disabled),
 .bg-zinc-950.text-white:hover:not(:disabled) {
-  filter: brightness(1.08);
+  background: #ffffff;
 }
 
 /* Existing pages put dark: variants on the zinc ramp, which is already

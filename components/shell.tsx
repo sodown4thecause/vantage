@@ -40,8 +40,8 @@ export function Shell({
       <a href="#main" className="skip-link">
         Skip to content
       </a>
-      <header className="border-b border-contour">
-        <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-x-8 gap-y-2 px-5 py-3 sm:px-8">
+      <header className="sticky top-0 z-10 border-b border-contour/60 bg-paper/85 backdrop-blur-md">
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-x-8 gap-y-2 px-5 py-3 sm:px-8">
           <Link href="/" aria-label="contextfor.dev home">
             <Wordmark />
           </Link>
@@ -83,11 +83,14 @@ export function Shell({
               <Link href="/auth/sign-in" className="rounded px-3 py-1.5 font-medium text-ridge hover:text-ink">
                 Sign in
               </Link>
+              <Link href="/auth/sign-up" className="btn ml-1">
+                Create a free account
+              </Link>
             </nav>
           )}
         </div>
       </header>
-      <main id="main" className={`mx-auto w-full flex-1 px-5 py-10 sm:px-8 sm:py-14 ${wide ? "max-w-5xl" : "max-w-3xl"}`}>
+      <main id="main" className={`mx-auto w-full flex-1 px-5 py-10 sm:px-8 sm:py-14 ${wide ? "max-w-6xl" : "max-w-3xl"}`}>
         {children}
       </main>
       <SiteFooter />
@@ -97,8 +100,8 @@ export function Shell({
 
 function SiteFooter() {
   return (
-    <footer className="border-t border-contour">
-      <div className="mx-auto grid w-full max-w-5xl gap-8 px-5 py-10 text-[0.9375rem] sm:grid-cols-[1.4fr_1fr_1fr] sm:px-8">
+    <footer className="border-t border-contour/60">
+      <div className="mx-auto grid w-full max-w-6xl gap-8 px-5 py-10 text-[0.9375rem] sm:grid-cols-[1.4fr_1fr_1fr] sm:px-8">
         <div className="space-y-2">
           <Wordmark />
           <p className="max-w-[36ch] text-ridge">
@@ -129,7 +132,7 @@ function SiteFooter() {
 export function PageHead({ title, lede }: { title: string; lede?: string }) {
   return (
     <div className="mb-8 space-y-3">
-      <h1 className="display text-4xl sm:text-5xl">{title}</h1>
+      <h1 className="display text-4xl sm:text-5xl lg:text-[3.25rem]">{title}</h1>
       {lede && <p className="max-w-[56ch] text-lg leading-snug text-ridge">{lede}</p>}
     </div>
   );
