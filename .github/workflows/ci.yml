@@ -81,16 +81,25 @@ jobs:
       - name: Validate complete Worker upload (dry run)
         run: pnpm exec wrangler deploy --dry-run --env staging --outdir .wrangler/audit-bundle
       # .open-next/worker.js is only the ~2 KB entry shim; wrangler bundles it
-      # into .wrangler/audit-bundle/worker-entry.js, which is what uploads.
-      # Cloudflare counts the compressed script against the 10 MB paid limit.
+      # into the modules under .wrangler/audit-bundle, which are what uploads.
+      # Sum every uploaded module (the dry run also writes source maps, which
+      # are not uploaded, and a README) so a future wasm or chunk module cannot
+      # grow past the limit unnoticed. Cloudflare counts the compressed script
+      # size against the 10 MB paid limit.
       - name: Check Worker size (10 MB compressed paid-plan limit)
         run: |
-          bundle=.wrangler/audit-bundle/worker-entry.js
-          raw=$(stat -c%s "$bundle")
-          gz=$(gzip -c "$bundle" | wc -c)
-          echo "$bundle: raw $raw bytes ($((raw / 1024)) KiB), gzip $gz bytes ($((gz / 1024)) KiB), limit 10485760"
+          dir=.wrangler/audit-bundle
+          raw=0
+          gz=0
+          files=0
+          while IFS= read -r file; do
+            raw=$((raw + $(stat -c%s "$file")))
+            gz=$((gz + $(gzip -c "$file" | wc -c)))
+            files=$((files + 1))
+          done < <(find "$dir" -type f ! -name '*.map' ! -name 'README.md')
+          echo "$files module(s): raw $raw bytes ($((raw / 1024)) KiB), gzip $gz bytes ($((gz / 1024)) KiB), limit 10485760"
           if [ "$gz" -gt 10485760 ]; then
-            echo "::error::$bundle is over the 10 MB compressed script limit"
+            echo "::error::The Worker upload is over the 10 MB compressed script limit"
             exit 1
           fi
       - uses: actions/upload-artifact@v7
