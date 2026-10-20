@@ -26,4 +26,7 @@ const SHELL_ENV_TO_CLEAR = [
 
 if (process.env.LIVE_SMOKE !== "1") {
   for (const name of SHELL_ENV_TO_CLEAR) delete process.env[name];
+  for (const name of Object.keys(process.env)) {
+    if (/^VANTAGE_PAID_DAILY_BUDGET_.+_USD$/.test(name)) delete process.env[name];
+  }
 }
