@@ -1,6 +1,9 @@
 # S10 — TinyFish-on-Reddit spike
 
-**Track:** Reddit · **Wave:** 1 · **Size:** S · **Owner:** agent + human (H4) · **Depends on:** none · **Unblocks:** S11, S12
+**Track:** Reddit · **Wave:** 1 · **Size:** S · **Owner:** agent + human (H4) · **Depends on:** none · **Unblocks:** S11, S12 · **Status:** not started · **Do this next** (before 31 Oct 2026)
+
+## Why this is next (20 Oct 2026)
+Reddit stops accepting new public API requests on 31 Oct, and Reddit RSS ends 13 Nov. Today `reddit` is a keyed source: `MANUAL_KEYED_SOURCE_TYPES` in `lib/cron/scan.ts` runs it on an owner's "Scan now" only, never on the hourly production cron. S11 cannot choose a chain or a cost until this spike measures TinyFish Fetch and Search against public Reddit pages. Needs `TINYFISH_API_KEY` (human gate H4); the script must read it from the environment and never print it.
 
 ## Question
 Does TinyFish **Fetch** return usable content for public Reddit pages (subreddit listings, post pages), and does TinyFish **Search** return Reddit posts for keyword queries? The review flagged this as untested; the answer decides whether the shared sweep costs about $0 or about $23/month.
@@ -18,4 +21,4 @@ Does TinyFish **Fetch** return usable content for public Reddit pages (subreddit
 - [ ] Script reads secrets only from env; no secret in output.
 
 ## Out of scope
-Building the sweep (S11).
+Building the sweep (S11). Putting `reddit` on the schedule (that is S11, and it stays off `SCHEDULED_SOURCE_TYPES` until the chain and its budget exist).

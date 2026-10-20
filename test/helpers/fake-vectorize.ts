@@ -39,6 +39,10 @@ export function createFakeVectorize(opts: FakeVectorizeOptions = {}) {
   const store = new Map<string, StoredVector>();
 
   const binding: VectorizeBinding = {
+    async getByIds(ids) {
+      if (opts.throws) throw opts.throws;
+      return ids.flatMap((id) => (store.has(id) ? [{ id }] : []));
+    },
     async upsert(vectors) {
       const items = vectors as Array<{ id: string; values: number[]; namespace?: string; metadata?: Record<string, unknown> }>;
       calls.push({ op: "upsert", vectors: items.map(({ id, namespace, metadata }) => ({ id, namespace, metadata })) });

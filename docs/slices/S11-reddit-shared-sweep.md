@@ -1,6 +1,9 @@
 # S11 — Reddit provider chain and shared sweep
 
-**Track:** Reddit (Idea 1) · **Wave:** 2 · **Size:** L · **Owner:** agent · **Depends on:** S02 (queue), S03 (cost), S04 (switch); informed by S10 · **Unblocks:** S12, S16, S21
+**Track:** Reddit (Idea 1) · **Wave:** 2 · **Size:** L · **Owner:** agent · **Depends on:** S02 (queue, done), S03 (cost, done), S04 (switch, done); informed by S10 · **Unblocks:** S12, S16, S21 · **Status:** not started
+
+## Where the code is today (20 Oct 2026)
+`reddit` is in `MANUAL_KEYED_SOURCE_TYPES`, not `SCHEDULED_SOURCE_TYPES` (`lib/cron/scan.ts`). The hourly production cron (#76) therefore never polls it; only "Scan now" does. Do not add `reddit` to the schedule until the shared sweep, its switch and the run budget below exist. S02, S03 and S04 are on `main`, so the remaining blocker is the S10 verdict.
 
 ## Outcome
 Reddit works in the free plan at near-zero marginal cost: one shared sweep of about 100 AI/dev subreddits every 3 hours serves every workspace, and it degrades gracefully when Reddit blocks us.

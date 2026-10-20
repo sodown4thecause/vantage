@@ -1,4 +1,4 @@
-import { getVectorize } from "@/lib/cf/env";
+import { getVectorize, type VectorizeBinding } from "@/lib/cf/env";
 
 export type VectorKind = "doc" | "profile" | "material";
 
@@ -122,6 +122,34 @@ export async function queryVectors(
       .filter((m): m is VectorMatch => m !== null && (minScore === undefined || m.score >= minScore));
   } catch (err) {
     logFailure("query", err);
+    return null;
+  }
+}
+
+function hasGetByIds(index: VectorizeBinding): index is VectorizeBinding & { getByIds(ids: string[]): Promise<unknown> } {
+  return typeof index.getByIds === "function";
+}
+
+/**
+ * Whether these ids are already stored. Returns null when the binding is absent, the
+ * index has no getByIds, or the call fails, so the caller re-indexes rather than
+ * assuming the vectors exist.
+ */
+export async function vectorsPresent(workspaceId: string, ids: string[]): Promise<boolean | null> {
+  requireWorkspace(workspaceId);
+  if (ids.length === 0) return true;
+  const index = await getVectorize();
+  if (!index || !hasGetByIds(index)) return null;
+  try {
+    const found = await index.getByIds(ids);
+    if (!Array.isArray(found)) return null;
+    const present = new Set(found.flatMap((item) => {
+      if (typeof item !== "object" || item === null || typeof (item as { id?: unknown }).id !== "string") return [];
+      return [(item as { id: string }).id];
+    }));
+    return ids.every((id) => present.has(id));
+  } catch (err) {
+    logFailure("getByIds", err);
     return null;
   }
 }

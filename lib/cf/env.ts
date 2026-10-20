@@ -13,6 +13,7 @@ export type VectorizeBinding = {
   upsert(vectors: unknown[]): Promise<unknown>;
   query(vector: number[], options?: unknown): Promise<unknown>;
   deleteByIds(ids: string[]): Promise<unknown>;
+  getByIds?(ids: string[]): Promise<unknown>;
 };
 
 export type SemanticMode = "off" | "shadow" | "on";
