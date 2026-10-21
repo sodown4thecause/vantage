@@ -1,21 +1,14 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
 
+import { gtmAnswerSchema } from "@/lib/gtm/schema";
 import type { OpportunityDetailView } from "@/lib/opportunities/types";
 import type { MonitoringProfileView } from "@/lib/profile/types";
 import { runPaidCall } from "@/lib/providers/paid-call";
 import type { SeoMessageRow } from "@/lib/seo-agent/conversations";
 import { costOfUsage, gatewayProvider, seoModels } from "@/lib/seo-agent/models";
 
-export const gtmAnswerSchema = z.object({
-  answer: z.string().trim().min(1).max(12000),
-  actions: z.array(z.object({
-    prompt: z.string().trim().min(1).max(2000),
-    reason: z.string().trim().min(1).max(1000),
-  })).length(3).refine((actions) => new Set(actions.map((action) => action.prompt.toLowerCase().replace(/\s+/g, " "))).size === actions.length, {
-    message: "Next questions must be distinct",
-  }),
-});
+export { gtmAnswerSchema } from "@/lib/gtm/schema";
 
 export async function answerGtmQuestion(input: {
   workspaceId: string;

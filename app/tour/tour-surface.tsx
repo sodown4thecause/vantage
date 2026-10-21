@@ -7,7 +7,7 @@ import { WorkspaceFrame } from "@/components/workspace-frame";
 
 import { DEMO, DEMO_LANES, demoReply, type DemoEvidence, type DemoLane, type DemoTurn } from "./tour-demo";
 import { WORKSPACE } from "./tour-data";
-import s from "../workspace/workspace.module.css";
+import s from "@/app/workspace/workspace.module.css";
 import t from "./tour.module.css";
 
 function Evidence({ items }: { items: DemoEvidence[] }) {

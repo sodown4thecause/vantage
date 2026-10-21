@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { SafeLink } from "@/components/safe-link";
 import { WorkspaceFrame } from "@/components/workspace-frame";
+import { gtmResponseSchema } from "@/lib/gtm/schema";
 import type { OpportunityDetailView } from "@/lib/opportunities/types";
 
 import s from "./workspace.module.css";
@@ -95,7 +96,9 @@ export function WorkspaceClient({ workspaceId, productName, hasProfile, initialE
         if (response.status === 403 || response.status === 401) throw new Error("Unable to access this workspace. Sign in again to continue.");
         throw new Error("The assistant couldn't complete that request. Your question is back in the composer so you can retry.");
       }
-      const result = await response.json() as { conversationId: string; answer: string; actions: NextAction[]; evidence: OpportunityDetailView[] };
+      const parsed = gtmResponseSchema.safeParse(await response.json());
+      if (!parsed.success) throw new Error("The assistant returned an invalid response. Your question is back in the composer so you can retry.");
+      const result = parsed.data;
       conversationId.current = result.conversationId;
       setTurns([...previous, { role: "user", content: message }, { role: "assistant", content: result.answer, actions: result.actions, evidence: result.evidence }]);
       window.history.replaceState(null, "", `/workspace?${new URLSearchParams({ workspaceId, c: result.conversationId })}`);

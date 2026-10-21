@@ -39,7 +39,7 @@ describe("guided sample workspace", () => {
   it("uses the shared frame and composer without a scrolling engine or network calls", () => {
     const source = readFileSync("app/tour/tour-surface.tsx", "utf8");
     expect(source).toContain("<WorkspaceFrame focused demo");
-    expect(source).toContain("../workspace/workspace.module.css");
+    expect(source).toContain("@/app/workspace/workspace.module.css");
     expect(source).toContain("<textarea");
     expect(source).toContain("<details className={s.mobileEvidence}");
     expect(source).toContain('index === 0 && <span className={s.recommended}>Recommended</span>');

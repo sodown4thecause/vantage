@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
 import { ResultCardView } from "./cards";
-import s from "../workspace/workspace.module.css";
+import s from "@/app/workspace/workspace.module.css";
 import {
   buildRequestBody,
   fromHistory,
