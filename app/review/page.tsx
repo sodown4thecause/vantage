@@ -34,7 +34,7 @@ export default async function ReviewPage({
   }
 
   return (
-    <Shell workspaceId={workspaceId} wide>
+    <Shell workspaceId={workspaceId} active="review" wide>
       <div className="mb-8">
         <h1 className="display text-4xl">Review queue</h1>
       </div>

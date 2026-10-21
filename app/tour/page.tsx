@@ -5,7 +5,7 @@ import { absoluteUrl } from "@/lib/site";
 
 const TITLE = "Tour the workspace";
 const DESCRIPTION =
-  "Run a morning in a demo contextfor.dev workspace: Reddit, X, Hacker News and forum threads ranked for buying intent, Search Console and AI-answer gaps, and a draft edited until it sounds like you.";
+  "Explore a guided sample contextfor.dev workspace: a chat-first GTM conversation with illustrative evidence, plus clearly labelled SEO, GEO and Content previews. No live data or model calls.";
 
 export const metadata: Metadata = {
   title: TITLE,
