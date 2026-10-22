@@ -56,3 +56,4 @@ worker-entry.d.ts
 # Mikk generated artifacts stay local-only; mikk.json (the contract) is committed.
 mikk.lock.json
 .mikkignore
+.clinerules
