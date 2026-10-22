@@ -7,7 +7,8 @@ loadEnv({ path: '.env.local', quiet: true });
 
 // Staging by default. Never point this at https://contextfor.dev: Polar there is live.
 const appUrl = process.env.APP_URL ?? 'https://vantage-staging.liam-wilson1990.workers.dev';
-if (/^https?:\/\/(www\.)?contextfor\.dev/.test(appUrl)) {
+const hostname = new URL(appUrl).hostname.toLowerCase().replace(/\.$/, '');
+if (hostname === 'contextfor.dev' || hostname === 'www.contextfor.dev') {
   throw new Error('e2e must not run against production (contextfor.dev)');
 }
 

@@ -19,7 +19,7 @@ describe('public content', { tags: ['public-content'] }, () => {
 
   test('unknown launch slug shows a not-found page', async ({ app, screen }) => {
     await app.open('/launch/does-not-exist');
-    await expect(screen.getByRole('heading', { level: 1 })).toBeVisible();
+    await expect(screen.getByRole('heading', 'This page does not exist.', { exact: true })).toBeVisible();
   });
 
   test('blog rss feed is XML with items', async ({ app }) => {
