@@ -1,0 +1,11 @@
+{
+  "ignorePatterns": [
+    ".env.local",
+    ".env.*.local",
+    ".env.development",
+    ".env.production",
+    "package.json",
+    "tsconfig.json",
+    "next.config.ts"
+  ]
+}
