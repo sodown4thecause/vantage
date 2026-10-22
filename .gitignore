@@ -57,3 +57,6 @@ worker-entry.d.ts
 mikk.lock.json
 .mikkignore
 .clinerules
+
+# This is a pnpm repo; never commit an npm lockfile.
+package-lock.json
