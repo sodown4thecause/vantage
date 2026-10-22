@@ -1,10 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ paid: false, userId: "user-1" as string | null, status: "open" }));
+const state = vi.hoisted(() => ({ paid: false, userId: "user-1" as string | null, status: "open", customerId: "user-1" }));
 vi.mock("@/lib/auth/server", () => ({ auth: { getSession: async () => ({ data: { user: { id: state.userId } } }) } }));
 vi.mock("@/lib/billing/entitlement", () => ({ userHasPaidPlan: async () => state.paid }));
-vi.mock("@/lib/billing/polar", () => ({ getPolar: () => ({ checkouts: { get: async () => ({ external_customer_id: "user-1", status: state.status }) } }) }));
+vi.mock("@/lib/billing/polar", () => ({ getPolar: () => ({ checkouts: { get: async () => ({ external_customer_id: state.customerId, status: state.status }) } }) }));
 vi.mock("@/lib/billing/next-step", () => ({ nextStepHref: async () => "/workspace?workspaceId=ws-1" }));
 
 import SuccessPage from "@/app/success/page";
@@ -17,9 +17,19 @@ beforeEach(() => {
   state.paid = false;
   state.userId = "user-1";
   state.status = "open";
+  state.customerId = "user-1";
 });
 
 describe("success page automatic rechecks", () => {
+  it.each(["failed", "expired"])("ignores another customer's %s checkout status", async (status) => {
+    state.customerId = "user-2";
+    state.status = status;
+    const html = await render({ checkout_id: checkoutId });
+    expect(html).toContain(`5;url=/success?checkout_id=${checkoutId}&amp;retry=1`);
+    expect(html).toContain("This page updates by itself");
+    expect(html).not.toContain("The payment did not go through");
+  });
+
   it("preserves the checkout and increments the retry count", async () => {
     const html = await render({ checkout_id: checkoutId });
     expect(html).toContain(`5;url=/success?checkout_id=${checkoutId}&amp;retry=1`);
