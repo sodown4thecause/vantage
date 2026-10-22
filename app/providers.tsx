@@ -19,6 +19,9 @@ export function Providers({ children }: { children: ReactNode }) {
       // native UI (scrollbars, form controls, autofill) renders light against
       // the dark surfaces.
       defaultTheme="dark"
+      // Neon Auth emails a 6-digit code on email sign-up. Without this the UI
+      // never renders a box to enter it, so new email accounts get stuck.
+      emailVerification={{ otp: true }}
       navigate={router.push}
       replace={router.replace}
       onSessionChange={() => {

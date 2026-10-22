@@ -30,8 +30,26 @@ function getAuth(): NeonAuth {
   return instance;
 }
 
+/**
+ * A stale or malformed `__Secure-neon-auth.session_data` cookie makes
+ * `getSession()` throw, which turned /, /queue, /settings/plan and /success
+ * into 500s. Treat any failure as "signed out" instead; signing in again
+ * overwrites the bad cookie.
+ */
+async function safeGetSession(
+  ...args: Parameters<NeonAuth["getSession"]>
+): Promise<Awaited<ReturnType<NeonAuth["getSession"]>>> {
+  try {
+    return await getAuth().getSession(...args);
+  } catch (error) {
+    console.warn("auth.getSession failed; treating request as signed out", error);
+    return { data: null, error: null } as unknown as Awaited<ReturnType<NeonAuth["getSession"]>>;
+  }
+}
+
 export const auth = new Proxy({} as NeonAuth, {
   get(_target, property, receiver) {
+    if (property === "getSession") return safeGetSession;
     const value = Reflect.get(getAuth() as object, property, receiver) as unknown;
     return typeof value === "function" ? value.bind(getAuth()) : value;
   },
