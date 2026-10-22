@@ -1,6 +1,5 @@
 import {
   INTERVIEW_CARD_TOOL,
-  INTERVIEW_TITLE,
   interviewStateSchema,
   type InterviewState,
 } from "@/lib/onboarding/interview";
@@ -34,8 +33,8 @@ export function interviewCard(state: InterviewState) {
 
 /** An interview conversation by id, or null when it is missing, in another workspace, or not an interview. */
 export async function loadInterview(workspaceId: string, conversationId: string): Promise<InterviewConversation | null> {
-  const conversation = await getConversation(workspaceId, conversationId);
-  if (!conversation || conversation.title !== INTERVIEW_TITLE) return null;
+  const conversation = await getConversation(workspaceId, conversationId, "interview");
+  if (!conversation || !conversation.messages.some(isInterviewMessage)) return null;
   if (conversation.messages.some((message) => message.role === "assistant" && !isInterviewMessage(message))) return null;
   return {
     id: conversation.id,
@@ -46,8 +45,8 @@ export async function loadInterview(workspaceId: string, conversationId: string)
 
 /** The most recent unfinished interview, so a returning owner picks up at the next unanswered question. */
 export async function findResumableInterview(workspaceId: string): Promise<InterviewConversation | null> {
-  const recent = await listConversations(workspaceId, 30);
-  const latest = recent.find((conversation) => conversation.title === INTERVIEW_TITLE);
+  const recent = await listConversations(workspaceId, 1, "interview");
+  const latest = recent[0];
   if (!latest) return null;
   const interview = await loadInterview(workspaceId, latest.id);
   return interview && !interview.state.complete ? interview : null;

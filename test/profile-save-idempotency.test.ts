@@ -153,3 +153,11 @@ it("preserves ordinary profile inserts without conflict suppression", async () =
   expect(state.conflictTargets).toHaveLength(0);
   expect(state.inserts[0]).not.toHaveProperty("id");
 });
+
+it("leaves newer searches untouched when an old retry reloads after an insert conflict", async () => {
+  const newer = { ...row, id: "new-profile", version: 2, topics: ["current searches"] };
+  state.reads = [[], [row]];
+  state.latestReads = [[newer], [newer]];
+  await saveMonitoringProfile({ workspaceId, input, profileId: id });
+  expect(state.sourceWrites).toBe(0);
+});

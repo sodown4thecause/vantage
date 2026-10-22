@@ -62,7 +62,8 @@ vi.mock("@/lib/seo-agent/conversations", () => {
       return { id };
     },
     getConversation: async (workspaceId: string, id: string) => find(workspaceId, id) ?? null,
-    listConversations: async (workspaceId: string) => state.conversations.filter((c) => c.workspaceId === workspaceId).reverse()
+    listConversations: async (workspaceId: string, limit: number, kind?: string) => state.conversations.filter((c) => c.workspaceId === workspaceId
+      && (kind !== "interview" || c.messages.some((m) => JSON.stringify(m.parts).includes('"tool":"onboarding_interview"')))).reverse().slice(0, limit)
       .map((c) => ({ id: c.id, title: c.title, updatedAt: "" })),
     appendMessage: async (workspaceId: string, id: string, msg: { role: "user" | "assistant"; content: string; parts?: Record<string, unknown> }) => {
       if (state.failCompletion && msg.content.startsWith("You’re all set")) throw new Error("completion write failed");
@@ -109,6 +110,18 @@ beforeEach(() => {
 });
 
 describe("interview step logic", () => {
+  it("discovers setup by its card even when research uses the setup title", async () => {
+    const first = await turn(ANSWERS[0]!);
+    const setup = state.conversations[0]!;
+    setup.title = "Renamed setup";
+    const researchId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    state.conversations.push({ ...setup, id: researchId, title: "Product setup interview",
+      messages: setup.messages.map((message) => ({ ...message, parts: {}, content: "Ordinary research" })),
+    });
+    expect((await findResumableInterview(WS))?.id).toBe(first.body.conversationId);
+    expect((await turn("Continue", researchId)).status).toBe(404);
+    expect(state.saved).toHaveLength(0);
+  });
   it("asks the steps in order and resumes from the first unanswered one", () => {
     expect(nextStep({})).toBe("productUrl");
     expect(nextStep({ productUrl: "https://example.com/", productDescription: "Does things well." })).toBe("targetCustomer");

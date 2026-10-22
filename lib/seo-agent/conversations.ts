@@ -4,7 +4,7 @@ import { getDb } from "@/lib/db/client";
 import { seoConversation, seoMessage } from "@/lib/db/schema";
 import { INTERVIEW_CARD_TOOL } from "@/lib/onboarding/interview";
 
-export type ConversationKind = "research" | "gtm";
+export type ConversationKind = "research" | "gtm" | "interview";
 
 function laneFilter(workspaceId: string, kind?: ConversationKind) {
   if (!kind) return undefined;
@@ -15,7 +15,7 @@ function laneFilter(workspaceId: string, kind?: ConversationKind) {
       and ${seoMessage.parts} @> ${JSON.stringify({ cards: [{ tool }] })}::jsonb
   )`;
   return and(
-    not(hasCard(INTERVIEW_CARD_TOOL)),
+    kind === "interview" ? hasCard(INTERVIEW_CARD_TOOL) : not(hasCard(INTERVIEW_CARD_TOOL)),
     kind === "gtm" ? hasCard("gtm_journey") : not(hasCard("gtm_journey")),
   );
 }

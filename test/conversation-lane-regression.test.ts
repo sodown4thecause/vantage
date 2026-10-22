@@ -45,7 +45,7 @@ beforeEach(() => {
 });
 
 describe("conversation lane query boundaries", () => {
-  it.each(["research", "gtm"] as const)("filters %s in the database before limiting the history", async (kind) => {
+  it.each(["research", "gtm", "interview"] as const)("filters %s in the database before limiting the history", async (kind) => {
     await listConversations(workspace, 5, kind);
     const { sql, params } = compiled();
     expect(state.selects[0]).toMatchObject({ table: seoConversation, limit: 5 });
@@ -69,6 +69,7 @@ describe("conversation lane query boundaries", () => {
   it("applies the same lane boundary before fetching a selected conversation's messages", async () => {
     await getConversation(workspace, conversation, "research");
     expect(compiled().params).toEqual(expect.arrayContaining([workspace, conversation]));
+    expect(compiled().params).not.toContain("Product setup interview");
     expect(compiled().sql).not.toContain('"seo_conversation"."title"');
     expect(compiled().sql).toContain("not exists");
     expect(state.selects[1]!.table).toBe(seoMessage);
