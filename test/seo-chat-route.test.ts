@@ -185,6 +185,13 @@ describe("POST /seo/chat: access and configuration", () => {
 });
 
 describe("POST /seo/chat: asking a question", () => {
+  it("continues research whose user-derived title matches the interview title", async () => {
+    mocks.getConversation.mockResolvedValue({ ...conversation(), title: "Product setup interview" });
+    const { res } = await postAndRead({ workspaceId: WS, conversationId: CONV, message: "Which keywords?" });
+    expect(res.status).toBe(200);
+    expect(mocks.consume).toHaveBeenCalled();
+    expect(mocks.runAgent).toHaveBeenCalled();
+  });
   it.each(["gtm_journey", "onboarding_interview"])("rejects %s chats before charging or writing", async (tool) => {
     mocks.getConversation.mockResolvedValue(conversation([storedMessage({ parts: { cards: [{ tool }] } })]));
     const response = await POST(request({ workspaceId: WS, conversationId: CONV, message: "Continue" }));
@@ -365,6 +372,14 @@ describe("POST /seo/chat: asking a question", () => {
 });
 
 describe("POST /seo/chat: approving a plan", () => {
+  it("approves research whose user-derived title matches the interview title", async () => {
+    mocks.getConversation.mockResolvedValue({ ...conversation(), title: "Product setup interview" });
+    mocks.claimPlan.mockResolvedValueOnce(PLAN);
+    const { res } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
+    expect(res.status).toBe(200);
+    expect(mocks.claimPlan).toHaveBeenCalledWith(WS, MSG_PLAN);
+    expect(mocks.runAgent).toHaveBeenCalled();
+  });
   it.each(["gtm_journey", "onboarding_interview"])("rejects plan approval in %s chats", async (tool) => {
     mocks.getConversation.mockResolvedValue(conversation([storedMessage({ parts: { cards: [{ tool }], plan: PLAN } })]));
     const response = await POST(request({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN }));

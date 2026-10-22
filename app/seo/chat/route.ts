@@ -3,7 +3,7 @@ import { after } from "next/server";
 import { z } from "zod";
 
 import { authorizeWorkspace } from "@/lib/auth/workspace";
-import { INTERVIEW_CARD_TOOL, INTERVIEW_TITLE } from "@/lib/onboarding/interview";
+import { isResearchConversation } from "@/lib/seo-agent/conversation-lane";
 import { consume, release } from "@/lib/plans/limits";
 import { getLatestMonitoringProfile } from "@/lib/profile/repository";
 import type { MonitoringProfileView } from "@/lib/profile/types";
@@ -96,8 +96,7 @@ async function askQuestion(
 
   // The conversation is checked before the question is charged, so an unknown id costs nothing.
   const existing = conversationId ? await getConversation(workspaceId, conversationId) : null;
-  if (conversationId && (!existing || existing.title === INTERVIEW_TITLE
-    || existing.messages.some((item) => item.parts.cards?.some((card) => card.tool === "gtm_journey" || card.tool === INTERVIEW_CARD_TOOL)))) return json({ error: "not_found" }, 404);
+  if (conversationId && (!existing || !isResearchConversation(existing))) return json({ error: "not_found" }, 404);
 
   const allowance = await consume(workspaceId, QUESTION_LIMIT);
   if (!allowance.allowed) return textResponse(UPGRADE_COPY, existing?.id);
@@ -140,8 +139,7 @@ async function approvePlan(
 ): Promise<Response> {
   if (!conversationId) return json({ error: "invalid_request" }, 400);
   const conversation = await getConversation(workspaceId, conversationId);
-  if (!conversation || conversation.title === INTERVIEW_TITLE
-    || conversation.messages.some((item) => item.parts.cards?.some((card) => card.tool === "gtm_journey" || card.tool === INTERVIEW_CARD_TOOL))) return json({ error: "not_found" }, 404);
+  if (!conversation || !isResearchConversation(conversation)) return json({ error: "not_found" }, 404);
   if (!conversation.messages.some((message) => message.id === messageId)) return json({ error: "not_found" }, 404);
 
   // The claim is one conditional update, so a double click cannot run the plan twice.

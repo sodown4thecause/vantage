@@ -21,7 +21,7 @@ import { PlanLimitError } from "@/lib/plans/types";
 import { indexSavedProfile } from "@/lib/profile/index-profile";
 import { getLatestMonitoringProfile, saveMonitoringProfile } from "@/lib/profile/repository";
 import { validateMonitoringProfileInput } from "@/lib/profile/validate";
-import { appendMessage, ConversationNotFoundError, createConversation } from "@/lib/seo-agent/conversations";
+import { appendMessage, appendTurn, ConversationNotFoundError } from "@/lib/seo-agent/conversations";
 
 /*
  * One interview turn: validate the answer for the next unanswered step, store it in the interview conversation and
@@ -65,7 +65,16 @@ export async function POST(req: Request): Promise<Response> {
       answers = applied.answers;
     }
 
-    const id = existing?.id ?? (await createConversation(workspaceId, INTERVIEW_TITLE)).id;
+    if (!existing) {
+      const prompt = promptFor(nextStep(answers)!, answers, current, timeZone);
+      const { id } = await appendTurn(workspaceId, { title: INTERVIEW_TITLE }, { content: answer }, {
+        content: prompt.question,
+        parts: { cards: [interviewCard({ answers, complete: false })] },
+      });
+      return Response.json({ conversationId: id, complete: false, message: prompt.question, prompt } satisfies InterviewResponse);
+    }
+
+    const id = existing.id;
     await appendMessage(workspaceId, id, { role: "user", content: answer });
     const reply = async (message: string, state: InterviewState, prompt?: InterviewPrompt, profileSaved = false) => {
       await appendMessage(workspaceId, id, { role: "assistant", content: message, parts: { cards: [interviewCard(state)] } });

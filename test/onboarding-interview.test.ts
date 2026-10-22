@@ -25,6 +25,7 @@ const state = vi.hoisted(() => ({
   indexed: [] as string[],
   saveError: null as Error | null,
   failCompletion: false,
+  failFirstTurn: false,
   profiles: {} as Record<string, { id: string }>,
 }));
 
@@ -46,6 +47,15 @@ vi.mock("@/lib/seo-agent/conversations", () => {
   const find = (workspaceId: string, id: string) => state.conversations.find((c) => c.id === id && c.workspaceId === workspaceId);
   return {
     ConversationNotFoundError,
+    appendTurn: async (workspaceId: string, conversation: { title: string }, user: { content: string }, assistant: { content: string; parts: Record<string, unknown> }) => {
+      if (state.failFirstTurn) throw new Error("first turn write failed");
+      const id = crypto.randomUUID();
+      state.conversations.push({ id, workspaceId, title: conversation.title, messages: [
+        { id: crypto.randomUUID(), role: "user", content: user.content, parts: {}, status: "complete", creditsUsed: 0, createdAt: "" },
+        { id: crypto.randomUUID(), role: "assistant", ...assistant, status: "complete", creditsUsed: 0, createdAt: "" },
+      ] });
+      return { id };
+    },
     createConversation: async (workspaceId: string, title: string) => {
       const id = crypto.randomUUID();
       state.conversations.push({ id, workspaceId, title, messages: [] });
@@ -93,6 +103,7 @@ beforeEach(() => {
   state.indexed = [];
   state.saveError = null;
   state.failCompletion = false;
+  state.failFirstTurn = false;
   state.profiles = {};
   vi.mocked(saveMonitoringProfile).mockClear();
 });
@@ -208,6 +219,19 @@ describe("interview route", () => {
     expect(resumed).toMatchObject({ id: first.body.conversationId, state: { complete: false } });
     expect(nextStep(resumed!.state.answers)).toBe("targetCustomer");
     expect(resumed!.turns).toHaveLength(4);
+  });
+
+  it("leaves no unmarked conversation when the first atomic turn fails", async () => {
+    state.failFirstTurn = true;
+    expect((await turn(ANSWERS[0]!)).status).toBe(500);
+    expect(state.conversations).toHaveLength(0);
+    state.failFirstTurn = false;
+    const retry = await turn(ANSWERS[0]!);
+    expect(retry.status).toBe(200);
+    expect(await findResumableInterview(WS)).toMatchObject({
+      id: retry.body.conversationId, state: { answers: { productUrl: "https://example.com/" }, complete: false },
+    });
+    expect(state.conversations[0]!.messages[1]!.parts).toMatchObject({ cards: [{ tool: "onboarding_interview" }] });
   });
 
   it("rejects an invalid answer without storing it", async () => {

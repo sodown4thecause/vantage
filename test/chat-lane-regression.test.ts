@@ -44,7 +44,7 @@ beforeEach(() => {
 
 describe("chat lane isolation", () => {
   it.each([
-    stored("gtm_journey"), stored("onboarding_interview"), stored(undefined, "Product setup interview"),
+    stored("gtm_journey"), stored("onboarding_interview"),
   ])("rejects foreign-lane research questions and approvals before charging or claiming", async (conversation) => {
     mocks.get.mockResolvedValue(conversation);
     for (const body of [{ message: "Question" }, { approvePlan: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }]) {
