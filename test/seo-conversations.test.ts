@@ -211,7 +211,7 @@ describe("listConversations", () => {
     const query = sqlOf(call.where!);
     expect(query.sql).toContain(lane === "research" ? "not exists" : " exists");
     expect(query.sql).toContain('"seo_message"."conversation_id" = "seo_conversation"."id"');
-    expect(query.params.filter((value) => value === WS_A)).toHaveLength(2);
+    expect(query.params.filter((value) => value === WS_A)).toHaveLength(3);
     expect(query.params).toContain(JSON.stringify({ cards: [{ tool: "gtm_journey" }] }));
     if (lane === "research") expect(query.params).toContain(JSON.stringify({ cards: [{ tool: "onboarding_interview" }] }));
     expect(call.limit).toBe(5);

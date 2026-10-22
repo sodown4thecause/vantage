@@ -245,10 +245,12 @@ describe("interview route", () => {
     let conversationId: string | undefined;
     let last: Awaited<ReturnType<typeof turn>> | undefined;
     for (const answer of ANSWERS) { last = await turn(answer, conversationId); conversationId = last.body.conversationId; }
-    expect(last!.body.complete).toBe(true);
+    expect(last!.body.complete).toBe(false);
     expect(last!.body.message).toContain("couldn’t save your chosen digest time");
     expect(last!.body.message).not.toContain("Your daily digest is set for");
     expect(last!.body.message).toContain("Please set it under Daily digest");
+    expect(state.saved).toHaveLength(1);
+    expect((await turn("retry", conversationId)).body.complete).toBe(true);
     expect(state.saved).toHaveLength(1);
   });
 

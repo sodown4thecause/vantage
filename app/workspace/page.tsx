@@ -24,8 +24,8 @@ export const dynamic = "force-dynamic";
 async function savedOrEmpty(workspaceId: string): Promise<SavedArtifactView[]> {
   try {
     return await listSavedArtifacts(workspaceId);
-  } catch (error) {
-    console.error("[workspace page] saved artifacts unavailable", { error: error instanceof Error ? error.name : "unknown" });
+  } catch {
+    console.error("[workspace page] saved artifacts unavailable", { step: "saved_artifacts", category: "unexpected" });
     return [];
   }
 }
@@ -41,7 +41,7 @@ export default async function WorkspacePage({ searchParams }: { searchParams: Pr
   const [profile, queue, conversation, resumable, saved, conversations] = await Promise.all([
     getLatestMonitoringProfile(workspaceId),
     listOpportunityQueue({ workspaceId, limit: 5 }),
-    requested.success ? getConversation(workspaceId, requested.data) : null,
+    requested.success ? getConversation(workspaceId, requested.data, "gtm") : null,
     findResumableInterview(workspaceId),
     savedOrEmpty(workspaceId),
     listConversations(workspaceId, 30, "gtm"),
@@ -66,5 +66,5 @@ export default async function WorkspacePage({ searchParams }: { searchParams: Pr
     try { productName = new URL(profile.productUrl).hostname.replace(/^www\./, ""); } catch { productName = "Your product"; }
   }
   return <WorkspaceClient key={gtmConversation?.id ?? "new"} workspaceId={workspaceId} productName={productName} hasProfile={Boolean(profile)} initialEvidence={evidence} initialTurns={turns} initialConversationId={gtmConversation?.id ?? null} configured={seoModels() !== null} scanControl={<ScanButton workspaceId={workspaceId} />}
-    interview={interview} interviewOpen={params.setup === "1" && !gtmConversation} savedArtifacts={saved} conversations={conversations} />;
+    interview={interview} interviewOpen={(params.setup === "1" || Boolean(resumable)) && !gtmConversation} savedArtifacts={saved} conversations={conversations} />;
 }

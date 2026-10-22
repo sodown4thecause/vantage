@@ -64,6 +64,7 @@ export type InterviewResponse = {
   rejected?: boolean;
   /** Once complete: the product's host name for the workspace header. */
   productName?: string;
+  profileSaved?: boolean;
 };
 
 /** The first step without an answer, or null when every step is answered. Resuming starts here. */
@@ -306,13 +307,13 @@ export function stepForFieldErrors(answers: InterviewAnswers, errors: FieldError
 
 /** A plain summary of the saved setup for the closing message. */
 export function completionMessage(answers: InterviewAnswers, digestSaved = true): string {
-  const digest = answers.digest && !digestSaved
-    ? "Your product profile is saved, but I couldn’t save your chosen digest time. Please set it under Daily digest."
+  const digest = !digestSaved
+    ? "Your product profile is saved, but I couldn’t save your chosen digest time. Send any message to retry. Please set it under Daily digest if you’d rather change the time."
     : answers.digest
     ? `Your daily digest is set for ${formatHour(answers.digest.localHour)} ${answers.digest.timeZone} (${String(answers.digest.hourUtc).padStart(2, "0")}:00 UTC). Digests are scheduled in UTC, so daylight saving can shift the local time by an hour. Turn on email delivery under Daily digest when you’re ready.`
     : "Your daily digest keeps its default time. You can change it under Daily digest.";
   return [
-    `You’re all set. I’ve saved the product profile for ${hostOf(answers.productUrl)}.`,
+    `${digestSaved ? "You’re all set. " : ""}I’ve saved the product profile for ${hostOf(answers.productUrl)}.`,
     digest,
     "Next, run a scan to bring in your first conversations. You write every reply; nothing is posted on your behalf.",
   ].join("\n\n");

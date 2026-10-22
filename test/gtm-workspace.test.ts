@@ -82,9 +82,8 @@ describe("guided GTM workspace", () => {
     await Page({ searchParams: Promise.resolve({ workspaceId: "owned-workspace", c: id }) });
     expect(mocks.profile).toHaveBeenCalledWith("owned-workspace");
     expect(mocks.queue).toHaveBeenCalledWith({ workspaceId: "owned-workspace", limit: 5 });
-    expect(mocks.conversation).toHaveBeenCalledWith("owned-workspace", id);
+    expect(mocks.conversation).toHaveBeenCalledWith("owned-workspace", id, "gtm");
     expect(mocks.detail).toHaveBeenCalledWith({ workspaceId: "owned-workspace", opportunityId: "lead-1" });
-    expect(mocks.conversations).toHaveBeenCalledWith("owned-workspace", 30);
     expect(mocks.conversations).toHaveBeenCalledWith("owned-workspace", 30, "gtm");
     expect(mocks.saved).toHaveBeenCalledWith("owned-workspace");
   });

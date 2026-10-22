@@ -67,18 +67,18 @@ export async function POST(req: Request): Promise<Response> {
 
     const id = existing?.id ?? (await createConversation(workspaceId, INTERVIEW_TITLE)).id;
     await appendMessage(workspaceId, id, { role: "user", content: answer });
-    const reply = async (message: string, state: InterviewState, prompt?: InterviewPrompt) => {
+    const reply = async (message: string, state: InterviewState, prompt?: InterviewPrompt, profileSaved = false) => {
       await appendMessage(workspaceId, id, { role: "assistant", content: message, parts: { cards: [interviewCard(state)] } });
       return Response.json({
         conversationId: id, complete: state.complete, message, prompt,
-        ...(state.complete ? { productName: hostOf(state.answers.productUrl) } : {}),
+        ...(profileSaved ? { profileSaved: true, productName: hostOf(state.answers.productUrl) } : {}),
       } satisfies InterviewResponse);
     };
 
     const following = nextStep(answers);
     if (following) {
       const prompt = promptFor(following, answers, current, timeZone);
-      return reply(prompt.question, { answers, complete: false }, prompt);
+      return await reply(prompt.question, { answers, complete: false }, prompt);
     }
 
     const validated = validateMonitoringProfileInput(toProfileInput(answers, current));
@@ -86,7 +86,7 @@ export async function POST(req: Request): Promise<Response> {
       const retry = stepForFieldErrors(answers, validated.errors);
       if (!retry) throw new Error("profile validation failed without a field error");
       const prompt = promptFor(retry.step, retry.answers, current, timeZone);
-      return reply(`${retry.error} ${prompt.question}`, { answers: retry.answers, complete: false }, prompt);
+      return await reply(`${retry.error} ${prompt.question}`, { answers: retry.answers, complete: false }, prompt);
     }
 
     let profileId: string;
@@ -100,29 +100,29 @@ export async function POST(req: Request): Promise<Response> {
         const rest = { ...answers };
         delete rest.keywords;
         const prompt = promptFor("keywords", rest, current, timeZone);
-        return reply(`${error.message} ${prompt.question}`, { answers: rest, complete: false }, prompt);
+        return await reply(`${error.message} ${prompt.question}`, { answers: rest, complete: false }, prompt);
       }
-      console.error("[interview route] profile save failed", { error: error instanceof Error ? error.name : "unknown" });
-      return reply("I couldn’t save your profile just now. Send any message to try again.", { answers, complete: false });
+      console.error("[interview route] profile save failed");
+      return await reply("I couldn’t save your profile just now. Send any message to try again.", { answers, complete: false });
     }
     try {
       await indexSavedProfile(workspaceId, profileId);
-    } catch (error) {
-      console.error("[interview route] indexing failed", { error: error instanceof Error ? error.name : "unknown" });
+    } catch {
+      console.error("[interview route] indexing failed");
     }
     let digestSaved = true;
     if (answers.digest) {
       try {
         await setDigestHour(workspaceId, answers.digest.hourUtc);
-      } catch (error) {
+      } catch {
         digestSaved = false;
-        console.error("[interview route] digest save failed", { error: error instanceof Error ? error.name : "unknown" });
+        console.error("[interview route] digest save failed");
       }
     }
-    return await reply(completionMessage(answers, digestSaved), { answers, complete: true });
+    return await reply(completionMessage(answers, digestSaved), { answers, complete: digestSaved }, undefined, true);
   } catch (error) {
     if (error instanceof ConversationNotFoundError) return Response.json({ error: "not_found" }, { status: 404 });
-    console.error("[interview route] failed", { error: error instanceof Error ? error.name : "unknown" });
+    console.error("[interview route] failed");
     return Response.json({ error: "request_failed" }, { status: 500 });
   }
 }

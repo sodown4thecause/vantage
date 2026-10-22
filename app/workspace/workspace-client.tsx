@@ -193,6 +193,10 @@ export function WorkspaceClient({ workspaceId, productName: initialProductName, 
       setupConversationId.current = result.conversationId;
       const next: Turn[] = [...previous, { role: "user", content: shown }, { role: "assistant", content: result.message }];
       setSetupPrompt(result.prompt);
+      if (result.profileSaved) {
+        setProfileSaved(true);
+        if (result.productName) setProductName(result.productName);
+      }
       if (result.complete) {
         setProfileSaved(true);
         if (result.productName) setProductName(result.productName);

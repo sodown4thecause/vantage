@@ -78,55 +78,57 @@ export async function saveMonitoringProfile(args: {
   profileId?: string;
 }): Promise<MonitoringProfileView> {
   const db = getDb();
+  let row: MonitoringProfile | undefined;
   if (args.profileId) {
-    const [saved] = await db.select().from(monitoringProfile).where(and(
-      eq(monitoringProfile.workspaceId, args.workspaceId), eq(monitoringProfile.id, args.profileId),
-    )).limit(1);
-    if (saved) return toProfileView(saved);
-  }
-  const latest = await getLatestMonitoringProfile(args.workspaceId);
-  // Plan keyword cap. Profiles saved before plans existed are grandfathered: a save may keep
-  // (but not grow) the keyword count the workspace already has. Throws PlanLimitError.
-  await assertWithinCount(args.workspaceId, "keywords", 0, args.input.topics.length, latest?.topics.length ?? 0);
-  const nextVersion = (latest?.version ?? 0) + 1;
-
-  const material = await retrieveProductMaterial(
-    args.input,
-    args.fetchImpl ?? fetch,
-  );
-
-  const insert = db
-    .insert(monitoringProfile)
-    .values({
-      ...(args.profileId ? { id: args.profileId } : {}),
-      workspaceId: args.workspaceId,
-      version: nextVersion,
-      productUrl: args.input.productUrl,
-      docsUrls: args.input.docsUrls,
-      productDescription: args.input.productDescription,
-      targetCustomer: args.input.targetCustomer,
-      competitors: args.input.competitors,
-      topics: args.input.topics,
-      productMaterialStatus: material.status,
-      productMaterialText: material.text,
-      retrievalNotes: material.notes,
-    });
-  const inserted = await (args.profileId
-    ? insert.onConflictDoNothing({ target: monitoringProfile.id })
-    : insert).returning();
-
-  let row = inserted[0];
-  if (!row && args.profileId) {
     [row] = await db.select().from(monitoringProfile).where(and(
       eq(monitoringProfile.workspaceId, args.workspaceId), eq(monitoringProfile.id, args.profileId),
     )).limit(1);
-    if (row) return toProfileView(row);
+  }
+  if (!row) {
+    const latest = await getLatestMonitoringProfile(args.workspaceId);
+    // Plan keyword cap. Profiles saved before plans existed are grandfathered: a save may keep
+    // (but not grow) the keyword count the workspace already has. Throws PlanLimitError.
+    await assertWithinCount(args.workspaceId, "keywords", 0, args.input.topics.length, latest?.topics.length ?? 0);
+    const nextVersion = (latest?.version ?? 0) + 1;
+
+    const material = await retrieveProductMaterial(
+      args.input,
+      args.fetchImpl ?? fetch,
+    );
+
+    const insert = db
+      .insert(monitoringProfile)
+      .values({
+        ...(args.profileId ? { id: args.profileId } : {}),
+        workspaceId: args.workspaceId,
+        version: nextVersion,
+        productUrl: args.input.productUrl,
+        docsUrls: args.input.docsUrls,
+        productDescription: args.input.productDescription,
+        targetCustomer: args.input.targetCustomer,
+        competitors: args.input.competitors,
+        topics: args.input.topics,
+        productMaterialStatus: material.status,
+        productMaterialText: material.text,
+        retrievalNotes: material.notes,
+      });
+    const inserted = await (args.profileId
+      ? insert.onConflictDoNothing({ target: monitoringProfile.id })
+      : insert).returning();
+
+    row = inserted[0];
+    if (!row && args.profileId) {
+      [row] = await db.select().from(monitoringProfile).where(and(
+        eq(monitoringProfile.workspaceId, args.workspaceId), eq(monitoringProfile.id, args.profileId),
+      )).limit(1);
+    }
   }
   if (!row) {
     throw new Error("failed to persist monitoring profile");
   }
-  await provisionProfileSources(args.workspaceId, args.input.topics, args.input.productUrl,
-    [args.input.productDescription, args.input.targetCustomer, args.input.topics.join(" ")].join(" "));
+  const topics = row.topics ?? [];
+  await provisionProfileSources(args.workspaceId, topics, row.productUrl,
+    [row.productDescription, row.targetCustomer, topics.join(" ")].join(" "));
   return toProfileView(row);
 }
 

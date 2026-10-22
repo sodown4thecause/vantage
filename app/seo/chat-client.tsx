@@ -130,16 +130,18 @@ function ApprovalBox({
 }
 
 /** Backlink and ranking cards render as a table plus a chart, each with Save; other cards keep their own view. */
-function SeoResult({ card, sandbox, workspaceId, lane }: { card: CardView; sandbox: boolean; workspaceId: string; lane: "seo" | "geo" }) {
+function SeoResult({ card, sandbox, workspaceId, lane, saveAllowed }: { card: CardView; sandbox: boolean; workspaceId: string; lane: "seo" | "geo"; saveAllowed: boolean }) {
   const blocks = seoCardBlocks(card);
   if (!blocks.length) return <ResultCardView card={card} sandbox={sandbox} />;
   const isSandbox = card.sandbox ?? sandbox;
   const cachedLabel = card.cached ? (card.fetchedAt ? `Cached ${card.fetchedAt.slice(0, 10)}` : "Cached") : null;
   return (
     <section className="space-y-3" data-tool={card.tool}>
-      {cachedLabel && <p className="text-xs text-ridge"><span className="rounded-full px-2.5 py-0.5 shadow-[inset_0_0_0_1px_var(--contour)]">{cachedLabel}</span></p>}
-      {isSandbox && <p className="text-xs font-semibold text-ridge">Sandbox data: not real figures.</p>}
-      <BlockList blocks={blocks} workspaceId={isSandbox ? undefined : workspaceId} lane={lane} />
+      {(cachedLabel || isSandbox) && <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ridge">
+        {cachedLabel && <span className="rounded-full px-2.5 py-0.5 shadow-[inset_0_0_0_1px_var(--contour)]">{cachedLabel}</span>}
+        {isSandbox && <span className="font-semibold">Sandbox data: not real figures.</span>}
+      </p>}
+      <BlockList blocks={blocks} workspaceId={isSandbox || !saveAllowed ? undefined : workspaceId} lane={lane} />
     </section>
   );
 }
@@ -154,6 +156,7 @@ function AssistantAnswer({
   showCards,
   workspaceId,
   lane,
+  saveAllowed,
 }: {
   workspaceId: string;
   lane: "seo" | "geo";
@@ -164,10 +167,13 @@ function AssistantAnswer({
   onRun: (messageId: string) => void;
   onCancel: (messageId: string) => void;
   showCards: boolean;
+  saveAllowed: boolean;
 }) {
   const incomplete = view.status === "incomplete";
   const hasSandboxCards = view.cards.some((card) => card.sandbox ?? sandbox);
-  const answerText = hasSandboxCards ? `Sandbox data: not real figures. This answer includes illustrative sandbox research.\n\n${view.text}` : view.text;
+  const answerText = hasSandboxCards ? `Sandbox data: not real figures. This answer includes illustrative sandbox research.
+
+${view.text}` : view.text;
   const awaitingApproval = view.status === "needs_approval" && view.plan.length > 0 && Boolean(view.messageId) && approvalOpen;
   return (
     <div className="space-y-6">
@@ -180,7 +186,7 @@ function AssistantAnswer({
       {showCards && view.cards.length > 0 && (
         <div className="space-y-10">
           {view.cards.map((card, i) => (
-            <SeoResult key={`${i}-${card.tool}`} card={card} sandbox={sandbox} workspaceId={workspaceId} lane={lane} />
+            <SeoResult key={`${i}-${card.tool}`} card={card} sandbox={sandbox} workspaceId={workspaceId} lane={lane} saveAllowed={saveAllowed} />
           ))}
         </div>
       )}
@@ -192,7 +198,7 @@ function AssistantAnswer({
         </ul>
       )}
       {hasSandboxCards && !sandbox && <p className="text-xs font-semibold text-ridge">This answer includes sandbox data: not real figures. Saved answers keep this warning and exclude sandbox visuals.</p>}
-      {view.text && view.status === "complete" && !busy && !sandbox && (
+      {view.text && saveAllowed && !sandbox && (
         <SaveButton workspaceId={workspaceId} lane={lane} label="Save answer" title={view.text.split(/\r?\n/)[0]!.slice(0, 120) || "Research answer"}
           blocks={[{ type: "text" as const, text: answerText.slice(0, 12000) }, ...view.cards.filter((card) => !(card.sandbox ?? sandbox)).flatMap((card) => seoCardBlocks(card))].slice(0, 12)} />
       )}
@@ -214,6 +220,7 @@ function AssistantTurn({
   showCards,
   workspaceId,
   lane,
+  streaming,
 }: {
   workspaceId: string;
   lane: "seo" | "geo";
@@ -224,12 +231,13 @@ function AssistantTurn({
   onRun: (messageId: string) => void;
   onCancel: (messageId: string) => void;
   showCards: boolean;
+  streaming: boolean;
 }) {
   const view = viewOf(message);
   return (
     <AssistantAnswer
       view={view}
-      busy={busy || message.metadata?.status === undefined}
+      busy={busy}
       sandbox={sandbox}
       approvalOpen={!closedPlans.has(view.messageId ?? "")}
       onRun={onRun}
@@ -237,6 +245,7 @@ function AssistantTurn({
       showCards={showCards}
       workspaceId={workspaceId}
       lane={lane}
+      saveAllowed={!streaming && message.metadata?.status === "complete"}
     />
   );
 }
@@ -356,7 +365,7 @@ export function ChatClient({
   const evidence = <>
     <div className={s.evidenceHead}><h2>Behind the answer</h2><span>{latestView?.cards.length ?? 0}</span></div>
     <p className={s.evidenceIntro}>{sandbox ? "Sandbox data: not real figures." : "Research results from this conversation. Check the source and capture date before making a decision."}</p>
-    {latestView?.cards.length ? latestView.cards.map((card, index) => <div className={s.opportunity} key={`${index}-${card.tool}`}><SeoResult card={card} sandbox={sandbox} workspaceId={workspaceId} lane={focus} /></div>) : <p className={s.empty}>No research results in this answer yet. Ask a question to plan the next step; any results will appear here.</p>}
+    {latestView?.cards.length ? latestView.cards.map((card, index) => <div className={s.opportunity} key={`${index}-${card.tool}`}><SeoResult card={card} sandbox={sandbox} workspaceId={workspaceId} lane={focus} saveAllowed={!busy && latest?.metadata?.status === "complete"} /></div>) : <p className={s.empty}>No research results in this answer yet. Ask a question to plan the next step; any results will appear here.</p>}
   </>;
 
   useEffect(() => {
@@ -386,6 +395,7 @@ export function ChatClient({
                 <><div className={s.turnLabel}><span className={s.spark} aria-hidden="true">✳</span>Your research assistant</div><AssistantTurn
                   message={message}
                   busy={busy}
+                  streaming={busy && message.id === latest?.id}
                   sandbox={sandbox}
                   closedPlans={closedPlans}
                   onRun={runPlan}

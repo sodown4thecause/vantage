@@ -55,7 +55,7 @@ export async function listSavedArtifacts(workspaceId: string, limit = MAX_SAVED_
     .from(savedArtifact)
     .where(eq(savedArtifact.workspaceId, workspaceId))
     .orderBy(desc(savedArtifact.createdAt))
-    .limit(limit);
+    .limit(Number.isFinite(limit) ? Math.max(1, Math.min(MAX_SAVED_ARTIFACTS, Math.floor(limit))) : MAX_SAVED_ARTIFACTS);
   return rows.map(toView);
 }
 
