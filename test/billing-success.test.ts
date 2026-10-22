@@ -40,7 +40,10 @@ describe("success page automatic rechecks", () => {
 
   it("does not recheck for signed-out users or failed payments", async () => {
     state.userId = null;
-    expect(await render({ checkout_id: checkoutId })).not.toContain('http-equiv="refresh"');
+    const signedOut = await render({ checkout_id: checkoutId });
+    expect(signedOut).not.toContain('http-equiv="refresh"');
+    expect(signedOut).toContain("Sign in to check your payment");
+    expect(signedOut).not.toContain("This page updates by itself");
     state.userId = "user-1";
     for (const status of ["failed", "expired"]) {
       state.status = status;

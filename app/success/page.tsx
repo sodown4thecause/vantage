@@ -53,10 +53,12 @@ export default async function SuccessPage({ searchParams }: { searchParams: Prom
         />
       ) : (
         <PageHead
-          title="Thanks, we're confirming your payment"
+          title={userId ? "Thanks, we're confirming your payment" : "Sign in to check your payment"}
           lede={failed
             ? "The payment did not go through. You have not been charged; you can try again from Pricing."
-            : recheck
+            : !userId
+              ? "Sign in through Plan & usage to check your payment and current plan."
+              : recheck
               ? "Pro switches on as soon as Polar confirms the payment, usually within a few seconds. This page updates by itself."
               : "We haven't confirmed your payment yet. Check Plan & usage for your current plan; you can refresh this page later."}
         />
