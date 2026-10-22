@@ -53,7 +53,8 @@ describe("conversation lane query boundaries", () => {
     expect(sql).toContain('"seo_message"."conversation_id" = "seo_conversation"."id"');
     expect(sql).toContain('"seo_message"."workspace_id" =');
     expect(params.filter((value) => value === workspace)).toHaveLength(3);
-    if (kind === "research") expect(params).toContain("Product setup interview");
+    expect(sql).not.toContain('"seo_conversation"."title"');
+    expect(params).not.toContain("Product setup interview");
     expect(params).toContain(JSON.stringify({ cards: [{ tool: "onboarding_interview" }] }));
     expect(params).toContain(JSON.stringify({ cards: [{ tool: "gtm_journey" }] }));
     expect(sql.match(/not exists/g)).toHaveLength(kind === "research" ? 2 : 1);
@@ -67,7 +68,8 @@ describe("conversation lane query boundaries", () => {
 
   it("applies the same lane boundary before fetching a selected conversation's messages", async () => {
     await getConversation(workspace, conversation, "research");
-    expect(compiled().params).toEqual(expect.arrayContaining([workspace, conversation, "Product setup interview"]));
+    expect(compiled().params).toEqual(expect.arrayContaining([workspace, conversation]));
+    expect(compiled().sql).not.toContain('"seo_conversation"."title"');
     expect(compiled().sql).toContain("not exists");
     expect(state.selects[1]!.table).toBe(seoMessage);
     expect(compiled(1).params).toEqual([conversation, workspace]);

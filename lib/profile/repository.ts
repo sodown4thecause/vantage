@@ -126,6 +126,10 @@ export async function saveMonitoringProfile(args: {
   if (!row) {
     throw new Error("failed to persist monitoring profile");
   }
+  if (args.profileId) {
+    const latest = await getLatestMonitoringProfile(args.workspaceId);
+    if (latest && latest.version > row.version) return toProfileView(row);
+  }
   const topics = row.topics ?? [];
   await provisionProfileSources(args.workspaceId, topics, row.productUrl,
     [row.productDescription, row.targetCustomer, topics.join(" ")].join(" "));

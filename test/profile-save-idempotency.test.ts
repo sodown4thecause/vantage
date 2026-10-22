@@ -6,6 +6,7 @@ import type { MonitoringProfileInput } from "@/lib/profile/types";
 
 const state = vi.hoisted(() => ({
   reads: [] as unknown[][],
+  latestReads: [] as unknown[][],
   predicates: [] as unknown[],
   inserts: [] as Record<string, unknown>[],
   conflictTargets: [] as unknown[],
@@ -19,7 +20,7 @@ const state = vi.hoisted(() => ({
 vi.mock("@/lib/db/client", () => ({ getDb: () => ({
   select: () => ({ from: () => ({ where: (predicate: unknown) => {
     state.predicates.push(predicate);
-    return { limit: async () => state.reads.shift() ?? [], orderBy: () => ({ limit: async () => state.reads.shift() ?? [] }) };
+    return { limit: async () => state.reads.shift() ?? [], orderBy: () => ({ limit: async () => state.latestReads.shift() ?? [] }) };
   } }) }),
   insert: (table: unknown) => ({ values: (values: Record<string, unknown>) => {
     if (table !== monitoringProfile) return { onConflictDoUpdate: async () => {
@@ -57,6 +58,7 @@ const row: MonitoringProfile = {
 beforeEach(() => {
   state.reads = []; state.predicates = []; state.inserts = []; state.conflictTargets = []; state.inserted = []; state.insertResults = []; state.sourceWrites = 0;
   state.sourceFailures = 0; state.sourceValues = [];
+  state.latestReads = [];
   vi.mocked(retrieveProductMaterial).mockClear();
   vi.stubEnv("TINYFISH_API_KEY", ""); vi.stubEnv("SCAVIO_API_KEY", ""); vi.stubEnv("FIRECRAWL_API_KEY", "");
 });
@@ -75,7 +77,7 @@ it("reuses a persisted profile without fetching and refreshes sources from its s
 });
 
 it("uses the profile primary key to deduplicate concurrent saves and reloads within the workspace", async () => {
-  state.reads = [[], [], [row]];
+  state.reads = [[], [row]];
   const saved = await saveMonitoringProfile({ workspaceId, input, profileId: id });
   expect(saved).toMatchObject({ id, version: 1 });
   expect(state.inserts[0]).toMatchObject({ id, workspaceId, version: 1 });
@@ -86,9 +88,20 @@ it("uses the profile primary key to deduplicate concurrent saves and reloads wit
 });
 
 it("fails closed when a conflicting profile is not in this workspace", async () => {
-  state.reads = [[], [], []];
+  state.reads = [[], []];
   await expect(saveMonitoringProfile({ workspaceId, input, profileId: id })).rejects.toThrow("failed to persist monitoring profile");
   expect(state.sourceWrites).toBe(0);
+});
+
+it("does not replace newer source searches when recovering an older profile", async () => {
+  state.reads = [[row]];
+  state.latestReads = [[{ ...row, id: "newer-profile", version: 2, topics: ["newer search"] }]];
+  await expect(saveMonitoringProfile({ workspaceId, input, profileId: id })).resolves.toMatchObject({ id, version: 1 });
+  expect(state.sourceWrites).toBe(0);
+  expect(state.inserts).toHaveLength(0);
+  expect(retrieveProductMaterial).not.toHaveBeenCalled();
+  const query = new PgDialect().sqlToQuery(state.predicates[1] as Parameters<PgDialect["sqlToQuery"]>[0]);
+  expect(query.params).toEqual([workspaceId]);
 });
 
 it("creates only one profile and safely repeats source upserts across independent calls", async () => {
@@ -101,7 +114,7 @@ it("creates only one profile and safely repeats source upserts across independen
 });
 
 it("returns one profile and provisions sources when two requests race for the same persisted key", async () => {
-  state.reads = [[], [], [], [], [row]];
+  state.reads = [[], [], [row]];
   state.insertResults = [[row], []];
   const saved = await Promise.all([
     saveMonitoringProfile({ workspaceId, input, profileId: id }),
@@ -129,7 +142,7 @@ it("does not report success when source setup still fails on an existing profile
 });
 
 it("propagates source setup failure after loading a concurrent insert", async () => {
-  state.reads = [[], [], [row]]; state.sourceFailures = 1;
+  state.reads = [[], [row]]; state.sourceFailures = 1;
   await expect(saveMonitoringProfile({ workspaceId, input, profileId: id })).rejects.toThrow("source setup failed");
   expect(state.sourceWrites).toBe(1);
 });

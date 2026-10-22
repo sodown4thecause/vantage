@@ -2,7 +2,7 @@ import { and, asc, desc, eq, not, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { seoConversation, seoMessage } from "@/lib/db/schema";
-import { INTERVIEW_CARD_TOOL, INTERVIEW_TITLE } from "@/lib/onboarding/interview";
+import { INTERVIEW_CARD_TOOL } from "@/lib/onboarding/interview";
 
 export type ConversationKind = "research" | "gtm";
 
@@ -15,7 +15,6 @@ function laneFilter(workspaceId: string, kind?: ConversationKind) {
       and ${seoMessage.parts} @> ${JSON.stringify({ cards: [{ tool }] })}::jsonb
   )`;
   return and(
-    kind === "research" ? sql`${seoConversation.title} <> ${INTERVIEW_TITLE}` : undefined,
     not(hasCard(INTERVIEW_CARD_TOOL)),
     kind === "gtm" ? hasCard("gtm_journey") : not(hasCard("gtm_journey")),
   );
