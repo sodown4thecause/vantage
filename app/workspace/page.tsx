@@ -10,7 +10,7 @@ import { findResumableInterview } from "@/lib/onboarding/interview-store";
 import { getOpportunityDetail, listOpportunityQueue } from "@/lib/opportunities/run";
 import type { OpportunityDetailView } from "@/lib/opportunities/types";
 import { getLatestMonitoringProfile } from "@/lib/profile/repository";
-import { getConversation } from "@/lib/seo-agent/conversations";
+import { getConversation, listConversations } from "@/lib/seo-agent/conversations";
 import { seoModels } from "@/lib/seo-agent/model-config";
 import { parseBlocks } from "@/lib/workspace/blocks";
 import { listSavedArtifacts, type SavedArtifactView } from "@/lib/workspace/saved-artifacts";
@@ -38,12 +38,13 @@ export default async function WorkspacePage({ searchParams }: { searchParams: Pr
   if (!authorization.ok) return <Shell><p role="alert" className="text-stop">Unable to load this workspace.</p></Shell>;
 
   const requested = z.uuid().safeParse(params.c);
-  const [profile, queue, conversation, resumable, saved] = await Promise.all([
+  const [profile, queue, conversation, resumable, saved, conversations] = await Promise.all([
     getLatestMonitoringProfile(workspaceId),
     listOpportunityQueue({ workspaceId, limit: 5 }),
     requested.success ? getConversation(workspaceId, requested.data) : null,
     findResumableInterview(workspaceId),
     savedOrEmpty(workspaceId),
+    listConversations(workspaceId, 30, "gtm"),
   ]);
   const details = await Promise.all(queue.map((item) => getOpportunityDetail({ workspaceId, opportunityId: item.id })));
   const evidence = details.filter((item): item is OpportunityDetailView => item !== null);
@@ -65,5 +66,5 @@ export default async function WorkspacePage({ searchParams }: { searchParams: Pr
     try { productName = new URL(profile.productUrl).hostname.replace(/^www\./, ""); } catch { productName = "Your product"; }
   }
   return <WorkspaceClient key={gtmConversation?.id ?? "new"} workspaceId={workspaceId} productName={productName} hasProfile={Boolean(profile)} initialEvidence={evidence} initialTurns={turns} initialConversationId={gtmConversation?.id ?? null} configured={seoModels() !== null} scanControl={<ScanButton workspaceId={workspaceId} />}
-    interview={interview} interviewOpen={params.setup === "1" && !gtmConversation} savedArtifacts={saved} />;
+    interview={interview} interviewOpen={params.setup === "1" && !gtmConversation} savedArtifacts={saved} conversations={conversations} />;
 }

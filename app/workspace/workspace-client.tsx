@@ -19,6 +19,12 @@ export type Turn = { role: "user" | "assistant"; content: string; actions?: Next
 /** Interview state from the server: a fresh first question, or an unfinished interview to resume. */
 export type InterviewStart = { conversationId: string | null; prompt?: InterviewPrompt; turns: Turn[] };
 
+export class WorkspaceRequestError extends Error {}
+
+export function workspaceErrorCopy(error: unknown): string {
+  return error instanceof WorkspaceRequestError ? error.message : "That didn’t work. Try again.";
+}
+
 export function starterActions(hasProfile: boolean, hasLeads: boolean): NextAction[] {
   if (!hasProfile) return [
     { prompt: "Help me define who we should reach first", reason: "A clear customer profile makes every opportunity more relevant." },
@@ -104,7 +110,7 @@ function Saved({ workspaceId, items, onDelete }: { workspaceId: string; items: S
   </section>;
 }
 
-export function WorkspaceClient({ workspaceId, productName: initialProductName, hasProfile, initialEvidence, initialTurns = [], initialConversationId = null, configured, scanControl, interview, interviewOpen = false, savedArtifacts = [] }: {
+export function WorkspaceClient({ workspaceId, productName: initialProductName, hasProfile, initialEvidence, initialTurns = [], initialConversationId = null, configured, scanControl, interview, interviewOpen = false, savedArtifacts = [], conversations = [] }: {
   workspaceId: string;
   productName: string;
   hasProfile: boolean;
@@ -117,6 +123,7 @@ export function WorkspaceClient({ workspaceId, productName: initialProductName, 
   /** Open the interview on load (the "Set up your product" link from other workspace pages). */
   interviewOpen?: boolean;
   savedArtifacts?: SavedArtifactSummary[];
+  conversations?: { id: string; title: string }[];
 }) {
   const [turns, setTurns] = useState(initialTurns);
   const [draft, setDraft] = useState("");
@@ -174,9 +181,9 @@ export function WorkspaceClient({ workspaceId, productName: initialProductName, 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ workspaceId, conversationId: setupConversationId.current ?? undefined, answer: message, timeZone }),
       });
-      if (response.status === 403 || response.status === 401) throw new Error("Unable to access this workspace. Sign in again to continue.");
-      if (response.status === 409) throw new Error("This setup was already finished in another tab. Reload the page to see your saved profile.");
-      if (!response.ok) throw new Error("I couldn’t save that answer. It’s back in the composer so you can try again.");
+      if (response.status === 403 || response.status === 401) throw new WorkspaceRequestError("Unable to access this workspace. Sign in again to continue.");
+      if (response.status === 409) throw new WorkspaceRequestError("This setup was already finished in another tab. Reload the page to see your saved profile.");
+      if (!response.ok) throw new WorkspaceRequestError("I couldn’t save that answer. It’s back in the composer so you can try again.");
       const result = await response.json() as InterviewResponse;
       if (result.rejected) {
         setSetupTurns([...previous, { role: "user", content: shown }, { role: "assistant", content: result.message }]);
@@ -199,7 +206,7 @@ export function WorkspaceClient({ workspaceId, productName: initialProductName, 
     } catch (err) {
       setSetupTurns(previous);
       setDraft(message);
-      setError(err instanceof Error ? err.message : "That didn’t work. Try again.");
+      setError(workspaceErrorCopy(err));
     } finally {
       requestInFlight.current = false;
       setBusy(false);
@@ -230,12 +237,12 @@ export function WorkspaceClient({ workspaceId, productName: initialProductName, 
         body: JSON.stringify({ workspaceId, conversationId: conversationId.current ?? undefined, message }),
       });
       if (!response.ok) {
-        if (response.status === 429) throw new Error("The assistant allowance or provider budget is currently exhausted. Try again later or check your plan.");
-        if (response.status === 403 || response.status === 401) throw new Error("Unable to access this workspace. Sign in again to continue.");
-        throw new Error("The assistant couldn’t complete that request. Your question is back in the composer so you can retry.");
+        if (response.status === 429) throw new WorkspaceRequestError("The assistant allowance or provider budget is currently exhausted. Try again later or check your plan.");
+        if (response.status === 403 || response.status === 401) throw new WorkspaceRequestError("Unable to access this workspace. Sign in again to continue.");
+        throw new WorkspaceRequestError("The assistant couldn’t complete that request. Your question is back in the composer so you can retry.");
       }
       const parsed = gtmResponseSchema.safeParse(await response.json());
-      if (!parsed.success) throw new Error("The assistant returned an invalid response. Your question is back in the composer so you can retry.");
+      if (!parsed.success) throw new WorkspaceRequestError("The assistant returned an invalid response. Your question is back in the composer so you can retry.");
       const result = parsed.data;
       conversationId.current = result.conversationId;
       setTurns([...previous, { role: "user", content: message }, { role: "assistant", content: result.answer, actions: result.actions, evidence: result.evidence, blocks: parseBlocks(result.blocks) }]);
@@ -243,7 +250,7 @@ export function WorkspaceClient({ workspaceId, productName: initialProductName, 
     } catch (err) {
       setTurns(previous);
       setDraft(message);
-      setError(err instanceof Error ? err.message : "That didn’t work. Try again.");
+      setError(workspaceErrorCopy(err));
     } finally {
       requestInFlight.current = false;
       setBusy(false);
@@ -270,6 +277,10 @@ export function WorkspaceClient({ workspaceId, productName: initialProductName, 
           <Link href={`/settings/sources${q}`}>Sources</Link>
           <button type="button" disabled={busy} onClick={openSetup} aria-pressed={setupOpen}>{profileReady ? "Update product profile" : "Product profile"}</button>
           <Link href={`/settings/digest${q}`}>Daily digest</Link>
+          {conversations.map((conversation) => <Link key={conversation.id}
+            href={`/workspace${q}&c=${encodeURIComponent(conversation.id)}`}
+            aria-current={initialConversationId === conversation.id ? "page" : undefined}
+          >{conversation.title}</Link>)}
         </nav>}
     setup={showSetup ? <section className={s.setup} aria-label="Finish setting up">
         <div className="flex items-start justify-between gap-2"><h2>Finish setting up</h2><button type="button" aria-label="Dismiss setup checklist" onClick={() => setShowSetup(false)}>×</button></div>

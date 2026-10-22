@@ -8,6 +8,7 @@ import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
 import { dataForSeoConfig } from "@/lib/dataforseo/config";
 import { getLatestMonitoringProfile } from "@/lib/profile/repository";
 import { getConversation, listConversations } from "@/lib/seo-agent/conversations";
+import { isResearchConversation } from "@/lib/seo-agent/conversation-lane";
 import { seoModels } from "@/lib/seo-agent/models";
 import { profileContext, starterChips, withCacheLabels } from "@/lib/seo-agent/suggestions";
 import { ChatClient } from "./chat-client";
@@ -58,11 +59,12 @@ export default async function SeoPage({
   // A malformed or foreign id finds no conversation, so the page shows an empty chat rather than an error.
   const requested = params.c ? conversationIdSchema.safeParse(params.c.trim()) : null;
   const selectedId = requested?.success ? requested.data : null;
-  const [conversations, selected, profile] = await Promise.all([
-    listConversations(workspaceId),
+  const [conversations, candidate, profile] = await Promise.all([
+    listConversations(workspaceId, 30, "research"),
     selectedId ? getConversation(workspaceId, selectedId) : null,
     getLatestMonitoringProfile(workspaceId),
   ]);
+  const selected = candidate && isResearchConversation(candidate) ? candidate : null;
 
   const context = profileContext(profile);
   const starters = await withCacheLabels(starterChips(context), context);

@@ -24,6 +24,8 @@ const state = vi.hoisted(() => ({
   digestHours: [] as number[],
   indexed: [] as string[],
   saveError: null as Error | null,
+  failCompletion: false,
+  profiles: {} as Record<string, { id: string }>,
 }));
 
 vi.mock("@/lib/auth/workspace", () => ({ authorizeWorkspace: vi.fn(async () => state.auth) }));
@@ -31,10 +33,12 @@ vi.mock("@/lib/profile/index-profile", () => ({ indexSavedProfile: vi.fn(async (
 vi.mock("@/lib/digest/preferences", () => ({ setDigestHour: vi.fn(async (_ws: string, hour: number) => { state.digestHours.push(hour); }) }));
 vi.mock("@/lib/profile/repository", () => ({
   getLatestMonitoringProfile: vi.fn(async () => null),
-  saveMonitoringProfile: vi.fn(async (args: { workspaceId: string; input: unknown }) => {
+  saveMonitoringProfile: vi.fn(async (args: { workspaceId: string; input: unknown; profileId: string }) => {
+    const key = `${args.workspaceId}:${args.profileId}`;
+    if (state.profiles[key]) return state.profiles[key];
     if (state.saveError) throw state.saveError;
     state.saved.push(args);
-    return { id: "profile-1" };
+    return state.profiles[key] = { id: "profile-1" };
   }),
 }));
 vi.mock("@/lib/seo-agent/conversations", () => {
@@ -51,6 +55,7 @@ vi.mock("@/lib/seo-agent/conversations", () => {
     listConversations: async (workspaceId: string) => state.conversations.filter((c) => c.workspaceId === workspaceId).reverse()
       .map((c) => ({ id: c.id, title: c.title, updatedAt: "" })),
     appendMessage: async (workspaceId: string, id: string, msg: { role: "user" | "assistant"; content: string; parts?: Record<string, unknown> }) => {
+      if (state.failCompletion && msg.content.startsWith("You’re all set")) throw new Error("completion write failed");
       const conversation = find(workspaceId, id);
       if (!conversation) throw new ConversationNotFoundError();
       conversation.messages.push({ id: crypto.randomUUID(), status: "complete", creditsUsed: 0, createdAt: "", parts: {}, ...msg });
@@ -87,6 +92,8 @@ beforeEach(() => {
   state.digestHours = [];
   state.indexed = [];
   state.saveError = null;
+  state.failCompletion = false;
+  state.profiles = {};
   vi.mocked(saveMonitoringProfile).mockClear();
 });
 
@@ -179,6 +186,7 @@ describe("interview route", () => {
     }
     expect(state.saved).toEqual([{
       workspaceId: WS,
+      profileId: conversationId,
       input: {
         productUrl: "https://example.com/", docsUrls: [],
         productDescription: "Invoicing for tradies that chases late payments automatically.",
@@ -228,6 +236,38 @@ describe("interview route", () => {
     expect(last!.body.complete).toBe(true);
     expect((await turn("again", conversationId)).status).toBe(409);
     expect(state.saved).toHaveLength(1);
+    expect(state.digestHours).toHaveLength(1);
+  });
+
+  it("reports a failed digest write without claiming that the chosen time was saved", async () => {
+    const { setDigestHour } = await import("@/lib/digest/preferences");
+    vi.mocked(setDigestHour).mockRejectedValueOnce(new Error("db down"));
+    let conversationId: string | undefined;
+    let last: Awaited<ReturnType<typeof turn>> | undefined;
+    for (const answer of ANSWERS) { last = await turn(answer, conversationId); conversationId = last.body.conversationId; }
+    expect(last!.body.complete).toBe(true);
+    expect(last!.body.message).toContain("couldn’t save your chosen digest time");
+    expect(last!.body.message).not.toContain("Your daily digest is set for");
+    expect(last!.body.message).toContain("Please set it under Daily digest");
+    expect(state.saved).toHaveLength(1);
+  });
+
+  it("reuses the durable profile after a completion append failure and keeps the original final answer", async () => {
+    let conversationId: string | undefined;
+    for (const answer of ANSWERS.slice(0, -1)) conversationId = (await turn(answer, conversationId)).body.conversationId;
+    state.failCompletion = true;
+    expect((await turn("8am", conversationId)).status).toBe(500);
+    expect(state.saved).toHaveLength(1);
+    const resumed = await findResumableInterview(WS);
+    expect(nextStep(resumed!.state.answers)).toBeNull();
+    expect(resumed!.state.answers.digest).toMatchObject({ localHour: 8 });
+    state.failCompletion = false;
+    const retried = await turn("skip", conversationId);
+    expect(retried.body.complete).toBe(true);
+    expect(retried.body.message).toContain("8am Australia/Sydney");
+    expect(state.saved).toHaveLength(1);
+    expect(saveMonitoringProfile).toHaveBeenLastCalledWith(expect.objectContaining({ workspaceId: WS, profileId: conversationId }));
+    expect((await turn("again", conversationId)).status).toBe(409);
   });
 
   it("keeps every answer when the save fails, so the next message retries", async () => {

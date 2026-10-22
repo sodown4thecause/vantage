@@ -305,8 +305,10 @@ export function stepForFieldErrors(answers: InterviewAnswers, errors: FieldError
 }
 
 /** A plain summary of the saved setup for the closing message. */
-export function completionMessage(answers: InterviewAnswers): string {
-  const digest = answers.digest
+export function completionMessage(answers: InterviewAnswers, digestSaved = true): string {
+  const digest = answers.digest && !digestSaved
+    ? "Your product profile is saved, but I couldn’t save your chosen digest time. Please set it under Daily digest."
+    : answers.digest
     ? `Your daily digest is set for ${formatHour(answers.digest.localHour)} ${answers.digest.timeZone} (${String(answers.digest.hourUtc).padStart(2, "0")}:00 UTC). Digests are scheduled in UTC, so daylight saving can shift the local time by an hour. Turn on email delivery under Daily digest when you’re ready.`
     : "Your daily digest keeps its default time. You can change it under Daily digest.";
   return [

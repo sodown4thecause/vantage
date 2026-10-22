@@ -134,8 +134,10 @@ function SeoResult({ card, sandbox, workspaceId, lane }: { card: CardView; sandb
   const blocks = seoCardBlocks(card);
   if (!blocks.length) return <ResultCardView card={card} sandbox={sandbox} />;
   const isSandbox = card.sandbox ?? sandbox;
+  const cachedLabel = card.cached ? (card.fetchedAt ? `Cached ${card.fetchedAt.slice(0, 10)}` : "Cached") : null;
   return (
     <section className="space-y-3" data-tool={card.tool}>
+      {cachedLabel && <p className="text-xs text-ridge"><span className="rounded-full px-2.5 py-0.5 shadow-[inset_0_0_0_1px_var(--contour)]">{cachedLabel}</span></p>}
       {isSandbox && <p className="text-xs font-semibold text-ridge">Sandbox data: not real figures.</p>}
       <BlockList blocks={blocks} workspaceId={isSandbox ? undefined : workspaceId} lane={lane} />
     </section>
@@ -164,6 +166,8 @@ function AssistantAnswer({
   showCards: boolean;
 }) {
   const incomplete = view.status === "incomplete";
+  const hasSandboxCards = view.cards.some((card) => card.sandbox ?? sandbox);
+  const answerText = hasSandboxCards ? `Sandbox data: not real figures. This answer includes illustrative sandbox research.\n\n${view.text}` : view.text;
   const awaitingApproval = view.status === "needs_approval" && view.plan.length > 0 && Boolean(view.messageId) && approvalOpen;
   return (
     <div className="space-y-6">
@@ -187,9 +191,10 @@ function AssistantAnswer({
           ))}
         </ul>
       )}
-      {view.text && !incomplete && !sandbox && (
+      {hasSandboxCards && !sandbox && <p className="text-xs font-semibold text-ridge">This answer includes sandbox data: not real figures. Saved answers keep this warning and exclude sandbox visuals.</p>}
+      {view.text && view.status === "complete" && !busy && !sandbox && (
         <SaveButton workspaceId={workspaceId} lane={lane} label="Save answer" title={view.text.split(/\r?\n/)[0]!.slice(0, 120) || "Research answer"}
-          blocks={[{ type: "text" as const, text: view.text.slice(0, 12000) }, ...view.cards.flatMap((card) => seoCardBlocks(card))].slice(0, 12)} />
+          blocks={[{ type: "text" as const, text: answerText.slice(0, 12000) }, ...view.cards.filter((card) => !(card.sandbox ?? sandbox)).flatMap((card) => seoCardBlocks(card))].slice(0, 12)} />
       )}
       {awaitingApproval && view.messageId && (
         <ApprovalBox messageId={view.messageId} plan={view.plan} busy={busy} onRun={onRun} onCancel={onCancel} />
@@ -224,7 +229,7 @@ function AssistantTurn({
   return (
     <AssistantAnswer
       view={view}
-      busy={busy}
+      busy={busy || message.metadata?.status === undefined}
       sandbox={sandbox}
       approvalOpen={!closedPlans.has(view.messageId ?? "")}
       onRun={onRun}

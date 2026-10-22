@@ -49,7 +49,7 @@ export async function countSavedArtifacts(workspaceId: string): Promise<number> 
 }
 
 /** Newest first. */
-export async function listSavedArtifacts(workspaceId: string, limit = 50): Promise<SavedArtifactView[]> {
+export async function listSavedArtifacts(workspaceId: string, limit = MAX_SAVED_ARTIFACTS): Promise<SavedArtifactView[]> {
   const rows = await getDb()
     .select()
     .from(savedArtifact)

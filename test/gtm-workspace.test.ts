@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { interviewActions, starterActions, WorkspaceClient } from "@/app/workspace/workspace-client";
+import { interviewActions, starterActions, WorkspaceClient, WorkspaceRequestError, workspaceErrorCopy } from "@/app/workspace/workspace-client";
 import { promptFor } from "@/lib/onboarding/interview";
 import { PRIVATE_PATHS } from "@/lib/seo";
 
@@ -15,6 +15,23 @@ vi.mock("@/lib/workspace/saved-artifacts", () => ({ listSavedArtifacts: mocks.sa
 vi.mock("@/app/source-controls", () => ({ ScanButton: () => null }));
 
 describe("guided GTM workspace", () => {
+  it.each([new TypeError("Failed to fetch private browser details"), new SyntaxError("Unexpected token from upstream response"), new Error("Internal browser failure"), null])("hides unexpected network and JSON errors (%s)", (error) => {
+    expect(workspaceErrorCopy(error)).toBe("That didn’t work. Try again.");
+  });
+
+  it("preserves the deliberate workspace error copy", () => {
+    const copy = "Unable to access this workspace. Sign in again to continue.";
+    expect(workspaceErrorCopy(new WorkspaceRequestError(copy))).toBe(copy);
+  });
+  it("reopens saved GTM chats in the workspace rather than research", () => {
+    const html = renderToStaticMarkup(createElement(WorkspaceClient, {
+      workspaceId: "workspace-1", productName: "Example", hasProfile: true,
+      initialEvidence: [], configured: true, initialConversationId: "chat-1",
+      conversations: [{ id: "chat-1", title: "GTM next steps" }],
+    }));
+    expect(html).toContain('aria-current="page" href="/workspace?workspaceId=workspace-1&amp;c=chat-1"');
+    expect(html).toContain("GTM next steps");
+  });
   it.each([[false, false], [true, false], [true, true]])("always offers three contextual starting actions (%s, %s)", (profile, leads) => {
     const actions = starterActions(profile, leads);
     expect(actions).toHaveLength(3);
@@ -68,6 +85,7 @@ describe("guided GTM workspace", () => {
     expect(mocks.conversation).toHaveBeenCalledWith("owned-workspace", id);
     expect(mocks.detail).toHaveBeenCalledWith({ workspaceId: "owned-workspace", opportunityId: "lead-1" });
     expect(mocks.conversations).toHaveBeenCalledWith("owned-workspace", 30);
+    expect(mocks.conversations).toHaveBeenCalledWith("owned-workspace", 30, "gtm");
     expect(mocks.saved).toHaveBeenCalledWith("owned-workspace");
   });
 

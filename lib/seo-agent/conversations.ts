@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { seoConversation, seoMessage } from "@/lib/db/schema";
@@ -63,11 +63,21 @@ export async function createConversation(workspaceId: string, title: string): Pr
 export async function listConversations(
   workspaceId: string,
   limit = 30,
+  lane?: "gtm" | "research",
 ): Promise<{ id: string; title: string; updatedAt: string }[]> {
   const rows = await getDb()
     .select({ id: seoConversation.id, title: seoConversation.title, updatedAt: seoConversation.updatedAt })
     .from(seoConversation)
-    .where(eq(seoConversation.workspaceId, workspaceId))
+    .where(and(
+      eq(seoConversation.workspaceId, workspaceId),
+      lane === undefined ? undefined : sql`${lane === "gtm" ? sql`` : sql`not`} exists (
+        select 1 from ${seoMessage}
+        where ${seoMessage.conversationId} = ${seoConversation.id}
+          and ${seoMessage.workspaceId} = ${workspaceId}
+          and (${seoMessage.parts} @> ${JSON.stringify({ cards: [{ tool: "gtm_journey" }] })}::jsonb
+            ${lane === "research" ? sql`or ${seoMessage.parts} @> ${JSON.stringify({ cards: [{ tool: "onboarding_interview" }] })}::jsonb` : sql``})
+      )`,
+    ))
     .orderBy(desc(seoConversation.updatedAt))
     .limit(limit);
   return rows.map((row) => ({ id: row.id, title: row.title, updatedAt: row.updatedAt.toISOString() }));
@@ -123,6 +133,15 @@ export async function appendMessage(
     creditsUsed?: number;
   },
 ): Promise<{ id: string }> {
+  const [row] = await appendMessages(workspaceId, conversationId, [msg]);
+  return row!;
+}
+
+export async function appendMessages(
+  workspaceId: string,
+  conversationId: string,
+  messages: Parameters<typeof appendMessage>[2][],
+): Promise<{ id: string }[]> {
   const db = getDb();
   const [owned] = await db
     .select({ id: seoConversation.id })
@@ -131,26 +150,27 @@ export async function appendMessage(
     .limit(1);
   if (!owned) throw new ConversationNotFoundError();
 
+  const createdAt = Date.now();
+  const values = messages.map((msg, index) => ({
+    ...(msg.id ? { id: msg.id } : {}),
+    workspaceId,
+    conversationId,
+    role: msg.role,
+    content: msg.content,
+    parts: msg.parts ?? {},
+    status: msg.status ?? "complete",
+    creditsUsed: msg.creditsUsed ?? 0,
+    ...(messages.length > 1 ? { createdAt: new Date(createdAt + index) } : {}),
+  }));
+  const insert = db.insert(seoMessage);
   const [inserted] = await db.batch([
-    db
-      .insert(seoMessage)
-      .values({
-        ...(msg.id ? { id: msg.id } : {}),
-        workspaceId,
-        conversationId,
-        role: msg.role,
-        content: msg.content,
-        parts: msg.parts ?? {},
-        status: msg.status ?? "complete",
-        creditsUsed: msg.creditsUsed ?? 0,
-      })
-      .returning({ id: seoMessage.id }),
+    (values.length === 1 ? insert.values(values[0]!) : insert.values(values)).returning({ id: seoMessage.id }),
     db
       .update(seoConversation)
       .set({ updatedAt: new Date() })
       .where(and(eq(seoConversation.id, conversationId), eq(seoConversation.workspaceId, workspaceId))),
   ]);
-  return { id: inserted![0]!.id };
+  return inserted!;
 }
 
 /**

@@ -90,8 +90,11 @@ export async function POST(req: Request): Promise<Response> {
     }
 
     let profileId: string;
+    await appendMessage(workspaceId, id, {
+      role: "assistant", content: "Saving your product setup…", parts: { cards: [interviewCard({ answers, complete: false })] },
+    });
     try {
-      profileId = (await saveMonitoringProfile({ workspaceId, input: validated.value })).id;
+      profileId = (await saveMonitoringProfile({ workspaceId, input: validated.value, profileId: id })).id;
     } catch (error) {
       if (error instanceof PlanLimitError) {
         const rest = { ...answers };
@@ -102,14 +105,21 @@ export async function POST(req: Request): Promise<Response> {
       console.error("[interview route] profile save failed", { error: error instanceof Error ? error.name : "unknown" });
       return reply("I couldn’t save your profile just now. Send any message to try again.", { answers, complete: false });
     }
-    // The profile is saved: a failure after this point must not leave the interview open, or a retry saves it twice.
     try {
       await indexSavedProfile(workspaceId, profileId);
-      if (answers.digest) await setDigestHour(workspaceId, answers.digest.hourUtc);
     } catch (error) {
-      console.error("[interview route] post-save step failed", { error: error instanceof Error ? error.name : "unknown" });
+      console.error("[interview route] indexing failed", { error: error instanceof Error ? error.name : "unknown" });
     }
-    return reply(completionMessage(answers), { answers, complete: true });
+    let digestSaved = true;
+    if (answers.digest) {
+      try {
+        await setDigestHour(workspaceId, answers.digest.hourUtc);
+      } catch (error) {
+        digestSaved = false;
+        console.error("[interview route] digest save failed", { error: error instanceof Error ? error.name : "unknown" });
+      }
+    }
+    return await reply(completionMessage(answers, digestSaved), { answers, complete: true });
   } catch (error) {
     if (error instanceof ConversationNotFoundError) return Response.json({ error: "not_found" }, { status: 404 });
     console.error("[interview route] failed", { error: error instanceof Error ? error.name : "unknown" });

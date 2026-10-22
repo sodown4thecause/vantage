@@ -75,8 +75,15 @@ export async function saveMonitoringProfile(args: {
   workspaceId: string;
   input: MonitoringProfileInput;
   fetchImpl?: typeof fetch;
+  profileId?: string;
 }): Promise<MonitoringProfileView> {
   const db = getDb();
+  if (args.profileId) {
+    const [saved] = await db.select().from(monitoringProfile).where(and(
+      eq(monitoringProfile.workspaceId, args.workspaceId), eq(monitoringProfile.id, args.profileId),
+    )).limit(1);
+    if (saved) return toProfileView(saved);
+  }
   const latest = await getLatestMonitoringProfile(args.workspaceId);
   // Plan keyword cap. Profiles saved before plans existed are grandfathered: a save may keep
   // (but not grow) the keyword count the workspace already has. Throws PlanLimitError.
@@ -88,9 +95,10 @@ export async function saveMonitoringProfile(args: {
     args.fetchImpl ?? fetch,
   );
 
-  const inserted = await db
+  const insert = db
     .insert(monitoringProfile)
     .values({
+      ...(args.profileId ? { id: args.profileId } : {}),
       workspaceId: args.workspaceId,
       version: nextVersion,
       productUrl: args.input.productUrl,
@@ -102,10 +110,18 @@ export async function saveMonitoringProfile(args: {
       productMaterialStatus: material.status,
       productMaterialText: material.text,
       retrievalNotes: material.notes,
-    })
-    .returning();
+    });
+  const inserted = await (args.profileId
+    ? insert.onConflictDoNothing({ target: monitoringProfile.id })
+    : insert).returning();
 
-  const row = inserted[0];
+  let row = inserted[0];
+  if (!row && args.profileId) {
+    [row] = await db.select().from(monitoringProfile).where(and(
+      eq(monitoringProfile.workspaceId, args.workspaceId), eq(monitoringProfile.id, args.profileId),
+    )).limit(1);
+    if (row) return toProfileView(row);
+  }
   if (!row) {
     throw new Error("failed to persist monitoring profile");
   }

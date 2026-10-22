@@ -10,7 +10,7 @@ vi.mock("@/lib/plans/limits", () => ({ consume: mocks.consume, release: mocks.re
 vi.mock("@/lib/profile/repository", () => ({ getLatestMonitoringProfile: mocks.profile }));
 vi.mock("@/lib/opportunities/run", () => ({ listOpportunityQueue: mocks.queue, getOpportunityDetail: mocks.detail }));
 vi.mock("@/lib/seo-agent/conversations", () => ({
-  getConversation: mocks.get, createConversation: mocks.create, appendMessage: mocks.append,
+  getConversation: mocks.get, createConversation: mocks.create, appendMessages: mocks.append,
   ConversationNotFoundError: class extends Error {},
 }));
 vi.mock("@/lib/seo-agent/models", () => ({
@@ -58,6 +58,29 @@ beforeEach(() => {
 });
 
 describe("GTM chat boundary", () => {
+  it("refunds a failed atomic turn save without persisting separate messages", async () => {
+    mocks.append.mockRejectedValue(new Error("private database failure"));
+    expect((await POST(request())).status).toBe(500);
+    expect(mocks.append).toHaveBeenCalledOnce();
+    expect(mocks.append.mock.calls[0]![2]).toHaveLength(2);
+    expect(mocks.release).toHaveBeenCalledOnce();
+  });
+
+  it("logs only fixed failure categories and steps, including failed refunds", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      mocks.detail.mockRejectedValue(new Error("secret evidence"));
+      mocks.release.mockRejectedValue(new Error("secret refund"));
+      expect((await POST(request())).status).toBe(500);
+      expect(log.mock.calls).toEqual([
+        ["[gtm chat] failed", { step: "evidence_read", category: "request_failed" }],
+        ["[gtm chat] failed", { step: "quota_refund", category: "refund_failed" }],
+      ]);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it("authorizes before every query, quota mutation, and model call", async () => {
     mocks.authorize.mockResolvedValue({ ok: false });
     expect((await POST(request({ conversationId: CONV }))).status).toBe(403);
@@ -89,7 +112,9 @@ describe("GTM chat boundary", () => {
     expect(mocks.consume).toHaveBeenCalledWith(WS, "seo_questions_per_month", 1, expect.any(Date));
     expect(mocks.create).toHaveBeenCalledWith(WS, "Where should I focus?");
     expect(mocks.append.mock.calls.every(([workspaceId, id]) => workspaceId === WS && id === CONV)).toBe(true);
-    const stored = mocks.append.mock.calls[1]![2];
+    const stored = mocks.append.mock.calls[0]![2][1];
+    expect(mocks.append).toHaveBeenCalledOnce();
+    expect(mocks.append.mock.calls[0]![2][0]).toEqual({ role: "user", content: "Where should I focus?" });
     expect(stored.parts.cards[0]).toMatchObject({ tool: "gtm_journey", sandbox: false, data: { actions, evidence: [evidence] } });
     expect(stored.parts.followUps).toEqual({ seo: actions[0]!.prompt, geo: actions[1]!.prompt, content: actions[2]!.prompt });
     expect(mocks.paid).toHaveBeenCalledWith(expect.objectContaining({ context: { workspaceId: WS, sourceKey: "gtm" }, provider: "gateway", action: "gtm_chat" }), expect.any(Function));
@@ -103,7 +128,7 @@ describe("GTM chat boundary", () => {
     mocks.detail.mockResolvedValue(reddit);
     const body = await (await POST(request())).json() as { blocks: unknown[] };
     expect(body.blocks).toEqual([expect.objectContaining({ type: "reddit_thread", subreddit: "SaaS", score: 12, comments: [{ body: "Try a spreadsheet first", score: null }] })]);
-    expect(mocks.append.mock.calls[1]![2].parts.cards[0].data.blocks).toEqual(body.blocks);
+    expect(mocks.append.mock.calls[0]![2][1].parts.cards[0].data.blocks).toEqual(body.blocks);
   });
 
   it.each([0, 2, 4])("rejects %i follow-ups and releases the question", async (length) => {

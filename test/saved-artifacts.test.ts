@@ -82,6 +82,19 @@ beforeEach(() => {
 });
 
 describe("saved artifact repository", () => {
+  it("returns every allowed saved item, including items older than the first fifty", async () => {
+    for (let index = 1; index < 200; index++) {
+      await createSavedArtifact(WS_A, { lane: "gtm", title: `Saved ${index}`, blocks: [table], createdBy: "user-a" });
+    }
+    const response = await GET(new Request(`http://test/api/workspace/artifacts?workspaceId=${WS_A}`));
+    expect(response.status).toBe(200);
+    const body = await response.json() as { artifacts: { id: string }[] };
+    expect(body.artifacts).toHaveLength(200);
+    expect(body.artifacts.at(-1)?.id).toBe(ART_A);
+    expect(await listSavedArtifacts(WS_A)).toHaveLength(200);
+    expect((await listSavedArtifacts(WS_A)).at(-1)?.id).toBe(ART_A);
+  });
+
   it("lists only the workspace's artifacts, newest first", async () => {
     await createSavedArtifact(WS_A, { lane: "gtm", title: "Newer", blocks: [table], createdBy: "user-a" });
     const list = await listSavedArtifacts(WS_A);
