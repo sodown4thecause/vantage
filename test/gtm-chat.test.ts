@@ -82,7 +82,7 @@ describe("GTM chat boundary", () => {
   it("scopes every query, meters once, and stores the exact three prompts and real evidence", async () => {
     const response = await POST(request());
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ conversationId: CONV, answer: "Review the supplied conversation.", actions, evidence: [evidence] });
+    expect(await response.json()).toEqual({ conversationId: CONV, answer: "Review the supplied conversation.", actions, evidence: [evidence], blocks: [] });
     expect(mocks.profile).toHaveBeenCalledWith(WS);
     expect(mocks.queue).toHaveBeenCalledWith({ workspaceId: WS, limit: 5 });
     expect(mocks.detail).toHaveBeenCalledWith({ workspaceId: WS, opportunityId: "opportunity" });
@@ -96,6 +96,14 @@ describe("GTM chat boundary", () => {
     expect(mocks.generate).toHaveBeenCalledWith(expect.objectContaining({ maxRetries: 0 }));
     expect(mocks.cost).toHaveBeenCalledWith("test-model", expect.objectContaining({ inputTokens: 10, outputTokens: 20 }));
     expect(mocks.release).not.toHaveBeenCalled();
+  });
+
+  it("returns Reddit evidence as conversation cards built from stored documents", async () => {
+    const reddit = { ...evidence, evidence: [{ urlCanonical: "https://www.reddit.com/r/SaaS/comments/1/x/", platform: "reddit", contentMd: "Buyer question", title: "Thread", existingReplies: ["Try a spreadsheet first"], score: 12, subreddit: "SaaS" }] };
+    mocks.detail.mockResolvedValue(reddit);
+    const body = await (await POST(request())).json() as { blocks: unknown[] };
+    expect(body.blocks).toEqual([expect.objectContaining({ type: "reddit_thread", subreddit: "SaaS", score: 12, comments: [{ body: "Try a spreadsheet first", score: null }] })]);
+    expect(mocks.append.mock.calls[1]![2].parts.cards[0].data.blocks).toEqual(body.blocks);
   });
 
   it.each([0, 2, 4])("rejects %i follow-ups and releases the question", async (length) => {

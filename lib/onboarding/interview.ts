@@ -50,7 +50,7 @@ export type InterviewSuggestion =
   | { kind: "answer"; label: string; reason: string; value: string }
   | { kind: "ask"; label: string; reason: string; reply: string };
 
-export type InterviewPrompt = { step: InterviewStep; question: string; suggestions: InterviewSuggestion[] };
+export type InterviewPrompt = { step: InterviewStep; position: number; total: number; question: string; suggestions: InterviewSuggestion[] };
 
 /** What the interview route returns for each turn. */
 export type InterviewResponse = {
@@ -62,6 +62,8 @@ export type InterviewResponse = {
   prompt?: InterviewPrompt;
   /** True when the answer was not accepted and nothing was stored. */
   rejected?: boolean;
+  /** Once complete: the product's host name for the workspace header. */
+  productName?: string;
 };
 
 /** The first step without an answer, or null when every step is answered. Resuming starts here. */
@@ -73,7 +75,7 @@ export function stepNumber(step: InterviewStep): number {
   return INTERVIEW_STEPS.indexOf(step) + 1;
 }
 
-function hostOf(url: string | undefined): string {
+export function hostOf(url: string | undefined): string {
   if (!url) return "your product";
   try {
     return new URL(url).hostname.replace(/^www\./, "");
@@ -104,7 +106,11 @@ function keep(label: string, value: string): InterviewSuggestion {
 }
 
 /** The question for a step and its three suggested prompts. `current` offers "keep" answers when updating a profile. */
-export function promptFor(step: InterviewStep, answers: InterviewAnswers, current?: MonitoringProfileView | null, timeZone = "UTC"): InterviewPrompt {
+export function promptFor(step: InterviewStep, answers: InterviewAnswers, current?: MonitoringProfileView | null, timeZone?: string): InterviewPrompt {
+  return { ...promptBody(step, answers, current, timeZone), position: stepNumber(step), total: INTERVIEW_STEPS.length };
+}
+
+function promptBody(step: InterviewStep, answers: InterviewAnswers, current?: MonitoringProfileView | null, timeZone?: string): Omit<InterviewPrompt, "position" | "total"> {
   const host = hostOf(answers.productUrl);
   const existing = current ? splitCommunities(current.targetCustomer) : null;
   const withKeep = (keepAnswer: InterviewSuggestion | null, rest: InterviewSuggestion[]) =>
@@ -151,7 +157,7 @@ export function promptFor(step: InterviewStep, answers: InterviewAnswers, curren
       ]) };
     }
     case "digest":
-      return { step, question: `Last one: what time should your daily digest of new conversations arrive? I’ll use your time zone (${timeZone}).`, suggestions: [
+      return { step, question: `Last one: what time should your daily digest of new conversations arrive? ${timeZone ? `I’ll use your time zone (${timeZone}).` : "I’ll use this device’s time zone."}`, suggestions: [
         { kind: "answer", label: "8am", reason: "Start the day with fresh conversations.", value: "8am" },
         { kind: "answer", label: "12pm", reason: "A lunchtime check-in.", value: "12pm" },
         { kind: "answer", label: "Skip, I’ll set this later", reason: "Keep the default time.", value: "skip" },

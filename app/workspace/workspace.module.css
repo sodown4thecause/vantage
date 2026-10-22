@@ -56,6 +56,25 @@
 .notice { font-size: 12px; color: var(--ridge); padding: 12px 0; }
 .error { font-size: 12px; color: var(--stop); margin-bottom: 10px; }
 .mobileEvidence { display: none; }
+.setupItem { display: block; width: 100%; padding: 7px 0; text-align: left; color: var(--ridge); }
+.setupItem:hover { color: var(--ink); }
+.setupIntro { max-width: 650px; margin-bottom: 28px; }
+.setupIntro p { color: var(--ridge); font-size: 14px; line-height: 1.7; max-width: 56ch; }
+.exitSetup { margin-top: 12px; font-size: 12px; color: var(--signal); }
+.answerTools { display: flex; gap: 10px; margin-top: 12px; }
+.saved { margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--contour); }
+.savedHead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 13px; }
+.savedHead h2 { font-size: 15px; font-weight: 600; }
+.savedList { display: grid; gap: 10px; }
+.savedItem { border: 1px solid var(--contour); border-radius: 12px; padding: 12px 14px; }
+.savedRow { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.savedMeta { display: grid; gap: 4px; min-width: 0; }
+.savedMeta strong { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.savedMeta > span { font-size: 11px; color: var(--ridge); }
+.lane { display: inline-block; padding: 1px 6px; border: 1px solid var(--contour-strong); border-radius: 4px; color: var(--ink); margin-right: 6px; }
+.savedButtons { display: flex; gap: 6px; flex-shrink: 0; }
+.savedButtons button { padding: 4px 10px; border: 1px solid var(--contour); border-radius: 6px; font-size: 11px; color: var(--ridge); }
+.savedButtons button:hover:not(:disabled) { color: var(--ink); border-color: var(--contour-strong); }
 @keyframes arrive { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 @media (min-width: 1600px) { .body { grid-template-columns: minmax(0, 1fr) 380px; } .evidence { padding: 28px; } }
 @media (max-width: 1150px) { .body { grid-template-columns: minmax(0, 1fr); } .evidence { display: none; } .mobileEvidence { display: block; margin-top: 24px; } }

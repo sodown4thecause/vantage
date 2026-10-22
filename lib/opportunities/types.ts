@@ -27,6 +27,9 @@ export type OpportunityEvidenceView = {
   contentMd: string;
   postedAt: string | null;
   provider: string | null;
+  /** Reddit only: the post's score and subreddit when the collector supplied them. */
+  score?: number | null;
+  subreddit?: string | null;
 };
 
 export type OpportunityCardView = {

@@ -471,6 +471,8 @@ export async function getOpportunityDetail(opts: {
       typeof e.doc.metadata?.provider === "string"
         ? e.doc.metadata.provider
         : null,
+    score: typeof e.doc.metadata?.score === "number" && Number.isFinite(e.doc.metadata.score) ? e.doc.metadata.score : null,
+    subreddit: typeof e.doc.metadata?.subreddit === "string" ? e.doc.metadata.subreddit.slice(0, 100) : null,
   }));
 
   return {

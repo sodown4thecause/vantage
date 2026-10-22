@@ -5,6 +5,7 @@ import { setDigestHour } from "@/lib/digest/preferences";
 import {
   applyAnswer,
   completionMessage,
+  hostOf,
   INTERVIEW_TITLE,
   nextStep,
   normaliseTimeZone,
@@ -67,7 +68,10 @@ export async function POST(req: Request): Promise<Response> {
     await appendMessage(workspaceId, id, { role: "user", content: answer });
     const reply = async (message: string, state: InterviewState, prompt?: InterviewPrompt) => {
       await appendMessage(workspaceId, id, { role: "assistant", content: message, parts: { cards: [interviewCard(state)] } });
-      return Response.json({ conversationId: id, complete: state.complete, message, prompt } satisfies InterviewResponse);
+      return Response.json({
+        conversationId: id, complete: state.complete, message, prompt,
+        ...(state.complete ? { productName: hostOf(state.answers.productUrl) } : {}),
+      } satisfies InterviewResponse);
     };
 
     const following = nextStep(answers);

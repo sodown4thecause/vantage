@@ -11,7 +11,10 @@ describe("shared workspace design", () => {
     expect(html).toContain('id="main"');
     expect(html).toContain('href="#main"');
     expect(html).toContain("Page content");
-    for (const path of ["/workspace", "/seo", "/content", "/queue", "/settings/sources", "/onboarding", "/settings/digest"]) expect(html).toContain(`${path}?workspaceId=owned-workspace`);
+    for (const path of ["/workspace", "/seo", "/content", "/queue", "/settings/sources", "/settings/digest"]) expect(html).toContain(`${path}?workspaceId=owned-workspace`);
+    // Product setup runs as the interview inside /workspace; the sidebar no longer links to /onboarding.
+    expect(html).toContain("/workspace?workspaceId=owned-workspace&amp;setup=1");
+    expect(html).not.toContain("/onboarding");
     expect(html).not.toContain('aria-label="Site"');
   });
 

@@ -43,10 +43,14 @@ const evidenceSchema: z.ZodType<OpportunityDetailView> = z.object({
     contentMd: z.string(),
     postedAt: z.string().nullable(),
     provider: z.string().nullable(),
+    score: z.number().nullable().optional(),
+    subreddit: z.string().nullable().optional(),
   })),
 });
 
 export const gtmResponseSchema = gtmAnswerSchema.extend({
   conversationId: z.uuid(),
   evidence: z.array(evidenceSchema),
+  /** Visual blocks; validated one by one with parseBlocks on the client. */
+  blocks: z.array(z.unknown()).max(12).optional(),
 });

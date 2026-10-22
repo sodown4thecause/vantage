@@ -8,6 +8,7 @@ import { getLatestMonitoringProfile } from "@/lib/profile/repository";
 import { PaidCallDeniedError } from "@/lib/providers/paid-call";
 import { appendMessage, ConversationNotFoundError, createConversation, getConversation } from "@/lib/seo-agent/conversations";
 import { seoModels } from "@/lib/seo-agent/models";
+import { redditThreadBlocks } from "@/lib/workspace/blocks";
 
 const bodySchema = z.object({
   workspaceId: z.uuid(),
@@ -47,6 +48,8 @@ export async function POST(req: Request): Promise<Response> {
     const result = await answerGtmQuestion({
       workspaceId, message, profile, evidence, history: existing?.messages ?? [], signal: req.signal,
     });
+    // Evidence cards come from stored documents, never from model output.
+    const blocks = redditThreadBlocks(evidence);
     const id = existing?.id ?? (await createConversation(workspaceId, message.slice(0, 80))).id;
     await appendMessage(workspaceId, id, { role: "user", content: message });
     await appendMessage(workspaceId, id, {
@@ -55,13 +58,13 @@ export async function POST(req: Request): Promise<Response> {
       parts: {
         cards: [{
           tool: "gtm_journey", title: "GTM next moves", fetchedAt: new Date().toISOString(),
-          cached: false, sandbox: false, data: { actions: result.actions, evidence },
+          cached: false, sandbox: false, data: { actions: result.actions, evidence, blocks },
         }],
         followUps: { seo: result.actions[0]!.prompt, geo: result.actions[1]!.prompt, content: result.actions[2]!.prompt },
         notices: ["GTM and SEO share the monthly question allowance."],
       },
     });
-    return Response.json({ conversationId: id, answer: result.answer, actions: result.actions, evidence });
+    return Response.json({ conversationId: id, answer: result.answer, actions: result.actions, evidence, blocks });
   } catch (error) {
     if (reserved) {
       try {

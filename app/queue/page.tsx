@@ -47,7 +47,7 @@ export default async function OpportunityQueuePage({
           <p className="text-xl font-semibold tracking-tight">Nothing strong right now.</p>
           <p className="text-ridge">
             Scan your sources again, or{" "}
-            <Link href={`/onboarding?workspaceId=${encodeURIComponent(workspaceId)}`} className="link">
+            <Link href={`/workspace?workspaceId=${encodeURIComponent(workspaceId)}&setup=1`} className="link">
               refine your monitoring profile
             </Link>{" "}
             so contextfor.dev knows what to look for.
