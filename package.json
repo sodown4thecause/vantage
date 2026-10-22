@@ -23,7 +23,8 @@
     "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "cf:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
-    "test:e2e": "e2e run"
+    "test:e2e": "e2e run --exclude-tag bugbash",
+    "test:e2e:bugbash": "e2e run --tag bugbash"
   },
   "dependencies": {
     "@ai-sdk/react": "4.0.147",

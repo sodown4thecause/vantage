@@ -11,7 +11,7 @@ describe('public content', { tags: ['public-content'] }, () => {
     await expect(screen.getByRole('heading', { level: 1 })).toBeVisible();
   });
 
-  test('blog index lists a post and a tag page is reachable from it', async ({ app, screen }) => {
+  test('blog index lists a post', async ({ app, screen }) => {
     await app.open('/blog');
     await expect(screen.getByRole('heading', { level: 1 })).toBeVisible();
     await expect(screen.getByRole('link', 'What is buying intent, and how do you spot it in public conversations?', { exact: false })).toBeVisible();
@@ -22,9 +22,8 @@ describe('public content', { tags: ['public-content'] }, () => {
     await expect(screen.getByRole('heading', { level: 1 })).toBeVisible();
   });
 
-  test('blog rss feed is XML with items', async () => {
-    const base = 'https://vantage-staging.liam-wilson1990.workers.dev';
-    const r = await fetch(new URL('/blog/rss.xml', base));
+  test('blog rss feed is XML with items', async ({ app }) => {
+    const r = await fetch(new URL('/blog/rss.xml', app.baseUrl));
     expect(r.status).toBe(200);
     expect(r.headers.get('content-type') ?? '').toMatch(/xml/);
     const body = await r.text();
@@ -32,9 +31,8 @@ describe('public content', { tags: ['public-content'] }, () => {
     expect(body).toContain('<item>');
   });
 
-  test('llms.txt is served as text with links', async () => {
-    const base = 'https://vantage-staging.liam-wilson1990.workers.dev';
-    const r = await fetch(new URL('/llms.txt', base));
+  test('llms.txt is served as text with links', async ({ app }) => {
+    const r = await fetch(new URL('/llms.txt', app.baseUrl));
     expect(r.status).toBe(200);
     expect(r.headers.get('content-type') ?? '').toMatch(/text\/plain/);
     const body = await r.text();

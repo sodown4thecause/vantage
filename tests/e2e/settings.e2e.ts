@@ -71,7 +71,7 @@ describe('settings: sources, digest and plan', { tags: ['settings'] }, () => {
 
   test('plan page shows Free plan usage matching the limits', { session: 'settings' }, async ({ app, screen }) => {
     await app.open(`/settings/plan?workspaceId=${WS}`);
-    await expect(screen.getByTestId('plan-name')).toHaveText(/free/i);
+    await expect(screen.getByText('free', { exact: true })).toBeVisible();
     const rows = screen.getByTestId('plan-usage-row');
     await expect(rows.getByText('8 of 8')).toBeVisible();
     await expect(rows.getByText('3 of 5')).toBeVisible();
