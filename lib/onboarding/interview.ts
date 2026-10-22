@@ -175,6 +175,8 @@ export function parseList(raw: string): string[] {
 }
 
 const SKIP = /^(skip|no|none|not sure|later|not now|n\/a)\b/i;
+// For lists the first item must be only a skip phrase, so "No Code Founders, r/nocode" is a list, not a skip.
+const SKIP_ITEM = /^(skip( for now)?|no|none|not sure( yet)?|later|not now|n\/a)[.!]?$/i;
 
 /** Parses "8am", "8:30 pm", "17", "17:00", "noon" or "midnight" into an hour from 0 to 23. */
 export function parseHour(raw: string): number | null {
@@ -232,7 +234,7 @@ export function applyAnswer(answers: InterviewAnswers, step: InterviewStep, raw:
       return { ok: true, answers: { ...answers, productDescription: text } };
     case "targetCustomer":
       if (text.length < 3) return { ok: false, error: "Could you describe your ideal customer in a few words?" };
-      if (text.length > 6_500) return { ok: false, error: "Please keep this a bit shorter." };
+      if (text.length > MAX_TEXT) return { ok: false, error: `Please keep this under ${MAX_TEXT.toLocaleString("en-AU")} characters.` };
       return { ok: true, answers: { ...answers, targetCustomer: splitCommunities(text).customer } };
     case "competitors": {
       const list = parseList(text);
@@ -242,8 +244,8 @@ export function applyAnswer(answers: InterviewAnswers, step: InterviewStep, raw:
       return { ok: true, answers: { ...answers, competitors: list } };
     }
     case "communities": {
-      if (SKIP.test(text)) return { ok: true, answers: { ...answers, communities: [] } };
       const list = parseList(text);
+      if (!list.length || SKIP_ITEM.test(list[0]!)) return { ok: true, answers: { ...answers, communities: [] } };
       if (list.length > MAX_COMMUNITIES) return { ok: false, error: `Please pick up to ${MAX_COMMUNITIES} communities.` };
       if (list.some((item) => item.length > 100)) return { ok: false, error: "Each community should be a short name, such as r/SaaS." };
       return { ok: true, answers: { ...answers, communities: list } };
@@ -270,7 +272,8 @@ export function applyAnswer(answers: InterviewAnswers, step: InterviewStep, raw:
  * profile carry over, because the interview does not ask for them.
  */
 export function toProfileInput(answers: InterviewAnswers, current?: MonitoringProfileView | null): MonitoringProfileInput {
-  const manual = current?.productMaterialStatus === "manual";
+  // Manual material carries over only for the same site; a new website address is read afresh.
+  const manual = current?.productMaterialStatus === "manual" && current.productUrl === answers.productUrl;
   return {
     productUrl: answers.productUrl ?? "",
     docsUrls: current?.docsUrls ?? [],
@@ -278,7 +281,7 @@ export function toProfileInput(answers: InterviewAnswers, current?: MonitoringPr
     targetCustomer: withCommunities(answers.targetCustomer ?? "", answers.communities ?? []),
     competitors: answers.competitors ?? [],
     topics: answers.keywords ?? [],
-    productMaterialManual: manual ? current.productMaterialText : undefined,
+    productMaterialManual: manual ? current!.productMaterialText : undefined,
     forceManualMaterial: manual,
   };
 }
@@ -304,7 +307,7 @@ export function stepForFieldErrors(answers: InterviewAnswers, errors: FieldError
 /** A plain summary of the saved setup for the closing message. */
 export function completionMessage(answers: InterviewAnswers): string {
   const digest = answers.digest
-    ? `Your daily digest is set for ${formatHour(answers.digest.localHour)} ${answers.digest.timeZone}. Turn on email delivery under Daily digest when you’re ready.`
+    ? `Your daily digest is set for ${formatHour(answers.digest.localHour)} ${answers.digest.timeZone} (${String(answers.digest.hourUtc).padStart(2, "0")}:00 UTC). Digests are scheduled in UTC, so daylight saving can shift the local time by an hour. Turn on email delivery under Daily digest when you’re ready.`
     : "Your daily digest keeps its default time. You can change it under Daily digest.";
   return [
     `You’re all set. I’ve saved the product profile for ${hostOf(answers.productUrl)}.`,

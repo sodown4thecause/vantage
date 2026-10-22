@@ -117,6 +117,15 @@ describe("interview step logic", () => {
     expect(applyAnswer({}, "communities", "skip")).toEqual({ ok: true, answers: { communities: [] } });
     expect(applyAnswer({}, "digest", "Skip, I'll set this later")).toEqual({ ok: true, answers: { digest: null } });
     expect(applyAnswer({}, "digest", "whenever")).toMatchObject({ ok: false });
+    expect(applyAnswer({}, "communities", "No Code Founders, r/nocode")).toEqual({ ok: true, answers: { communities: ["No Code Founders", "r/nocode"] } });
+    expect(applyAnswer({}, "communities", "Not sure yet")).toEqual({ ok: true, answers: { communities: [] } });
+    expect(applyAnswer({}, "productDescription", "x".repeat(7_000))).toMatchObject({ ok: true });
+  });
+
+  it("re-reads a new website instead of keeping the old site's manual material", () => {
+    const current = { productUrl: "https://old.example/", docsUrls: [], productMaterialStatus: "manual", productMaterialText: "Old README" } as unknown as MonitoringProfileView;
+    expect(toProfileInput({ productUrl: "https://old.example/" }, current)).toMatchObject({ forceManualMaterial: true, productMaterialManual: "Old README" });
+    expect(toProfileInput({ productUrl: "https://new.example/" }, current)).toMatchObject({ forceManualMaterial: false, productMaterialManual: undefined });
   });
 
   it("parses lists and hours", () => {
@@ -208,6 +217,17 @@ describe("interview route", () => {
   it("will not continue a conversation from another workspace", async () => {
     state.conversations.push({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", workspaceId: "22222222-2222-4222-8222-222222222222", title: "Product setup interview", messages: [] });
     expect((await turn(ANSWERS[0]!, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")).status).toBe(404);
+  });
+
+  it("finishes once the profile is saved even if indexing fails, so a retry cannot save twice", async () => {
+    const { indexSavedProfile } = await import("@/lib/profile/index-profile");
+    vi.mocked(indexSavedProfile).mockRejectedValueOnce(new Error("queue down"));
+    let conversationId: string | undefined;
+    let last: Awaited<ReturnType<typeof turn>> | undefined;
+    for (const answer of ANSWERS) { last = await turn(answer, conversationId); conversationId = last.body.conversationId; }
+    expect(last!.body.complete).toBe(true);
+    expect((await turn("again", conversationId)).status).toBe(409);
+    expect(state.saved).toHaveLength(1);
   });
 
   it("keeps every answer when the save fails, so the next message retries", async () => {

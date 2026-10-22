@@ -175,6 +175,7 @@ export function WorkspaceClient({ workspaceId, productName: initialProductName, 
         body: JSON.stringify({ workspaceId, conversationId: setupConversationId.current ?? undefined, answer: message, timeZone }),
       });
       if (response.status === 403 || response.status === 401) throw new Error("Unable to access this workspace. Sign in again to continue.");
+      if (response.status === 409) throw new Error("This setup was already finished in another tab. Reload the page to see your saved profile.");
       if (!response.ok) throw new Error("I couldn’t save that answer. It’s back in the composer so you can try again.");
       const result = await response.json() as InterviewResponse;
       if (result.rejected) {
@@ -322,7 +323,7 @@ export function WorkspaceClient({ workspaceId, productName: initialProductName, 
             {!configured && !setupOpen && <p role="status" className={s.notice}>The assistant needs an AI Gateway connection. Your sources and opportunity queue are still available.</p>}
             <form onSubmit={onSubmit} className={s.composer} aria-label={setupOpen ? "Answer the setup question" : "Ask your GTM assistant"}>
               <label htmlFor="gtm-message" className="sr-only">{setupOpen ? "Your answer" : "Your message"}</label>
-              <textarea id="gtm-message" placeholder={setupOpen ? "Type your answer…" : "What do you want to grow today?"} maxLength={2000} rows={2} value={draft}
+              <textarea id="gtm-message" placeholder={setupOpen ? "Type your answer…" : "What do you want to grow today?"} maxLength={setupOpen ? 8000 : 2000} rows={2} value={draft}
                 onChange={(event) => setDraft(event.target.value)} disabled={busy || !composerEnabled}
                 onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && setupOpen) { event.preventDefault(); void answerSetup(draft); } }} />
               <div className={s.composerFooter}><span>{setupOpen ? "Product setup · Saved as you go" : "GTM assistant · Grounded in your workspace"}</span><button type="submit" aria-label={setupOpen ? "Send answer" : "Send message"} className={s.send} disabled={busy || !composerEnabled || !draft.trim()}>↑</button></div>

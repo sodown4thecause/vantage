@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { savedArtifact } from "@/lib/db/schema";
@@ -39,6 +39,13 @@ export async function createSavedArtifact(workspaceId: string, input: {
     .values({ workspaceId, lane: input.lane, title: input.title, blocks: input.blocks, createdBy: input.createdBy })
     .returning();
   return toView(row!);
+}
+
+export const MAX_SAVED_ARTIFACTS = 200;
+
+export async function countSavedArtifacts(workspaceId: string): Promise<number> {
+  const [row] = await getDb().select({ total: count() }).from(savedArtifact).where(eq(savedArtifact.workspaceId, workspaceId));
+  return Number(row?.total ?? 0);
 }
 
 /** Newest first. */

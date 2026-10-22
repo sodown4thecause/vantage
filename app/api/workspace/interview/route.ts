@@ -32,7 +32,8 @@ import { appendMessage, ConversationNotFoundError, createConversation } from "@/
 const bodySchema = z.object({
   workspaceId: z.uuid(),
   conversationId: z.uuid().optional(),
-  answer: z.string().trim().min(1).max(2000),
+  // Matches the onboarding form's longest field, so "Keep" works for a long existing description.
+  answer: z.string().trim().min(1).max(8000),
   timeZone: z.string().max(64).optional(),
 });
 
@@ -101,8 +102,13 @@ export async function POST(req: Request): Promise<Response> {
       console.error("[interview route] profile save failed", { error: error instanceof Error ? error.name : "unknown" });
       return reply("I couldn’t save your profile just now. Send any message to try again.", { answers, complete: false });
     }
-    await indexSavedProfile(workspaceId, profileId);
-    if (answers.digest) await setDigestHour(workspaceId, answers.digest.hourUtc);
+    // The profile is saved: a failure after this point must not leave the interview open, or a retry saves it twice.
+    try {
+      await indexSavedProfile(workspaceId, profileId);
+      if (answers.digest) await setDigestHour(workspaceId, answers.digest.hourUtc);
+    } catch (error) {
+      console.error("[interview route] post-save step failed", { error: error instanceof Error ? error.name : "unknown" });
+    }
     return reply(completionMessage(answers), { answers, complete: true });
   } catch (error) {
     if (error instanceof ConversationNotFoundError) return Response.json({ error: "not_found" }, { status: 404 });

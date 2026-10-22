@@ -3,7 +3,7 @@ import { z } from "zod";
 import { authorizeWorkspace } from "@/lib/auth/workspace";
 import { blockListSchema } from "@/lib/workspace/blocks";
 import { SAVED_ARTIFACT_LANES } from "@/lib/workspace/saved-artifact-types";
-import { createSavedArtifact, listSavedArtifacts } from "@/lib/workspace/saved-artifacts";
+import { countSavedArtifacts, createSavedArtifact, listSavedArtifacts, MAX_SAVED_ARTIFACTS } from "@/lib/workspace/saved-artifacts";
 
 const bodySchema = z.object({
   workspaceId: z.uuid(),
@@ -31,6 +31,9 @@ export async function POST(req: Request): Promise<Response> {
   try {
     const authorization = await authorizeWorkspace(workspaceId);
     if (!authorization.ok) return Response.json({ error: "forbidden" }, { status: authorization.status });
+    if (await countSavedArtifacts(workspaceId) >= MAX_SAVED_ARTIFACTS) {
+      return Response.json({ error: "limit_reached", message: `You can keep up to ${MAX_SAVED_ARTIFACTS} saved items. Delete some to save more.` }, { status: 409 });
+    }
     const artifact = await createSavedArtifact(workspaceId, { lane, title, blocks, createdBy: authorization.userId });
     return Response.json({ artifact }, { status: 201 });
   } catch {
