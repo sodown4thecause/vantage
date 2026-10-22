@@ -1,3 +1,5 @@
+import { and, count, eq, gte } from "drizzle-orm";
+
 import { getDb } from "@/lib/db/client";
 import { costEvent, type CostBillable } from "@/lib/db/schema";
 
@@ -81,4 +83,23 @@ export async function recordCost(input: CostInput): Promise<boolean> {
     });
     return false;
   }
+}
+
+/** Cost rows recorded so far today (UTC) for one workspace, provider and action. Failed attempts count too. */
+export async function countCostEventsToday(input: {
+  workspaceId: string;
+  provider: string;
+  action: string;
+}): Promise<number> {
+  const startOfDay = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
+  const [row] = await getDb()
+    .select({ total: count() })
+    .from(costEvent)
+    .where(and(
+      eq(costEvent.workspaceId, input.workspaceId),
+      eq(costEvent.provider, input.provider),
+      eq(costEvent.action, input.action),
+      gte(costEvent.ts, startOfDay),
+    ));
+  return Number(row?.total ?? 0);
 }

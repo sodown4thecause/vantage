@@ -29,6 +29,7 @@ export const redditCollector: Collector = {
         query,
         subreddit,
         limit: perQuery,
+        lookbackHours: Number(ctx.config.lookbackHours) || undefined,
         cursor: ctx.cursor ?? undefined,
         signal: ctx.signal,
       });
@@ -44,6 +45,8 @@ export const redditCollector: Collector = {
     const documents: NewDocument[] = posts.map((p) => {
       const postedAt = parseValidDate(p.createdAt);
       const publicationDateMissing = postedAt === null;
+      // A search preview carries no votes or comment count: unknown, not zero.
+      const engagementKnown = p.contentKind !== "preview";
       const body = [
         p.subreddit ? `r/${p.subreddit}` : null,
         p.author ? `u/${p.author}` : null,
@@ -67,8 +70,9 @@ export const redditCollector: Collector = {
         rawSnapshotRef: `reddit:${p.id}`,
         metadata: {
           subreddit: p.subreddit,
-          score: p.score,
-          numComments: p.numComments,
+          score: engagementKnown ? p.score : null,
+          numComments: engagementKnown ? p.numComments : null,
+          engagementKnown,
           provider: meta.provider,
           mocked: meta.provider === "fixture",
           contentKind: p.contentKind,
