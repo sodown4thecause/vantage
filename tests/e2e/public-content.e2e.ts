@@ -53,11 +53,13 @@ describe('public content', { tags: ['public-content'] }, () => {
     await browser.evaluate(() => {
       (window as unknown as { __errs: string[] }).__errs = [];
       window.addEventListener('error', (e) => (window as unknown as { __errs: string[] }).__errs.push(String(e.message)));
+      window.addEventListener('unhandledrejection', (e) => (window as unknown as { __errs: string[] }).__errs.push(String(e.reason)));
       return null;
     });
     await screen.getByRole('link', 'DevHunt').tap();
     await expect(browser).toHaveURL('/launch/devhunt');
-    const errs = await browser.evaluate(() => (window as unknown as { __errs?: string[] }).__errs ?? []);
+    const errs = await browser.evaluate(() => (window as unknown as { __errs?: string[] }).__errs ?? null);
+    expect(errs).not.toBeNull();
     expect(errs).toEqual([]);
   });
 });
