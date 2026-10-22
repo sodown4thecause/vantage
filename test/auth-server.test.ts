@@ -15,6 +15,7 @@ describe("server auth session lookup", () => {
     vi.stubEnv("NEON_AUTH_COOKIE_SECRET", "test-only-cookie-secret-at-least-32-characters");
     createNeonAuth.mockReturnValue({ getSession });
     vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -60,7 +61,8 @@ describe("server auth session lookup", () => {
     const { auth } = await import("@/lib/auth/server");
 
     await expect(auth.getSession()).resolves.toBe(result);
-    expect(console.warn).toHaveBeenCalledExactlyOnceWith("auth.getSession returned an error");
+    expect(console.error).toHaveBeenCalledExactlyOnceWith("auth.getSession returned an error");
+    expect(console.warn).not.toHaveBeenCalled();
   });
 
   it("preserves successful session results", async () => {

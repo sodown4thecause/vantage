@@ -50,12 +50,12 @@ export async function safeGetSession(
   let result: GetSessionResult;
   try {
     result = await client.getSession(...args);
-  } catch (error) {
-    console.warn("auth.getSession threw; treating request as signed out", error);
-    return { data: null, error: null } as GetSessionResult;
+  } catch {
+    console.warn("auth.getSession failed; treating request as signed out");
+    return { data: null, error: null };
   }
   if (result && "error" in result && result.error) {
-    console.error("auth.getSession returned an error", result.error);
+    console.error("auth.getSession returned an error");
   }
   return result;
 }
