@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { blockListSchema, blockSchema, parseBlocks, redditThreadBlocks, subredditFromUrl } from "@/lib/workspace/blocks";
-import { rankingDistribution, referringDomainsOverTime, seoCardBlocks } from "@/lib/workspace/seo-blocks";
+import { rankingDistribution, referringDomainsOverTime, seoCardBlocks } from "@/app/seo/seo-blocks";
 
 const thread = {
   type: "reddit_thread", subreddit: "SaaS", title: "How do you find your first customers?",

@@ -5,7 +5,10 @@ import { DefaultChatTransport } from "ai";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
-import { ResultCardView } from "./cards";
+import { BlockList, SaveButton } from "@/components/workspace-blocks";
+
+import { ResultCardView, type CardView } from "./cards";
+import { seoCardBlocks } from "./seo-blocks";
 import s from "@/app/workspace/workspace.module.css";
 import {
   buildRequestBody,
@@ -126,6 +129,19 @@ function ApprovalBox({
   );
 }
 
+/** Backlink and ranking cards render as a table plus a chart, each with Save; other cards keep their own view. */
+function SeoResult({ card, sandbox, workspaceId, lane }: { card: CardView; sandbox: boolean; workspaceId: string; lane: "seo" | "geo" }) {
+  const blocks = seoCardBlocks(card);
+  if (!blocks.length) return <ResultCardView card={card} sandbox={sandbox} />;
+  const isSandbox = card.sandbox ?? sandbox;
+  return (
+    <section className="space-y-3" data-tool={card.tool}>
+      {isSandbox && <p className="text-xs font-semibold text-ridge">Sandbox data: not real figures.</p>}
+      <BlockList blocks={blocks} workspaceId={isSandbox ? undefined : workspaceId} lane={lane} />
+    </section>
+  );
+}
+
 function AssistantAnswer({
   view,
   busy,
@@ -134,7 +150,11 @@ function AssistantAnswer({
   onRun,
   onCancel,
   showCards,
+  workspaceId,
+  lane,
 }: {
+  workspaceId: string;
+  lane: "seo" | "geo";
   view: View;
   busy: boolean;
   sandbox: boolean;
@@ -156,7 +176,7 @@ function AssistantAnswer({
       {showCards && view.cards.length > 0 && (
         <div className="space-y-10">
           {view.cards.map((card, i) => (
-            <ResultCardView key={`${i}-${card.tool}`} card={card} sandbox={sandbox} />
+            <SeoResult key={`${i}-${card.tool}`} card={card} sandbox={sandbox} workspaceId={workspaceId} lane={lane} />
           ))}
         </div>
       )}
@@ -166,6 +186,10 @@ function AssistantAnswer({
             <li key={notice}>{notice}</li>
           ))}
         </ul>
+      )}
+      {view.text && !incomplete && !sandbox && (
+        <SaveButton workspaceId={workspaceId} lane={lane} label="Save answer" title={view.text.split(/\r?\n/)[0]!.slice(0, 120) || "Research answer"}
+          blocks={[{ type: "text" as const, text: view.text.slice(0, 12000) }, ...view.cards.flatMap((card) => seoCardBlocks(card))].slice(0, 12)} />
       )}
       {awaitingApproval && view.messageId && (
         <ApprovalBox messageId={view.messageId} plan={view.plan} busy={busy} onRun={onRun} onCancel={onCancel} />
@@ -183,7 +207,11 @@ function AssistantTurn({
   onRun,
   onCancel,
   showCards,
+  workspaceId,
+  lane,
 }: {
+  workspaceId: string;
+  lane: "seo" | "geo";
   message: ChatMessage;
   busy: boolean;
   sandbox: boolean;
@@ -202,6 +230,8 @@ function AssistantTurn({
       onRun={onRun}
       onCancel={onCancel}
       showCards={showCards}
+      workspaceId={workspaceId}
+      lane={lane}
     />
   );
 }
@@ -321,7 +351,7 @@ export function ChatClient({
   const evidence = <>
     <div className={s.evidenceHead}><h2>Behind the answer</h2><span>{latestView?.cards.length ?? 0}</span></div>
     <p className={s.evidenceIntro}>{sandbox ? "Sandbox data: not real figures." : "Research results from this conversation. Check the source and capture date before making a decision."}</p>
-    {latestView?.cards.length ? latestView.cards.map((card, index) => <div className={s.opportunity} key={`${index}-${card.tool}`}><ResultCardView card={card} sandbox={sandbox} /></div>) : <p className={s.empty}>No research results in this answer yet. Ask a question to plan the next step; any results will appear here.</p>}
+    {latestView?.cards.length ? latestView.cards.map((card, index) => <div className={s.opportunity} key={`${index}-${card.tool}`}><SeoResult card={card} sandbox={sandbox} workspaceId={workspaceId} lane={focus} /></div>) : <p className={s.empty}>No research results in this answer yet. Ask a question to plan the next step; any results will appear here.</p>}
   </>;
 
   useEffect(() => {
@@ -356,6 +386,8 @@ export function ChatClient({
                   onRun={runPlan}
                   onCancel={cancelPlan}
                   showCards={message.id !== latest?.id}
+                  workspaceId={workspaceId}
+                  lane={focus}
                 /></>
               )}
             </li>
