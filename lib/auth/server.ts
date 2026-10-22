@@ -39,11 +39,14 @@ function getAuth(): NeonAuth {
 async function safeGetSession(
   ...args: Parameters<NeonAuth["getSession"]>
 ): Promise<Awaited<ReturnType<NeonAuth["getSession"]>>> {
+  const client = getAuth();
   try {
-    return await getAuth().getSession(...args);
-  } catch (error) {
-    console.warn("auth.getSession failed; treating request as signed out", error);
-    return { data: null, error: null } as unknown as Awaited<ReturnType<NeonAuth["getSession"]>>;
+    const result = await client.getSession(...args);
+    if (result.error) console.warn("auth.getSession returned an error");
+    return result;
+  } catch {
+    console.warn("auth.getSession failed; treating request as signed out");
+    return { data: null, error: null };
   }
 }
 
