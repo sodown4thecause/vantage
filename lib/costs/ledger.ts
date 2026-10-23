@@ -1,6 +1,7 @@
-import { and, count, eq, gte } from "drizzle-orm";
+import { and, count, eq, gte, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
+import { rowsOf } from "@/lib/db/rows";
 import { costEvent, type CostBillable } from "@/lib/db/schema";
 
 export type CostInput = {
@@ -102,4 +103,23 @@ export async function countCostEventsToday(input: {
       gte(costEvent.ts, startOfDay),
     ));
   return Number(row?.total ?? 0);
+}
+
+export async function reserveCostAttemptToday(input: {
+  workspaceId: string; provider: string; action: string; max: number;
+}): Promise<boolean> {
+  if (!Number.isSafeInteger(input.max) || input.max <= 0) return false;
+  const day = new Date().toISOString().slice(0, 10);
+  return rowsOf(await getDb().execute(sql`
+    insert into workspace_provider_quota (workspace_id, day, provider, action, attempts)
+    select ${input.workspaceId}::uuid, ${day}::date, ${input.provider}::text, ${input.action}::text, count(*) + 1
+    from cost_event
+    where workspace_id = ${input.workspaceId}::uuid and provider = ${input.provider}::text
+      and action = ${input.action}::text and ts >= (${day}::date::timestamp at time zone 'UTC')
+    having count(*) < ${input.max}::integer
+    on conflict (workspace_id, day, provider, action) do update
+      set attempts = workspace_provider_quota.attempts + 1
+      where workspace_provider_quota.attempts < ${input.max}::integer
+    returning attempts
+  `)).length > 0;
 }

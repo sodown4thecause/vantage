@@ -1,4 +1,5 @@
 import type { CostContext } from "@/lib/costs/meter";
+import { requiredEnv } from "@/lib/env/required";
 import { fetchPublicText } from "@/lib/http/public-fetch";
 import { runPaidCall } from "@/lib/providers/paid-call";
 
@@ -28,8 +29,7 @@ export async function linkupSearch(query: string, opts: {
   context: CostContext; signal?: AbortSignal;
 }): Promise<LinkupSearchHit[]> {
   opts.signal?.throwIfAborted();
-  const key = process.env.LINKUP_API_KEY?.trim();
-  if (!key) throw new Error("LINKUP_API_KEY is not configured");
+  const key = requiredEnv("LINKUP_API_KEY").trim();
   const maxResults = Math.min(20, Math.max(1, Math.floor(opts.maxResults)));
   return runPaidCall({ context: opts.context, provider: "linkup", action: "search",
     estimateUsd: LINKUP_FAST_SEARCH_USD, signal: opts.signal }, async () => {

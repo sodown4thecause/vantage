@@ -12,6 +12,7 @@ vi.mock("@/lib/linkup/search", async (original) => ({
 }));
 vi.mock("@/lib/costs/ledger", async (original) => ({
   ...await original<typeof import("@/lib/costs/ledger")>(), countCostEventsToday: countToday,
+  reserveCostAttemptToday: vi.fn(async ({ max }: { max: number }) => max > 0),
 }));
 vi.mock("scavio", () => ({ Scavio: class {
   reddit = { search: vi.fn(), post: redditPost, postComments: redditComments };
@@ -161,9 +162,27 @@ describe("Linkup discovery lane", () => {
     search.mockResolvedValue([]);
     expect((await fetchRedditPostsWithMeta({ ctx: context })).meta.provider).toBe("tinyfish_search_fetch");
   });
+
+  it.each(["cap", "count failure", "disabled cap"])("falls back after a Linkup %s when Firecrawl fails", async reason => {
+    vi.stubEnv("TINYFISH_API_KEY", "test-key");
+    firecrawl.mockRejectedValue(new Error("down"));
+    if (reason === "count failure") countToday.mockRejectedValue(new Error("db down"));
+    else if (reason === "disabled cap") vi.stubEnv("REDDIT_LINKUP_DAILY_MAX", "0");
+    else countToday.mockResolvedValue(20);
+    search.mockResolvedValue([]);
+    expect((await fetchRedditPostsWithMeta({ ctx: context })).meta.provider).toBe("tinyfish_search_fetch");
+    expect(linkup).not.toHaveBeenCalled();
+    expect(search).toHaveBeenCalledOnce();
+  });
 });
 
 describe("Linkup request", () => {
+  it("uses the shared required-binding error before spending when its key is absent", async () => {
+    const { linkupSearch } = await vi.importActual<typeof import("@/lib/linkup/search")>("@/lib/linkup/search");
+    await expect(linkupSearch("crm", { maxResults: 1, context }))
+      .rejects.toThrow("Required environment variable LINKUP_API_KEY is not configured");
+    expect(paidCall).not.toHaveBeenCalled();
+  });
   it("asks for fast search results from the lookback date, metered at $0.005", async () => {
     const { linkupSearch } = await vi.importActual<typeof import("@/lib/linkup/search")>("@/lib/linkup/search");
     vi.stubEnv("LINKUP_API_KEY", "lk-test");

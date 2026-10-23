@@ -1,9 +1,9 @@
 import fixture from "@/test/fixtures/reddit.json";
-import { countCostEventsToday } from "@/lib/costs/ledger";
+import { countCostEventsToday, reserveCostAttemptToday } from "@/lib/costs/ledger";
 import type { CostContext } from "@/lib/costs/meter";
 import { firecrawlSearch, firecrawlTbs, hasFirecrawlApiKey, type FirecrawlSearchHit } from "@/lib/firecrawl/search";
 import { hasLinkupApiKey, linkupFromDate, linkupSearch } from "@/lib/linkup/search";
-import { isPaidCallDenied, runPaidCall } from "@/lib/providers/paid-call";
+import { isPaidCallDenied, PaidCallDeniedError, runPaidCall } from "@/lib/providers/paid-call";
 import { dropBotPosts, isBotAuthor, runRedditPipeline, type RedditEnricher, type RedditFilter } from "@/lib/reddit/pipeline";
 import { createScavioClient, hasScavioApiKey } from "@/lib/scavio/client";
 import { asRecordArray, normalizeAgentResult, numberField, stringField } from "@/lib/tinyfish/agent";
@@ -174,7 +174,7 @@ async function hydratePost(post: RedditPost, ctx: CostContext, signal?: AbortSig
       author: post.author ?? stringField(data, "author", "author_name", "username"),
       score: numberField(data, "score", "ups", "upvotes") ?? post.score,
       numComments: numberField(data, "num_comments", "numComments", "comment_count") ?? post.numComments,
-      createdAt: post.createdAt || publicationDate(data),
+      createdAt: publicationDate(data) || post.createdAt,
       topComments, contentKind: text ? "thread" : post.contentKind } };
   });
 }
@@ -196,12 +196,17 @@ async function remainingToday(ctx: CostContext, provider: string, action: string
  * Any failure keeps the preview; only cancellation propagates, so hydration never fails a scan.
  */
 async function hydratePreviews(posts: RedditPost[], ctx: CostContext, signal?: AbortSignal): Promise<RedditPost[]> {
-  if (!posts.some(shouldHydrate) || !hasScavioApiKey()) return posts;
-  let remaining = await remainingToday(ctx, "scavio", HYDRATE_ACTION, hydrateDailyMax());
+  if (!posts.some(shouldHydrate) || !hasScavioApiKey() || !ctx.workspaceId) return posts;
   const hydrated = [...posts];
-  for (let i = 0; i < hydrated.length && remaining > 0; i++) {
+  for (let i = 0; i < hydrated.length; i++) {
     if (!shouldHydrate(hydrated[i], i)) continue;
-    remaining--;
+    try {
+      if (!await reserveCostAttemptToday({ workspaceId: ctx.workspaceId, provider: "scavio",
+        action: HYDRATE_ACTION, max: hydrateDailyMax() })) break;
+    } catch {
+      signal?.throwIfAborted();
+      break;
+    }
     try { hydrated[i] = await hydratePost(hydrated[i], ctx, signal); }
     catch (error) {
       signal?.throwIfAborted();
@@ -234,11 +239,13 @@ export function linkupDailyMax(env: NodeJS.ProcessEnv = process.env): number {
 
 /**
  * Second discovery lane: Linkup `fast` search over Reddit and Hacker News. Only Reddit threads are kept here;
- * Hacker News items belong to the HN collector. Returns [] without spending when today's cap is used up.
+ * Hacker News items belong to the HN collector. Denies the lane without spending when today's cap is used up.
  */
 async function linkupPosts(query: string, subreddit: string | undefined, limit: number, opts: RedditOptions): Promise<RedditPost[]> {
   const ctx = opts.ctx ?? { sourceKey: "reddit" };
-  if (!await remainingToday(ctx, "linkup", "search", linkupDailyMax())) return [];
+  if (!await remainingToday(ctx, "linkup", "search", linkupDailyMax())) {
+    throw new PaidCallDeniedError("budget_exhausted", "Daily Linkup allowance unavailable.");
+  }
   const hits = await linkupSearch(subreddit ? `r/${subreddit} ${query}` : query, {
     maxResults: Math.min(20, limit * 2), includeDomains: LINKUP_DOMAINS,
     fromDate: linkupFromDate(opts.lookbackHours ?? DEFAULT_LOOKBACK_HOURS), context: ctx, signal: opts.signal });

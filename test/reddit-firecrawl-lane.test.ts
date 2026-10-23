@@ -1,14 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { firecrawl, search, fetchPages, agentRun, paidCall, redditSearch, redditPost, redditComments, countToday } = vi.hoisted(() => ({
+const { firecrawl, search, fetchPages, agentRun, paidCall, redditSearch, redditPost, redditComments, countToday, reserve } = vi.hoisted(() => ({
   firecrawl: vi.fn(), search: vi.fn(), fetchPages: vi.fn(), agentRun: vi.fn(), paidCall: vi.fn(),
-  redditSearch: vi.fn(), redditPost: vi.fn(), redditComments: vi.fn(), countToday: vi.fn(),
+  redditSearch: vi.fn(), redditPost: vi.fn(), redditComments: vi.fn(), countToday: vi.fn(), reserve: vi.fn(),
 }));
 vi.mock("@/lib/firecrawl/search", async (original) => ({
   ...await original<typeof import("@/lib/firecrawl/search")>(), firecrawlSearch: firecrawl,
 }));
 vi.mock("@/lib/costs/ledger", async (original) => ({
   ...await original<typeof import("@/lib/costs/ledger")>(), countCostEventsToday: countToday,
+  reserveCostAttemptToday: reserve,
 }));
 vi.mock("scavio", () => ({ Scavio: class {
   reddit = { search: redditSearch, post: redditPost, postComments: redditComments };
@@ -46,6 +47,8 @@ beforeEach(() => {
     "VANTAGE_DEMO_FIXTURES"]) vi.stubEnv(name, "");
   paidCall.mockImplementation(async (_options, work) => (await work()).value);
   countToday.mockResolvedValue(0);
+  let used = 0;
+  reserve.mockImplementation(async ({ max }) => max > used && ++used <= max);
 });
 afterEach(() => { vi.unstubAllEnvs(); });
 
@@ -177,11 +180,11 @@ describe("Scavio hydration", () => {
     expect(redditPost).toHaveBeenCalledWith({ post_id: "t3_h1" });
     expect(paidCall).toHaveBeenCalledWith(expect.objectContaining({ provider: "scavio", action: "reddit_hydrate",
       estimateUsd: 0.008, context }), expect.any(Function));
-    expect(countToday).toHaveBeenCalledWith({ workspaceId: "ws-1", provider: "scavio", action: "reddit_hydrate" });
+    expect(reserve).toHaveBeenCalledWith({ workspaceId: "ws-1", provider: "scavio", action: "reddit_hydrate", max: 5 });
   });
 
   it("stops at the workspace's daily cap and keeps the rest as previews", async () => {
-    countToday.mockResolvedValue(4); // default cap is 5
+    reserve.mockReset().mockResolvedValueOnce(true).mockResolvedValue(false);
     const { posts } = await fetchRedditPostsWithMeta({ ctx: context });
     expect(posts.map(post => post.contentKind)).toEqual(["thread", "preview", "preview"]);
     expect(redditPost).toHaveBeenCalledTimes(1);
@@ -220,7 +223,7 @@ describe("Scavio hydration", () => {
     expect((await fetchRedditPostsWithMeta({ ctx: context })).posts).toHaveLength(3);
     expect(paidCall).toHaveBeenCalledTimes(1);
 
-    paidCall.mockReset(); countToday.mockRejectedValue(new Error("db down"));
+    paidCall.mockReset(); reserve.mockRejectedValue(new Error("db down"));
     expect((await fetchRedditPostsWithMeta({ ctx: context })).posts).toHaveLength(3);
     expect(paidCall).not.toHaveBeenCalled();
   });
@@ -230,6 +233,22 @@ describe("Scavio hydration", () => {
     vi.stubEnv("SCAVIO_API_KEY", "");
     expect((await fetchRedditPostsWithMeta({ ctx: context })).posts.every(post => post.contentKind === "preview")).toBe(true);
     expect(redditPost).not.toHaveBeenCalled();
+  });
+
+  it("prefers the hydrated publication time, retaining the estimate when no exact time is supplied", async () => {
+    redditPost.mockResolvedValueOnce({ data: { ...scavioPost("h1").data, createdAt: "2026-10-21T12:34:00Z" } });
+    const { posts } = await fetchRedditPostsWithMeta({ ctx: context });
+    expect(posts[0].createdAt).toBe("2026-10-21T12:34:00.000Z");
+    expect(posts[1].createdAt).not.toBe("");
+  });
+
+  it("shares the last hydration slot between overlapping sources", async () => {
+    reserve.mockReset().mockResolvedValueOnce(true).mockResolvedValue(false);
+    const results = await Promise.all([
+      fetchRedditPostsWithMeta({ ctx: context }), fetchRedditPostsWithMeta({ ctx: context }),
+    ]);
+    expect(redditPost).toHaveBeenCalledTimes(1);
+    expect(results.flatMap(result => result.posts).filter(post => post.contentKind === "thread")).toHaveLength(1);
   });
 });
 
