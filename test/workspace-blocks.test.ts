@@ -16,7 +16,12 @@ describe("block schema", () => {
     expect(blockSchema.safeParse({ type: "chart", kind: "line", title: "Referring domains", points: [{ label: "2026-01", value: 3 }] }).success).toBe(true);
   });
 
+  it("accepts a research card with a safe source link", () => {
+    expect(blockSchema.safeParse({ type: "research_card", title: "Market size", value: "42 USD", sourceUrl: "https://example.com/report" }).success).toBe(true);
+  });
+
   it("rejects unsafe links, ragged tables, unknown chart kinds and unknown types", () => {
+    expect(blockSchema.safeParse({ type: "research_card", title: "Bad", value: "x", sourceUrl: "javascript:alert(1)" }).success).toBe(false);
     expect(blockSchema.safeParse({ ...thread, url: "javascript:alert(1)" }).success).toBe(false);
     expect(blockSchema.safeParse({ type: "table", title: "T", columns: ["A", "B"], rows: [["only one"]] }).success).toBe(false);
     expect(blockSchema.safeParse({ type: "chart", kind: "pie", title: "C", points: [{ label: "x", value: 1 }] }).success).toBe(false);
@@ -74,6 +79,26 @@ describe("SEO card blocks", () => {
     const rows = [{ keyword: "a", position: 2 }, { keyword: "b", position: 8 }, { keyword: "c", position: 99 }];
     expect(rankingDistribution(rows).map((point) => point.value)).toEqual([1, 1, 0, 0, 1]);
     expect(seoCardBlocks({ tool: "ranked_keywords", title: "Rankings", data: rows }).map((block) => block.type)).toEqual(["table", "chart"]);
+  });
+
+  it("renders Tako data cards and web results as title/value/source visuals", () => {
+    const blocks = seoCardBlocks({ tool: "tako_search", title: "Tako Search", data: {
+      cards: [{ title: "Market size", value: "42 USD", sourceUrl: "https://example.com/report", sourceLabel: "Report" }],
+      web_results: [{ title: "Industry report", url: "https://example.com/industry", snippet: "A cited excerpt." }],
+    } });
+    expect(blocks).toEqual([
+      expect.objectContaining({ type: "research_card", title: "Market size", value: "42 USD", sourceUrl: "https://example.com/report" }),
+      expect.objectContaining({ type: "research_card", title: "Industry report", value: "A cited excerpt.", sourceUrl: "https://example.com/industry" }),
+    ]);
+  });
+
+  it("renders Linkup search results and page fetches as source-linked visuals", () => {
+    expect(seoCardBlocks({ tool: "web_research", title: "Linkup", data: {
+      results: [{ title: "Docs", url: "https://example.com/docs", snippet: "Relevant guidance." }],
+    } })).toEqual([expect.objectContaining({ type: "research_card", title: "Docs", sourceUrl: "https://example.com/docs" })]);
+    expect(seoCardBlocks({ tool: "linkup_fetch", title: "Fetch", data: {
+      url: "https://example.com/article", markdown: "The page excerpt.",
+    } })).toEqual([expect.objectContaining({ type: "research_card", sourceUrl: "https://example.com/article" })]);
   });
 
   it("ignores cards it does not map", () => {

@@ -50,12 +50,21 @@ export const textBlockSchema = z.object({
   text: text(12000),
 });
 
-export const blockSchema = z.union([redditThreadBlockSchema, tableBlockSchema, chartBlockSchema, textBlockSchema]);
+export const researchCardBlockSchema = z.object({
+  type: z.literal("research_card"),
+  title: text(200),
+  value: z.union([text(2000), z.number().finite()]),
+  sourceUrl: httpUrl,
+  sourceLabel: z.string().trim().max(120).optional(),
+});
+
+export const blockSchema = z.union([redditThreadBlockSchema, tableBlockSchema, chartBlockSchema, textBlockSchema, researchCardBlockSchema]);
 
 export type RedditThreadBlock = z.infer<typeof redditThreadBlockSchema>;
 export type TableBlock = z.infer<typeof tableBlockSchema>;
 export type ChartBlock = z.infer<typeof chartBlockSchema>;
 export type TextBlock = z.infer<typeof textBlockSchema>;
+export type ResearchCardBlock = z.infer<typeof researchCardBlockSchema>;
 export type Block = z.infer<typeof blockSchema>;
 
 export const MAX_BLOCKS = 12;

@@ -1,4 +1,5 @@
 import { parseBlocks, type Block } from "@/lib/workspace/blocks";
+import { linkupPageBlocks, linkupResearchBlocks, takoResearchBlocks } from "@/lib/research/blocks";
 
 /*
  * Turns SEO result cards (provider output, untrusted) into table and chart blocks. Client-safe: no server imports.
@@ -38,6 +39,9 @@ export function rankingDistribution(rows: Record<string, unknown>[]): { label: s
 }
 
 export function seoCardBlocks(card: Card): Block[] {
+  if (card.tool === "tako_search") return takoResearchBlocks(card.data);
+  if (card.tool === "web_research") return linkupResearchBlocks(card.data);
+  if (card.tool === "linkup_fetch") return linkupPageBlocks(card.data);
   const title = card.title.trim().slice(0, 200) || "SEO results";
   if (card.tool === "backlink_summary" && isRecord(card.data)) {
     const data = card.data;
