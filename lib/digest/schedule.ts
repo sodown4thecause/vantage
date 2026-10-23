@@ -29,15 +29,17 @@ function zoned(at: Date, timeZone: string): { year: number; month: number; day: 
 }
 
 /**
- * The instant of `hour`:00 local time on a calendar date in a time zone. The offset is re-read at the candidate
- * instant, so the date's own daylight-saving offset applies. An hour skipped by a daylight-saving jump lands an hour
- * later, as clocks do.
+ * The instant of `hour`:00 local time on a calendar date in a time zone. Matches PostgreSQL AT TIME ZONE:
+ * skipped times use the offset before the transition, and repeated times use the offset after it.
  */
 export function zonedHourToInstant(date: { year: number; month: number; day: number }, hour: number, timeZone: string): Date {
   const wall = Date.UTC(date.year, date.month - 1, date.day, hour);
-  let instant = wall - zoned(new Date(wall), timeZone).offsetMinutes * 60_000;
-  instant = wall - zoned(new Date(instant), timeZone).offsetMinutes * 60_000;
-  return new Date(instant);
+  const beforeOffset = zoned(new Date(wall - 86_400_000), timeZone).offsetMinutes;
+  const afterOffset = zoned(new Date(wall + 86_400_000), timeZone).offsetMinutes;
+  const before = wall - beforeOffset * 60_000;
+  const after = wall - afterOffset * 60_000;
+  const afterMatches = after + zoned(new Date(after), timeZone).offsetMinutes * 60_000 === wall;
+  return new Date(afterMatches ? after : before);
 }
 
 /** True for an IANA time zone the runtime understands. */
