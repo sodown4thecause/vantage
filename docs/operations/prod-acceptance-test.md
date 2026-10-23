@@ -101,8 +101,8 @@ These are inventory entries, not instructions to enable unrelated features.
 | `SEO_AGENT_GEO_ALWAYS_ASK` | Same approval policy | No* | No* | Geographic research continues to require approval by default. |
 | `X_GATEWAY_EXPERIMENT_ENABLED` | `lib/x/client.ts` | No* | No* | Optional X gateway experiment off. |
 | `X_GATEWAY_MODEL` | `lib/x/gateway.ts` | No* | No* | Uses the committed X gateway default. |
-| `DATAFORSEO_LOGIN` | `lib/dataforseo/config.ts` | No* | No* | DataForSEO unavailable unless `DATAFORSEO_USERNAME` alias is supplied. |
-| `DATAFORSEO_USERNAME` | Same login alias | No* | No* | No alias fallback; primary login can suffice. |
+| `DATAFORSEO_LOGIN` | `lib/dataforseo/config.ts` | No* | No* | Falls back to nonblank `DATAFORSEO_USERNAME` when missing or blank; credentials require either login name plus `DATAFORSEO_PASSWORD`. |
+| `DATAFORSEO_USERNAME` | Same login alias | No* | No* | Optional alias, ignored when `DATAFORSEO_LOGIN` is nonblank; credentials require either login name plus `DATAFORSEO_PASSWORD`. |
 | `DATAFORSEO_PASSWORD` | Same config | No* | No* | DataForSEO unavailable. |
 | `DATAFORSEO_ENV` | Same config | No* | No* | Defaults to sandbox; sandbox blocked under production fixture policy. |
 | `DATAFORSEO_DAILY_BUDGET_USD` | Same config | No* | No* | Uses committed default daily budget. |
