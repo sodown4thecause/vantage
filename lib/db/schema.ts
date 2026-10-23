@@ -1,7 +1,10 @@
 import { sql } from "drizzle-orm";
 import type { SeoMessageParts, SeoMessageRole, SeoMessageStatus } from "@/lib/seo-agent/conversations";
+import type { Block } from "@/lib/workspace/blocks";
+import type { SavedArtifactLane } from "@/lib/workspace/saved-artifact-types";
 import {
   boolean,
+  check,
   date,
   index,
   integer,
@@ -1059,4 +1062,25 @@ export const seoMessage = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index("seo_message_conversation_created_idx").on(table.conversationId, table.createdAt)],
+);
+
+/** An assistant answer or visual block the owner saved to the workspace. Blocks are validated before insert. */
+export const savedArtifact = pgTable(
+  "saved_artifact",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    lane: text("lane").$type<SavedArtifactLane>().notNull(),
+    title: text("title").notNull(),
+    blocks: jsonb("blocks").$type<Block[]>().notNull(),
+    /** Neon Auth user id of the owner who saved it. */
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("saved_artifact_workspace_created_idx").on(table.workspaceId, table.createdAt),
+    check("saved_artifact_lane_check", sql`${table.lane} in ('gtm', 'seo', 'geo', 'content')`),
+  ],
 );

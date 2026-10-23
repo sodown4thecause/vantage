@@ -1,0 +1,15 @@
+.layout { min-height: 58vh; display: grid; grid-template-columns: 1fr 420px; align-items: center; gap: clamp(40px, 8vw, 130px); max-width: 1080px; margin: auto; padding: 36px 0; }
+.intro { max-width: 520px; }
+.mark { display: inline-grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--contour); border-radius: 12px; color: var(--signal); font-size: 24px; margin-bottom: 28px; }
+.intro h1 { margin: 16px 0 24px; max-width: 14ch; }
+.intro > p:not(:global(.eyebrow)) { font-size: 15px; color: var(--ridge); line-height: 1.8; max-width: 45ch; }
+.promise { display: flex; gap: 14px; margin-top: 42px; border-top: 1px solid var(--contour); padding-top: 24px; font-size: 13px; }
+.promise > span { color: var(--signal); }
+.promise strong { font-weight: 500; }
+.promise p { color: var(--ridge); line-height: 1.7; margin-top: 7px; }
+.panel { padding: 28px; background: var(--sheet); border: 1px solid var(--contour); border-radius: 16px; min-width: 0; }
+.panel > div { width: 100%; max-width: none; background: transparent; border: 0; box-shadow: none; }
+.panel input { background: var(--paper); border-radius: 8px; }
+.panel button { border-radius: 8px; }
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; max-width: 520px; padding: 0; gap: 32px; } .intro h1 { max-width: none; font-size: 36px; } .promise { display: none; } .mark { margin-bottom: 18px; } }
+@media (max-width: 480px) { .panel { padding: 20px; } }

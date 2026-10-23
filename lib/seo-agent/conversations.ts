@@ -1,7 +1,24 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, not, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { seoConversation, seoMessage } from "@/lib/db/schema";
+import { INTERVIEW_CARD_TOOL } from "@/lib/onboarding/interview";
+
+export type ConversationKind = "research" | "gtm" | "interview";
+
+function laneFilter(workspaceId: string, kind?: ConversationKind) {
+  if (!kind) return undefined;
+  const hasCard = (tool: string) => sql`exists (
+    select 1 from ${seoMessage}
+    where ${seoMessage.conversationId} = ${seoConversation.id}
+      and ${seoMessage.workspaceId} = ${workspaceId}
+      and ${seoMessage.parts} @> ${JSON.stringify({ cards: [{ tool }] })}::jsonb
+  )`;
+  return and(
+    kind === "interview" ? hasCard(INTERVIEW_CARD_TOOL) : not(hasCard(INTERVIEW_CARD_TOOL)),
+    kind === "gtm" ? hasCard("gtm_journey") : not(hasCard("gtm_journey")),
+  );
+}
 
 export type SeoMessageRole = "user" | "assistant";
 export type SeoMessageStatus = "complete" | "incomplete" | "needs_approval" | "approved";
@@ -63,11 +80,12 @@ export async function createConversation(workspaceId: string, title: string): Pr
 export async function listConversations(
   workspaceId: string,
   limit = 30,
+  kind?: ConversationKind,
 ): Promise<{ id: string; title: string; updatedAt: string }[]> {
   const rows = await getDb()
     .select({ id: seoConversation.id, title: seoConversation.title, updatedAt: seoConversation.updatedAt })
     .from(seoConversation)
-    .where(eq(seoConversation.workspaceId, workspaceId))
+    .where(and(eq(seoConversation.workspaceId, workspaceId), laneFilter(workspaceId, kind)))
     .orderBy(desc(seoConversation.updatedAt))
     .limit(limit);
   return rows.map((row) => ({ id: row.id, title: row.title, updatedAt: row.updatedAt.toISOString() }));
@@ -76,12 +94,13 @@ export async function listConversations(
 export async function getConversation(
   workspaceId: string,
   conversationId: string,
+  kind?: ConversationKind,
 ): Promise<{ id: string; title: string; messages: SeoMessageRow[] } | null> {
   const db = getDb();
   const [conversation] = await db
     .select({ id: seoConversation.id, title: seoConversation.title })
     .from(seoConversation)
-    .where(and(eq(seoConversation.id, conversationId), eq(seoConversation.workspaceId, workspaceId)))
+    .where(and(eq(seoConversation.id, conversationId), eq(seoConversation.workspaceId, workspaceId), laneFilter(workspaceId, kind)))
     .limit(1);
   if (!conversation) return null;
 
@@ -123,6 +142,15 @@ export async function appendMessage(
     creditsUsed?: number;
   },
 ): Promise<{ id: string }> {
+  const [row] = await appendMessages(workspaceId, conversationId, [msg]);
+  return row!;
+}
+
+export async function appendMessages(
+  workspaceId: string,
+  conversationId: string,
+  messages: Parameters<typeof appendMessage>[2][],
+): Promise<{ id: string }[]> {
   const db = getDb();
   const [owned] = await db
     .select({ id: seoConversation.id })
@@ -131,26 +159,57 @@ export async function appendMessage(
     .limit(1);
   if (!owned) throw new ConversationNotFoundError();
 
+  const createdAt = Date.now();
+  const values = messages.map((msg, index) => ({
+    ...(msg.id ? { id: msg.id } : {}),
+    workspaceId,
+    conversationId,
+    role: msg.role,
+    content: msg.content,
+    parts: msg.parts ?? {},
+    status: msg.status ?? "complete",
+    creditsUsed: msg.creditsUsed ?? 0,
+    ...(messages.length > 1 ? { createdAt: new Date(createdAt + index) } : {}),
+  }));
+  const insert = db.insert(seoMessage);
   const [inserted] = await db.batch([
-    db
-      .insert(seoMessage)
-      .values({
-        ...(msg.id ? { id: msg.id } : {}),
-        workspaceId,
-        conversationId,
-        role: msg.role,
-        content: msg.content,
-        parts: msg.parts ?? {},
-        status: msg.status ?? "complete",
-        creditsUsed: msg.creditsUsed ?? 0,
-      })
-      .returning({ id: seoMessage.id }),
+    (values.length === 1 ? insert.values(values[0]!) : insert.values(values)).returning({ id: seoMessage.id }),
     db
       .update(seoConversation)
       .set({ updatedAt: new Date() })
       .where(and(eq(seoConversation.id, conversationId), eq(seoConversation.workspaceId, workspaceId))),
   ]);
-  return { id: inserted![0]!.id };
+  return inserted!;
+}
+
+export async function appendTurn(
+  workspaceId: string,
+  conversation: string | { title: string },
+  user: { content: string },
+  assistant: { content: string; parts?: SeoMessageParts },
+): Promise<{ id: string }> {
+  const db = getDb();
+  const conversationId = typeof conversation === "string" ? conversation : crypto.randomUUID();
+  if (typeof conversation === "string") {
+    const [owned] = await db.select({ id: seoConversation.id }).from(seoConversation)
+      .where(and(eq(seoConversation.id, conversationId), eq(seoConversation.workspaceId, workspaceId)))
+      .limit(1);
+    if (!owned) throw new ConversationNotFoundError();
+  }
+  const createdAt = new Date();
+  const writes = [
+    db.insert(seoMessage).values([
+      { workspaceId, conversationId, role: "user", content: user.content, createdAt },
+      { workspaceId, conversationId, role: "assistant", content: assistant.content, parts: assistant.parts ?? {}, createdAt: new Date(createdAt.getTime() + 1) },
+    ]),
+    db.update(seoConversation).set({ updatedAt: createdAt })
+      .where(and(eq(seoConversation.id, conversationId), eq(seoConversation.workspaceId, workspaceId))),
+  ] as const;
+  await db.batch(typeof conversation === "string" ? writes : [
+    db.insert(seoConversation).values({ id: conversationId, workspaceId, title: conversation.title }),
+    ...writes,
+  ]);
+  return { id: conversationId };
 }
 
 /**

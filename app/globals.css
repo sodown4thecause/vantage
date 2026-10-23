@@ -143,10 +143,9 @@
 
   .eyebrow {
     font-size: 0.8125rem;
-    letter-spacing: 0.09em;
-    text-transform: uppercase;
+    letter-spacing: 0;
     font-weight: 500;
-    color: var(--sage);
+    color: var(--signal);
   }
 
   /* A hairline grid: one pixel of rule between cards, no shadows. */
@@ -195,19 +194,19 @@
     align-items: center;
     gap: 0.55rem;
     padding: 0.7rem 1.15rem;
-    border-radius: 999px;
+    border-radius: 8px;
     font-weight: 500;
-    font-size: 0.9375rem;
+    font-size: 0.875rem;
     line-height: 1.2;
-    background: var(--ink);
-    color: var(--paper);
+    background: var(--signal);
+    color: var(--signal-ink);
     transition: background 150ms ease, transform 150ms ease;
     white-space: nowrap;
   }
-  .btn:hover { background: var(--ink-bright); }
+  .btn:hover { background: color-mix(in srgb, var(--signal) 85%, white); }
   .btn:active { transform: scale(0.98); }
 
-  .btn-lg { font-size: 1.0625rem; padding: 0.95rem 1.6rem; }
+  .btn-lg { font-size: 0.9375rem; padding: 0.85rem 1.25rem; }
 
   .btn-quiet {
     background: transparent;
@@ -322,19 +321,17 @@
 
 /* These overrides sit outside @layer so they beat Tailwind's layered utilities. */
 
-/* Primary buttons in existing pages are "bg-zinc-900|950 text-white": make them
-   the same ink pill the marketing pages use. */
 .bg-zinc-900.text-white,
 .bg-zinc-950.text-white {
-  background: var(--ink);
-  color: var(--paper);
-  border-radius: 999px;
+  background: var(--signal);
+  color: var(--signal-ink);
+  border-radius: 8px;
   font-weight: 500;
   transition: background 150ms ease;
 }
 .bg-zinc-900.text-white:hover:not(:disabled),
 .bg-zinc-950.text-white:hover:not(:disabled) {
-  background: var(--ink-bright);
+  background: color-mix(in srgb, var(--signal) 85%, white);
 }
 
 /* The theme is dark whatever the browser prefers, so fixed white and black

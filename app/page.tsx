@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-import { Glyph } from "@/components/glyph";
 import { JsonLd } from "@/components/json-ld";
 import { Shell } from "@/components/shell";
 import { redirect } from "next/navigation";
@@ -10,6 +9,8 @@ import { formatDate, getAllPosts } from "@/lib/blog";
 import { createWorkspaceForCurrentUser } from "@/lib/db/actions";
 import { getLatestMonitoringProfile } from "@/lib/profile/repository";
 import { SITE_DESCRIPTION, SITE_NAME, SOURCES, absoluteUrl } from "@/lib/site";
+
+import styles from "./home.module.css";
 
 export const dynamic = "force-dynamic";
 
@@ -77,9 +78,8 @@ export default async function Home() {
   const workspace = session?.user ? await getCurrentWorkspace() : null;
   if (workspace) {
     const profile = await getLatestMonitoringProfile(workspace.id);
-    redirect(`/${profile ? "queue" : "onboarding"}?workspaceId=${encodeURIComponent(workspace.id)}`);
+    redirect(`/${profile ? "workspace" : "onboarding"}?workspaceId=${encodeURIComponent(workspace.id)}`);
   }
-  const example = { fit: 0.86, intent: 0.78, evidence: 0.64, momentum: 0.45, timing: 0.9 };
   const latest = getAllPosts().slice(0, 3);
 
   const jsonLd = [
@@ -123,185 +123,127 @@ export default async function Home() {
   return (
     <Shell wide>
       <JsonLd data={jsonLd} />
-      <div className="relative isolate grid items-center gap-x-14 gap-y-12 lg:grid-cols-[1.15fr_1fr]">
-        <div aria-hidden="true" className="aurora" />
-        <section className="space-y-7">
-          <p className="eyebrow">Social listening for developer tools</p>
-          <h1 className="display text-5xl sm:text-6xl lg:text-7xl">
-            Up to five conversations worth joining, every day.
-          </h1>
-          <p className="max-w-[48ch] text-lg leading-snug text-ridge">
-            contextfor.dev reads Reddit, Hacker News, X and more for people
-            asking for what you build. You get a short ranked list with the
-            posts that prove it. You write the reply. It never posts for you.
+      <div className={styles.home}>
+        <section className={styles.hero} aria-labelledby="home-heading">
+          <p className={styles.eyebrow}>Your go-to-market workspace</p>
+          <h1 id="home-heading">Find the conversations<br />worth showing up for.</h1>
+          <p className={styles.intro}>
+            A quieter way to find your next customers. contextfor.dev reads the
+            places they talk and brings you up to five relevant conversations a day,
+            with the evidence behind each one. You write every reply.
           </p>
           {session?.user ? (
-            <form action={startWorkspace} className="max-w-md space-y-3">
-              <label htmlFor="workspace-name" className="block font-semibold">
-                Name your workspace
-              </label>
-              <input
-                id="workspace-name"
-                name="name"
-                required
-                maxLength={100}
-                autoComplete="organization"
-                placeholder="Acme Analytics"
-                className="w-full rounded-md border border-contour bg-sheet px-3.5 py-3"
-              />
-              <button className="btn">Create workspace</button>
+            <form action={startWorkspace} className={styles.createForm}>
+              <label htmlFor="workspace-name">Name your workspace</label>
+              <div>
+                <input id="workspace-name" name="name" required maxLength={100}
+                  autoComplete="organization" placeholder="Acme Analytics" />
+                <button className={styles.primary}>Create workspace <span aria-hidden="true">↗</span></button>
+              </div>
             </form>
           ) : (
-            <div className="space-y-3">
-              <div className="flex flex-wrap gap-3">
-                <Link href="/auth/sign-up" className="btn btn-lg">
-                  Create a free account
-                </Link>
-                <Link href="#how-it-works" className="btn btn-lg btn-quiet">
-                  See how it works
-                </Link>
+            <>
+              <div className={styles.heroActions}>
+                <Link href="/auth/sign-up" className={styles.primary}>Create a free account <span aria-hidden="true">↗</span></Link>
+                <Link href="/tour" className={styles.secondary}>Explore the workspace <span aria-hidden="true">→</span></Link>
               </div>
-              <p className="text-sm text-ridge">
-                Already have an account? <Link href="/auth/sign-in" className="link">Sign in</Link>
-              </p>
-            </div>
+              <p className={styles.signIn}>Already have an account? <Link href="/auth/sign-in">Sign in</Link></p>
+            </>
           )}
         </section>
 
-        <aside aria-label="Example opportunity" className="panel space-y-5 p-6 sm:p-8">
-          <div className="mx-auto w-full max-w-[22rem]">
-            <Glyph features={example} size={352} labels animate />
-          </div>
-          <div className="space-y-2 border-t border-contour pt-4">
-            <p className="eyebrow">Example opportunity</p>
-            <p className="text-xl font-semibold leading-snug tracking-tight">
-              Founder asks for a cheaper way to track brand mentions in AI answers
-            </p>
-            <p className="max-w-[52ch] text-ridge">
-              Posted 3 hours ago in a thread with 40 replies. The scores show
-              why it ranked: a strong fit with your product, a clear request,
-              and good timing.
-            </p>
-          </div>
-        </aside>
-      </div>
-
-      <section aria-labelledby="sources-heading" className="mt-20 border-y border-contour/60 py-7">
-        <h2 id="sources-heading" className="eyebrow mb-4">
-          Where it listens
-        </h2>
-        <ul className="flex flex-wrap gap-x-3 gap-y-2">
-          {SOURCES.map((s) => (
-            <li
-              key={s}
-              className="rounded-full border border-contour px-3.5 py-1.5 text-[0.9375rem] text-ridge transition-colors hover:border-ridge hover:text-ink"
-            >
-              {s}
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section id="how-it-works" aria-labelledby="how-heading" className="mt-20 scroll-mt-24">
-        <h2 id="how-heading" className="display mb-10 text-3xl sm:text-4xl">
-          How it works
-        </h2>
-        <ol className="hair-grid sm:grid-cols-3">
-          {STEPS.map((step, i) => (
-            <li key={step.title} className="hair-cell space-y-3">
-              <span aria-hidden="true" className="block font-mono text-sm tracking-widest text-sage">
-                {String(i + 1).padStart(2, "0")}
-              </span>
-              <h3 className="text-xl font-semibold leading-snug tracking-tight">{step.title}</h3>
-              <p className="text-ridge">{step.body}</p>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      <section aria-labelledby="scores-heading" className="mt-20 grid gap-x-12 gap-y-8 border-t border-contour/60 pt-10 sm:grid-cols-2">
-        <div className="space-y-3">
-          <h2 id="scores-heading" className="display text-3xl sm:text-4xl">What the five scores mean</h2>
-          <p className="max-w-[40ch] text-ridge">
-            Every opportunity carries all five, drawn as the shape you see above,
-            so you can tell at a glance why it made the list.
-          </p>
-        </div>
-        <dl className="space-y-4">
-          {SCORES.map(([term, def]) => (
-            <div key={term} className="grid grid-cols-[6.5rem_1fr] gap-4 border-b border-contour/60 pb-4 last:border-0">
-              <dt className="font-medium">{term}</dt>
-              <dd className="text-ridge">{def}</dd>
+        <figure className={styles.preview} aria-labelledby="preview-caption">
+          <figcaption id="preview-caption" className={styles.previewCaption}>
+            <span><span className={styles.statusDot} />A look inside your workspace</span>
+            <span>Static preview · sample data</span>
+          </figcaption>
+          <div className={styles.previewBody}>
+            <div className={styles.previewSidebar} aria-hidden="true">
+              <div className={styles.previewBrand}>c<span>contextfor.dev</span></div>
+              <p>Acme workspace</p>
+              <div className={styles.selectedNav}>◈ <span>GTM workspace</span></div>
+              <div>☷ <span>Queue</span><small>3</small></div>
+              <div>⌁ <span>Sources</span></div>
+              <div>◎ <span>Profile</span></div>
+              <div className={styles.sidebarBottom}><span className={styles.avatar}>A</span>Acme Analytics</div>
             </div>
-          ))}
-        </dl>
-      </section>
-
-      <section aria-labelledby="never-heading" className="panel mt-20 px-6 py-10 sm:px-10">
-        <p className="eyebrow mb-3">Boundaries</p>
-        <h2 id="never-heading" className="display mb-8 text-3xl sm:text-4xl">
-          What it will never do
-        </h2>
-        <dl className="grid gap-8 sm:grid-cols-3">
-          {NEVER.map(([term, def]) => (
-            <div key={term} className="space-y-2 border-l-2 border-signal pl-4">
-              <dt className="text-lg font-medium leading-snug">{term}</dt>
-              <dd className="text-ridge">{def}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
-
-      {latest.length > 0 && (
-        <section aria-labelledby="blog-heading" className="mt-20">
-          <div className="mb-6 flex flex-wrap items-baseline justify-between gap-4">
-            <h2 id="blog-heading" className="display text-3xl sm:text-4xl">From the blog</h2>
-            <Link href="/blog" className="link font-semibold">All posts</Link>
-          </div>
-          <ul className="divide-y divide-contour/60 border-y border-contour/60">
-            {latest.map((post) => (
-              <li key={post.slug} className="grid gap-1 py-5 sm:grid-cols-[9rem_1fr] sm:gap-6">
-                <time dateTime={post.date} className="text-sm text-ridge sm:pt-1">
-                  {formatDate(post.date)}
-                </time>
-                <div className="space-y-1">
-                  <Link href={`/blog/${post.slug}`} className="text-xl font-medium leading-snug tracking-tight transition-colors hover:text-signal">
-                    {post.title}
-                  </Link>
-                  <p className="max-w-[64ch] text-ridge">{post.description}</p>
+            <div className={styles.previewMain}>
+              <div className={styles.previewTopbar}><span>GTM workspace</span><span>Acme Analytics</span></div>
+              <div className={styles.previewColumns}>
+                <div className={styles.previewConversation}>
+                  <div className={styles.previewAnswer}>
+                    <span className={styles.assistantMark} aria-hidden="true">c</span>
+                    <p className={styles.responseLabel}>Your next move</p>
+                    <h2>Start with a useful conversation.</h2>
+                    <p>There’s a founder looking for a simpler way to track brand mentions. The problem fits your product, and the thread is still active.</p>
+                    <p className={styles.actionLabel}>Three ways forward</p>
+                    <ol className={styles.nextActions}>
+                      <li><span>01</span><div>Review the conversation<small>Read the source and check the fit.</small></div><span aria-hidden="true">↗</span></li>
+                      <li><span>02</span><div>Find the right angle<small>Lead with an answer, not a pitch.</small></div><span aria-hidden="true">→</span></li>
+                      <li><span>03</span><div>Keep your queue focused<small>Review the next relevant conversation.</small></div><span aria-hidden="true">→</span></li>
+                    </ol>
+                  </div>
+                  <div className={styles.composer}>
+                    <span>Ask about your next move…</span>
+                    <div><small>Sample workspace · not interactive</small><span aria-hidden="true">↑</span></div>
+                  </div>
+                  <p className={styles.previewDisclaimer}>You decide what to say. Nothing is posted for you.</p>
                 </div>
-              </li>
-            ))}
-          </ul>
+                <aside className={styles.evidence} aria-label="Illustrative source evidence">
+                  <p className={styles.actionLabel}>The context</p>
+                  <div className={styles.evidenceHeading}><span className={styles.sourceIcon}>r</span><div>Reddit<small>Illustrative forum conversation</small></div></div>
+                  <h3>Looking for a simpler way to track mentions</h3>
+                  <blockquote>“How are other small teams keeping track of where people mention their product? I’m trying to move beyond checking everything manually.”</blockquote>
+                  <div className={styles.evidenceSignal}><span>Product fit</span><strong>Strong</strong></div>
+                  <div className={styles.evidenceSignal}><span>Intent</span><strong>Asking for a solution</strong></div>
+                  <p className={styles.evidenceNote}>An illustrative example, not a live lead or a customer quote.</p>
+                </aside>
+              </div>
+            </div>
+          </div>
+        </figure>
+
+        <section aria-labelledby="sources-heading" className={styles.sources}>
+          <h2 id="sources-heading">Context from the places your buyers talk</h2>
+          <ul>{SOURCES.map((source) => <li key={source}>{source}</li>)}</ul>
         </section>
-      )}
 
-      <section id="faq" aria-labelledby="faq-heading" className="mt-20 grid scroll-mt-24 gap-x-12 gap-y-6 sm:grid-cols-[1fr_1.6fr]">
-        <h2 id="faq-heading" className="display text-3xl sm:text-4xl">Questions</h2>
-        <div className="divide-y divide-contour/60 border-y border-contour/60">
-          {FAQ.map(({ q, a }) => (
-            <details key={q} className="faq group py-4">
-              <summary className="flex cursor-pointer list-none items-start justify-between gap-4 text-lg font-medium leading-snug">
-                {q}
-                <span aria-hidden="true" className="faq-icon mt-1 text-signal">+</span>
-              </summary>
-              <p className="mt-3 max-w-[60ch] text-ridge">{a}</p>
-            </details>
-          ))}
-        </div>
-      </section>
+        <section id="how-it-works" aria-labelledby="how-heading" className={styles.section}>
+          <div className={styles.sectionHeading}><p className={styles.eyebrow}>A focused daily workflow</p><h2 id="how-heading">Less searching. More context.</h2></div>
+          <ol className={styles.steps}>
+            {STEPS.map((step, i) => (
+              <li key={step.title}><span className={styles.stepNumber}>{String(i + 1).padStart(2, "0")}</span><div><h3>{step.title}</h3><p>{step.body}</p></div></li>
+            ))}
+          </ol>
+        </section>
 
-      <section className="panel relative isolate mt-20 overflow-hidden px-6 py-14 text-center sm:px-10">
-        <div aria-hidden="true" className="aurora" />
-        <h2 className="display mx-auto max-w-[20ch] text-4xl sm:text-5xl">
-          Tomorrow morning, five conversations worth your time.
-        </h2>
-        {!session?.user && (
-          <Link href="/auth/sign-up" className="btn btn-lg mt-7">
-            Create a free account
-          </Link>
+        <section aria-labelledby="scores-heading" className={styles.splitSection}>
+          <div className={styles.sectionHeading}><p className={styles.eyebrow}>Evidence before outreach</p><h2 id="scores-heading">Know why it made the list.</h2><p>Every opportunity carries five scores and links to the posts behind it. Make your own call with the context in front of you.</p></div>
+          <dl className={styles.definitionList}>{SCORES.map(([term, def]) => <div key={term}><dt>{term}</dt><dd>{def}</dd></div>)}</dl>
+        </section>
+
+        <section aria-labelledby="never-heading" className={styles.boundaries}>
+          <div className={styles.sectionHeading}><p className={styles.eyebrow}>Built with boundaries</p><h2 id="never-heading">Your voice. Your judgment.</h2></div>
+          <dl className={styles.boundaryList}>{NEVER.map(([term, def]) => <div key={term}><dt><span aria-hidden="true">—</span>{term}</dt><dd>{def}</dd></div>)}</dl>
+        </section>
+
+        {latest.length > 0 && (
+          <section aria-labelledby="blog-heading" className={styles.section}>
+            <div className={styles.sectionHeader}><h2 id="blog-heading">Notes from the field</h2><Link href="/blog">All posts <span aria-hidden="true">↗</span></Link></div>
+            <ul className={styles.posts}>{latest.map((post) => <li key={post.slug}><time dateTime={post.date}>{formatDate(post.date)}</time><div><Link href={`/blog/${post.slug}`}>{post.title}<span aria-hidden="true">↗</span></Link><p>{post.description}</p></div></li>)}</ul>
+          </section>
         )}
-      </section>
+
+        <section id="faq" aria-labelledby="faq-heading" className={styles.splitSection}>
+          <div className={styles.sectionHeading}><p className={styles.eyebrow}>A few details</p><h2 id="faq-heading">Questions, answered.</h2></div>
+          <div className={styles.questions}>{FAQ.map(({ q, a }) => <details key={q}><summary>{q}<span aria-hidden="true">+</span></summary><p>{a}</p></details>)}</div>
+        </section>
+
+        <section className={styles.closing}>
+          <div><p className={styles.eyebrow}>Start with the right context</p><h2>Your next conversation is a better place to start.</h2><p>A short list. The evidence behind it. The reply is yours.</p></div>
+          {!session?.user && <Link href="/auth/sign-up" className={styles.primary}>Create a free account <span aria-hidden="true">↗</span></Link>}
+        </section>
+      </div>
     </Shell>
   );
 }

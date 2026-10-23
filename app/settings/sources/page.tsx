@@ -184,10 +184,10 @@ export default async function SourcesCoveragePage({
 
       <div className="mt-8 flex flex-wrap gap-3 text-sm">
         <Link
-          href={`/onboarding?workspaceId=${encodeURIComponent(workspaceId)}`}
+          href={`/workspace?workspaceId=${encodeURIComponent(workspaceId)}&setup=1`}
           className="font-medium text-zinc-900 underline dark:text-zinc-50"
         >
-          Onboarding
+          Product profile
         </Link>
         <Link
           href={`/settings/plan?workspaceId=${encodeURIComponent(workspaceId)}`}
