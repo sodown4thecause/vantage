@@ -6,17 +6,19 @@ import { followUpTools } from "@/lib/seo-agent/tools/follow-ups";
 import { geoTools } from "@/lib/seo-agent/tools/geo";
 import { keywordTools } from "@/lib/seo-agent/tools/keywords";
 import { serpTools } from "@/lib/seo-agent/tools/serp";
+import { researchTools } from "@/lib/seo-agent/tools/research";
+import { takoSearchTool } from "@/lib/research/tako";
 import type { ToolContext } from "@/lib/seo-agent/tools/shared";
 
 type DataIntent = Exclude<Intent, "all" | "concept" | "out_of_scope">;
 
 /** Spec 4.2: which data tools each intent may call. Follow-ups are added to every set. */
 const TOOLS_BY_INTENT: Record<DataIntent, string[]> = {
-  backlinks: ["backlink_summary", "referring_domains", "backlink_gap", "anchors"],
-  keywords: ["keyword_ideas", "keyword_overview", "ranked_keywords", "competitor_domains", "keyword_gap"],
-  serp: ["google_serp", "keyword_overview"],
-  geo_visibility: ["llm_response", "ai_keyword_volume", "google_serp"],
-  content: ["keyword_ideas", "keyword_overview", "google_serp", "ranked_keywords"],
+  backlinks: ["backlink_summary", "referring_domains", "backlink_gap", "anchors", "tako_search", "web_research", "linkup_fetch"],
+  keywords: ["keyword_ideas", "keyword_overview", "ranked_keywords", "competitor_domains", "keyword_gap", "tako_search", "web_research", "linkup_fetch"],
+  serp: ["google_serp", "keyword_overview", "tako_search", "web_research", "linkup_fetch"],
+  geo_visibility: ["llm_response", "ai_keyword_volume", "google_serp", "tako_search", "web_research", "linkup_fetch"],
+  content: ["keyword_ideas", "keyword_overview", "google_serp", "ranked_keywords", "tako_search", "web_research", "linkup_fetch"],
 };
 
 /** Used when classification failed: every data tool named by any intent, each once, in first-seen order. */
@@ -34,6 +36,8 @@ export function toolsForIntent(intent: Intent, ctx: ToolContext): Record<string,
     ...keywordTools(ctx),
     ...serpTools(ctx),
     ...geoTools(ctx),
+    ...researchTools(ctx),
+    tako_search: takoSearchTool(),
     ...followUpTools(ctx),
   };
   const selected: Record<string, Tool> = {};

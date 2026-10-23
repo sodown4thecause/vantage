@@ -1,10 +1,11 @@
-import { generateText, Output } from "ai";
+import { generateText, Output, stepCountIs } from "ai";
 import { z } from "zod";
 
 import { gtmAnswerSchema } from "@/lib/gtm/schema";
 import type { OpportunityDetailView } from "@/lib/opportunities/types";
 import type { MonitoringProfileView } from "@/lib/profile/types";
 import { runPaidCall } from "@/lib/providers/paid-call";
+import { normalizeTakoSearchOutput, recordTakoSearchCost, takoSearchTool, type TakoResearchData } from "@/lib/research/tako";
 import type { SeoMessageRow } from "@/lib/seo-agent/conversations";
 import { costOfUsage, gatewayProvider, seoModels } from "@/lib/seo-agent/models";
 
@@ -21,7 +22,8 @@ export async function answerGtmQuestion(input: {
   const models = seoModels();
   if (!models) throw new Error("GTM unavailable");
   const profile = input.profile;
-  return runPaidCall<z.infer<typeof gtmAnswerSchema>>({
+  const takoResults: TakoResearchData[] = [];
+  return runPaidCall<z.infer<typeof gtmAnswerSchema> & { takoResults: TakoResearchData[] }>({
     context: { workspaceId: input.workspaceId, sourceKey: "gtm" },
     provider: "gateway",
     action: "gtm_chat",
@@ -36,6 +38,7 @@ export async function answerGtmQuestion(input: {
         "Only the current evidence contains verified opportunity facts. Cite its titles and source URLs when relevant.",
         "Never invent evidence, metrics, customers, links, or completed work. If evidence is empty, say so plainly.",
         "You only read the existing workspace profile and queue. You cannot post, scan, write drafts, or execute actions.",
+        "Use Tako Search for current web facts when useful. Cite web result titles and URLs; when data cards appear, ground each stated value in its card and source link.",
         "Never claim any of those actions happened. Provide advice and exactly three useful next questions with reasons.",
         "The three prompts must be distinct. Put the strongest recommended next step first (actions[0]); its reason must explain why it is the best next move.",
         "These questions can span any GTM topic; they are not limited to SEO, GEO or content categories.",
@@ -71,6 +74,16 @@ export async function answerGtmQuestion(input: {
         question: input.message,
       }),
       output: Output.object({ schema: gtmAnswerSchema }),
+      tools: { tako_search: takoSearchTool() },
+      stopWhen: stepCountIs(4),
+      onStepFinish: async ({ toolResults }) => {
+        for (const result of toolResults) {
+          if (result.toolName !== "tako_search") continue;
+          await recordTakoSearchCost(input.workspaceId, "gtm", result.output);
+          const data = normalizeTakoSearchOutput(result.output);
+          if (data.web_results.length > 0 || data.cards.length > 0) takoResults.push(data);
+        }
+      },
       maxOutputTokens: 4000,
       maxRetries: 0,
       abortSignal: input.signal,
@@ -82,6 +95,6 @@ export async function answerGtmQuestion(input: {
     });
     const parsed = gtmAnswerSchema.safeParse(result.output);
     if (!parsed.success) return { error: new Error("Invalid GTM answer"), costUsd };
-    return { value: parsed.data, costUsd };
+    return { value: { ...parsed.data, takoResults }, costUsd };
   });
 }

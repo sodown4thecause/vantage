@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => {
     dataForSeo: vi.fn(() => true),
     peekKeywordIdeas: vi.fn(async () => null),
     fetchKeywordIdeas: vi.fn(async (_ws: string, keywords: string[]) => ({ value: keywords.map((keyword) => ({ keyword })), cached: false })),
+    recordTakoSearchCost: vi.fn(async () => undefined),
   };
 });
 
@@ -22,6 +23,10 @@ vi.mock("@/lib/db/client", () => ({ getDb: () => ({}) }));
 vi.mock("@/lib/providers/paid-call", () => ({
   runPaidCall: mocks.paid,
   PaidCallDeniedError: mocks.PaidCallDeniedError,
+}));
+vi.mock("@/lib/research/tako", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/research/tako")>()),
+  recordTakoSearchCost: mocks.recordTakoSearchCost,
 }));
 vi.mock("@/lib/dataforseo/config", () => ({ dataForSeoAvailable: () => mocks.dataForSeo(), dataForSeoConfig: () => null }));
 vi.mock("@/lib/dataforseo/labs", async (importOriginal) => ({
@@ -44,7 +49,7 @@ const CLASSIFIER = "reflection/beam";
 const FALLBACK = "anthropic/claude-fallback-test";
 const DATA_TOOLS = [
   "ai_keyword_volume", "anchors", "backlink_gap", "backlink_summary", "competitor_domains", "google_serp",
-  "keyword_gap", "keyword_ideas", "keyword_overview", "llm_response", "ranked_keywords", "referring_domains",
+  "keyword_gap", "keyword_ideas", "keyword_overview", "llm_response", "ranked_keywords", "referring_domains", "tako_search", "web_research", "linkup_fetch",
 ];
 
 const PROFILE: AgentProfile = {
@@ -149,6 +154,7 @@ beforeEach(() => {
   mocks.peekKeywordIdeas.mockReset();
   mocks.peekKeywordIdeas.mockResolvedValue(null);
   mocks.fetchKeywordIdeas.mockClear();
+  mocks.recordTakoSearchCost.mockReset().mockResolvedValue(undefined);
   vi.stubEnv("AI_GATEWAY_API_KEY", "gateway-test-key");
   vi.stubEnv("SEO_AGENT_MODEL", "");
   vi.stubEnv("SEO_CLASSIFIER_MODEL", "");
@@ -169,6 +175,8 @@ describe("systemPrompt", () => {
   it("names the untrusted-data rule and the follow-up tool, and describes list results as rows of total", () => {
     const prompt = systemPrompt(PROFILE);
     expect(prompt).toContain("untrusted");
+    expect(prompt).toContain("tako_search first");
+    expect(prompt).toContain("fewer than three web_results");
     expect(prompt).toContain("suggest_follow_ups");
     expect(prompt).toMatch(/\{ rows, total \}/);
     expect(prompt).toContain("25");
@@ -179,7 +187,7 @@ describe("systemPrompt", () => {
     expect(prompt).toContain("data: { rows, total }");
     expect(prompt).toContain('For source "live", call the figures live data (as of today).');
     expect(prompt).toContain(
-      'For source "cached", call the figures cached data (up to 30 days old for backlinks, keywords and AI search volume; up to 7 days for Google results and AI answers).',
+      'For source "cached", call the figures cached data (up to 30 days old for backlinks, keywords and AI search volume; up to 7 days for Google results and AI answers; up to 24 hours for Linkup web research and page fetches).',
     );
     expect(prompt).toContain("Never invent a specific date.");
     expect(prompt).not.toContain("data date");
@@ -242,14 +250,56 @@ describe("runAgent: tool path", () => {
     expect(names).toEqual([...DATA_TOOLS, "suggest_follow_ups"].sort());
   });
 
-  it("gives only suggest_follow_ups and a notice when DataForSEO is not set up", async () => {
+  it("stores Tako citations and data cards, and forces Linkup after fewer than three web results", async () => {
+    const output = {
+      web_results: [{ title: "Source", url: "https://example.com/source", snippet: "A current fact." }],
+      cards: [{ title: "Market value", webpage_url: "https://example.com/market", content: { card_data: { value: 42, unit: "USD" } } }],
+    };
+    const streamText = fakeStreamText([{
+      chunks: async (options) => {
+        await options.onStepFinish({ toolResults: [{ toolName: "tako_search", toolCallId: "t1", output }] });
+        return text("The result is supported by the sources.");
+      },
+    }]);
+    const run = await runAgent(input(), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } });
+    const { outcome } = await drain(run);
+    const options = streamText.mock.calls[0]![0] as FakeOptions;
+    const lowResultStep = {
+      toolCalls: [{ toolName: "tako_search", toolCallId: "t1", input: { query: "current fact" } }],
+      toolResults: [{ toolName: "tako_search", toolCallId: "t1", output }],
+    };
+    expect(options.prepareStep({ steps: [lowResultStep] })).toEqual({
+      activeTools: ["web_research"],
+      toolChoice: { type: "tool", toolName: "web_research" },
+    });
+    expect(outcome.cards).toEqual([expect.objectContaining({
+      tool: "tako_search", sandbox: false, data: expect.objectContaining({
+        web_results: [expect.objectContaining({ title: "Source", url: "https://example.com/source" })],
+        cards: [expect.objectContaining({ title: "Market value", value: "value: 42 · unit: USD", sourceUrl: "https://example.com/market" })],
+      }),
+    })]);
+    expect(mocks.recordTakoSearchCost).toHaveBeenCalledWith(WS, "seo", output);
+  });
+
+  it("forces Linkup when the Tako call asks for domain or date filters", async () => {
+    const streamText = fakeStreamText([{ chunks: text("Done."), finishReason: "stop" }]);
+    const run = await runAgent(input(), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } });
+    await drain(run);
+    const prepareStep = (streamText.mock.calls[0]![0] as FakeOptions).prepareStep;
+    expect(prepareStep({ steps: [{
+      toolCalls: [{ toolName: "tako_search", toolCallId: "t2", input: { query: "recent", sources: { web: { include_domains: ["example.com"] } } } }],
+      toolResults: [{ toolName: "tako_search", toolCallId: "t2", output: { web_results: [{ title: "A", url: "https://example.com" }, { title: "B", url: "https://example.org" }, { title: "C", url: "https://example.net" }] } }],
+    }] })).toMatchObject({ activeTools: ["web_research"], toolChoice: { type: "tool", toolName: "web_research" } });
+  });
+
+  it("keeps web research available with a notice when DataForSEO is not set up", async () => {
     mocks.dataForSeo.mockReturnValue(false);
     const streamText = fakeStreamText([{ chunks: text("From general knowledge."), finishReason: "stop" }]);
     const run = await runAgent(input({ classification: { intent: "backlinks", domains: ["rival.io"], keywords: [], engines: [] } }), {
       deps: { streamText: streamText as never, generateText: fakeGenerateText() as never },
     });
     const { outcome } = await drain(run);
-    expect(Object.keys((streamText.mock.calls[0]![0] as FakeOptions).tools)).toEqual(["suggest_follow_ups"]);
+    expect(Object.keys((streamText.mock.calls[0]![0] as FakeOptions).tools).sort()).toEqual(["linkup_fetch", "suggest_follow_ups", "tako_search", "web_research"]);
     expect(outcome.notices).toEqual(["SEO data is not set up yet."]);
     expect(outcome.plan).toEqual([]);
   });

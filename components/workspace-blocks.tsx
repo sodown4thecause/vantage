@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import { SafeLink } from "@/components/safe-link";
-import type { Block, ChartBlock, RedditThreadBlock, TableBlock } from "@/lib/workspace/blocks";
+import type { Block, ChartBlock, RedditThreadBlock, ResearchCardBlock, TableBlock } from "@/lib/workspace/blocks";
 import type { SavedArtifactLane } from "@/lib/workspace/saved-artifact-types";
 
 import s from "./workspace-blocks.module.css";
@@ -31,6 +31,14 @@ function RedditThread({ block }: { block: RedditThreadBlock }) {
       </li>)}
     </ol>}
     <SafeLink href={block.url} className={s.link}>Read the thread on Reddit ↗</SafeLink>
+  </article>;
+}
+
+function ResearchCard({ block }: { block: ResearchCardBlock }) {
+  return <article className={s.researchCard}>
+    <h3>{block.title}</h3>
+    <p>{formatCell(block.value)}</p>
+    <SafeLink href={block.sourceUrl} className={s.link}>{block.sourceLabel || "Open source ↗"}</SafeLink>
   </article>;
 }
 
@@ -101,6 +109,7 @@ export function BlockView({ block }: { block: Block }) {
     case "reddit_thread": return <RedditThread block={block} />;
     case "table": return <Table block={block} />;
     case "chart": return <Chart block={block} />;
+    case "research_card": return <ResearchCard block={block} />;
     case "text": return <p className={s.text}>{block.text}</p>;
   }
 }
