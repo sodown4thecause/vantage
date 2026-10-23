@@ -4,10 +4,72 @@ import { describe, expect, it } from "vitest";
 
 import {
   document,
+  kbChunk,
+  kbDocument,
+  kbHubEnum,
+  kbTierEnum,
   semanticShadow,
   sourceTypeEnum,
   workspace,
 } from "../lib/db/schema";
+
+describe("knowledge base database contract", () => {
+  it("keeps global and workspace documents distinct and filterable", () => {
+    const columns = getTableColumns(kbDocument);
+    expect(columns.workspaceId.notNull).toBe(false);
+    expect(columns.sourceUrl.notNull).toBe(true);
+    expect(columns.contentHash.notNull).toBe(true);
+    expect(kbTierEnum.enumValues).toEqual(["A", "B", "C", "D"]);
+    expect(kbHubEnum.enumValues).toEqual([
+      "gtm",
+      "seo-geo",
+      "content",
+      "coding",
+      "community-rules",
+    ]);
+
+    const indexes = getTableConfig(kbDocument).indexes;
+    expect(indexes.map((candidate) => candidate.config.name)).toEqual(
+      expect.arrayContaining([
+        "kb_documents_workspace_hub_published_idx",
+        "kb_documents_workspace_source_idx",
+      ]),
+    );
+  });
+
+  it("stores ordered half-precision chunks with vector and BM25 indexes", () => {
+    const columns = getTableColumns(kbChunk);
+    expect(columns.embedding.getSQLType()).toBe("halfvec(1024)");
+    expect(columns.embedding.notNull).toBe(false);
+    expect(columns.tsv.getSQLType()).toBe("tsvector");
+    expect(columns.chunkerVersion.notNull).toBe(true);
+    expect(columns.contentHash.notNull).toBe(true);
+
+    const indexes = getTableConfig(kbChunk).indexes;
+    const byName = (name: string) => indexes.find((candidate) => candidate.config.name === name);
+    const ordered = byName("kb_chunks_document_ord_uidx");
+    expect(ordered?.config.unique).toBe(true);
+    expect(ordered?.config.columns.map((column) => (column as { name?: string }).name)).toEqual([
+      "document_id",
+      "ord",
+    ]);
+
+    const hnsw = byName("kb_chunks_embedding_hnsw_idx");
+    expect(hnsw?.config.method).toBe("hnsw");
+    expect((hnsw?.config.columns[0] as { indexConfig?: { opClass?: string } }).indexConfig?.opClass).toBe(
+      "halfvec_cosine_ops",
+    );
+
+    const bm25 = byName("kb_chunks_bm25_idx");
+    expect(bm25?.config.method).toBe("bm25");
+    expect(bm25?.config.with).toEqual({ key_field: "'id'" });
+    expect(bm25?.config.columns.map((column) => (column as { name?: string }).name)).toEqual([
+      "id",
+      "header",
+      "text",
+    ]);
+  });
+});
 
 describe("M1 database contract", () => {
   it("accepts every M1 collector source type", () => {

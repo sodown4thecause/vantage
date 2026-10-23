@@ -29,4 +29,19 @@ describe("repository delivery contract", () => {
       expect(() => read(`drizzle/meta/${String(entry.idx).padStart(4, "0")}_snapshot.json`)).not.toThrow();
     }
   });
+
+  it("declares the knowledge-base extensions before extension-backed indexes", () => {
+    const journal = JSON.parse(read("drizzle/meta/_journal.json")) as {
+      entries: Array<{ tag: string }>;
+    };
+    const migration = read(`drizzle/${journal.entries.at(-1)?.tag}.sql`);
+    const vector = migration.indexOf("CREATE EXTENSION IF NOT EXISTS vector VERSION '0.8.6';");
+    const search = migration.indexOf("CREATE EXTENSION IF NOT EXISTS pg_search;");
+
+    expect(vector).toBeGreaterThanOrEqual(0);
+    expect(search).toBeGreaterThan(vector);
+    expect(search).toBeLessThan(migration.indexOf('CREATE TYPE "public"."kb_hub"'));
+    expect(migration).toContain('CREATE INDEX "kb_chunks_bm25_idx"');
+    expect(migration).toContain('CREATE INDEX "kb_chunks_embedding_hnsw_idx"');
+  });
 });
