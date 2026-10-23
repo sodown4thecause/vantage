@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { firecrawl, linkup, search, paidCall, redditPost, redditComments, countToday } = vi.hoisted(() => ({
+const { firecrawl, linkup, search, paidCall, redditPost, redditComments, reserve } = vi.hoisted(() => ({
   firecrawl: vi.fn(), linkup: vi.fn(), search: vi.fn(), paidCall: vi.fn(),
-  redditPost: vi.fn(), redditComments: vi.fn(), countToday: vi.fn(),
+  redditPost: vi.fn(), redditComments: vi.fn(), reserve: vi.fn(),
 }));
 vi.mock("@/lib/firecrawl/search", async (original) => ({
   ...await original<typeof import("@/lib/firecrawl/search")>(), firecrawlSearch: firecrawl,
@@ -11,8 +11,7 @@ vi.mock("@/lib/linkup/search", async (original) => ({
   ...await original<typeof import("@/lib/linkup/search")>(), linkupSearch: linkup,
 }));
 vi.mock("@/lib/costs/ledger", async (original) => ({
-  ...await original<typeof import("@/lib/costs/ledger")>(), countCostEventsToday: countToday,
-  reserveCostAttemptToday: vi.fn(async ({ max }: { max: number }) => max > 0),
+  ...await original<typeof import("@/lib/costs/ledger")>(), reserveCostAttemptToday: reserve,
 }));
 vi.mock("scavio", () => ({ Scavio: class {
   reddit = { search: vi.fn(), post: redditPost, postComments: redditComments };
@@ -49,7 +48,7 @@ beforeEach(() => {
   for (const name of ["FIRECRAWL_API_KEY", "SCAVIO_API_KEY", "TINYFISH_API_KEY", "LINKUP_API_KEY", "REDDIT_LINKUP_LANE",
     "REDDIT_LINKUP_DAILY_MAX", "REDDIT_HYDRATE_DAILY_MAX", "VANTAGE_DEMO_FIXTURES"]) vi.stubEnv(name, "");
   paidCall.mockImplementation(async (_options, work) => (await work()).value);
-  countToday.mockResolvedValue(0);
+  reserve.mockImplementation(async ({ max }: { max: number }) => max > 0);
 });
 afterEach(() => { vi.unstubAllEnvs(); });
 
@@ -130,7 +129,7 @@ describe("Linkup discovery lane", () => {
     expect(result.posts.map(post => [post.id, post.provider])).toEqual([["m1", undefined], ["m2", "linkup_search"]]);
     expect(linkup).toHaveBeenCalledWith("crm", expect.objectContaining({ includeDomains: ["reddit.com", "news.ycombinator.com"],
       fromDate: linkupFromDate(48), context }));
-    expect(countToday).toHaveBeenCalledWith({ workspaceId: "ws-1", provider: "linkup", action: "search" });
+    expect(reserve).toHaveBeenCalledWith({ workspaceId: "ws-1", provider: "linkup", action: "search", max: 20 });
   });
 
   it("carries Linkup provenance into the document", async () => {
@@ -150,7 +149,7 @@ describe("Linkup discovery lane", () => {
 
   it("does not search once the workspace has used today's Linkup cap", async () => {
     vi.stubEnv("REDDIT_LINKUP_DAILY_MAX", "2");
-    countToday.mockResolvedValue(2);
+    reserve.mockResolvedValue(false);
     firecrawl.mockResolvedValue([hit("c1")]);
     expect((await fetchRedditPostsWithMeta({ ctx: context })).posts.map(post => post.id)).toEqual(["c1"]);
     expect(linkup).not.toHaveBeenCalled();
@@ -163,16 +162,42 @@ describe("Linkup discovery lane", () => {
     expect((await fetchRedditPostsWithMeta({ ctx: context })).meta.provider).toBe("tinyfish_search_fetch");
   });
 
-  it.each(["cap", "count failure", "disabled cap"])("falls back after a Linkup %s when Firecrawl fails", async reason => {
+  it.each(["cap", "reservation failure", "disabled cap"])("falls back after a Linkup %s when Firecrawl fails", async reason => {
     vi.stubEnv("TINYFISH_API_KEY", "test-key");
     firecrawl.mockRejectedValue(new Error("down"));
-    if (reason === "count failure") countToday.mockRejectedValue(new Error("db down"));
+    if (reason === "reservation failure") reserve.mockRejectedValue(new Error("db down"));
     else if (reason === "disabled cap") vi.stubEnv("REDDIT_LINKUP_DAILY_MAX", "0");
-    else countToday.mockResolvedValue(20);
+    else reserve.mockResolvedValue(false);
     search.mockResolvedValue([]);
     expect((await fetchRedditPostsWithMeta({ ctx: context })).meta.provider).toBe("tinyfish_search_fetch");
     expect(linkup).not.toHaveBeenCalled();
     expect(search).toHaveBeenCalledOnce();
+  });
+
+  it("admits only one overlapping source when one Linkup slot remains", async () => {
+    vi.stubEnv("REDDIT_LINKUP_DAILY_MAX", "2");
+    let attempts = 1;
+    reserve.mockImplementation(async ({ max }: { max: number }) => attempts < max && Boolean(++attempts));
+    firecrawl.mockResolvedValue([hit("f1")]);
+    let finishSearch!: (hits: ReturnType<typeof hit>[]) => void;
+    linkup.mockImplementation(() => new Promise(resolve => { finishSearch = resolve; }));
+    const sources = [fetchRedditPostsWithMeta({ ctx: context }), fetchRedditPostsWithMeta({ ctx: context })];
+    await vi.waitFor(() => expect(linkup).toHaveBeenCalledOnce());
+    finishSearch([hit("l1")]);
+    const results = await Promise.all(sources);
+    expect(results.map(result => result.posts.map(post => post.id))).toEqual([["f1", "l1"], ["f1"]]);
+    expect(linkup).toHaveBeenCalledOnce();
+    expect(reserve.mock.calls.map(([input]) => input)).toEqual([
+      { workspaceId: "ws-1", provider: "linkup", action: "search", max: 2 },
+      { workspaceId: "ws-1", provider: "linkup", action: "search", max: 2 },
+    ]);
+  });
+
+  it("denies Linkup without a workspace before reserving or searching", async () => {
+    firecrawl.mockResolvedValue([hit("f1")]);
+    expect((await fetchRedditPostsWithMeta()).posts.map(post => post.id)).toEqual(["f1"]);
+    expect(reserve).not.toHaveBeenCalled();
+    expect(linkup).not.toHaveBeenCalled();
   });
 });
 

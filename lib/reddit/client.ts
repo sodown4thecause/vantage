@@ -1,5 +1,5 @@
 import fixture from "@/test/fixtures/reddit.json";
-import { countCostEventsToday, reserveCostAttemptToday } from "@/lib/costs/ledger";
+import { reserveCostAttemptToday } from "@/lib/costs/ledger";
 import type { CostContext } from "@/lib/costs/meter";
 import { firecrawlSearch, firecrawlTbs, hasFirecrawlApiKey, type FirecrawlSearchHit } from "@/lib/firecrawl/search";
 import { hasLinkupApiKey, linkupFromDate, linkupSearch } from "@/lib/linkup/search";
@@ -184,13 +184,6 @@ export function shouldHydrate(post: RedditPost, rank: number): boolean {
   return post.contentKind === "preview" && (rank < HYDRATE_TOP_RANKS || post.body.trim().length < HYDRATE_SHORT_BODY_CHARS);
 }
 
-/** Paid calls today's per-workspace cap still allows; 0 when the count can't be read, so nothing is spent. */
-async function remainingToday(ctx: CostContext, provider: string, action: string, max: number): Promise<number> {
-  if (!max || !ctx.workspaceId) return 0;
-  try { return Math.max(0, max - await countCostEventsToday({ workspaceId: ctx.workspaceId, provider, action })); }
-  catch { return 0; }
-}
-
 /**
  * Scavio full text and top replies for eligible previews in search order, within the workspace's daily cap.
  * Any failure keeps the preview; only cancellation propagates, so hydration never fails a scan.
@@ -243,7 +236,15 @@ export function linkupDailyMax(env: NodeJS.ProcessEnv = process.env): number {
  */
 async function linkupPosts(query: string, subreddit: string | undefined, limit: number, opts: RedditOptions): Promise<RedditPost[]> {
   const ctx = opts.ctx ?? { sourceKey: "reddit" };
-  if (!await remainingToday(ctx, "linkup", "search", linkupDailyMax())) {
+  let reserved = false;
+  if (ctx.workspaceId) {
+    try {
+      reserved = await reserveCostAttemptToday({ workspaceId: ctx.workspaceId, provider: "linkup", action: "search", max: linkupDailyMax() });
+    } catch {
+      opts.signal?.throwIfAborted();
+    }
+  }
+  if (!reserved) {
     throw new PaidCallDeniedError("budget_exhausted", "Daily Linkup allowance unavailable.");
   }
   const hits = await linkupSearch(subreddit ? `r/${subreddit} ${query}` : query, {
