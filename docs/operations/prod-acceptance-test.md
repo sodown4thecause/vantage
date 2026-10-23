@@ -165,14 +165,14 @@ Secret listing cannot establish whether a live binding works.
 
 ## Read-only monitoring and repeat audit
 
-Commands below are for **Windows PowerShell**, using this issue's isolated
-worktree, not either of Liam's existing checkouts. `Set-Location` means change
-folder. `npx --no-install` uses installed tooling without downloading a newer CLI.
+Commands below are for **Windows PowerShell**. Before running each block, change
+into the repository root of your isolated checkout (the folder containing
+`package.json` and `wrangler.jsonc`), not either of Liam's existing checkouts.
+`npx --no-install` uses installed tooling without downloading a newer CLI.
 Install the lockfile dependencies first if it reports a missing executable.
 Do not copy secrets into shell arguments or load a production `.env.local`.
 
 ```powershell
-Set-Location 'C:\Users\install\.capy\worktrees\jam_01M5NCWQ96B5GZ97B5ESVYWSX6\vantage'
 $env:WRANGLER_SEND_METRICS = 'false'
 $env:WRANGLER_LOAD_DOT_ENV_FILES = 'false'
 npx --no-install wrangler secret list --name dontkillmyvibe
@@ -186,10 +186,9 @@ Compare deployment version/time with the release Liam authorised. These commands
 list metadata only; none deploys or changes secrets.
 
 A tail is a live log stream; it does not replay historical logs. In a separate
-PowerShell terminal at the same full path, watch the production test:
+PowerShell terminal at the same repository root, watch the production test:
 
 ```powershell
-Set-Location 'C:\Users\install\.capy\worktrees\jam_01M5NCWQ96B5GZ97B5ESVYWSX6\vantage'
 $env:WRANGLER_LOAD_DOT_ENV_FILES = 'false'
 npx --no-install wrangler tail dontkillmyvibe --format pretty
 ```
@@ -304,10 +303,9 @@ pass or issue closure until every required gate has observed evidence.
 ## Repository verification for this documentation change
 
 No migration is needed; no billing, auth, Wrangler or dependency change is part
-of #107. Next remains pinned to 16.3.8. Use the isolated folder above:
+of #107. Next remains pinned to 16.3.8. Run from the isolated repository root:
 
 ```powershell
-Set-Location 'C:\Users\install\.capy\worktrees\jam_01M5NCWQ96B5GZ97B5ESVYWSX6\vantage'
 pnpm lint
 pnpm typecheck
 pnpm test
