@@ -66,7 +66,7 @@ describe("Firecrawl hit mapping", () => {
       ["abc4", "Need a CRM", thread("abc4")],
     ]);
     expect(posts[0]).toMatchObject({ subreddit: "SaaS", body: "2 days ago ... any recommendations?",
-      score: 0, numComments: 0, contentKind: "preview" });
+      score: null, numComments: null, contentKind: "preview" });
   });
 
   it("filters to the targeted subreddit, case-insensitively, and honours the limit", () => {
@@ -200,7 +200,7 @@ describe("Scavio hydration", () => {
     redditPost.mockRejectedValueOnce(new Error("Scavio 500"));
     const result = await fetchRedditPostsWithMeta({ ctx: context });
     expect(result.meta.provider).toBe("firecrawl_search");
-    expect(result.posts[0]).toMatchObject({ id: "h1", contentKind: "preview", body: "2 days ago ... any recommendations?", score: 0 });
+    expect(result.posts[0]).toMatchObject({ id: "h1", contentKind: "preview", body: "2 days ago ... any recommendations?", score: null });
     expect(result.posts[1]).toMatchObject({ id: "h2", contentKind: "thread" });
   });
 
@@ -254,7 +254,11 @@ describe("preview engagement in documents and scoring", () => {
     const features = (metadata: Record<string, unknown>) =>
       computeFeatures(normalizeDocuments([{ ...base, metadata } as unknown as DocumentRecord]),
         { productDescription: "CRM for small teams", topics: ["crm"], competitors: [] });
-    expect(features({ score: null, numComments: null, engagementKnown: false }))
-      .toEqual(features({ score: 950, numComments: 300, engagementKnown: true }));
+    // Timing decays with the clock, so pin it: both calls must see the same "now".
+    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(NOW + 3_600_000);
+    try {
+      expect(features({ score: null, numComments: null, engagementKnown: false }))
+        .toEqual(features({ score: 950, numComments: 300, engagementKnown: true }));
+    } finally { vi.useRealTimers(); }
   });
 });
