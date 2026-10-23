@@ -28,6 +28,8 @@ export const DEFAULT_PRICES: PriceSeed[] = [
   { provider: "scrapecreators", action: "request", unitCostUsd: 0.0019, unit: "request", notes: "ScrapeCreators $0.0019/request (LinkedIn/Instagram/Facebook). Source: competitor review 2026-10-06; pricing page URL unverified; checked 2026-10-06" },
   { provider: "browser_run", action: "browser_hour", unitCostUsd: 0.09, unit: "hour", notes: "Cloudflare Browser Run $0.09/hour after 10 free hours/month; use X-Browser-Ms-Used. Source: https://developers.cloudflare.com/browser-rendering/pricing/ ; checked 2026-10-06" },
   { provider: "workers_ai", action: "embed_m_tokens", unitCostUsd: 0.0118, unit: "million tokens", notes: "Workers AI qwen3-embedding-0.6b $0.0118/M input tokens. Source: https://developers.cloudflare.com/workers-ai/models/qwen3-embedding-0.6b/ ; checked 2026-10-08" },
+  { provider: "scavio", action: "reddit_hydrate", unitCostUsd: 0.008, unit: "post", notes: "Two Scavio requests (post + top comments) at the reddit_search estimate of ~ $0.004 each; same unverified source as reddit_search" },
+  { provider: "linkup", action: "search", unitCostUsd: 0.005, unit: "request", notes: "Linkup search, depth fast, outputType searchResults, $0.005/call. Source: https://docs.linkup.so/pages/documentation/platform/pricing ; checked 2026-10-23" },
 ];
 
 const CACHE_TTL_MS = 60_000;

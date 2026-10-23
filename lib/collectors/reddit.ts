@@ -46,7 +46,7 @@ export const redditCollector: Collector = {
       const postedAt = parseValidDate(p.createdAt);
       const publicationDateMissing = postedAt === null;
       // A search preview carries no votes or comment count: unknown, not zero.
-      const engagementKnown = p.contentKind !== "preview";
+      const engagementKnown = p.contentKind !== "preview" && (p.score !== null || p.numComments !== null);
       const body = [
         p.subreddit ? `r/${p.subreddit}` : null,
         p.author ? `u/${p.author}` : null,
@@ -73,7 +73,7 @@ export const redditCollector: Collector = {
           score: engagementKnown ? p.score : null,
           numComments: engagementKnown ? p.numComments : null,
           engagementKnown,
-          provider: meta.provider,
+          provider: p.provider ?? meta.provider,
           mocked: meta.provider === "fixture",
           contentKind: p.contentKind,
           discoveryOnly: p.contentKind === "preview",
