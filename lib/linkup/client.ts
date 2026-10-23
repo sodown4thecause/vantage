@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { dataForSeoCacheKey, readDataForSeoCache, writeDataForSeoCache } from "@/lib/dataforseo/cache";
+import { optionalEnv } from "@/lib/env/required";
 import { fetchPublicText, isPublicHttpUrl } from "@/lib/http/public-fetch";
 import { runPaidCall } from "@/lib/providers/paid-call";
 
@@ -87,7 +88,7 @@ async function postJson(
   body: Record<string, unknown>,
   opts: { fetchImpl?: typeof fetch; signal?: AbortSignal },
 ): Promise<{ response: Response; text: string }> {
-  const apiKey = process.env.LINKUP_API_KEY?.trim();
+  const apiKey = optionalEnv("LINKUP_API_KEY");
   if (!apiKey) throw new LinkupNotConfiguredError();
   return fetchPublicText(`${API_BASE}/${path}`, {
     method: "POST",
@@ -116,7 +117,7 @@ export async function searchLinkup(input: LinkupSearchInput, opts: CallOptions):
   });
   const hit = await readDataForSeoCache<LinkupSearchResponse>(key, CACHE_SECONDS);
   if (hit !== null) return { value: hit, cached: true };
-  if (!process.env.LINKUP_API_KEY?.trim()) throw new LinkupNotConfiguredError();
+  if (!optionalEnv("LINKUP_API_KEY")) throw new LinkupNotConfiguredError();
 
   const value = await runPaidCall<LinkupSearchResponse>({
     context: { workspaceId: opts.workspaceId, sourceKey: "seo" },
@@ -150,7 +151,7 @@ export async function fetchLinkupPage(url: string, opts: CallOptions): Promise<{
   const key = cacheKey(opts.workspaceId, "fetch", { url: pageUrl, mode: "standard", renderJs: false });
   const hit = await readDataForSeoCache<LinkupPageResponse>(key, CACHE_SECONDS);
   if (hit !== null) return { value: hit, cached: true };
-  if (!process.env.LINKUP_API_KEY?.trim()) throw new LinkupNotConfiguredError();
+  if (!optionalEnv("LINKUP_API_KEY")) throw new LinkupNotConfiguredError();
 
   const value = await runPaidCall<LinkupPageResponse>({
     context: { workspaceId: opts.workspaceId, sourceKey: "seo" },

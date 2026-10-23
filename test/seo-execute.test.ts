@@ -518,6 +518,17 @@ describe("runAgent: tool path", () => {
     expect(outcome.notices).toEqual(["SEO data is not set up yet."]);
     expect(Object.keys((streamText.mock.calls[0]![0] as FakeOptions).tools)).toEqual(["suggest_follow_ups"]);
   });
+
+  it("does not add a DataForSEO notice for Linkup-only approved calls", async () => {
+    mocks.dataForSeo.mockReturnValue(false);
+    vi.stubEnv("LINKUP_API_KEY", "");
+    const approved = [{ tool: "web_research", input: { query: "current facts" }, credits: 1 }];
+    const streamText = fakeStreamText([{ chunks: text("Research unavailable.") }]);
+    const run = await runAgent(input({ approved }), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } });
+    const { outcome } = await drain(run);
+    expect(outcome.notices).toEqual(["Linkup research is not configured."]);
+    expect(mocks.fetchKeywordIdeas).not.toHaveBeenCalled();
+  });
 });
 
 describe("runAgent: concept and out-of-scope path", () => {

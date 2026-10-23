@@ -13,6 +13,20 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("Tako Search results", () => {
+  it("preserves dataset column positions and tolerates cells beyond the declared columns", () => {
+    const result = normalizeTakoSearchOutput({
+      cards: [{
+        title: "Dataset",
+        webpage_url: "https://example.com/data",
+        content: { dataset: {
+          columns: [null, { name: "Revenue", unit: "USD" }],
+          rows: [[10, 42, 99]],
+        } },
+      }],
+    });
+    expect(result.cards[0]?.value).toBe("Value 1: 10 · Revenue: 42 USD · Value 3: 99");
+  });
+
   it("normalises web citations and card values while dropping unsafe source URLs", () => {
     const result = normalizeTakoSearchOutput({
       web_results: [

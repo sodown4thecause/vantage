@@ -13,17 +13,16 @@ import { z } from "zod";
 
 import { dataForSeoAvailable } from "@/lib/dataforseo/config";
 import { runPaidCall } from "@/lib/providers/paid-call";
+import { isTakoFilterRequest, normalizeTakoSearchOutput, recordTakoSearchCost, takoSearchTool, takoWebResultCount } from "@/lib/research/tako";
 import { QuestionBudget, autoCreditsFromEnv } from "@/lib/seo-agent/budget";
 import type { Classification, Intent } from "@/lib/seo-agent/classify";
 import type { FollowUps, PlannedCall, ResultCard, SeoMessageStatus } from "@/lib/seo-agent/conversations";
 import { classifierProviderOptions, costOfUsage, gatewayProvider, seoModels } from "@/lib/seo-agent/models";
 import { conceptPrompt, systemPrompt, type PromptProfile } from "@/lib/seo-agent/prompt";
-import { normalizeTakoSearchOutput, isTakoFilterRequest, recordTakoSearchCost, takoWebResultCount } from "@/lib/research/tako";
 import { fallbackFollowUps } from "@/lib/seo-agent/suggestions";
 import { toolsForIntent } from "@/lib/seo-agent/tools";
 import { followUpTools } from "@/lib/seo-agent/tools/follow-ups";
 import { researchTools } from "@/lib/seo-agent/tools/research";
-import { takoSearchTool } from "@/lib/research/tako";
 import { addCard, addNotice, type ToolContext } from "@/lib/seo-agent/tools/shared";
 
 export type AgentProfile = PromptProfile;
@@ -249,7 +248,6 @@ type ApprovedResult = { tool: string; input: Record<string, unknown>; result: un
  * A call whose tool is not a lookup is skipped with a notice; a call that throws reports a generic failure.
  */
 async function runApprovedCalls(ctx: ToolContext, approved: PlannedCall[]): Promise<ApprovedResult[]> {
-  if (!dataForSeoAvailable()) addNotice(ctx, NOT_SET_UP_NOTICE);
   const lookups = toolsForIntent("all", ctx);
   const results: ApprovedResult[] = [];
   for (const call of approved) {

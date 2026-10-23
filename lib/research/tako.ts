@@ -37,14 +37,14 @@ function valueOfCard(card: RecordValue): string {
   }
 
   const dataset = isRecord(content.dataset) ? content.dataset : null;
-  const columns = dataset && Array.isArray(dataset.columns) ? dataset.columns.filter(isRecord) : [];
+  const columns = dataset && Array.isArray(dataset.columns) ? dataset.columns : [];
   const rows = dataset && Array.isArray(dataset.rows) ? dataset.rows : [];
   const firstRow = Array.isArray(rows[0]) ? rows[0] : null;
   if (firstRow && columns.length) {
     const values = firstRow.flatMap((value, index) => {
       const scalar = scalarSummary(value);
       if (!scalar) return [];
-      const column = columns[index]!;
+      const column = isRecord(columns[index]) ? columns[index] : {};
       const name = asText(column.name) || `Value ${index + 1}`;
       const unit = asText(column.unit);
       return [`${name}: ${scalar}${unit ? ` ${unit}` : ""}`];
