@@ -126,6 +126,9 @@ export const workspace = pgTable("workspace", {
   digestEnabled: boolean("digest_enabled").notNull().default(false),
   digestEmail: text("digest_email"),
   digestHourUtc: integer("digest_hour_utc").notNull().default(13),
+  /** Local send hour in `digestTimeZone` (IANA, e.g. Australia/Brisbane). When both are set they replace the UTC hour. */
+  digestLocalHour: integer("digest_local_hour"),
+  digestTimeZone: text("digest_time_zone"),
   digestLastSentAt: timestamp("digest_last_sent_at", { withTimezone: true }),
   digestLeaseToken: text("digest_lease_token"),
   digestLeaseUntil: timestamp("digest_lease_until", { withTimezone: true }),

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { isPublicHttpUrl } from "@/lib/http/public-fetch";
+import { PROFILE_FIELDS, profileDraftSchema, type ProfileDraft, type ProfileField } from "@/lib/onboarding/draft";
 import type { FieldErrors, MonitoringProfileInput, MonitoringProfileView } from "@/lib/profile/types";
 
 /*
@@ -21,6 +22,8 @@ const MAX_COMMUNITIES = 10;
 const MAX_KEYWORDS = 12;
 const COMMUNITIES_LABEL = "Communities they use:";
 
+// The digest is scheduled from the local hour in an IANA time zone. `hourUtc` is today's equivalent, also written to
+// the legacy UTC column so anything still reading it stays close.
 const digestSchema = z.object({
   localHour: z.number().int().min(0).max(23),
   timeZone: z.string().max(64),
@@ -39,7 +42,11 @@ export const interviewAnswersSchema = z.object({
 });
 export type InterviewAnswers = z.infer<typeof interviewAnswersSchema>;
 
-export const interviewStateSchema = z.object({ answers: interviewAnswersSchema, complete: z.boolean() });
+/**
+ * `answers` holds confirmed values only; `draft` holds what was derived from the website and not yet confirmed. So the
+ * first unanswered step is also the first unconfirmed field, and a returning owner resumes there.
+ */
+export const interviewStateSchema = z.object({ answers: interviewAnswersSchema, draft: profileDraftSchema.optional(), complete: z.boolean() });
 export type InterviewState = z.infer<typeof interviewStateSchema>;
 
 /**
@@ -65,7 +72,39 @@ export type InterviewResponse = {
   /** Once complete: the product's host name for the workspace header. */
   productName?: string;
   profileSaved?: boolean;
+  /** The profile derived from the website, for the editable card. Confirmed fields are in `answers`. */
+  draft?: ProfileDraft;
+  answers?: InterviewAnswers;
 };
+
+/** True while the owner is reviewing the derived profile card rather than answering one question. */
+export function reviewingDraft(answers: InterviewAnswers, draft: ProfileDraft | undefined): boolean {
+  const step = nextStep(answers);
+  return Boolean(draft) && step !== null && (PROFILE_FIELDS as readonly string[]).includes(step);
+}
+
+export function draftReviewMessage(answers: InterviewAnswers): string {
+  return `I read ${hostOf(answers.productUrl)} and drafted your profile below. Edit anything that’s off, then choose “Looks right”.`;
+}
+
+export type ConfirmResult = { ok: true; answers: InterviewAnswers } | { ok: false; field: ProfileField; error: string };
+
+/**
+ * Confirms edited or accepted card fields, each through the same validation as a typed answer. Already confirmed
+ * fields are left alone, and nothing is stored unless every submitted field is valid.
+ */
+export function confirmFields(answers: InterviewAnswers, values: Partial<Record<ProfileField, string>>): ConfirmResult {
+  let next = answers;
+  for (const field of PROFILE_FIELDS) {
+    const value = values[field];
+    if (value === undefined || next[field] !== undefined) continue;
+    // An empty communities field means "none", which the communities step reads from "skip".
+    const applied = applyAnswer(next, field, field === "communities" && !value.trim() ? "skip" : value);
+    if (!applied.ok) return { ok: false, field, error: applied.error };
+    next = applied.answers;
+  }
+  return { ok: true, answers: next };
+}
 
 /** The first step without an answer, or null when every step is answered. Resuming starts here. */
 export function nextStep(answers: InterviewAnswers): InterviewStep | null {
@@ -118,7 +157,7 @@ function promptBody(step: InterviewStep, answers: InterviewAnswers, current?: Mo
     (keepAnswer ? [keepAnswer, ...rest] : rest).slice(0, 3);
   switch (step) {
     case "productUrl":
-      return { step, question: "Let’s set up your product so I can find the right conversations. What’s your product’s website address?", suggestions: withKeep(current ? keep("website", current.productUrl) : null, [
+      return { step, question: "Let’s set up your product so I can find the right conversations. Paste your product’s website address and I’ll draft the rest of your profile for you to check.", suggestions: withKeep(current ? keep("website", current.productUrl) : null, [
         { kind: "ask", label: "Why do you need my website?", reason: "How your answers are used.", reply: "I read your public site to understand what you sell, so I can judge which conversations are a genuine fit. Nothing is ever posted on your behalf." },
         { kind: "ask", label: "What if my site isn’t live yet?", reason: "You can still finish setup.", reply: "Enter the address you’ll launch on. If I can’t read it, I’ll rely on the description you give me next." },
         { kind: "ask", label: "Can I change these answers later?", reason: "Nothing here is final.", reply: "Yes. Choose “Update product profile” in the sidebar at any time. Each save keeps a new version." },
@@ -310,7 +349,7 @@ export function completionMessage(answers: InterviewAnswers, digestSaved = true)
   const digest = !digestSaved
     ? "Your product profile is saved, but I couldn’t save your chosen digest time. Send any message to retry. Please set it under Daily digest if you’d rather change the time."
     : answers.digest
-    ? `Your daily digest is set for ${formatHour(answers.digest.localHour)} ${answers.digest.timeZone} (${String(answers.digest.hourUtc).padStart(2, "0")}:00 UTC). Digests are scheduled in UTC, so daylight saving can shift the local time by an hour. Turn on email delivery under Daily digest when you’re ready.`
+    ? `Your daily digest is set for ${formatHour(answers.digest.localHour)} ${answers.digest.timeZone}, and it follows daylight saving. Turn on email delivery under Daily digest when you’re ready.`
     : "Your daily digest keeps its default time. You can change it under Daily digest.";
   return [
     `${digestSaved ? "You’re all set. " : ""}I’ve saved the product profile for ${hostOf(answers.productUrl)}.`,

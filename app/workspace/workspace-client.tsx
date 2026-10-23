@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
+import { ProfileDraftCard } from "@/components/profile-draft-card";
 import { SafeLink } from "@/components/safe-link";
 import { BlockList, SaveButton, type SavedArtifactSummary } from "@/components/workspace-blocks";
 import { WorkspaceFrame } from "@/components/workspace-frame";
 import { gtmResponseSchema } from "@/lib/gtm/schema";
-import type { InterviewPrompt, InterviewResponse, InterviewSuggestion } from "@/lib/onboarding/interview";
+import { FIELD_LABELS, PROFILE_FIELDS, type ProfileDraft, type ProfileField } from "@/lib/onboarding/draft";
+import type { InterviewAnswers, InterviewPrompt, InterviewResponse, InterviewSuggestion } from "@/lib/onboarding/interview";
 import type { OpportunityDetailView } from "@/lib/opportunities/types";
 import { parseBlocks, type Block } from "@/lib/workspace/blocks";
 import { LANE_LABELS } from "@/lib/workspace/saved-artifact-types";
@@ -17,7 +19,12 @@ import s from "./workspace.module.css";
 export type NextAction = { prompt: string; reason: string };
 export type Turn = { role: "user" | "assistant"; content: string; actions?: NextAction[]; evidence?: OpportunityDetailView[]; blocks?: Block[] };
 /** Interview state from the server: a fresh first question, or an unfinished interview to resume. */
-export type InterviewStart = { conversationId: string | null; prompt?: InterviewPrompt; turns: Turn[] };
+export type InterviewStart = { conversationId: string | null; prompt?: InterviewPrompt; turns: Turn[]; draft?: ProfileDraft; answers?: InterviewAnswers };
+
+/** True while the derived profile card is waiting for the owner, i.e. the website is in and a profile field is open. */
+export function showsDraftCard(draft: ProfileDraft | undefined, answers: InterviewAnswers): draft is ProfileDraft {
+  return Boolean(draft && answers.productUrl) && PROFILE_FIELDS.some((field) => answers[field] === undefined);
+}
 
 export class WorkspaceRequestError extends Error {}
 
@@ -138,6 +145,8 @@ export function WorkspaceClient({ workspaceId, productName: initialProductName, 
   const [setupTurns, setSetupTurns] = useState<Turn[]>(() => interview
     ? interview.turns.length ? interview.turns : interview.prompt ? [{ role: "assistant", content: interview.prompt.question }] : []
     : []);
+  const [setupDraft, setSetupDraft] = useState(interview?.draft);
+  const [setupAnswers, setSetupAnswers] = useState<InterviewAnswers>(interview?.answers ?? {});
   const conversationId = useRef(initialConversationId);
   const setupConversationId = useRef(interview?.conversationId ?? null);
   const requestInFlight = useRef(false);
@@ -165,7 +174,7 @@ export function WorkspaceClient({ workspaceId, productName: initialProductName, 
     setSetupOpen(true);
   }
 
-  async function answerSetup(answer: string, shown = answer) {
+  async function answerSetup(answer: string, shown = answer, confirm?: Partial<Record<ProfileField, string>>) {
     const message = answer.trim();
     if (!message || requestInFlight.current) return;
     requestInFlight.current = true;
@@ -173,13 +182,13 @@ export function WorkspaceClient({ workspaceId, productName: initialProductName, 
     setError("");
     const previous = setupTurns;
     setSetupTurns([...previous, { role: "user", content: shown }]);
-    setDraft("");
+    if (!confirm) setDraft("");
     try {
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const response = await fetch("/api/workspace/interview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workspaceId, conversationId: setupConversationId.current ?? undefined, answer: message, timeZone }),
+        body: JSON.stringify({ workspaceId, conversationId: setupConversationId.current ?? undefined, ...(confirm ? { confirm } : { answer: message }), timeZone }),
       });
       if (response.status === 403 || response.status === 401) throw new WorkspaceRequestError("Unable to access this workspace. Sign in again to continue.");
       if (response.status === 409) throw new WorkspaceRequestError("This setup was already finished in another tab. Reload the page to see your saved profile.");
@@ -187,10 +196,12 @@ export function WorkspaceClient({ workspaceId, productName: initialProductName, 
       const result = await response.json() as InterviewResponse;
       if (result.rejected) {
         setSetupTurns([...previous, { role: "user", content: shown }, { role: "assistant", content: result.message }]);
-        setDraft(answer === shown ? message : "");
+        if (!confirm) setDraft(answer === shown ? message : "");
         return;
       }
       setupConversationId.current = result.conversationId;
+      setSetupDraft(result.draft);
+      setSetupAnswers(result.answers ?? {});
       const next: Turn[] = [...previous, { role: "user", content: shown }, { role: "assistant", content: result.message }];
       setSetupPrompt(result.prompt);
       if (result.profileSaved) {
@@ -209,7 +220,7 @@ export function WorkspaceClient({ workspaceId, productName: initialProductName, 
       }
     } catch (err) {
       setSetupTurns(previous);
-      setDraft(message);
+      if (!confirm) setDraft(message);
       setError(workspaceErrorCopy(err));
     } finally {
       requestInFlight.current = false;
@@ -320,7 +331,11 @@ export function WorkspaceClient({ workspaceId, productName: initialProductName, 
                 </div>}
               </>}
             </li>)}</ol>}
-            {busy && <p role="status" className={s.notice}>{setupOpen ? "Saving your answer…" : "Reading your current opportunities and planning the next step…"}</p>}
+            {setupOpen && showsDraftCard(setupDraft, setupAnswers) && <ProfileDraftCard draft={setupDraft} answers={setupAnswers} busy={busy}
+              onConfirm={(values) => void answerSetup("confirm", Object.keys(values).length > 1 ? "Looks right" : `Confirmed: ${FIELD_LABELS[Object.keys(values)[0] as ProfileField]}`, values)} />}
+            {busy && <p role="status" className={s.notice}>{setupOpen
+              ? setupPrompt?.step === "productUrl" ? "Reading your website and drafting your profile…" : "Saving your answer…"
+              : "Reading your current opportunities and planning the next step…"}</p>}
             <div ref={end} />
             {!setupOpen && <details className={s.mobileEvidence}><summary>View supporting conversations ({evidence.length})</summary><div className="mt-5"><Evidence evidence={evidence} workspaceId={workspaceId} /></div></details>}
             <Saved workspaceId={workspaceId} items={saved} onDelete={(id) => setSaved((items) => items.filter((item) => item.id !== id))} />

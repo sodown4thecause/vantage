@@ -60,6 +60,8 @@ export default async function WorkspacePage({ searchParams }: { searchParams: Pr
     conversationId: resumable?.id ?? null,
     prompt: step ? promptFor(step, answers, profile) : undefined,
     turns: resumable?.turns ?? [],
+    draft: resumable?.state.draft,
+    answers,
   };
   let productName = "Your product";
   if (profile?.productUrl) {

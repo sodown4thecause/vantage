@@ -36,8 +36,17 @@ export async function runDueDigests(
   dayStart.setUTCHours(0, 0, 0, 0);
   const todaySlot = sql`${dayStart.toISOString()}::timestamptz
     + make_interval(hours => greatest(0, least(23, ${workspace.digestHourUtc})))`;
-  const latestSlot = sql`(${todaySlot} - case when ${todaySlot} > ${now.toISOString()}::timestamptz
+  const utcSlot = sql`(${todaySlot} - case when ${todaySlot} > ${now.toISOString()}::timestamptz
     then interval '1 day' else interval '0 days' end)`;
+  // A local hour in an IANA zone is converted here, at send time, so daylight saving is followed. The zone was
+  // checked against pg_timezone_names when it was stored. Must match latestDigestSlot in schedule.ts.
+  const localDay = sql`date_trunc('day', ${now.toISOString()}::timestamptz at time zone ${workspace.digestTimeZone})`;
+  const localHour = sql`make_interval(hours => greatest(0, least(23, ${workspace.digestLocalHour})))`;
+  const localToday = sql`((${localDay} + ${localHour}) at time zone ${workspace.digestTimeZone})`;
+  const localSlot = sql`case when ${localToday} > ${now.toISOString()}::timestamptz
+    then ((${localDay} - interval '1 day' + ${localHour}) at time zone ${workspace.digestTimeZone}) else ${localToday} end`;
+  const latestSlot = sql`(case when ${workspace.digestTimeZone} is not null and ${workspace.digestLocalHour} is not null
+    then ${localSlot} else ${utcSlot} end)`;
   const eligible = and(
     eq(workspace.digestEnabled, true),
     sql`nullif(btrim(${workspace.digestEmail}), '') is not null`,
@@ -86,6 +95,8 @@ export async function runDueDigests(
           id: workspace.id,
           digestEmail: workspace.digestEmail,
           digestHourUtc: workspace.digestHourUtc,
+          digestLocalHour: workspace.digestLocalHour,
+          digestTimeZone: workspace.digestTimeZone,
           digestLastSentAt: workspace.digestLastSentAt,
         });
       if (!ws) {
@@ -95,6 +106,8 @@ export async function runDueDigests(
       claimed = true;
       if (!ws.digestEmail || !isDigestDue({
         digestHourUtc: ws.digestHourUtc,
+        digestLocalHour: ws.digestLocalHour,
+        digestTimeZone: ws.digestTimeZone,
         lastSentAt: ws.digestLastSentAt,
         now,
       })) {
