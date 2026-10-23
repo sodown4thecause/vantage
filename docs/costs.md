@@ -13,6 +13,7 @@ Every outbound paid or metered provider call writes one `cost_event` row via `wi
 | tinyfish | `fetch` | request (one per batch of 10 URLs) | 0 | `lib/tinyfish/search-fetch.ts` `tinyFishFetchMarkdown` | youtube, producthunt |
 | scavio | `reddit_search` | request | 0.004 | `lib/reddit/client.ts` | reddit collector |
 | scavio | `reddit_hydrate` | hydrated post (post + comments requests) | 0.008 | `lib/reddit/client.ts`, capped by `REDDIT_HYDRATE_DAILY_MAX` per workspace per day | reddit collector |
+| linkup | `search` | request (depth `fast`, search results) | 0.005 | `lib/linkup/search.ts`, capped by `REDDIT_LINKUP_DAILY_MAX` per workspace per day | reddit collector (optional lane behind `REDDIT_LINKUP_LANE`) |
 | firecrawl | `search` | request (2 credits per 10 results) | credits × `FIRECRAWL_CREDIT_USD` | `lib/firecrawl/search.ts` | reddit collector (first choice), web discussions |
 | scavio | `x_search` | request | 0.004 (assumed) | `lib/x/client.ts` | x collector |
 | scavio | `youtube_comments` | request (one per video) | 0.004 (assumed) | `lib/youtube/client.ts` | youtube collector |
