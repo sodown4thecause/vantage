@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => {
     dataForSeo: vi.fn(() => true),
     peekKeywordIdeas: vi.fn(async () => null),
     fetchKeywordIdeas: vi.fn(async (_ws: string, keywords: string[]) => ({ value: keywords.map((keyword) => ({ keyword })), cached: false })),
-    recordTakoSearchCost: vi.fn(async () => undefined),
+    recordCost: vi.fn(async () => true),
   };
 });
 
@@ -24,10 +24,7 @@ vi.mock("@/lib/providers/paid-call", () => ({
   runPaidCall: mocks.paid,
   PaidCallDeniedError: mocks.PaidCallDeniedError,
 }));
-vi.mock("@/lib/research/tako", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/research/tako")>()),
-  recordTakoSearchCost: mocks.recordTakoSearchCost,
-}));
+vi.mock("@/lib/costs/ledger", () => ({ recordCost: mocks.recordCost }));
 vi.mock("@/lib/dataforseo/config", () => ({ dataForSeoAvailable: () => mocks.dataForSeo(), dataForSeoConfig: () => null }));
 vi.mock("@/lib/dataforseo/labs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/dataforseo/labs")>()),
@@ -154,7 +151,8 @@ beforeEach(() => {
   mocks.peekKeywordIdeas.mockReset();
   mocks.peekKeywordIdeas.mockResolvedValue(null);
   mocks.fetchKeywordIdeas.mockClear();
-  mocks.recordTakoSearchCost.mockReset().mockResolvedValue(undefined);
+  mocks.recordCost.mockReset().mockResolvedValue(true);
+  vi.stubEnv("TAKO_SEARCH_USD", "");
   vi.stubEnv("AI_GATEWAY_API_KEY", "gateway-test-key");
   vi.stubEnv("SEO_AGENT_MODEL", "");
   vi.stubEnv("SEO_CLASSIFIER_MODEL", "");
@@ -278,7 +276,27 @@ describe("runAgent: tool path", () => {
         cards: [expect.objectContaining({ title: "Market value", value: "value: 42 · unit: USD", sourceUrl: "https://example.com/market" })],
       }),
     })]);
-    expect(mocks.recordTakoSearchCost).toHaveBeenCalledWith(WS, "seo", output);
+    expect(mocks.recordCost).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: WS, sourceKey: "seo", provider: "gateway", action: "tako_search", unitCostUsd: 0,
+    }));
+  });
+
+  it("reserves a configured Tako price through runPaidCall before the provider tool executes", async () => {
+    vi.stubEnv("TAKO_SEARCH_USD", "0.007");
+    const output = { web_results: [{ title: "Source", url: "https://example.com", snippet: "Evidence" }] };
+    const streamText = fakeStreamText([{
+      chunks: async (options) => {
+        await options.toolApproval.tako_search({ query: "current facts" }, { toolCallId: "priced-tako", messages: [] });
+        await options.onStepFinish({ toolResults: [{ toolName: "tako_search", toolCallId: "priced-tako", output }] });
+        return text("Cited answer.");
+      },
+    }]);
+    const run = await runAgent(input(), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } });
+    await drain(run);
+    expect(mocks.paid).toHaveBeenCalledWith(expect.objectContaining({
+      context: { workspaceId: WS, sourceKey: "seo" }, provider: "gateway", action: "tako_search", estimateUsd: 0.007,
+    }), expect.any(Function));
+    expect(mocks.recordCost).not.toHaveBeenCalled();
   });
 
   it("forces Linkup when the Tako call asks for domain or date filters", async () => {
@@ -302,6 +320,16 @@ describe("runAgent: tool path", () => {
     expect(Object.keys((streamText.mock.calls[0]![0] as FakeOptions).tools).sort()).toEqual(["linkup_fetch", "suggest_follow_ups", "tako_search", "web_research"]);
     expect(outcome.notices).toEqual(["SEO data is not set up yet."]);
     expect(outcome.plan).toEqual([]);
+  });
+
+  it("does not show a DataForSEO notice for an approved Linkup-only call", async () => {
+    mocks.dataForSeo.mockReturnValue(false);
+    vi.stubEnv("LINKUP_API_KEY", "");
+    const approved = [{ tool: "web_research", input: { query: "current facts" }, credits: 0 }];
+    const streamText = fakeStreamText([{ chunks: text("Linkup is not configured."), finishReason: "stop" }]);
+    const run = await runAgent(input({ approved }), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } });
+    const { outcome } = await drain(run);
+    expect(outcome.notices).toEqual(["Linkup research is not configured."]);
   });
 
   it("uses the follow-up the model records through suggest_follow_ups", async () => {
@@ -517,17 +545,6 @@ describe("runAgent: tool path", () => {
     expect(mocks.fetchKeywordIdeas).not.toHaveBeenCalled();
     expect(outcome.notices).toEqual(["SEO data is not set up yet."]);
     expect(Object.keys((streamText.mock.calls[0]![0] as FakeOptions).tools)).toEqual(["suggest_follow_ups"]);
-  });
-
-  it("does not add a DataForSEO notice for Linkup-only approved calls", async () => {
-    mocks.dataForSeo.mockReturnValue(false);
-    vi.stubEnv("LINKUP_API_KEY", "");
-    const approved = [{ tool: "web_research", input: { query: "current facts" }, credits: 1 }];
-    const streamText = fakeStreamText([{ chunks: text("Research unavailable.") }]);
-    const run = await runAgent(input({ approved }), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } });
-    const { outcome } = await drain(run);
-    expect(outcome.notices).toEqual(["Linkup research is not configured."]);
-    expect(mocks.fetchKeywordIdeas).not.toHaveBeenCalled();
   });
 });
 

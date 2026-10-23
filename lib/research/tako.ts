@@ -2,6 +2,8 @@ import { gateway } from "ai";
 
 import { recordCost } from "@/lib/costs/ledger";
 import { isPublicHttpUrl } from "@/lib/http/public-fetch";
+import { optionalEnv } from "@/lib/env/required";
+import { runPaidCall } from "@/lib/providers/paid-call";
 
 export type TakoWebResult = { title: string; url: string; snippet: string };
 export type TakoDataCard = { title: string; value: string; sourceUrl: string; sourceLabel?: string };
@@ -13,6 +15,7 @@ const isRecord = (value: unknown): value is RecordValue =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 const asText = (value: unknown): string => typeof value === "string" ? value.trim() : "";
 const sourceUrl = (value: unknown): string | null => typeof value === "string" && isPublicHttpUrl(value) ? value : null;
+const isPaidCallDenied = (error: unknown): boolean => error instanceof Error && error.name === "PaidCallDeniedError";
 
 /** The provider-executed search tool shipped by the AI SDK's Vercel Gateway integration. */
 export function takoSearchTool() {
@@ -40,13 +43,13 @@ function valueOfCard(card: RecordValue): string {
   const columns = dataset && Array.isArray(dataset.columns) ? dataset.columns : [];
   const rows = dataset && Array.isArray(dataset.rows) ? dataset.rows : [];
   const firstRow = Array.isArray(rows[0]) ? rows[0] : null;
-  if (firstRow && columns.length) {
+  if (firstRow && firstRow.length > 0) {
     const values = firstRow.flatMap((value, index) => {
       const scalar = scalarSummary(value);
       if (!scalar) return [];
-      const column = isRecord(columns[index]) ? columns[index] : {};
-      const name = asText(column.name) || `Value ${index + 1}`;
-      const unit = asText(column.unit);
+      const column = columns[index];
+      const name = isRecord(column) ? asText(column.name) || `Value ${index + 1}` : `Value ${index + 1}`;
+      const unit = isRecord(column) ? asText(column.unit) : "";
       return [`${name}: ${scalar}${unit ? ` ${unit}` : ""}`];
     });
     if (values.length) return values.slice(0, 5).join(" · ").slice(0, 2000);
@@ -88,21 +91,102 @@ export function normalizeTakoSearchOutput(output: unknown): TakoResearchData {
   return { web_results, cards };
 }
 
-/** Tako calls are currently free; log every attempt at TAKO_SEARCH_USD (default 0) for cost visibility. */
-export async function recordTakoSearchCost(workspaceId: string, sourceKey: "seo" | "gtm", output: unknown): Promise<void> {
-  const rawPrice = process.env.TAKO_SEARCH_USD?.trim();
+export function takoSearchUsd(): number {
+  const rawPrice = optionalEnv("TAKO_SEARCH_USD");
   const parsedPrice = rawPrice ? Number(rawPrice) : 0;
-  const unitCostUsd = Number.isFinite(parsedPrice) && parsedPrice >= 0 ? parsedPrice : 0;
-  const failed = isRecord(output) && typeof output.error === "string";
-  await recordCost({
-    workspaceId,
-    sourceKey,
-    provider: "gateway",
-    action: "tako_search",
-    units: 1,
-    unitCostUsd,
-    ok: !failed,
-  });
+  return Number.isFinite(parsedPrice) && parsedPrice >= 0 ? parsedPrice : 0;
+}
+
+type TakoCostOutcome = { costUsd: number; error?: Error };
+type PendingTakoCall = { settle: (outcome: TakoCostOutcome) => void; done: Promise<void>; costUsd: number };
+
+/**
+ * Free Tako calls still get a zero-cost ledger row. If a per-call price is configured, reserve it with runPaidCall
+ * before the provider-executed Gateway tool runs, then settle the reservation from its result.
+ */
+export class TakoSearchMeter {
+  private readonly pending = new Map<string, PendingTakoCall>();
+
+  constructor(
+    private readonly workspaceId: string,
+    private readonly sourceKey: "seo" | "gtm",
+    private readonly signal?: AbortSignal,
+  ) {}
+
+  async approve(toolCallId: string): Promise<"approved" | { type: "denied"; reason: string }> {
+    const costUsd = takoSearchUsd();
+    if (costUsd === 0) return "approved";
+
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    let settle!: (outcome: TakoCostOutcome) => void;
+    const finished = new Promise<TakoCostOutcome>((resolve) => { settle = resolve; });
+    let settled = false;
+    const finish = (outcome: TakoCostOutcome) => {
+      if (settled) return;
+      settled = true;
+      settle(outcome);
+    };
+    const done = runPaidCall<void>({
+      context: { workspaceId: this.workspaceId, sourceKey: this.sourceKey },
+      provider: "gateway",
+      action: "tako_search",
+      estimateUsd: costUsd,
+      signal: this.signal,
+    }, async () => {
+      markStarted();
+      const outcome = await finished;
+      return outcome.error ? { error: outcome.error, costUsd: outcome.costUsd } : { value: undefined, costUsd: outcome.costUsd };
+    });
+    const pending = { settle: finish, done, costUsd };
+    this.pending.set(toolCallId, pending);
+    try {
+      await Promise.race([started, done]);
+      return "approved";
+    } catch {
+      this.pending.delete(toolCallId);
+      finish({ error: new Error("Tako Search budget reservation failed."), costUsd: 0 });
+      await done.catch(() => undefined);
+      return { type: "denied", reason: "Tako Search is unavailable under the configured gateway budget." };
+    }
+  }
+
+  async complete(toolCallId: string, output: unknown): Promise<void> {
+    const failed = isRecord(output) && typeof output.error === "string";
+    const pending = this.pending.get(toolCallId);
+    if (pending) {
+      pending.settle(failed
+        ? { error: new Error("Tako Search returned an error."), costUsd: 0 }
+        : { costUsd: pending.costUsd });
+      this.pending.delete(toolCallId);
+      try { await pending.done; }
+      catch (error) { if (isPaidCallDenied(error)) throw error; }
+      return;
+    }
+    if (takoSearchUsd() === 0) {
+      await recordCost({
+        workspaceId: this.workspaceId,
+        sourceKey: this.sourceKey,
+        provider: "gateway",
+        action: "tako_search",
+        units: 1,
+        unitCostUsd: 0,
+        ok: !failed,
+      });
+    }
+  }
+
+  async settlePending(): Promise<void> {
+    const pendingCalls = [...this.pending.entries()];
+    for (const [toolCallId, pending] of pendingCalls) {
+      pending.settle({ error: new Error("Tako Search ended without a result."), costUsd: pending.costUsd });
+      this.pending.delete(toolCallId);
+    }
+    await Promise.all(pendingCalls.map(async ([, pending]) => {
+      try { await pending.done; }
+      catch (error) { if (isPaidCallDenied(error)) throw error; }
+    }));
+  }
 }
 
 /** Count only web results: data cards do not replace the three source results required for Linkup fallback. */

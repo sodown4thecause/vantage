@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   authorize: vi.fn(), consume: vi.fn(), release: vi.fn(), profile: vi.fn(),
@@ -42,6 +42,7 @@ const request = (body: object = {}) => new Request("https://contextfor.dev/api/g
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.stubEnv("TAKO_SEARCH_USD", "");
   mocks.authorize.mockResolvedValue({ ok: true });
   mocks.consume.mockResolvedValue({ allowed: true });
   mocks.profile.mockResolvedValue(null);
@@ -59,6 +60,8 @@ beforeEach(() => {
     return result.value;
   });
 });
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe("GTM chat boundary", () => {
   it("refunds a failed atomic turn save without persisting separate messages", async () => {
@@ -125,6 +128,7 @@ describe("GTM chat boundary", () => {
     expect(mocks.generate).toHaveBeenCalledWith(expect.objectContaining({
       maxRetries: 0,
       tools: { tako_search: expect.any(Object) },
+      toolApproval: { tako_search: expect.any(Function) },
       stopWhen: expect.any(Function),
     }));
     expect(mocks.cost).toHaveBeenCalledWith("test-model", expect.objectContaining({ inputTokens: 10, outputTokens: 20 }));
@@ -147,7 +151,7 @@ describe("GTM chat boundary", () => {
     mocks.generate.mockImplementationOnce(async (...args: unknown[]) => {
       const options = args[0] as Record<string, unknown>;
       const onStepFinish = options.onStepFinish as (event: never) => Promise<void>;
-      await onStepFinish({ toolResults: [{ toolName: "tako_search", output }] } as never);
+      await onStepFinish({ toolResults: [{ toolName: "tako_search", toolCallId: "gtm-tako", output }] } as never);
       return { output: { answer: "Review the supplied conversation.", actions }, usage: { inputTokens: 10, outputTokens: 20 } };
     });
     const response = await POST(request());

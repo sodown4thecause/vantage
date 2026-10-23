@@ -13,7 +13,7 @@ import { z } from "zod";
 
 import { dataForSeoAvailable } from "@/lib/dataforseo/config";
 import { runPaidCall } from "@/lib/providers/paid-call";
-import { isTakoFilterRequest, normalizeTakoSearchOutput, recordTakoSearchCost, takoSearchTool, takoWebResultCount } from "@/lib/research/tako";
+import { isTakoFilterRequest, normalizeTakoSearchOutput, takoSearchTool, takoWebResultCount, TakoSearchMeter } from "@/lib/research/tako";
 import { QuestionBudget, autoCreditsFromEnv } from "@/lib/seo-agent/budget";
 import type { Classification, Intent } from "@/lib/seo-agent/classify";
 import type { FollowUps, PlannedCall, ResultCard, SeoMessageStatus } from "@/lib/seo-agent/conversations";
@@ -164,6 +164,7 @@ type AttemptArgs = {
   writer: UIMessageStreamWriter;
   onStepFinish?: NonNullable<Parameters<typeof streamText>[0]["onStepFinish"]>;
   prepareStep?: NonNullable<Parameters<typeof streamText>[0]["prepareStep"]>;
+  toolApproval?: NonNullable<Parameters<typeof streamText>[0]["toolApproval"]>;
 };
 
 /**
@@ -194,6 +195,7 @@ async function runAttempt(a: AttemptArgs): Promise<Attempt> {
       abortSignal: a.signal,
       onStepFinish: a.onStepFinish,
       prepareStep: a.prepareStep,
+      toolApproval: a.toolApproval,
       onFinish: ({ usage }) => {
         a.meter.finished += 1;
         const cost = costOfUsage(a.modelId, {
@@ -248,11 +250,12 @@ type ApprovedResult = { tool: string; input: Record<string, unknown>; result: un
  * A call whose tool is not a lookup is skipped with a notice; a call that throws reports a generic failure.
  */
 async function runApprovedCalls(ctx: ToolContext, approved: PlannedCall[]): Promise<ApprovedResult[]> {
+  const dataForSeoIsAvailable = dataForSeoAvailable();
   const lookups = toolsForIntent("all", ctx);
   const results: ApprovedResult[] = [];
   for (const call of approved) {
     const isLinkupTool = call.tool === "web_research" || call.tool === "linkup_fetch";
-    if (!dataForSeoAvailable() && !isLinkupTool) {
+    if (!dataForSeoIsAvailable && !isLinkupTool) {
       addNotice(ctx, NOT_SET_UP_NOTICE);
       continue;
     }
@@ -403,17 +406,21 @@ export async function runAgent(
       ...input.history,
       { role: "user", content: results ? approvedTurn(results) : questionTurn(input) },
     ];
+    const takoMeter = new TakoSearchMeter(input.workspaceId, "seo", signal);
     const onStepFinish: NonNullable<AttemptArgs["onStepFinish"]> = async ({ toolResults }) => {
       for (const value of toolResults as unknown as ObservedToolResult[]) {
         if (value.toolName !== "tako_search") continue;
         const output = value.output;
-        await recordTakoSearchCost(input.workspaceId, "seo", output);
+        if (typeof value.toolCallId === "string") await takoMeter.complete(value.toolCallId, output);
         const data = normalizeTakoSearchOutput(output);
         if (data.web_results.length > 0 || data.cards.length > 0) {
           addCard(ctx, { tool: "tako_search", title: "Tako Search", cached: false, data, sandbox: false });
         }
       }
     };
+    const toolApproval: AttemptArgs["toolApproval"] = "tako_search" in tools ? {
+      tako_search: (_input, { toolCallId }) => takoMeter.approve(toolCallId),
+    } : undefined;
     const prepareStep: NonNullable<AttemptArgs["prepareStep"]> = ({ steps }) => {
       const calls = steps.flatMap((step) => step.toolCalls as unknown as ObservedToolCall[]);
       const takoCall = calls.findLast((call) => call.toolName === "tako_search");
@@ -425,7 +432,7 @@ export async function runAgent(
       if (!isTakoFilterRequest(takoCall.input) && takoWebResultCount(result?.output) >= 3) return undefined;
       return { activeTools: ["web_research"], toolChoice: { type: "tool", toolName: "web_research" } };
     };
-    const attemptArgs = { streamer, system, messages, tools, signal, meter, onStepFinish, prepareStep };
+    const attemptArgs = { streamer, system, messages, tools, signal, meter, onStepFinish, prepareStep, toolApproval };
     let attempt = await runAttempt({
       ...attemptArgs,
       modelId: primary.id,
@@ -434,6 +441,7 @@ export async function runAgent(
       maxOutputTokens: primaryMaxTokens,
       writer,
     });
+    await takoMeter.settlePending();
     if (attempt.kind === "refused" && !attempt.flushed && fallback) {
       attempt = await runAttempt({
         ...attemptArgs,
@@ -443,6 +451,7 @@ export async function runAgent(
         maxOutputTokens: primaryMaxTokens,
         writer,
       });
+      await takoMeter.settlePending();
     }
 
     const outcome = (status: AgentStatus, content: string, followUps: FollowUps): AgentOutcome => ({
