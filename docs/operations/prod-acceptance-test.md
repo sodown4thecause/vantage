@@ -165,14 +165,21 @@ Secret listing cannot establish whether a live binding works.
 
 ## Read-only monitoring and repeat audit
 
-Commands below are for **Windows PowerShell**. Before running each block, change
-into the repository root of your isolated checkout (the folder containing
-`package.json` and `wrangler.jsonc`), not either of Liam's existing checkouts.
+Commands below are for **Windows PowerShell** and use Liam's checkout path
+stated in #107: `C:\Users\install\workspace\vantage`. This path has not been
+verified on his device; the linked device root differed. Before running a block,
+verify or replace its `Set-Location` path with the full Windows path to your
+actual checkout (the folder containing `package.json` and `wrangler.jsonc`).
+For repository changes, use a fresh isolated worktree off the latest `main` as
+required by #107, and substitute that worktree's full path instead.
+`Set-Location` changes the current folder; stop if it fails so later commands
+do not run in the wrong checkout. No agent-specific worktree path is required.
 `npx --no-install` uses installed tooling without downloading a newer CLI.
 Install the lockfile dependencies first if it reports a missing executable.
 Do not copy secrets into shell arguments or load a production `.env.local`.
 
 ```powershell
+Set-Location 'C:\Users\install\workspace\vantage'
 $env:WRANGLER_SEND_METRICS = 'false'
 $env:WRANGLER_LOAD_DOT_ENV_FILES = 'false'
 npx --no-install wrangler secret list --name dontkillmyvibe
@@ -189,6 +196,7 @@ A tail is a live log stream; it does not replay historical logs. In a separate
 PowerShell terminal at the same repository root, watch the production test:
 
 ```powershell
+Set-Location 'C:\Users\install\workspace\vantage'
 $env:WRANGLER_LOAD_DOT_ENV_FILES = 'false'
 npx --no-install wrangler tail dontkillmyvibe --format pretty
 ```
@@ -303,9 +311,11 @@ pass or issue closure until every required gate has observed evidence.
 ## Repository verification for this documentation change
 
 No migration is needed; no billing, auth, Wrangler or dependency change is part
-of #107. Next remains pinned to 16.3.8. Run from the isolated repository root:
+of #107. Next remains pinned to 16.3.8. Verify or replace the full checkout path
+below as described above before running these commands:
 
 ```powershell
+Set-Location 'C:\Users\install\workspace\vantage'
 pnpm lint
 pnpm typecheck
 pnpm test
