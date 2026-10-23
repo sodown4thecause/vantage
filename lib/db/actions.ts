@@ -1,5 +1,7 @@
 "use server";
 
+import { FunnelEvent } from "@/lib/analytics/events";
+import { captureServerEvent } from "@/lib/analytics/server";
 import { auth } from "@/lib/auth/server";
 import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
 import { getDb } from "@/lib/db/client";
@@ -32,6 +34,8 @@ export async function createWorkspaceForCurrentUser(name: string) {
     })
     .returning();
 
+  // The first workspace is created straight after sign-up, so this is the server-side sign-up moment.
+  await captureServerEvent(FunnelEvent.SignedUp, String(session.user.id), {});
   return row;
 }
 
