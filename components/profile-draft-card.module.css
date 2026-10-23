@@ -1,0 +1,18 @@
+.card { border: 1px solid var(--contour-strong); border-radius: 14px; background: var(--sheet); padding: 18px; margin-top: 18px; display: grid; gap: 14px; }
+.head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.head h2 { font-size: 14px; font-weight: 600; }
+.head span { font-size: 11px; color: var(--ridge); }
+.field { display: grid; gap: 6px; }
+.label { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 12px; color: var(--ridge); }
+.field textarea, .field input { width: 100%; background: transparent; border: 1px solid var(--contour); border-radius: 8px; padding: 8px 10px; font-size: 14px; line-height: 1.6; color: var(--ink); }
+.field textarea { resize: vertical; min-height: 64px; }
+.field textarea:focus, .field input:focus { border-color: var(--signal); }
+.field textarea:focus-visible, .field input:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
+.confirmed { font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.done { color: var(--signal); }
+.hint { font-size: 11px; color: var(--ridge); }
+.small { padding: 3px 9px; border: 1px solid var(--contour); border-radius: 6px; font-size: 11px; color: var(--ridge); }
+.small:hover:not(:disabled) { color: var(--ink); border-color: var(--contour-strong); }
+.footer { display: flex; justify-content: flex-end; align-items: center; gap: 12px; flex-wrap: wrap; }
+.primary { padding: 8px 16px; border-radius: 8px; background: var(--signal); color: var(--sheet); font-size: 13px; font-weight: 500; }
+.primary:disabled, .small:disabled { opacity: .6; }

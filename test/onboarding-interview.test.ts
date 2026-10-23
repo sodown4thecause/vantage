@@ -27,11 +27,13 @@ const state = vi.hoisted(() => ({
   failCompletion: false,
   failFirstTurn: false,
   profiles: {} as Record<string, { id: string }>,
+  derived: null as Record<string, unknown> | null,
 }));
 
 vi.mock("@/lib/auth/workspace", () => ({ authorizeWorkspace: vi.fn(async () => state.auth) }));
 vi.mock("@/lib/profile/index-profile", () => ({ indexSavedProfile: vi.fn(async (_ws: string, id: string) => { state.indexed.push(id); }) }));
-vi.mock("@/lib/digest/preferences", () => ({ setDigestHour: vi.fn(async (_ws: string, hour: number) => { state.digestHours.push(hour); }) }));
+vi.mock("@/lib/digest/preferences", () => ({ setDigestSchedule: vi.fn(async (_ws: string, schedule: { hourUtc: number }) => { state.digestHours.push(schedule.hourUtc); }) }));
+vi.mock("@/lib/onboarding/derive", () => ({ deriveProfileFromUrl: vi.fn(async () => state.derived) }));
 vi.mock("@/lib/profile/repository", () => ({
   getLatestMonitoringProfile: vi.fn(async () => null),
   saveMonitoringProfile: vi.fn(async (args: { workspaceId: string; input: unknown; profileId: string }) => {
@@ -106,7 +108,70 @@ beforeEach(() => {
   state.failCompletion = false;
   state.failFirstTurn = false;
   state.profiles = {};
+  state.derived = null;
   vi.mocked(saveMonitoringProfile).mockClear();
+});
+
+const DRAFT = {
+  productDescription: "Invoicing for tradies that chases late payments automatically.",
+  targetCustomer: "Sole-trader electricians and plumbers",
+  competitors: ["Xero", "MYOB", "spreadsheets"],
+  communities: ["r/AusFinance"],
+  keywords: ["late invoices", "chasing payments"],
+};
+
+const confirmTurn = async (conversationId: string, confirm: Record<string, string>) => {
+  const response = await POST(new Request("http://test/api/workspace/interview", {
+    method: "POST", body: JSON.stringify({ workspaceId: WS, conversationId, confirm, timeZone: "Australia/Brisbane" }),
+  }));
+  return { status: response.status, body: await response.json() as { complete: boolean; rejected?: boolean; message: string; answers?: Record<string, unknown>; draft?: unknown; prompt?: { step: string } } };
+};
+
+describe("URL-first interview", () => {
+  it("drafts the profile from the website and shows it as one card to confirm", async () => {
+    state.derived = DRAFT;
+    const first = await turn("example.com");
+    expect(first.body.message).toContain("drafted your profile");
+    expect(first.body).toMatchObject({ complete: false, prompt: { step: "productDescription" } });
+    expect((first.body as unknown as { draft: unknown }).draft).toEqual(DRAFT);
+
+    const all = await confirmTurn(first.body.conversationId, {
+      productDescription: DRAFT.productDescription, targetCustomer: "Electricians", competitors: "Xero, MYOB, spreadsheets",
+      communities: "", keywords: "late invoices",
+    });
+    expect(all.body).toMatchObject({ complete: false, prompt: { step: "digest" } });
+    expect(all.body.answers).toMatchObject({ targetCustomer: "Electricians", communities: [], keywords: ["late invoices"] });
+    const done = await turn("7am", first.body.conversationId, "Australia/Brisbane");
+    expect(done.body.complete).toBe(true);
+    expect(state.saved).toHaveLength(1);
+    expect(state.digestHours).toEqual([21]);
+  });
+
+  it("resumes from the first unconfirmed field after the owner leaves halfway", async () => {
+    state.derived = DRAFT;
+    const first = await turn("example.com");
+    await confirmTurn(first.body.conversationId, { productDescription: DRAFT.productDescription });
+    await confirmTurn(first.body.conversationId, { targetCustomer: DRAFT.targetCustomer });
+    const resumed = await findResumableInterview(WS);
+    expect(nextStep(resumed!.state.answers)).toBe("competitors");
+    expect(resumed!.state.draft).toEqual(DRAFT);
+    expect(resumed!.turns.at(-2)).toEqual({ role: "user", content: "Confirmed: Ideal customer" });
+  });
+
+  it("rejects an invalid edit without storing any of the submitted fields", async () => {
+    state.derived = DRAFT;
+    const first = await turn("example.com");
+    const bad = await confirmTurn(first.body.conversationId, { productDescription: DRAFT.productDescription, competitors: "Xero" });
+    expect(bad.body).toMatchObject({ rejected: true, prompt: { step: "competitors" } });
+    expect(nextStep((await findResumableInterview(WS))!.state.answers)).toBe("productDescription");
+  });
+
+  it("falls back to one question per field when the site can't be drafted", async () => {
+    const first = await turn("example.com");
+    expect(first.body.message).toContain("what does example.com do");
+    expect((first.body as unknown as { draft?: unknown }).draft).toBeUndefined();
+    expect((await confirmTurn(first.body.conversationId, { productDescription: "Something useful here." })).status).toBe(400);
+  });
 });
 
 describe("interview step logic", () => {
@@ -277,8 +342,8 @@ describe("interview route", () => {
   });
 
   it("reports a failed digest write without claiming that the chosen time was saved", async () => {
-    const { setDigestHour } = await import("@/lib/digest/preferences");
-    vi.mocked(setDigestHour).mockRejectedValueOnce(new Error("db down"));
+    const { setDigestSchedule } = await import("@/lib/digest/preferences");
+    vi.mocked(setDigestSchedule).mockRejectedValueOnce(new Error("db down"));
     let conversationId: string | undefined;
     let last: Awaited<ReturnType<typeof turn>> | undefined;
     for (const answer of ANSWERS) { last = await turn(answer, conversationId); conversationId = last.body.conversationId; }

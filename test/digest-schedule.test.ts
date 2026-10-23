@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { clampHour, isDigestDue } from "@/lib/digest/schedule";
+import { clampHour, isDigestDue, latestDigestSlot, zonedHourToInstant } from "@/lib/digest/schedule";
 
 describe("clampHour", () => {
   it("keeps hours inside 0-23", () => {
@@ -114,5 +114,41 @@ describe("isDigestDue", () => {
         now: new Date("2026-10-09T14:00:00.000Z"),
       }),
     ).toBe(true);
+  });
+});
+
+describe("local digest hour in an IANA time zone", () => {
+  // Sydney moves to daylight time at 2am on Sunday 4 October 2026 (UTC+10 to UTC+11). Brisbane stays on UTC+10.
+  const iso = (date: Date) => date.toISOString();
+
+  it("converts 8am to the right UTC instant on each side of Sydney's daylight-saving change", () => {
+    expect(iso(zonedHourToInstant({ year: 2026, month: 10, day: 3 }, 8, "Australia/Sydney"))).toBe("2026-10-02T22:00:00.000Z");
+    expect(iso(zonedHourToInstant({ year: 2026, month: 10, day: 4 }, 8, "Australia/Sydney"))).toBe("2026-10-03T21:00:00.000Z");
+    expect(iso(zonedHourToInstant({ year: 2026, month: 10, day: 4 }, 8, "Australia/Brisbane"))).toBe("2026-10-03T22:00:00.000Z");
+  });
+
+  it("moves an hour skipped by the change forward, as clocks do", () => {
+    expect(iso(zonedHourToInstant({ year: 2026, month: 10, day: 4 }, 2, "Australia/Sydney"))).toBe("2026-10-03T16:00:00.000Z");
+  });
+
+  it("sends Sydney at 8am local after the change, an hour earlier in UTC, while Brisbane keeps its UTC time", () => {
+    const lastSentAt = new Date("2026-10-02T22:00:00.000Z"); // Saturday 8am in both cities.
+    const now = new Date("2026-10-03T21:30:00.000Z"); // Sunday 8:30am Sydney, 7:30am Brisbane.
+    expect(isDigestDue({ digestHourUtc: 22, digestLocalHour: 8, digestTimeZone: "Australia/Sydney", lastSentAt, now })).toBe(true);
+    expect(isDigestDue({ digestHourUtc: 22, digestLocalHour: 8, digestTimeZone: "Australia/Brisbane", lastSentAt, now })).toBe(false);
+    // The stored UTC hour alone would have waited until 9am Sydney time.
+    expect(isDigestDue({ digestHourUtc: 22, lastSentAt, now })).toBe(false);
+  });
+
+  it("uses yesterday's local slot before today's hour arrives", () => {
+    const now = new Date("2026-10-03T20:00:00.000Z"); // Sunday 7am Sydney.
+    expect(iso(latestDigestSlot({ digestHourUtc: 0, digestLocalHour: 8, digestTimeZone: "Australia/Sydney", now }))).toBe("2026-10-02T22:00:00.000Z");
+  });
+
+  it("keeps the UTC hour for existing rows and for an unknown zone", () => {
+    const now = new Date("2026-10-03T21:30:00.000Z");
+    expect(iso(latestDigestSlot({ digestHourUtc: 13, now }))).toBe("2026-10-03T13:00:00.000Z");
+    expect(iso(latestDigestSlot({ digestHourUtc: 13, digestLocalHour: 8, digestTimeZone: "Not/AZone", now }))).toBe("2026-10-03T13:00:00.000Z");
+    expect(iso(latestDigestSlot({ digestHourUtc: 13, digestLocalHour: 8, digestTimeZone: null, now }))).toBe("2026-10-03T13:00:00.000Z");
   });
 });

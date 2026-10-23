@@ -1,6 +1,6 @@
 "use server";
 
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
 import { authorizeWorkspace } from "@/lib/auth/workspace";
@@ -51,6 +51,10 @@ export async function updateDigestPreferences(
         digestEnabled: enabled,
         digestEmail: email ?? null,
         digestHourUtc: clampHour(hour),
+        // This form sets a UTC hour. Choosing a different one replaces the local hour and time zone from setup;
+        // saving delivery with the hour unchanged keeps them.
+        digestLocalHour: sql`case when ${workspace.digestHourUtc} = ${clampHour(hour)} then ${workspace.digestLocalHour} end`,
+        digestTimeZone: sql`case when ${workspace.digestHourUtc} = ${clampHour(hour)} then ${workspace.digestTimeZone} end`,
         updatedAt: new Date(),
       })
       .where(eq(workspace.id, workspaceId));

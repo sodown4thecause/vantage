@@ -21,7 +21,8 @@ vi.mock("@/lib/profile/repository", () => ({
   saveMonitoringProfile: mocks.save,
 }));
 vi.mock("@/lib/profile/index-profile", () => ({ indexSavedProfile: mocks.index }));
-vi.mock("@/lib/digest/preferences", () => ({ setDigestHour: mocks.digest }));
+vi.mock("@/lib/digest/preferences", () => ({ setDigestSchedule: mocks.digest }));
+vi.mock("@/lib/onboarding/derive", () => ({ deriveProfileFromUrl: vi.fn(async () => null) }));
 vi.mock("@/lib/onboarding/interview-store", () => ({
   loadInterview: vi.fn(async (_workspaceId: string, id: string) => ({ id, state: mocks.state, turns: [] })),
   interviewCard: (state: InterviewState) => ({ tool: "onboarding_interview", title: "Product setup", data: state }),
@@ -108,7 +109,7 @@ describe("interview completion recovery", () => {
     mocks.index.mockRejectedValueOnce(new Error("index unavailable"));
     const result = await request();
     expect(result.body.complete).toBe(true);
-    expect(mocks.digest).toHaveBeenCalledWith(workspaceId, 8);
+    expect(mocks.digest).toHaveBeenCalledWith(workspaceId, expect.objectContaining({ localHour: 8, timeZone: "UTC", hourUtc: 8 }));
   });
 
   it("does not save again when identical profile fields are already persisted", async () => {
