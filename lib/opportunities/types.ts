@@ -1,3 +1,5 @@
+import type { EvidenceContentKind } from "@/lib/opportunities/content-kind";
+
 export const OPPORTUNITY_STATUSES = [
   "ignore",
   "monitor",
@@ -27,6 +29,8 @@ export type OpportunityEvidenceView = {
   contentMd: string;
   postedAt: string | null;
   provider: string | null;
+  /** How much of the source was read: a search snippet, a page excerpt or the full thread. */
+  contentKind?: EvidenceContentKind | null;
   /** Reddit only: the post's score and subreddit when the collector supplied them. */
   score?: number | null;
   subreddit?: string | null;
