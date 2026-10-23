@@ -230,6 +230,6 @@ describe("GTM chat boundary", () => {
     const context = JSON.parse(mocks.generate.mock.calls[0]![0].prompt);
     expect(context.evidence[0].sources[0].url).toBe("https://example.com/thread");
     expect(context.evidence[0].sources[0].excerpt).toHaveLength(2000);
-    expect(mocks.generate.mock.calls[0]![0].system).toContain("actions[0]");
+    expect(mocks.generate.mock.calls[0]![0].instructions).toContain("actions[0]");
   });
 });
