@@ -308,9 +308,9 @@ export function WorkspaceClient({ workspaceId, productName: initialProductName, 
         <p>○ Write your first blog<small>Coming with Content</small></p>
       </section> : <button type="button" className={s.setup} onClick={() => setShowSetup(true)}>Show setup checklist</button>}>
       <div className={s.body}>
-        <TopicTrends workspaceId={workspaceId} />
         <section className={s.conversation} aria-label="GTM assistant">
           <div className={s.scroll}>
+            <TopicTrends workspaceId={workspaceId} />
             {setupOpen ? <div className={s.setupIntro}>
               <div className={s.eyebrow}><span className={s.spark} aria-hidden="true">✳</span> Set up your product{setupPrompt ? ` · Question ${setupPrompt.position} of ${setupPrompt.total}` : ""}</div>
               <p>A few quick questions so I can find conversations worth joining. You write every reply; nothing is posted on your behalf.</p>
