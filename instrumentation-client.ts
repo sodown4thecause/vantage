@@ -1,6 +1,6 @@
 import posthog from "posthog-js";
 
-import { isReplayExcludedPath, posthogHost, posthogKey } from "@/lib/analytics/config";
+import { isReplayExcludedPath, posthogHost, posthogKey, replayEnabled } from "@/lib/analytics/config";
 
 const key = posthogKey();
 
@@ -14,7 +14,7 @@ if (key) {
     respect_dnt: true,
     // Uncaught errors and unhandled rejections become error-tracking exceptions linked to the replay.
     capture_exceptions: true,
-    disable_session_recording: isReplayExcludedPath(window.location.pathname),
+    disable_session_recording: !replayEnabled() || isReplayExcludedPath(window.location.pathname),
     session_recording: {
       // Every input and textarea (draft and reply text, search boxes, sign-in fields) is masked.
       maskAllInputs: true,
@@ -27,7 +27,7 @@ if (key) {
 }
 
 export function onRouterTransitionStart(url: string) {
-  if (!key || !posthog.__loaded) return;
+  if (!key || !replayEnabled() || !posthog.__loaded) return;
   const { pathname } = new URL(url, window.location.origin);
   if (isReplayExcludedPath(pathname)) posthog.stopSessionRecording();
   else if (!posthog.sessionRecordingStarted()) posthog.startSessionRecording();
