@@ -1,7 +1,7 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, gte, lt, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
-import { document, topicVolumeDaily, type DocumentRecord } from "@/lib/db/schema";
+import { document, topicVolumeDaily, workspace } from "@/lib/db/schema";
 
 export type TopicVolumeRow = {
   topic: string;
@@ -53,69 +53,64 @@ function dayOfDocument(doc: { postedAt: Date | null; collectedAt: Date }): strin
   return at.toISOString().slice(0, 10);
 }
 
-/**
- * Upserts this scan's matched counts. Called after the collectors' filters have
- * run, so every counted document survived them. Only documents not yet counted
- * (metadata.topicVolumeRecorded) are passed in, so re-runs never double count.
- */
-export async function recordTopicVolume(
+export function topicVolumeWindow(now = new Date()): { since: string; until: string } {
+  const until = new Date(now);
+  until.setUTCHours(0, 0, 0, 0);
+  until.setUTCDate(until.getUTCDate() + 1);
+  const since = new Date(until);
+  since.setUTCDate(since.getUTCDate() - 28);
+  return { since: since.toISOString(), until: until.toISOString() };
+}
+
+export async function recordWorkspaceTopicVolume(
   workspaceId: string,
-  docs: Array<Pick<DocumentRecord, "id" | "platform" | "postedAt" | "collectedAt" | "title" | "contentMd">>,
   topics: readonly string[],
+  options: { rebuild?: boolean; now?: Date } = {},
 ): Promise<number> {
-  const rows = countTopicMentions(docs, topics);
-  if (rows.length === 0) return 0;
-  const db = getDb();
-  await db
-    .insert(topicVolumeDaily)
-    .values(rows.map((row) => ({ ...row, workspaceId })))
-    .onConflictDoUpdate({
-      target: [topicVolumeDaily.workspaceId, topicVolumeDaily.topic, topicVolumeDaily.source, topicVolumeDaily.day],
-      set: { mentions: sql`${topicVolumeDaily.mentions} + excluded.mentions` },
-    });
-  return rows.length;
-}
-
-/** Marks documents as counted so the next scan skips them. */
-export async function markTopicVolumeRecorded(workspaceId: string, docIds: string[]): Promise<void> {
-  if (docIds.length === 0) return;
-  const db = getDb();
-  const existing = await db
-    .select({ id: document.id, metadata: document.metadata })
-    .from(document)
-    .where(and(eq(document.workspaceId, workspaceId), inArray(document.id, docIds)));
-  await Promise.all(existing.map((row) =>
-    db.update(document)
-      .set({ metadata: { ...row.metadata, topicVolumeRecorded: true } })
-      .where(and(eq(document.id, row.id), eq(document.workspaceId, workspaceId))),
-  ));
-}
-
-/**
- * The scan job's entry point: counts every uncounted document from the last 28
- * days against the workspace's topics and marks them counted. Documents arrive
- * here only after the collectors' filters have run.
- */
-export async function recordWorkspaceTopicVolume(workspaceId: string, topics: readonly string[]): Promise<number> {
   if (topics.length === 0) return 0;
   const db = getDb();
-  const docs = await db
-    .select({
-      id: document.id,
-      platform: document.platform,
-      postedAt: document.postedAt,
-      collectedAt: document.collectedAt,
-      title: document.title,
-      contentMd: document.contentMd,
-    })
-    .from(document)
-    .where(and(
-      eq(document.workspaceId, workspaceId),
-      sql`${document.metadata}->>'topicVolumeRecorded' is not true`,
-      sql`coalesce(${document.postedAt}, ${document.collectedAt}) >= now() - interval '28 days'`,
-    ))
-    .limit(500);
-  const counted = await recordTopicVolume(workspaceId, docs, topics);
-  await markTopicVolumeRecorded(workspaceId, docs.map((doc) => doc.id));
-  return counted;
+  const { since, until } = topicVolumeWindow(options.now);
+  const patterns = [...new Set(topics)].filter((topic) => topic.trim()).map((topic) => ({
+    topic,
+    pattern: `(^|[^a-z0-9])${topic.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z0-9]|$)`,
+  }));
+  const lock = db.select({ id: workspace.id }).from(workspace)
+    .where(eq(workspace.id, workspaceId)).for("update");
+  const write = db.execute(sql`
+    with claimed as (
+      update ${document}
+      set metadata = coalesce(${document.metadata}, '{}'::jsonb) || '{"topicVolumeRecorded":true}'::jsonb
+      where ${document.workspaceId} = ${workspaceId}
+        and coalesce(${document.postedAt}, ${document.collectedAt}) >= ${since}::timestamptz
+        and coalesce(${document.postedAt}, ${document.collectedAt}) < ${until}::timestamptz
+        and ${options.rebuild ? sql`true` : sql`${document.metadata}->>'topicVolumeRecorded' is distinct from 'true'`}
+      returning ${document.platform} as platform, ${document.postedAt} as posted_at,
+        ${document.collectedAt} as collected_at, ${document.title} as title, ${document.contentMd} as content_md
+    )
+    insert into ${topicVolumeDaily} (workspace_id, topic, source, day, mentions)
+    select ${workspaceId}::uuid, topics.topic, claimed.platform,
+      (coalesce(claimed.posted_at, claimed.collected_at) at time zone 'UTC')::date, count(*)::integer
+    from claimed
+    cross join jsonb_to_recordset(${JSON.stringify(patterns)}::jsonb) as topics(topic text, pattern text)
+    where (coalesce(claimed.title, '') || ' ' || claimed.content_md) ~* topics.pattern
+    group by topics.topic, claimed.platform,
+      (coalesce(claimed.posted_at, claimed.collected_at) at time zone 'UTC')::date
+    on conflict (workspace_id, topic, source, day)
+    do update set mentions = ${topicVolumeDaily.mentions} + excluded.mentions
+    returning topic
+  `);
+  if (options.rebuild) {
+    const results = await db.batch([
+      lock,
+      db.delete(topicVolumeDaily).where(and(
+        eq(topicVolumeDaily.workspaceId, workspaceId),
+        gte(topicVolumeDaily.day, since.slice(0, 10)),
+        lt(topicVolumeDaily.day, until.slice(0, 10)),
+      )),
+      write,
+    ]);
+    return results[2].rows.length;
+  }
+  const results = await db.batch([lock, write]);
+  return results[1].rows.length;
 }

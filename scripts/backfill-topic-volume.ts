@@ -5,14 +5,11 @@
  * replaced with a fresh count over every stored document. Never part of deploy.
  * Arctic Shift is deliberately not used as a live source; this reads stored rows only.
  */
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 
 import { getDb } from "../lib/db/client";
-import { document, monitoringProfile, topicVolumeDaily, workspace } from "../lib/db/schema";
-import { countTopicMentions } from "../lib/trends/volume";
-
-const WINDOW_DAYS = 28;
-const DOC_LIMIT = 2_000;
+import { monitoringProfile, workspace } from "../lib/db/schema";
+import { recordWorkspaceTopicVolume } from "../lib/trends/volume";
 
 async function backfillWorkspace(workspaceId: string): Promise<number> {
   const db = getDb();
@@ -25,37 +22,7 @@ async function backfillWorkspace(workspaceId: string): Promise<number> {
   const topics = profile?.topics ?? [];
   if (topics.length === 0) return 0;
 
-  const since = new Date(Date.now() - (WINDOW_DAYS - 1) * 24 * 60 * 60 * 1000).toISOString();
-  const docs = await db
-    .select({
-      id: document.id,
-      platform: document.platform,
-      postedAt: document.postedAt,
-      collectedAt: document.collectedAt,
-      title: document.title,
-      contentMd: document.contentMd,
-    })
-    .from(document)
-    .where(and(
-      eq(document.workspaceId, workspaceId),
-      sql`coalesce(${document.postedAt}, ${document.collectedAt}) >= ${since}::timestamptz`,
-    ))
-    .orderBy(desc(document.collectedAt))
-    .limit(DOC_LIMIT);
-
-  const rows = countTopicMentions(docs, topics);
-  await db
-    .delete(topicVolumeDaily)
-    .where(and(
-      eq(topicVolumeDaily.workspaceId, workspaceId),
-      gte(topicVolumeDaily.day, since.slice(0, 10)),
-    ));
-  for (let i = 0; i < rows.length; i += 500) {
-    await db.insert(topicVolumeDaily)
-      .values(rows.slice(i, i + 500).map((row) => ({ ...row, workspaceId })))
-      .onConflictDoNothing();
-  }
-  return rows.length;
+  return recordWorkspaceTopicVolume(workspaceId, topics, { rebuild: true });
 }
 
 async function main() {
