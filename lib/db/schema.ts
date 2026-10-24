@@ -76,6 +76,13 @@ export const sourceHealthEnum = pgEnum("source_health", [
   "failed",
 ]);
 
+export const publicProductLead = pgTable("public_product_lead", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: text("email").notNull().unique(),
+  productDescription: text("product_description").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const leadStatusEnum = pgEnum("lead_status", [
   "new",
   "queued",

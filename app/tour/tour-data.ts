@@ -1,6 +1,6 @@
 /**
  * Sample data for the /tour demo workspace. Nothing here is live: the page says so on its face.
- * "Tracewell" is a made-up open-source LLM tracing tool used as the demo customer.
+ * "Sample tracing SDK" is a made-up open-source LLM tracing tool used as the demo customer.
  */
 import type { GlyphFeatures } from "@/components/glyph";
 
@@ -19,7 +19,7 @@ export const PANELS: { id: PanelId; label: string }[] = [
   { id: "start", label: "Start" },
 ];
 
-export const WORKSPACE = "Tracewell";
+export const WORKSPACE = "Sample tracing SDK";
 
 export type QueueItem = {
   source: string;
@@ -121,7 +121,7 @@ export const EVIDENCE: { source: string; who: string; text: string }[] = [
 ];
 
 export const WHY_RANKED: string[] = [
-  "Asks for a way to see agent retries, which is what Tracewell does.",
+  "Asks for a way to see agent retries, which is what Sample tracing SDK does.",
   "Two more people on X and Hacker News describe the same problem.",
   "Posted two hours ago and still getting replies.",
 ];
@@ -140,7 +140,7 @@ export const ANSWER_ENGINES: { engine: string; prompt: string; cited: boolean; n
     engine: "ChatGPT",
     prompt: "How do I debug an AI agent that keeps retrying a tool call?",
     cited: false,
-    note: "Four sources cited. tracewell.dev is not one of them.",
+    note: "Four sources cited. example.com is not one of them.",
   },
   {
     engine: "Perplexity",
