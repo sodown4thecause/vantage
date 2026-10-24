@@ -1,0 +1,12 @@
+# Check out every text file with LF, including on Windows (core.autocrlf=true would give CRLF).
+# Generated files such as lib/blog/posts.generated.ts are compared byte for byte in tests.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.pdf binary

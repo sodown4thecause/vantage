@@ -21,7 +21,8 @@ function importSpecifiers(source: string): string[] {
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((entry) => {
-    const path = join(dir, entry.name);
+    // Repo-relative with forward slashes on every OS, so the path checks below also hold on Windows.
+    const path = `${dir}/${entry.name}`;
     if (entry.isDirectory()) return sourceFiles(path);
     return /\.(ts|tsx)$/.test(entry.name) ? [path] : [];
   });
