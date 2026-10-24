@@ -1,12 +1,12 @@
 "use client";
 
-import * as Sentry from "@sentry/nextjs";
+import posthog from "posthog-js";
 import { useEffect } from "react";
 
-/** Last-resort boundary for errors thrown while rendering the root layout. Reports to Sentry. */
+/** Last-resort boundary for errors thrown while rendering the root layout. Reports to PostHog error tracking. */
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
-    Sentry.captureException(error);
+    if (posthog.__loaded) posthog.captureException(error);
   }, [error]);
 
   return (

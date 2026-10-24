@@ -1,15 +1,8 @@
-import * as Sentry from "@sentry/nextjs";
 import posthog from "posthog-js";
 
 import { ANALYTICS_PROXY_PATH, posthogKey, posthogUiHost } from "@/lib/analytics/config";
-import { sentryOptions } from "@/lib/observability/sentry-options.mjs";
 
-// No replayIntegration: the free plan allows 50 replays a month.
-Sentry.init(sentryOptions({
-  dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
-  environment: process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT,
-}));
-
+// Browser analytics and browser error tracking. Worker-side errors go to Cloudflare Workers Issues (wrangler.jsonc).
 const key = posthogKey();
 if (key) {
   posthog.init(key, {
@@ -18,7 +11,7 @@ if (key) {
     // Anonymous visitors stay anonymous; a person profile exists only after identify on sign-in.
     person_profiles: "identified_only",
     defaults: "2026-08-30",
+    // Uncaught errors and unhandled rejections become PostHog error-tracking exceptions.
+    capture_exceptions: true,
   });
 }
-
-export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

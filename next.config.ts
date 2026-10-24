@@ -1,4 +1,3 @@
-import { withSentryConfig } from "@sentry/nextjs/config";
 import type { NextConfig } from "next";
 
 import { ANALYTICS_PROXY_PATH, posthogAssetsHost, posthogHost } from "./lib/analytics/config";
@@ -23,14 +22,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withSentryConfig(nextConfig, {
-  // Source maps upload only when SENTRY_AUTH_TOKEN is set (the Deploy workflow). CI and local builds skip it.
-  org: process.env.SENTRY_ORG,
-  project: process.env.SENTRY_PROJECT,
-  authToken: process.env.SENTRY_AUTH_TOKEN,
-  silent: !process.env.CI,
-  widenClientFileUpload: true,
-  // Uploaded maps are removed from the build so they are never served publicly.
-  sourcemaps: { deleteSourcemapsAfterUpload: true },
-  telemetry: false,
-});
+export default nextConfig;

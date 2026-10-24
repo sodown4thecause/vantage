@@ -9,10 +9,8 @@ name: Deploy
 #   CLOUDFLARE_API_TOKEN   - token with "Edit Cloudflare Workers" permission
 #   CLOUDFLARE_ACCOUNT_ID
 #   DATABASE_URL           - only needed if you tick "run migrations"
-#   SENTRY_AUTH_TOKEN      - optional; uploads source maps to Sentry
 # Build-time variables (Settings > Secrets and variables > Actions > Variables), all optional:
-#   SENTRY_ORG, SENTRY_PROJECT, NEXT_PUBLIC_SENTRY_DSN, NEXT_PUBLIC_POSTHOG_KEY,
-#   NEXT_PUBLIC_POSTHOG_HOST (e.g. https://us.i.posthog.com)
+#   NEXT_PUBLIC_POSTHOG_KEY, NEXT_PUBLIC_POSTHOG_HOST (e.g. https://us.i.posthog.com)
 # Runtime secrets (CRON_SECRET, NEON_AUTH_COOKIE_SECRET, DATABASE_URL) stay in
 # Cloudflare via `wrangler secret put`, as described in the README.
 
@@ -94,13 +92,7 @@ jobs:
       - name: Build Cloudflare Worker bundle
         if: steps.creds.outputs.ok == 'true'
         env:
-          # Source map upload to Sentry; skipped when the token is unset.
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
-          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
           # NEXT_PUBLIC_* are baked into the bundle at build time, so they are set here, not in Cloudflare.
-          NEXT_PUBLIC_SENTRY_DSN: ${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
-          NEXT_PUBLIC_SENTRY_ENVIRONMENT: ${{ env.TARGET_ENV }}
           NEXT_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
           NEXT_PUBLIC_POSTHOG_HOST: ${{ vars.NEXT_PUBLIC_POSTHOG_HOST }}
         run: pnpm cf:build

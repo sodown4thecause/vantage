@@ -6,14 +6,7 @@ mock.method(console, "error", () => {});
 
 // Run the real wrapper without requiring a generated OpenNext bundle.
 // The Workflow re-export is stubbed too: relative and cloudflare:* imports cannot load from a data: URL.
-// Sentry is stubbed to hand the handler back unchanged and record the options factory it was given.
-globalThis.__sentryOptions = [];
-const sentryOptionsUrl = new URL("../lib/observability/sentry-options.mjs", import.meta.url).href;
 const source = readFileSync(new URL("../worker-entry.mjs", import.meta.url), "utf8")
-  .replace('import * as Sentry from "@sentry/nextjs/cloudflare";',
-    "const Sentry = { withSentry: (options, handler) => { globalThis.__sentryOptions.push(options); return handler; } };")
-  .replace('import { workerSentryOptions } from "./lib/observability/sentry-options.mjs";',
-    `import { workerSentryOptions } from "${sentryOptionsUrl}";`)
   .replace('import openNextWorker from "./.open-next/worker.js";',
     'const openNextWorker = { fetch: () => new Response("app") };')
   .replace('export { ScanWorkspace } from "./worker/workflows.mjs";',
@@ -31,14 +24,6 @@ const env = (body = { ok: true, collectorResults: [], opportunityResults: [] }) 
   } },
 });
 
-test("wraps the worker with Sentry using options from the Worker env", () => {
-  assert.equal(globalThis.__sentryOptions.length, 1);
-  const options = globalThis.__sentryOptions[0]({ SENTRY_DSN: "https://key@o0.ingest.sentry.io/1", SENTRY_ENVIRONMENT: "staging" });
-  assert.equal(options.enabled, true);
-  assert.equal(options.environment, "staging");
-  assert.equal(options.tracesSampleRate, 0.1);
-  assert.equal(globalThis.__sentryOptions[0]({}).enabled, false);
-});
 test("delegates web requests to the application", async () => {
   assert.equal(await (await worker.fetch(new Request("https://example.com"), {}, {})).text(), "app");
 });

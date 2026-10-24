@@ -4,12 +4,20 @@ import { posthogAssetsHost, posthogHost, posthogUiHost } from "@/lib/analytics/c
 import { FunnelEvent } from "@/lib/analytics/events";
 import { captureServerEvent, type ServerAnalyticsDeps } from "@/lib/analytics/server";
 
-function fakeClient(shutdown: () => Promise<void> = async () => {}) {
-  return { capture: vi.fn(), shutdown: vi.fn(shutdown) };
+type FetchArgs = Parameters<typeof fetch>;
+
+function fakeFetch(respond: () => Promise<Response> = async () => new Response(null, { status: 200 })) {
+  return vi.fn<(...args: FetchArgs) => Promise<Response>>(respond);
 }
 
-function deps(overrides: Partial<ServerAnalyticsDeps> & { client?: ServerAnalyticsDeps["client"] } = {}): ServerAnalyticsDeps {
-  return { key: () => "phc_test", client: () => fakeClient(), waitUntil: async () => null, ...overrides };
+function deps(overrides: Partial<ServerAnalyticsDeps> = {}): ServerAnalyticsDeps {
+  return {
+    key: () => "phc_test",
+    host: () => "https://us.i.posthog.com",
+    fetch: fakeFetch(),
+    waitUntil: async () => null,
+    ...overrides,
+  };
 }
 
 afterEach(() => {
@@ -19,45 +27,56 @@ afterEach(() => {
 
 describe("captureServerEvent", () => {
   it("does nothing without a PostHog key", async () => {
-    const client = vi.fn();
-    await captureServerEvent(FunnelEvent.SignedUp, "user_1", {}, deps({ key: () => undefined, client }));
-    expect(client).not.toHaveBeenCalled();
+    const fetch = fakeFetch();
+    await captureServerEvent(FunnelEvent.SignedUp, "user_1", {}, deps({ key: () => undefined, fetch }));
+    expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("captures by user id and flushes before resolving outside a Worker", async () => {
+  it("posts the event by user id and waits for delivery outside a Worker", async () => {
     const order: string[] = [];
-    const client = fakeClient(async () => { order.push("flushed"); });
-    await captureServerEvent(FunnelEvent.CheckoutStarted, "user_1", { plan: "pro_monthly" }, deps({ client: () => client }));
+    const fetch = fakeFetch(async () => { order.push("delivered"); return new Response(null, { status: 200 }); });
+    await captureServerEvent(FunnelEvent.CheckoutStarted, "user_1", { plan: "pro_monthly" }, deps({ fetch }));
     order.push("returned");
-    expect(client.capture).toHaveBeenCalledWith({ distinctId: "user_1", event: "checkout_started", properties: { plan: "pro_monthly" } });
-    expect(client.shutdown).toHaveBeenCalledOnce();
-    expect(order).toEqual(["flushed", "returned"]);
+    expect(order).toEqual(["delivered", "returned"]);
+    const [url, init] = fetch.mock.calls[0];
+    expect(url).toBe("https://us.i.posthog.com/i/v0/e/");
+    expect(init?.method).toBe("POST");
+    const body = JSON.parse(String(init?.body));
+    expect(body).toMatchObject({
+      api_key: "phc_test",
+      event: "checkout_started",
+      distinct_id: "user_1",
+      properties: { plan: "pro_monthly" },
+    });
   });
 
   it("hands delivery to the Worker's waitUntil when there is one", async () => {
-    let release!: () => void;
-    const client = fakeClient(() => new Promise<void>((resolve) => { release = resolve; }));
+    let release!: (response: Response) => void;
+    const fetch = fakeFetch(() => new Promise<Response>((resolve) => { release = resolve; }));
     const waitUntil = vi.fn();
     // Resolves even though delivery is still pending: the Worker keeps it alive.
-    await captureServerEvent(FunnelEvent.SignedUp, "user_1", {}, deps({ client: () => client, waitUntil: async () => waitUntil }));
+    await captureServerEvent(FunnelEvent.SignedUp, "user_1", {}, deps({ fetch, waitUntil: async () => waitUntil }));
     expect(waitUntil).toHaveBeenCalledWith(expect.any(Promise));
-    release();
+    release(new Response(null, { status: 200 }));
   });
 
-  it("never throws when the client or delivery fails", async () => {
+  it("never throws when the request fails or PostHog rejects it", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     await expect(captureServerEvent(FunnelEvent.SignedUp, "user_1", {}, deps({
-      client: () => { throw new Error("boom"); },
+      fetch: fakeFetch(async () => { throw new Error("network"); }),
     }))).resolves.toBeUndefined();
     await expect(captureServerEvent(FunnelEvent.SignedUp, "user_1", {}, deps({
-      client: () => fakeClient(async () => { throw new Error("network"); }),
+      fetch: fakeFetch(async () => new Response("bad", { status: 400 })),
+    }))).resolves.toBeUndefined();
+    await expect(captureServerEvent(FunnelEvent.SignedUp, "user_1", {}, deps({
+      key: () => { throw new Error("boom"); },
     }))).resolves.toBeUndefined();
   });
 
   it("skips an empty distinct id rather than merging anonymous users", async () => {
-    const client = vi.fn();
-    await captureServerEvent(FunnelEvent.SignedUp, "", {}, deps({ client }));
-    expect(client).not.toHaveBeenCalled();
+    const fetch = fakeFetch();
+    await captureServerEvent(FunnelEvent.SignedUp, "", {}, deps({ fetch }));
+    expect(fetch).not.toHaveBeenCalled();
   });
 });
 

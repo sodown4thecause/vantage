@@ -17,15 +17,9 @@
  * existing route needs no Cloudflare-specific authorization path. Keep this file
  * as plain `.mjs`: it references `.open-next/`, which does not exist until the
  * adapter build runs, and `.mjs` is deliberately excluded from `tsconfig`.
- *
- * `withSentry` wraps every handler (fetch, queue, scheduled) and creates the
- * Sentry client from the Worker env; without SENTRY_DSN it stays disabled.
  */
 
-import * as Sentry from "@sentry/nextjs/cloudflare";
-
 import openNextWorker from "./.open-next/worker.js";
-import { workerSentryOptions } from "./lib/observability/sentry-options.mjs";
 import { handleQueue } from "./worker/queue.mjs";
 
 // Workflow class export (the `SCAN` binding). Wrangler requires it on the main module.
@@ -182,4 +176,4 @@ const worker = {
 	},
 };
 
-export default Sentry.withSentry(workerSentryOptions, worker);
+export default worker;

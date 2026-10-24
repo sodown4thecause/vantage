@@ -34,6 +34,7 @@
 	"env": {
 		"staging": {
 			"name": "vantage-staging",
+			"observability": { "enabled": true, "issues": { "enabled": true } },
 			"build": { "command": "" },
 			"routes": [],
 			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "vantage-staging" }],
@@ -54,6 +55,7 @@
 		},
 		"production": {
 			"name": "dontkillmyvibe",
+			"observability": { "enabled": true, "issues": { "enabled": true } },
 			"build": { "command": "" },
 			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "dontkillmyvibe" }],
 			"browser": { "binding": "BROWSER" },
@@ -81,6 +83,7 @@
 		"consumers": [{ "queue": "vantage-embed-jobs", "max_batch_size": 10, "max_retries": 3, "max_concurrency": 2, "dead_letter_queue": "vantage-embed-dlq" }]
 	},
 	"observability": {
-		"enabled": true
+		"enabled": true,
+		"issues": { "enabled": true }
 	}
 }
