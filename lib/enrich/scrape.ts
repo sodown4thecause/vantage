@@ -1,3 +1,6 @@
+import { isPdfUrl } from "@/lib/enrich/url";
+import { fetchPublicText } from "@/lib/http/public-fetch";
+
 export type FetchedLink = {
   title: string | null;
   /** Plain markdown text of the page or transcript, capped before summarising. */
@@ -38,7 +41,7 @@ export async function fetchYoutubeTranscript(url: string, opts: {
   fetchImpl?: typeof fetch;
 } = {}): Promise<FetchOutcome> {
   const key = process.env.SUPADATA_API_KEY?.trim();
-  if (!key) return { outcome: "skipped", reason: "SUPADATA_API_KEY is not set" };
+  if (!key) return { outcome: "failed", reason: "SUPADATA_API_KEY is not set" };
   try {
     const impl = opts.fetchImpl ?? fetch;
     const response = await impl(`https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(url)}&text=true`, {
@@ -71,9 +74,9 @@ export async function fetchLinkedPage(url: string, opts: {
   headContentLength?: (url: string) => Promise<number | null>;
 } = {}): Promise<FetchOutcome> {
   const key = process.env.FIRECRAWL_API_KEY?.trim();
-  if (!key) return { outcome: "skipped", reason: "FIRECRAWL_API_KEY is not set" };
+  if (!key) return { outcome: "failed", reason: "FIRECRAWL_API_KEY is not set" };
   try {
-    if (url.toLowerCase().endsWith(".pdf")) {
+    if (isPdfUrl(url)) {
       const head = opts.headContentLength ?? defaultHeadLength;
       const bytes = await head(url);
       if (bytes !== null && bytes > 5_000_000) return { outcome: "skipped", reason: "pdf over 5 MB" };
@@ -104,7 +107,7 @@ export async function fetchLinkedPage(url: string, opts: {
 
 async function defaultHeadLength(url: string): Promise<number | null> {
   try {
-    const response = await fetch(url, { method: "HEAD", redirect: "manual", signal: AbortSignal.timeout(4_000) });
+    const { response } = await fetchPublicText(url, { method: "HEAD" });
     const length = response.headers.get("content-length");
     const n = length === null ? null : Number(length);
     return n !== null && Number.isFinite(n) ? n : null;

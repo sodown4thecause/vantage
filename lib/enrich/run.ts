@@ -40,6 +40,7 @@ const SUPADATA_TRANSCRIPT_ESTIMATE_USD = 0.005;
 
 /** ENRICH_DAILY_MAX: enrichments per workspace per day; 0 turns enrichment off. Default 20. */
 export function enrichDailyMax(env: Record<string, string | undefined> = process.env): number {
+  if (!env.ENRICH_DAILY_MAX?.trim()) return 20;
   const raw = Number(env.ENRICH_DAILY_MAX);
   if (!Number.isFinite(raw)) return 20;
   return Math.max(0, Math.floor(raw));
@@ -117,12 +118,9 @@ export async function enrichLinkDocuments(
   } catch {
     return out;
   }
-  if (budgetLeft <= 0) return out;
   const db = getDb();
-  const queue = candidates.slice(0, Math.max(0, budgetLeft) * 4);
 
-  await mapWithConcurrency(queue, ENRICH_CONCURRENCY, async (doc) => {
-    if (out.size >= budgetLeft) return;
+  await mapWithConcurrency(candidates, ENRICH_CONCURRENCY, async (doc) => {
     try {
       const link = firstEnrichableLink(doc);
       if (!link) return;
@@ -138,32 +136,37 @@ export async function enrichLinkDocuments(
         return;
       }
 
-      const fetched = await fetchLink(link, opts);
+      const key = link.kind === "youtube" ? process.env.SUPADATA_API_KEY : process.env.FIRECRAWL_API_KEY;
+      if (!key?.trim() || budgetLeft <= 0) return;
+      budgetLeft -= 1;
+      let fetched = await fetchLink(link, opts);
       const attempts = decision.priorAttempts + 1;
       if (fetched.outcome === "ok") {
         const summary = await summariseLinkedPage({
           url: link.url, title: fetched.value.title, text: fetched.value.text,
           workspaceId: opts.workspaceId, signal: opts.signal,
         }).catch(() => null);
-        if (!summary) throw new Error("summary unavailable");
-        await db
-          .insert(linkEnrichment)
-          .values({
-            urlHash: link.urlHash, url: link.url, kind: link.kind,
-            title: fetched.value.title, summary: summary.summary, status: "ok",
-            attempts, lastAttemptAt: new Date(), fetchedAt: new Date(),
-            costUsd: summary.costUsd !== undefined ? summary.costUsd.toFixed(6) : "0",
-          })
-          .onConflictDoUpdate({
-            target: linkEnrichment.urlHash,
-            set: {
+        if (summary) {
+          await db
+            .insert(linkEnrichment)
+            .values({
+              urlHash: link.urlHash, url: link.url, kind: link.kind,
               title: fetched.value.title, summary: summary.summary, status: "ok",
               attempts, lastAttemptAt: new Date(), fetchedAt: new Date(),
               costUsd: summary.costUsd !== undefined ? summary.costUsd.toFixed(6) : "0",
-            },
-          });
-        out.set(doc.id, { url: link.url, kind: link.kind, title: fetched.value.title, summary: summary.summary });
-        return;
+            })
+            .onConflictDoUpdate({
+              target: linkEnrichment.urlHash,
+              set: {
+                title: fetched.value.title, summary: summary.summary, status: "ok",
+                attempts, lastAttemptAt: new Date(), fetchedAt: new Date(),
+                costUsd: summary.costUsd !== undefined ? summary.costUsd.toFixed(6) : "0",
+              },
+            });
+          out.set(doc.id, { url: link.url, kind: link.kind, title: fetched.value.title, summary: summary.summary });
+          return;
+        }
+        fetched = { outcome: "failed", reason: "summary unavailable" };
       }
 
       // skipped: paywall, unsupported or empty — cached so it is never retried.

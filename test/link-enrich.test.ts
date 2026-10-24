@@ -127,6 +127,8 @@ describe("decideFromCache", () => {
 describe("budget", () => {
   it("defaults to 20 and honours 0 as off", () => {
     expect(enrichDailyMax({})).toBe(20);
+    expect(enrichDailyMax({ ENRICH_DAILY_MAX: "" })).toBe(20);
+    expect(enrichDailyMax({ ENRICH_DAILY_MAX: "   " })).toBe(20);
     expect(enrichDailyMax({ ENRICH_DAILY_MAX: "0" })).toBe(0);
     expect(enrichDailyMax({ ENRICH_DAILY_MAX: "5" })).toBe(5);
     expect(enrichDailyMax({ ENRICH_DAILY_MAX: "not-a-number" })).toBe(20);

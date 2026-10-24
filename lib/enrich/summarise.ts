@@ -47,6 +47,6 @@ export async function summariseLinkedPage(input: {
       outputTokens: result.usage.outputTokens,
       cachedInputTokens: result.usage.inputTokenDetails?.cacheReadTokens,
     });
-    return { value: { summary: text.slice(0, 1_200), costUsd } };
+    return { value: { summary: text.slice(0, 1_200), costUsd }, costUsd };
   });
 }
