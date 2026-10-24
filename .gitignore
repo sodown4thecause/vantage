@@ -49,3 +49,5 @@ worker-entry.d.ts
 
 # Claude Code agent worktrees (local only)
 /.claude/worktrees/
+
+/data/discovery/
