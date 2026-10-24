@@ -232,6 +232,13 @@
       "when": 1792841291283,
       "tag": "0032_first_scan_activation",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792840487091,
+      "tag": "0034_reply_handoff",
+      "breakpoints": true
     }
   ]
 }

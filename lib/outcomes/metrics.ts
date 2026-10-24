@@ -33,7 +33,8 @@ export function computeNorthStar(input: {
   const inWeek = input.events.filter(
     (e) => e.createdAt >= input.weekStartUtc && e.createdAt < input.weekEndUtc,
   );
-  const actedOnCount = inWeek.filter((e) => e.event === "acted_on").length;
+  // "sent" is the owner marking a reply as sent themselves; it replaced the old "acted on" button.
+  const actedOnCount = inWeek.filter((e) => e.event === "acted_on" || e.event === "sent").length;
   const usefulCount = inWeek.filter((e) => e.event === "useful").length;
   const notUsefulCount = inWeek.filter((e) => e.event === "not_useful").length;
   const judged = usefulCount + notUsefulCount;

@@ -8,6 +8,10 @@ export const OUTCOME_EVENTS = [
   "published_url",
   "utm_click",
   "conversion",
+  "copy",
+  "open",
+  "sent",
+  "replied",
 ] as const;
 
 export type OutcomeEvent = (typeof OUTCOME_EVENTS)[number];
