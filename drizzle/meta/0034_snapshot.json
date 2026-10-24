@@ -1,6 +1,6 @@
 {
-  "id": "e062cc3a-e6b4-4f6c-be82-b60c958df4fc",
-  "prevId": "d07f1ecd-ce11-4236-85d6-82756f647680",
+  "id": "f7e6e9c5-1158-41ff-b41c-688c140b723f",
+  "prevId": "b45f361a-3cdb-438f-b83d-2e01a972ab40",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3615,6 +3615,12 @@
         "product_email_suppressed_at": {
           "name": "product_email_suppressed_at",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "activation_email": {
+          "name": "activation_email",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
