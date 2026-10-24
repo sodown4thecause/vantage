@@ -6,6 +6,11 @@ import { scanRun, source, workspace } from "@/lib/db/schema";
 
 export const firstScanId = (workspaceId: string) => `first-${workspaceId}`;
 
+export async function firstScanWorkspaceExists(workspaceId: string): Promise<boolean> {
+  const [ws] = await getDb().select({ id: workspace.id }).from(workspace).where(eq(workspace.id, workspaceId)).limit(1);
+  return Boolean(ws);
+}
+
 function staleFirstScanCondition(workspaceId: string) {
   return and(
     eq(scanRun.workspaceId, workspaceId), eq(scanRun.id, firstScanId(workspaceId)), inArray(scanRun.status, ["queued", "running"]),
