@@ -3,6 +3,7 @@ import { Shell } from "@/components/shell";
 import { redirect } from "next/navigation";
 
 import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
+import { requireAdmin } from "@/lib/auth/admin";
 import { listReviewQueue } from "@/lib/pipeline/run";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +13,7 @@ export default async function ReviewPage({
 }: {
   searchParams: Promise<{ workspaceId?: string }>;
 }) {
+  await requireAdmin();
   const params = await searchParams;
   const workspaceId = params.workspaceId?.trim() || (await getCurrentWorkspace())?.id;
   if (!workspaceId) redirect("/");

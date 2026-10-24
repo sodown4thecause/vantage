@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { PageHead, Shell } from "@/components/shell";
@@ -6,11 +5,12 @@ import { eq } from "drizzle-orm";
 
 import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
 import { getDb } from "@/lib/db/client";
-import { workspace } from "@/lib/db/schema";
+import { billingSubscription, workspace } from "@/lib/db/schema";
 import { getPlanUsage } from "@/lib/plans/limits";
 import { getLatestMonitoringProfile } from "@/lib/profile/repository";
 import { listWorkspaceSources } from "@/lib/sources/list";
 import { DeleteWorkspaceForm } from "@/app/settings/plan/delete-workspace-form";
+import { SubscriptionControls } from "@/app/settings/plan/subscription-controls";
 
 export default async function PlanUsagePage({
   searchParams,
@@ -32,10 +32,17 @@ export default async function PlanUsagePage({
     );
   }
 
-  const [profile, sources, owned] = await Promise.all([
+  const [profile, sources, owned, subscriptions] = await Promise.all([
     getLatestMonitoringProfile(workspaceId),
     listWorkspaceSources(workspaceId),
     getDb().select({ id: workspace.id, name: workspace.name }).from(workspace).where(eq(workspace.ownerUserId, authorization.userId)),
+    getDb().select({
+      status: billingSubscription.status,
+      plan: billingSubscription.plan,
+      cancelAtPeriodEnd: billingSubscription.cancelAtPeriodEnd,
+      currentPeriodEnd: billingSubscription.currentPeriodEnd,
+      endedAt: billingSubscription.endedAt,
+    }).from(billingSubscription).where(eq(billingSubscription.userId, authorization.userId)),
   ]);
   const view = await getPlanUsage(workspaceId, {
     keywords: profile?.topics.length ?? 0,
@@ -72,16 +79,7 @@ export default async function PlanUsagePage({
         Scheduled scans run every {view.limits.scan_interval_hours} hours on this plan.
         {view.limits.reply_briefs > 0 ? "" : " Reply Briefs and 3-hourly alerts are part of Pro."}
       </p>
-      {view.plan === "free" ? (
-        <p className="text-sm">
-          <Link href="/pricing" className="btn">Upgrade to Pro</Link>
-        </p>
-      ) : (
-        <p className="text-sm">
-          {/* A plain link: the portal route creates a Polar session, so it must never be prefetched. */}
-          <a href="/api/billing/portal" className="link">Manage or cancel your subscription</a>
-        </p>
-      )}
+      <SubscriptionControls plan={view.plan} subscriptions={subscriptions} />
       {current ? (
         <section aria-labelledby="delete-workspace-heading" className="mt-12 border-t border-contour pt-10">
           <h2 id="delete-workspace-heading" className="mb-4 text-2xl font-bold tracking-tight">Delete workspace</h2>
