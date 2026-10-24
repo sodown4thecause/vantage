@@ -1,5 +1,6 @@
 "use server";
 
+import { captureServerException } from "@/lib/analytics/server";
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { authorizeWorkspace } from "@/lib/auth/workspace";
@@ -92,6 +93,7 @@ function logScanSourceFailure(stage: string, workspaceId: string, sourceId: stri
     errorName: error instanceof Error ? error.name : typeof error,
     error: (error instanceof Error ? error.message : String(error)).slice(0, 300),
   });
+  void captureServerException(error, { workspaceId, sourceId, area: `scan-source:${stage}` });
 }
 
 export async function scanSource(workspaceId: string, sourceId: string): Promise<SourceActionState> {
