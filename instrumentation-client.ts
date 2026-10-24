@@ -18,8 +18,9 @@ if (key) {
     session_recording: {
       // Every input and textarea (draft and reply text, search boxes, sign-in fields) is masked.
       maskAllInputs: true,
-      // Text rendered from user content (drafts, posts, replies) opts in with the ph-mask class.
-      maskTextClass: "ph-mask",
+      // Customer conversations, posts and drafts render as ordinary text, so all text is masked by default.
+      // Replays show layout, clicks, errors and network failures, never customer words.
+      maskTextSelector: "*",
       blockClass: "ph-no-capture",
     },
   });
