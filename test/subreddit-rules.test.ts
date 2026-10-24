@@ -41,6 +41,12 @@ describe("stored subreddit rules", () => {
     expect(ruleLineFor("https://github.com/o/r/issues/1")).toEqual({ text: "Check this community's rules before you reply.", url: null, checked: null });
   });
 
+  it("treats names that collide with object properties as unknown rather than throwing", () => {
+    for (const name of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      expect(ruleLineFor(`https://www.reddit.com/r/${name}/comments/1/x/`).text).toContain(`no stored rule for r/${name}`);
+    }
+  });
+
   it("only trusts well-formed subreddit names", () => {
     expect(subredditOf("https://old.reddit.com/r/SaaS/comments/1/x/")).toBe("SaaS");
     expect(subredditOf("https://evilreddit.com/r/SaaS/")).toBeNull();

@@ -13,6 +13,8 @@ export const POSITIVE_DECISION_EVENTS = [
   "useful",
   "saved",
   "acted_on",
+  "sent",
+  "replied",
   "published_url",
   "conversion",
 ] as const;

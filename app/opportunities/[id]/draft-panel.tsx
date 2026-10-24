@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { SafeLink } from "@/components/safe-link";
+import { safeHttpUrl } from "@/lib/http/safe-url";
 import type { ContributionReview } from "@/lib/drafting/generate";
 import { contributionRule } from "@/lib/drafting/rules";
 import type { RuleLine } from "@/lib/reddit/subreddit-rules";
@@ -185,9 +186,20 @@ export function DraftPanel({
   }
 
   async function copyAndOpen() {
+    const threadUrl = safeHttpUrl(selected?.urlCanonical);
+    if (!threadUrl) return;
+    const tab = window.open("about:blank", "_blank");
+    if (tab) tab.opener = null;
     const copied = await copyReply();
-    if (!copied || !selected) return;
-    window.open(selected.urlCanonical, "_blank", "noopener,noreferrer");
+    if (!copied) {
+      tab?.close();
+      return;
+    }
+    if (!tab) {
+      setNotice((current) => `${current ?? ""} Your browser blocked the new tab, so use Open thread.`.trim());
+      return;
+    }
+    tab.location.href = threadUrl;
     await recordEvent("open", copied.draftId);
   }
 

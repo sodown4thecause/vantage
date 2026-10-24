@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, lt, ne } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { opportunity, opportunityOutcome, opportunityPick } from "@/lib/db/schema";
@@ -13,7 +13,8 @@ export const DAILY_PICKS = 5;
 /**
  * Today's five for a workspace. The first visit of the local day fixes the list: it takes the best
  * live opportunities never shown on an earlier day. Later visits show the same list, topping it up
- * (never past five) when a scan finds more. Quiet days honestly show fewer than five.
+ * (never past five) when a scan finds more. Picks that stopped being eligible (retired by a scan or
+ * a profile change) give up their slot so replacements can fill it. Quiet days show fewer than five.
  */
 export async function ensureTodaysPicks(opts: {
   workspaceId: string;
@@ -29,16 +30,30 @@ export async function ensureTodaysPicks(opts: {
     .orderBy(asc(opportunityPick.rank));
 
   let today = await readToday();
+  let cards = await listOpportunityQueue({
+    workspaceId: opts.workspaceId,
+    limit: DAILY_PICKS,
+    onlyIds: today.map((pick) => pick.opportunityId),
+  });
+  const shown = new Set(cards.map((card) => card.id));
+  const retired = today.filter((pick) => !shown.has(pick.opportunityId));
+  if (retired.length > 0) {
+    await db
+      .delete(opportunityPick)
+      .where(and(
+        eq(opportunityPick.workspaceId, opts.workspaceId),
+        eq(opportunityPick.pickDate, day),
+        inArray(opportunityPick.opportunityId, retired.map((pick) => pick.opportunityId)),
+      ));
+    today = today.filter((pick) => shown.has(pick.opportunityId));
+  }
+
   if (today.length < DAILY_PICKS) {
-    const earlier = await db
-      .select({ opportunityId: opportunityPick.opportunityId })
-      .from(opportunityPick)
-      .where(and(eq(opportunityPick.workspaceId, opts.workspaceId), ne(opportunityPick.pickDate, day)))
-      .limit(1_000);
     const fresh = await listOpportunityQueue({
       workspaceId: opts.workspaceId,
       limit: DAILY_PICKS - today.length,
-      excludeIds: [...earlier, ...today].map((pick) => pick.opportunityId),
+      excludeIds: today.map((pick) => pick.opportunityId),
+      notPickedBeforeDay: day,
     });
     const taken = new Set(today.map((pick) => pick.rank));
     const freeRanks = Array.from({ length: DAILY_PICKS }, (_, index) => index + 1).filter((rank) => !taken.has(rank));
@@ -53,14 +68,14 @@ export async function ensureTodaysPicks(opts: {
         })))
         .onConflictDoNothing();
       today = await readToday();
+      cards = await listOpportunityQueue({
+        workspaceId: opts.workspaceId,
+        limit: DAILY_PICKS,
+        onlyIds: today.map((pick) => pick.opportunityId),
+      });
     }
   }
 
-  const cards = await listOpportunityQueue({
-    workspaceId: opts.workspaceId,
-    limit: DAILY_PICKS,
-    onlyIds: today.map((pick) => pick.opportunityId),
-  });
   const rankById = new Map(today.map((pick) => [pick.opportunityId, pick.rank]));
   cards.sort((a, b) => (rankById.get(a.id) ?? 0) - (rankById.get(b.id) ?? 0));
   return { day, cards };
