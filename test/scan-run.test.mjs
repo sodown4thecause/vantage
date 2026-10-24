@@ -160,3 +160,40 @@ test("collect steps are launched concurrently", async () => {
   await runScan(PARAMS, step, fakeCall().call);
   assert.ok(step.maxInFlight >= 2, `expected overlapping steps, saw ${step.maxInFlight}`);
 });
+
+test("first scan persists stage counters and completes zero results without placeholder picks", async () => {
+  const step = fakeStep();
+  const calls = [];
+  const result = await runScan({ workspaceId: "ws-1", kind: "first" }, step, async (_path, body) => {
+    calls.push(body);
+    if (body.action === "plan") return json({ leaseToken: LEASE, sourceIds: ["src-a"] });
+    if (body.action === "collect") return json({ read: 0 });
+    if (body.action === "build") return json({ picked: 0 });
+    return json({ status: "done" });
+  });
+  assert.deepEqual(result, { status: "done", failures: 0 });
+  assert.deepEqual(calls.find(item => item.action === "read"), { workspaceId: "ws-1", action: "read", leaseToken: LEASE, read: 0 });
+  assert.equal(calls.at(-1).failed, false);
+  assert.equal(calls.at(-1).partial, false);
+});
+
+test("first scan keeps partial results when one source fails, and records a build failure before propagating it", async () => {
+  for (const buildFails of [false, true]) {
+    const calls = [];
+    const running = runScan({ workspaceId: "ws-1", kind: "first" }, fakeStep(), async (_path, body) => {
+      calls.push(body);
+      if (body.action === "plan") return json({ leaseToken: LEASE, sourceIds: ["src-a", "src-b"] });
+      if (body.action === "collect") return json(body.sourceId === "src-a" ? { read: 7 } : { failed: true });
+      if (body.action === "build") {
+        if (buildFails) throw new Error("build unavailable");
+        return json({ picked: 2, partial: true });
+      }
+      return json({});
+    });
+    if (buildFails) await assert.rejects(running, /build unavailable/);
+    else assert.deepEqual(await running, { status: "partial", failures: 1 });
+    assert.equal(calls.at(-1).action, "finish");
+    assert.equal(calls.at(-1).failed, buildFails);
+    assert.equal(calls.at(-1).partial, true);
+  }
+});

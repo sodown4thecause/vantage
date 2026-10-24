@@ -12,9 +12,9 @@ export function resendApiKey(): string | undefined {
 }
 
 export function digestFromAddress(): string {
-  return optionalEnv("DIGEST_FROM_ADDRESS") ?? "digest@contextfor.dev";
+  return optionalEnv("DIGEST_FROM_ADDRESS") ?? "digest@updates.contextfor.dev";
 }
 
 export function digestFromName(): string {
-  return optionalEnv("DIGEST_FROM_NAME") ?? "contextfor.dev";
+  return optionalEnv("DIGEST_FROM_NAME") ?? "Vantage";
 }

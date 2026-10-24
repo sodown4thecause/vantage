@@ -21,18 +21,27 @@ export const redditCollector: Collector = {
     const posts: RedditPost[] = [];
     let meta: RedditFetchMeta | undefined;
     let cursor: string | null | undefined;
+    let coveragePartial = false;
     // Share the limit so one busy topic cannot crowd out the others.
     const perQuery = queries.length > 1 && Number.isInteger(limit) ? Math.max(1, Math.ceil(limit / queries.length)) : limit;
     for (const query of queries.length ? queries : [undefined]) {
-      const result = await fetchRedditPostsWithMeta({
-        ctx: { workspaceId: ctx.workspaceId, sourceKey: "reddit" },
-        query,
-        subreddit,
-        limit: perQuery,
-        lookbackHours: Number(ctx.config.lookbackHours) || undefined,
-        cursor: ctx.cursor ?? undefined,
-        signal: ctx.signal,
-      });
+      let result: Awaited<ReturnType<typeof fetchRedditPostsWithMeta>>;
+      try {
+        result = await fetchRedditPostsWithMeta({
+          ctx: { workspaceId: ctx.workspaceId, sourceKey: "reddit" },
+          query,
+          subreddit,
+          limit: perQuery,
+          lookbackHours: Number(ctx.config.lookbackHours) || undefined,
+          cursor: ctx.cursor ?? undefined,
+          signal: ctx.signal,
+        });
+      } catch (error) {
+        ctx.signal?.throwIfAborted();
+        if (!posts.length) throw error;
+        coveragePartial = true;
+        break;
+      }
       meta ??= result.meta;
       cursor = queries.length > 1 ? null : result.cursor;
       for (const post of result.posts) {
@@ -87,8 +96,8 @@ export const redditCollector: Collector = {
     const missingPublicationDates = documents.filter(document => document.postedAt === null).length;
     return {
       documents,
-      partial: missingPublicationDates > 0,
-      coverageReason: missingPublicationDates
+      partial: coveragePartial || missingPublicationDates > 0,
+      coverageReason: coveragePartial ? "Some topic searches were deferred; retaining the conversations already found." : missingPublicationDates
         ? `${missingPublicationDates} Reddit post(s) have no supplied publication date; recency is unverified.`
         : undefined,
       nextState: {

@@ -86,7 +86,7 @@ export async function unsubscribeDigest(
   try {
     await getDb()
       .update(workspace)
-      .set({ digestEnabled: false, updatedAt: new Date() })
+      .set({ digestEnabled: false, productEmailSuppressedAt: new Date(), updatedAt: new Date() })
       .where(eq(workspace.id, workspaceId));
   } catch (err) {
     console.error("[digest action] unsubscribe failed", {

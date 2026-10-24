@@ -42,7 +42,10 @@ vi.mock("@/lib/db/client", () => ({
           limit: async () => {
             const params = toSql(where).params;
             const ws = state.workspaces.find((row) => row.id === params[0]);
-            return ws && ws.digestLeaseToken === params[1] && ws.digestLeaseUntil && ws.digestLeaseUntil > state.dbNow
+            if (!ws) return [];
+            // The recipient check binds the delivery address; the ownership check binds the lease token.
+            if (params.includes(ws.digestEmail)) return ws.digestEnabled ? [{ id: ws.id }] : [];
+            return ws.digestLeaseToken === tokenParam(params) && ws.digestLeaseUntil && ws.digestLeaseUntil > state.dbNow
               ? [{ id: ws.id }] : [];
           },
           orderBy: (...order: unknown[]) => ({
@@ -66,7 +69,7 @@ vi.mock("@/lib/db/client", () => ({
           state.writes.push({ values, where });
           const params = toSql(where).params;
           const ws = state.workspaces.find((row) => row.id === params[0]);
-          if (ws && values.digestLeaseToken === null && ws.digestLeaseToken === params[1]) {
+          if (ws && values.digestLeaseToken === null && ws.digestLeaseToken === tokenParam(params)) {
             ws.digestLeaseToken = null;
             ws.digestLeaseUntil = null;
           }
@@ -83,9 +86,9 @@ vi.mock("@/lib/db/client", () => ({
                 return [{ ...ws }];
               }
               if (values.digestLastSentAt instanceof Date) {
-                if (ws.digestLeaseToken !== params[1] || !ws.digestLeaseUntil || ws.digestLeaseUntil <= state.dbNow) return [];
+                if (ws.digestLeaseToken !== tokenParam(params) || !ws.digestLeaseUntil || ws.digestLeaseUntil <= state.dbNow) return [];
                 await state.record(ws.id, values.digestLastSentAt);
-                if (ws.digestLeaseToken !== params[1]) return [];
+                if (ws.digestLeaseToken !== tokenParam(params)) return [];
                 ws.digestLastSentAt = values.digestLastSentAt;
                 return [{ id: ws.id }];
               }
@@ -108,6 +111,8 @@ import { markDigestSent } from "@/lib/digest/send";
 
 const dialect = new PgDialect();
 const toSql = (value: unknown) => dialect.sqlToQuery(value as Parameters<PgDialect["sqlToQuery"]>[0]);
+// The lease token is the string parameter that is not the workspace ID; other predicates may add booleans.
+const tokenParam = (params: unknown[]) => params.find((param) => typeof param === "string" && param !== params[0]);
 const now = new Date("2026-10-10T13:00:00.000Z");
 const opportunities: DigestOpportunity[] = [{
   opportunityId: "opportunity-1",
@@ -136,6 +141,7 @@ const deliveryKeys = () => state.fetch.mock.calls.map(([, init]) => new Headers(
 
 beforeEach(async () => {
   vi.stubEnv("RESEND_API_KEY", "re_test");
+  vi.stubEnv("CRON_SECRET", "synthetic-signing-key-not-a-credential");
   state.appUrl.mockReset().mockReturnValue("https://app.example.com");
   state.workspaces = [];
   state.writes = [];

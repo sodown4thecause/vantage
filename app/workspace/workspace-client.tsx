@@ -1,4 +1,5 @@
 "use client";
+import { FirstScanStatus } from "@/components/first-scan-status";
 
 import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
@@ -319,6 +320,7 @@ export function WorkspaceClient({ workspaceId, productName: initialProductName, 
               <div className={s.context}><span>{profileReady ? productName : "Product profile needed"}</span><span>{initialEvidence.length} current opportunities</span><span>You write every reply</span></div>
               <div className={s.notice}>{scanControl}</div>
             </div>}
+            {profileReady && <FirstScanStatus key={profileSaved ? "confirmed" : "existing"} workspaceId={workspaceId} />}
             {visibleTurns.length > 0 && <ol className={s.turns} aria-label={setupOpen ? "Product setup" : "Conversation"}>{visibleTurns.map((turn, index) => <li key={index} className={s.turn}>
               {turn.role === "user" ? <p className={s.user}>{turn.content}</p> : <>
                 <div className={s.turnLabel}><span className={s.spark} aria-hidden="true">✳</span> Your GTM assistant</div>

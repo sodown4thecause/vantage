@@ -39,6 +39,7 @@ export default async function DigestSettingsPage({
       digestHourUtc: workspace.digestHourUtc,
       digestLocalHour: workspace.digestLocalHour,
       digestTimeZone: workspace.digestTimeZone,
+      productEmailSuppressedAt: workspace.productEmailSuppressedAt,
     })
     .from(workspace)
     .where(eq(workspace.id, workspaceId))
@@ -57,7 +58,9 @@ export default async function DigestSettingsPage({
           Choosing a different hour below replaces this with a fixed UTC hour.
         </p>
       )}
-      {row ? (
+      {row?.productEmailSuppressedAt ? (
+        <p role="status" className="max-w-[56ch] text-ridge">You’re unsubscribed from Vantage product emails for this workspace. Digests and activation emails are suppressed, even if an older delivery preference is enabled.</p>
+      ) : row ? (
         <DigestSettingsForm
           workspaceId={workspaceId}
           enabled={row.digestEnabled}

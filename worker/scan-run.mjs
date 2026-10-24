@@ -38,6 +38,7 @@ async function readJson(response, path) {
  * @returns {Promise<{ status: "skipped" | "done" | "partial", failures: number }>}
  */
 export async function runScan(params, step, call) {
+  if (params.kind === "first") return runFirstScan(params, step, call);
   const { workspaceId } = params;
 
   const plan = await step.do("plan", async () => {
@@ -71,4 +72,39 @@ export async function runScan(params, step, call) {
   }
 
   return { status: failures > 0 ? "partial" : "done", failures };
+}
+
+async function runFirstScan({ workspaceId }, step, call) {
+  const path = "/api/internal/scan/first";
+  let plan;
+  let partial = false;
+  let failed = true;
+  let failures = 0;
+  let finalStatus;
+  const request = async (action, extra = {}) => readJson(await call(path, {
+    workspaceId, action, ...(plan ? { leaseToken: plan.leaseToken } : {}), ...extra,
+  }), path);
+  try {
+    plan = await step.do("first:plan", {
+      retries: { limit: 10, delay: "1 minute", backoff: "constant" }, timeout: "1 minute",
+    }, () => request("plan"));
+    if (plan.skipped) return { status: "skipped", failures: 0 };
+    const collected = await Promise.all(plan.sourceIds.map((sourceId) =>
+      step.do(`first:collect:${sourceId}`, COLLECT_STEP, () => request("collect", { sourceId }))
+        .catch(() => ({ failed: true, read: 0 }))));
+    failures = collected.filter((item) => item.failed).length;
+    partial = failures > 0 || collected.some((item) => item.partial);
+    await step.do("first:read", () => request("read", {
+      read: collected.reduce((sum, item) => sum + (Number(item.read) || 0), 0),
+    }));
+    const built = await step.do("first:build", BUILD_STEP, () => request("build"));
+    partial ||= built.partial === true;
+    failed = collected.length > 0 && failures === collected.length && !built.picked;
+  } finally {
+    if (!plan?.skipped) {
+      const finished = await step.do("first:finish", () => request("finish", { failed, partial }));
+      finalStatus = finished.status;
+    }
+  }
+  return { status: finalStatus ?? (failed ? "failed" : partial ? "partial" : "done"), failures };
 }

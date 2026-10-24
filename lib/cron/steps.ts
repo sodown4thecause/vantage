@@ -98,7 +98,7 @@ export async function collectSource(input: { workspaceId: string; sourceId: stri
   if (result.switchedOff) return { kind: "ok", body: { inserted: 0, skipped: 0, switchedOff: result.switchedOff } };
   // Collector errors are retryable by the Workflow step; the message is not returned or logged.
   if (result.error) return { kind: "failed" };
-  return { kind: "ok", body: { inserted: result.inserted, skipped: result.skipped } };
+  return { kind: "ok", body: { inserted: result.inserted, skipped: result.skipped, ...(result.receipt?.health === "degraded" ? { partial: true } : {}) } };
 }
 
 /** Semantic indexing is best effort: any failure is reported as zero embedded, never as a scan failure. */

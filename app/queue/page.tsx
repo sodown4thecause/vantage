@@ -6,6 +6,7 @@ import { listOpportunityQueue } from "@/lib/opportunities/run";
 import { ScanButton } from "@/app/source-controls";
 import { Glyph } from "@/components/glyph";
 import { PageHead, Shell } from "@/components/shell";
+import { FirstScanStatus } from "@/components/first-scan-status";
 
 export default async function OpportunityQueuePage({
   searchParams,
@@ -42,6 +43,7 @@ export default async function OpportunityQueuePage({
         </div>
       </div>
 
+      <FirstScanStatus workspaceId={workspaceId} />
       {cards.length === 0 ? (
         <div className="max-w-xl space-y-2 border-t border-contour pt-6" data-testid="queue-empty">
           <p className="text-xl font-semibold tracking-tight">Nothing strong right now.</p>
