@@ -2,8 +2,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   fetchImpl: null as null | ((url: string, init?: RequestInit) => Promise<Response>),
+  db: {} as unknown,
 }));
 
+// The permission queries must never reach a real driver: under fake timers the
+// driver's own fetch would hang on the stubbed global below, which is why CI
+// (where a database is configured) timed out here while local runs passed.
+vi.mock("@/lib/db/client", () => ({ getDb: () => state.db }));
+vi.mock("@/lib/analytics/activation", () => ({ captureActivation: vi.fn(async () => {}) }));
+
+const wsRow = { id: "workspace-1", digestEnabled: true, digestEmail: "founder@example.com" };
+state.db = {
+  select: () => ({ from: () => ({ where: () => ({ limit: async () => [wsRow] }) }) }),
+  insert: () => { throw new Error("insert not expected"); },
+  update: () => { throw new Error("update not expected"); },
+} as never;
 import { renderDigestEmail, sendDigestEmail } from "@/lib/digest/send";
 
 const opportunities = [
