@@ -1,4 +1,6 @@
 import { createHmac, randomBytes } from "node:crypto";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { errors } from "@polar-sh/sdk/2026-10";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -13,6 +15,8 @@ const db = vi.hoisted(() => ({
 }));
 
 const tableName = (table: unknown) => (table as { [k: symbol]: string })[Symbol.for("drizzle:Name")];
+
+vi.mock("@/lib/auth/server", () => ({ auth: { getSession: vi.fn() } }));
 
 vi.mock("@/lib/db/client", () => ({
   getDb: () => ({
@@ -46,6 +50,9 @@ vi.mock("@/lib/billing/products", async (original) => {
 });
 
 import { handlePolarWebhook, type WebhookDeps } from "@/lib/billing/webhook";
+import { createCheckout } from "@/lib/billing/routes";
+import { PAID_STATUSES } from "@/lib/billing/entitlement";
+import { SubscriptionControls, type SubscriptionState } from "@/app/settings/plan/subscription-controls";
 
 const key = randomBytes(24);
 const secret = `whsec_${key.toString("base64")}`;
@@ -82,6 +89,59 @@ beforeEach(() => {
 });
 
 describe("Polar webhook endpoint", () => {
+  it("carries a synthetic upgrade through signed cancellation, replay and revocation into plan UI", async () => {
+    const now = new Date("2026-10-24T00:00:00Z");
+    const form = new FormData();
+    form.set("productId", PRO_MONTHLY);
+    const create = vi.fn().mockResolvedValue({ url: "https://sandbox.polar.sh/checkout/synthetic" });
+    const checkout = await createCheckout(new Request("https://example.invalid/api/billing/checkout", { method: "POST", body: form }), {
+      session: async () => ({ id: "user_1" }),
+      polar: () => ({ checkouts: { create } }) as never,
+      isPaid: async () => false,
+      origin: () => "https://example.invalid",
+    });
+    expect(checkout.status).toBe(303);
+    expect(checkout.headers.get("location")).toBe("https://sandbox.polar.sh/checkout/synthetic");
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ external_customer_id: "user_1", products: [PRO_MONTHLY] }));
+
+    get.mockResolvedValue(subscription());
+    expect((await handlePolarWebhook(delivery("subscription.active", subscription()), deps())).status).toBe(202);
+    let row = subscriptionWrites().at(-1)!.values as unknown as SubscriptionState;
+    expect(row).toMatchObject({ plan: "pro", status: "active", cancelAtPeriodEnd: false });
+    expect(PAID_STATUSES).toContain(row.status);
+
+    const cancelled = subscription({ cancel_at_period_end: true, current_period_end: "2026-11-24T00:00:00Z" });
+    get.mockResolvedValue(cancelled);
+    expect((await handlePolarWebhook(delivery("subscription.canceled", cancelled, { id: "msg_cancellation" }), deps())).status).toBe(202);
+    row = subscriptionWrites().at(-1)!.values as unknown as SubscriptionState;
+    expect(row).toMatchObject({ status: "active", cancelAtPeriodEnd: true, currentPeriodEnd: new Date("2026-11-24T00:00:00Z") });
+    expect(PAID_STATUSES).toContain(row.status);
+    const html = renderToStaticMarkup(createElement(SubscriptionControls, { plan: "pro", subscriptions: [row], now }));
+    expect(html).toContain("Your plan ends on");
+    expect(html).toContain("24 November 2026");
+
+    const writes = subscriptionWrites().length;
+    const calls = get.mock.calls.length;
+    db.claim = "processed";
+    const replay = await handlePolarWebhook(delivery("subscription.canceled", cancelled, { id: "msg_cancellation" }), deps());
+    expect(await replay.json()).toEqual({ duplicate: true });
+    expect(subscriptionWrites()).toHaveLength(writes);
+    expect(get).toHaveBeenCalledTimes(calls);
+    expect(db.inserts.at(-1)?.values.id).toBe("msg_cancellation");
+
+    db.claim = "claimed";
+    const revoked = subscription({ status: "canceled", ended_at: now.toISOString() });
+    get.mockResolvedValue(revoked);
+    expect((await handlePolarWebhook(delivery("subscription.revoked", revoked), deps())).status).toBe(202);
+    row = subscriptionWrites().at(-1)!.values as unknown as SubscriptionState;
+    expect(PAID_STATUSES).not.toContain(row.status);
+    expect(row.endedAt).toEqual(now);
+    const ended = renderToStaticMarkup(createElement(SubscriptionControls, { plan: "free", subscriptions: [row], now }));
+    expect(ended).toContain("Your plan ended on");
+    expect(ended).toContain("24 October 2026");
+    expect(ended).toContain("/api/billing/checkout");
+  });
+
   it("refuses to run without a webhook secret", async () => {
     const res = await handlePolarWebhook(delivery("subscription.updated", subscription()), deps({ secret: () => undefined }));
     expect(res.status).toBe(503);
