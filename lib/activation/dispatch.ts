@@ -5,13 +5,14 @@ import { readBinding } from "@/lib/cf/env";
 import { getDb } from "@/lib/db/client";
 import { scanRun } from "@/lib/db/schema";
 import { releaseScanLease } from "@/lib/cron/lease";
+import { firstScanId, recoverStaleFirstScan } from "@/lib/scan/repository";
 
 type ScanBinding = {
   create(input: { id: string; params: { workspaceId: string; kind: "first" } }): Promise<unknown>;
   get(id: string): Promise<{ status(): Promise<{ status: string }>; restart(): Promise<void> }>;
 };
 
-export const firstScanId = (workspaceId: string) => `first-${workspaceId}`;
+export { firstScanId } from "@/lib/scan/repository";
 
 export async function firstScan(workspaceId: string) {
   const [run] = await getDb().select().from(scanRun)
@@ -23,6 +24,7 @@ export async function startFirstScan(workspaceId: string, retry = false): Promis
   const id = firstScanId(workspaceId);
   try {
     const db = getDb();
+    if (retry) await recoverStaleFirstScan(workspaceId);
     await db.insert(scanRun).values({ id, workspaceId, kind: "first", leaseToken: crypto.randomUUID() }).onConflictDoNothing();
     let run = await firstScan(workspaceId);
     if (!run) throw new Error("First scan row unavailable");

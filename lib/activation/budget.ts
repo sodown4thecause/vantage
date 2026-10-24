@@ -8,6 +8,15 @@ export const FIRST_SCAN_BUDGET_USD = 0.10;
 export const FIRST_SCAN_HYDRATION_MAX = 5;
 const context = new AsyncLocalStorage<{ workspaceId: string; runId: string }>();
 
+export class FirstScanAllowanceError extends Error {
+  readonly code = "FIRST_SCAN_ALLOWANCE_EXHAUSTED";
+
+  constructor() {
+    super("First scan allowance exhausted");
+    this.name = "FirstScanAllowanceError";
+  }
+}
+
 export function withFirstScanBudget<T>(workspaceId: string, runId: string, work: () => Promise<T>): Promise<T> {
   return context.run({ workspaceId, runId }, work);
 }
@@ -29,7 +38,7 @@ export async function reserveScanSpend(workspaceId: string, provider: string, ac
   )).returning({ id: scanRun.id }) : [];
   if (!reserved) {
     await db.update(scanRun).set({ capped: true }).where(scope);
-    throw new Error("First scan allowance exhausted");
+    throw new FirstScanAllowanceError();
   }
   return {
     settle: async (cost) => {

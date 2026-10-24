@@ -1,8 +1,5 @@
-import { eq } from "drizzle-orm";
-
 import { captureActivation } from "@/lib/analytics/activation";
-import { getDb } from "@/lib/db/client";
-import { workspace } from "@/lib/db/schema";
+import { suppressProductEmails } from "@/lib/email/repository";
 import { verifyUnsubscribeToken } from "@/lib/email/unsubscribe";
 
 export const dynamic = "force-dynamic";
@@ -19,8 +16,7 @@ export async function POST(req: Request) {
   const workspaceId = verifyUnsubscribeToken(new URL(req.url).searchParams.get("token") ?? "");
   if (!workspaceId) return new Response("Invalid or expired unsubscribe link.", { status: 400 });
   try {
-    await getDb().update(workspace).set({ digestEnabled: false, productEmailSuppressedAt: new Date(), updatedAt: new Date() })
-      .where(eq(workspace.id, workspaceId));
+    await suppressProductEmails(workspaceId);
     await captureActivation("unsubscribe", workspaceId);
     return new Response("You’re unsubscribed from Vantage product emails for this workspace.", { headers: { "cache-control": "no-store" } });
   } catch {

@@ -17,6 +17,9 @@ export async function sendProductEmail(input: {
 }): Promise<ProductEmailResult> {
   const apiKey = input.apiKey ?? resendApiKey();
   if (!apiKey) return { ok: true, skipped: true, reason: "no api key" };
+  let claimed = false;
+  let delivered = false;
+  let releaseClaim = false;
   try {
     const db = getDb();
     // Digests need opt-in delivery to this address; activation mail needs only that the workspace has not unsubscribed.
@@ -27,12 +30,16 @@ export async function sendProductEmail(input: {
     const unsubscribeUrl = `${appUrl()}/api/email/unsubscribe?token=${unsubscribeToken(input.workspaceId)}`;
     const content = input.render(unsubscribeUrl);
     if (input.once) {
-      const [claimed] = await db.insert(productEmailSent).values({ workspaceId: input.workspaceId, kind: input.once })
+      const [claim] = await db.insert(productEmailSent).values({ workspaceId: input.workspaceId, kind: input.once })
         .onConflictDoNothing().returning({ kind: productEmailSent.kind });
-      if (!claimed) return { ok: true, skipped: true, reason: "already claimed" };
+      if (!claim) return { ok: true, skipped: true, reason: "already claimed" };
+      claimed = true;
     }
     const [stillPermitted] = await db.select({ id: workspace.id }).from(workspace).where(permitted).limit(1);
-    if (!stillPermitted) return { ok: true, skipped: true, reason: "delivery disabled or suppressed" };
+    if (!stillPermitted) {
+      releaseClaim = true;
+      return { ok: true, skipped: true, reason: "delivery disabled or suppressed" };
+    }
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST", signal: AbortSignal.timeout(10_000),
       headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json", "Idempotency-Key": input.idempotencyKey },
@@ -40,9 +47,11 @@ export async function sendProductEmail(input: {
         headers: { "List-Unsubscribe": `<mailto:${digestFromAddress()}?subject=unsubscribe>, <${unsubscribeUrl}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } }),
     });
     if (!response.ok) {
+      releaseClaim = response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 409;
       await response.body?.cancel().catch(() => undefined);
       return { ok: false, error: "email provider rejected the message" };
     }
+    delivered = true;
     await response.body?.cancel().catch(() => undefined);
     if (input.once) await db.update(productEmailSent).set({ sentAt: new Date() })
       .where(and(eq(productEmailSent.workspaceId, input.workspaceId), eq(productEmailSent.kind, input.once)));
@@ -50,5 +59,15 @@ export async function sendProductEmail(input: {
   } catch {
     console.error("[product-email] delivery failed", { workspaceId: input.workspaceId });
     return { ok: false, error: "email send failed" };
+  } finally {
+    if (claimed && releaseClaim && !delivered && input.once) {
+      try {
+        await getDb().delete(productEmailSent).where(and(
+          eq(productEmailSent.workspaceId, input.workspaceId), eq(productEmailSent.kind, input.once), isNull(productEmailSent.sentAt),
+        ));
+      } catch {
+        console.error("[product-email] claim release failed", { workspaceId: input.workspaceId });
+      }
+    }
   }
 }

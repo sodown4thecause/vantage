@@ -1,13 +1,14 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
+import { requiredEnv } from "@/lib/env/required";
+
 const DAY_SECONDS = 86400;
 const TOKEN_LIFETIME_SECONDS = 30 * DAY_SECONDS;
 const payloadSchema = z.object({ w: z.uuid(), exp: z.number().int().positive(), v: z.literal(1) });
 
 function signature(payload: string): Buffer {
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) throw new Error("Product email signing is unavailable");
+  const secret = requiredEnv("CRON_SECRET").trim();
   return createHmac("sha256", secret).update(`vantage/product-email/unsubscribe/v1:${payload}`).digest();
 }
 
