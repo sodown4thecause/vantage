@@ -178,7 +178,14 @@ describe("due", () => {
     const response = await call(dueRoute);
     expect(response.status).toBe(500);
     expect(console.error).toHaveBeenCalledWith("[scan-due] lookup failed", "NeonDbError");
-    expect(console.error).not.toHaveBeenCalledWith(expect.stringContaining("select secret"));
+    for (const args of vi.mocked(console.error).mock.calls) {
+      for (const arg of args) {
+        expect(String(arg)).not.toContain("select secret");
+        if (arg instanceof Error) {
+          expect(arg.message).not.toContain("select secret");
+        }
+      }
+    }
   });
 
   it("returns workspaces whose cadence has elapsed", async () => {
