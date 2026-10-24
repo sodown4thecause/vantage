@@ -20,6 +20,8 @@ export async function sendProductEmail(input: {
   let claimed = false;
   let delivered = false;
   let releaseClaim = false;
+  let sendAttempted = false;
+  let gotResponse = false;
   try {
     const db = getDb();
     // Digests need opt-in delivery to this address; activation mail needs only that the workspace has not unsubscribed.
@@ -40,14 +42,16 @@ export async function sendProductEmail(input: {
       releaseClaim = true;
       return { ok: true, skipped: true, reason: "delivery disabled or suppressed" };
     }
+    sendAttempted = true;
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST", signal: AbortSignal.timeout(10_000),
       headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json", "Idempotency-Key": input.idempotencyKey },
       body: JSON.stringify({ from: `${digestFromName()} <${digestFromAddress()}>`, to: [input.to], ...content,
         headers: { "List-Unsubscribe": `<mailto:${digestFromAddress()}?subject=unsubscribe>, <${unsubscribeUrl}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } }),
     });
+    gotResponse = true;
     if (!response.ok) {
-      releaseClaim = response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 409;
+      releaseClaim = response.status >= 400 && response.status !== 408 && response.status !== 409;
       await response.body?.cancel().catch(() => undefined);
       return { ok: false, error: "email provider rejected the message" };
     }
@@ -57,6 +61,7 @@ export async function sendProductEmail(input: {
       .where(and(eq(productEmailSent.workspaceId, input.workspaceId), eq(productEmailSent.kind, input.once)));
     return { ok: true };
   } catch {
+    releaseClaim = sendAttempted && !gotResponse;
     console.error("[product-email] delivery failed", { workspaceId: input.workspaceId });
     return { ok: false, error: "email send failed" };
   } finally {

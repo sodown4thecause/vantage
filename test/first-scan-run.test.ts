@@ -25,6 +25,7 @@ vi.mock("@/lib/db/client", () => ({ getDb: () => ({
 }) }));
 
 import { firstScanStep } from "@/lib/activation/run";
+import { runScan } from "../worker/scan-run.mjs";
 const WS = "11111111-1111-4111-8111-111111111111";
 const LEASE = "22222222-2222-4222-8222-222222222222";
 const call = (action: string, extra: Record<string, unknown> = {}) => firstScanStep(WS, { action, leaseToken: LEASE, ...extra }, new AbortController().signal);
@@ -44,7 +45,46 @@ it("a capped scan preserves real results, honest counters, cost and a partial te
   expect(state.released).toHaveBeenCalledWith(WS, LEASE);
   expect(state.scopes.every((scope) => scope.includes(WS) && scope.includes(LEASE))).toBe(true);
   expect(await (await call("finish")).json()).toEqual({ status: "partial" });
-  expect(state.emails).toHaveBeenCalledTimes(1);
+  expect(state.emails).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+  ["rejected", "done"], ["thrown", "done"], ["rejected", "partial"], ["thrown", "partial"],
+])("the Workflow retries %s email failures after a %s scan without rerunning scan work", async (failure, status) => {
+  state.collect.mockResolvedValue({ kind: "collected", body: { inserted: 10, skipped: 0 } });
+  state.build.mockResolvedValue({ scanned: 10, relevant: 3, top: [{ id: "real-1" }], coverage: status === "partial" ? "budget_limited" : "complete" });
+  if (failure === "rejected") state.emails.mockResolvedValueOnce({ ok: false, error: "provider unavailable" });
+  else state.emails.mockRejectedValueOnce(new TypeError("fetch failed"));
+  state.emails.mockResolvedValue({ ok: true });
+  const attempts: Record<string, number> = {};
+  const step = { do: async (name: string, ...args: unknown[]) => {
+    const work = args.at(-1) as () => Promise<unknown>;
+    const options = args.length > 1 ? args[0] as { retries: { limit: number } } : undefined;
+    for (let attempt = 0; ; attempt++) {
+      attempts[name] = (attempts[name] ?? 0) + 1;
+      try { return await work(); } catch (error) { if (attempt >= (options?.retries.limit ?? 0)) throw error; }
+    }
+  } };
+  const finishStatuses: string[] = [];
+  const result = await runScan(Object.assign({ workspaceId: WS }, { kind: "first" }), step, async (_path: string, requestBody: object) => {
+    const body = requestBody as Record<string, unknown>;
+    const response = await firstScanStep(WS, body, new AbortController().signal);
+    if (body.action === "finish") {
+      finishStatuses.push(String(state.run.status));
+      state.owned = false;
+    }
+    return response;
+  });
+  expect(result).toEqual({ status, failures: 0 });
+  expect(finishStatuses).toEqual([status, status]);
+  expect(attempts["first:finish"]).toBe(2);
+  expect(state.emails).toHaveBeenCalledTimes(2);
+  expect(state.emails).toHaveBeenNthCalledWith(2, WS, 1, 10);
+  expect(state.collect).toHaveBeenCalledTimes(1);
+  expect(state.build).toHaveBeenCalledTimes(1);
+  expect(state.released).toHaveBeenCalledTimes(1);
+  expect((await call("finish", { leaseToken: "stale-token" })).status).toBe(409);
+  expect(state.emails).toHaveBeenCalledTimes(2);
 });
 
 it("distinguishes zero results from failure without creating picks", async () => {

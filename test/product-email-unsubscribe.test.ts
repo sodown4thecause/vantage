@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 
-const state = vi.hoisted(() => ({ suppressed: false, enabled: true, claims: new Set<string>(), calls: [] as Array<Record<string, unknown>>, scopes: [] as unknown[], allowedReads: 0 }));
+const state = vi.hoisted(() => ({ suppressed: false, enabled: true, failPersist: false, claims: new Map<string, { sentAt: boolean }>(), calls: [] as Array<Record<string, unknown>>, scopes: [] as unknown[], deletes: [] as unknown[][], allowedReads: 0 }));
 vi.mock("@/lib/analytics/activation", () => ({ captureActivation: vi.fn(async () => {}) }));
 vi.mock("@/lib/db/client", () => ({ getDb: () => ({
   select: () => ({ from: () => ({ where: (scope: unknown) => ({ limit: async () => {
@@ -11,14 +11,22 @@ vi.mock("@/lib/db/client", () => ({ getDb: () => ({
   } }) }) }),
   insert: () => ({ values: (value: { kind: string }) => ({ onConflictDoNothing: () => ({ returning: async () => {
     if (state.claims.has(value.kind)) return [];
-    state.claims.add(value.kind);
+    state.claims.set(value.kind, { sentAt: false });
     return [{ kind: value.kind }];
   } }) }) }),
   update: () => ({ set: (value: Record<string, unknown>) => ({ where: async (scope: unknown) => {
+    if (state.failPersist) throw new Error("synthetic persist failure");
     state.scopes.push(scope);
     if (value.productEmailSuppressedAt) state.suppressed = true;
     if (value.digestEnabled === false) state.enabled = false;
+    if (value.sentAt) for (const claim of state.claims.values()) claim.sentAt = true;
   } }) }),
+  delete: () => ({ where: async (scope: unknown) => {
+    state.scopes.push(scope);
+    const params = new PgDialect().sqlToQuery(scope as Parameters<PgDialect["sqlToQuery"]>[0]).params;
+    state.deletes.push(params as unknown[]);
+    for (const [kind, claim] of state.claims) if (params.includes(kind) && !claim.sentAt) state.claims.delete(kind);
+  } }),
 }) }));
 
 import { GET, POST } from "@/app/api/email/unsubscribe/route";
@@ -30,7 +38,7 @@ import { firstScanEmailChoice, sendFirstScanEmail } from "@/lib/email/activation
 const WS = "11111111-1111-4111-8111-111111111111";
 const opportunity = { opportunityId: "synthetic-1", platform: "hn", title: "Synthetic question", url: "https://example.com/synthetic", score: 1, reason: "Synthetic evidence" };
 beforeEach(() => {
-  state.suppressed = false; state.enabled = true; state.claims.clear(); state.calls = []; state.scopes = []; state.allowedReads = 0;
+  state.suppressed = false; state.enabled = true; state.failPersist = false; state.claims.clear(); state.calls = []; state.scopes = []; state.deletes = []; state.allowedReads = 0;
   vi.stubEnv("CRON_SECRET", "synthetic-signing-key-not-a-credential");
   vi.stubEnv("RESEND_API_KEY", "synthetic-mail-key");
   vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => { state.calls.push(JSON.parse(String(init.body))); return Response.json({ id: "mock" }); }));
@@ -101,6 +109,35 @@ describe("all product email delivery", () => {
     vi.stubEnv("CRON_SECRET", "");
     expect(await sendProductEmail({ workspaceId: WS, to: "synthetic@example.com", idempotencyKey: "test", render: () => ({ subject: "test", text: "test", html: "test" }) })).toMatchObject({ ok: false });
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("releases the once-claim on a provider 5xx so a later attempt sends instead of blocking forever", async () => {
+    const render = () => ({ subject: "test", text: "test", html: "test" });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("upstream unavailable", { status: 502 })));
+    expect(await sendProductEmail({ workspaceId: WS, to: "synthetic@example.com", idempotencyKey: "idem-5xx", once: "first_scan", render })).toMatchObject({ ok: false });
+    expect(state.claims.size).toBe(0);
+    expect(state.deletes[0]).toContain(WS);
+    expect(state.deletes[0]).toContain("first_scan");
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => { state.calls.push(JSON.parse(String(init.body))); return Response.json({ id: "mock" }); }));
+    expect(await sendProductEmail({ workspaceId: WS, to: "synthetic@example.com", idempotencyKey: "idem-5xx", once: "first_scan", render })).toEqual({ ok: true });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(state.claims.get("first_scan")).toEqual({ sentAt: true });
+  });
+
+  it("releases the claim when the provider never answers, keeps it on ambiguous 409 and on a persist failure after delivery", async () => {
+    const render = () => ({ subject: "test", text: "test", html: "test" });
+    const send = (idempotencyKey: string) => sendProductEmail({ workspaceId: WS, to: "synthetic@example.com", idempotencyKey, once: "first_scan", render });
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("fetch failed"); }));
+    await expect(send("idem-net")).resolves.toMatchObject({ ok: false });
+    expect(state.claims.size).toBe(0);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("conflict", { status: 409 })));
+    await expect(send("idem-409")).resolves.toMatchObject({ ok: false });
+    expect(state.claims.get("first_scan")).toEqual({ sentAt: false });
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ id: "mock" })));
+    state.claims.clear();
+    state.failPersist = true;
+    await expect(send("idem-persist")).resolves.toMatchObject({ ok: false });
+    expect(state.claims.get("first_scan")).toEqual({ sentAt: false });
   });
 
   it("chooses truthful nonempty and zero-result activation messages", () => {

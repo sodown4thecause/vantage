@@ -45,7 +45,19 @@ export async function firstScanStep(workspaceId: string, body: Record<string, un
     return Response.json({ status: "failed" });
   }
   if (body.leaseToken !== run.leaseToken) return Response.json({ error: "stale scan" }, { status: 409 });
-  if (body.action === "finish" && ["done", "partial", "failed"].includes(run.status)) return Response.json({ status: run.status });
+  const finishResponse = async (finished: typeof run) => {
+    if (finished.status !== "failed") {
+      try {
+        const result = await sendFirstScanEmail(workspaceId, finished.picked, finished.read);
+        if (result?.ok === false) return Response.json({ error: "activation email unavailable" }, { status: 502 });
+      } catch {
+        console.error("[activation] email unavailable");
+        return Response.json({ error: "activation email unavailable" }, { status: 502 });
+      }
+    }
+    return Response.json({ status: finished.status });
+  };
+  if (body.action === "finish" && ["done", "partial", "failed"].includes(run.status)) return finishResponse(run);
   const [owned] = await db.select({ id: workspace.id }).from(workspace).where(and(
     eq(workspace.id, workspaceId), eq(workspace.scanLeaseToken, run.leaseToken), gt(workspace.scanLeaseUntil, sql`now()`),
   )).limit(1);
@@ -83,7 +95,7 @@ export async function firstScanStep(workspaceId: string, body: Record<string, un
         read: finished.read, relevant: finished.relevant, picked: finished.picked, status, cost_usd: Number(finished.costUsd),
       });
       console.info("[activation] first scan finished", { workspaceId, status, costUsd: finished.costUsd });
-      if (status !== "failed") await sendFirstScanEmail(workspaceId, finished.picked, finished.read).catch(() => console.error("[activation] email unavailable"));
+      return finishResponse(finished);
     }
     return Response.json({ status });
   }

@@ -102,7 +102,9 @@ async function runFirstScan({ workspaceId }, step, call) {
     failed = collected.length > 0 && failures === collected.length && !built.picked;
   } finally {
     if (!plan?.skipped) {
-      const finished = await step.do("first:finish", () => request("finish", { failed, partial }));
+      const finished = await step.do("first:finish", {
+        retries: { limit: 3, delay: "10 seconds", backoff: "exponential" }, timeout: "1 minute",
+      }, () => request("finish", { failed, partial }));
       finalStatus = finished.status;
     }
   }
