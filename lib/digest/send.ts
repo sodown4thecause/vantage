@@ -85,7 +85,7 @@ export async function sendDigestEmail(input: {
     return { ok: true, skipped: true, reason: "no opportunities" };
   }
 
-  const result = await sendProductEmail({ workspaceId: input.workspaceId, to: input.to, apiKey: input.apiKey,
+  const result = await sendProductEmail({ workspaceId: input.workspaceId, to: input.to, apiKey: input.apiKey, digest: true,
     idempotencyKey: `digest/${input.workspaceId}/${input.previousDigestLastSentAt?.toISOString() ?? "first"}`,
     render: (unsubscribeUrl) => renderDigestEmail(input.opportunities, input.manageUrl, unsubscribeUrl),
   });

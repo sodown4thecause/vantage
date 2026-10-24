@@ -12,15 +12,16 @@ export type ProductEmailResult =
   | { ok: false; error: string };
 
 export async function sendProductEmail(input: {
-  workspaceId: string; to: string; idempotencyKey: string; once?: string; apiKey?: string;
+  workspaceId: string; to: string; idempotencyKey: string; once?: string; apiKey?: string; digest?: boolean;
   render: (unsubscribeUrl: string) => { subject: string; text: string; html: string };
 }): Promise<ProductEmailResult> {
   const apiKey = input.apiKey ?? resendApiKey();
   if (!apiKey) return { ok: true, skipped: true, reason: "no api key" };
   try {
     const db = getDb();
-    const permitted = and(eq(workspace.id, input.workspaceId), eq(workspace.digestEnabled, true),
-      eq(workspace.digestEmail, input.to), isNull(workspace.productEmailSuppressedAt));
+    // Digests need opt-in delivery to this address; activation mail needs only that the workspace has not unsubscribed.
+    const permitted = and(eq(workspace.id, input.workspaceId), isNull(workspace.productEmailSuppressedAt),
+      input.digest ? and(eq(workspace.digestEnabled, true), eq(workspace.digestEmail, input.to)) : undefined);
     const [ws] = await db.select({ id: workspace.id }).from(workspace).where(permitted).limit(1);
     if (!ws) return { ok: true, skipped: true, reason: "delivery disabled or suppressed" };
     const unsubscribeUrl = `${appUrl()}/api/email/unsubscribe?token=${unsubscribeToken(input.workspaceId)}`;
@@ -36,7 +37,7 @@ export async function sendProductEmail(input: {
       method: "POST", signal: AbortSignal.timeout(10_000),
       headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json", "Idempotency-Key": input.idempotencyKey },
       body: JSON.stringify({ from: `${digestFromName()} <${digestFromAddress()}>`, to: [input.to], ...content,
-        headers: { "List-Unsubscribe": `<${unsubscribeUrl}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } }),
+        headers: { "List-Unsubscribe": `<mailto:${digestFromAddress()}?subject=unsubscribe>, <${unsubscribeUrl}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } }),
     });
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);

@@ -64,10 +64,7 @@ export async function POST(req: Request): Promise<Response> {
 
     const existing = conversationId ? await loadInterview(workspaceId, conversationId) : null;
     if (conversationId && !existing) return Response.json({ error: "not_found" }, { status: 404 });
-    if (existing?.state.complete) {
-      await startFirstScan(workspaceId);
-      return Response.json({ error: "already_complete" }, { status: 409 });
-    }
+    if (existing?.state.complete) return Response.json({ error: "already_complete" }, { status: 409 });
     const current = await getLatestMonitoringProfile(workspaceId);
     let answers: InterviewAnswers = existing?.state.answers ?? {};
     let draft: ProfileDraft | undefined = existing?.state.draft;

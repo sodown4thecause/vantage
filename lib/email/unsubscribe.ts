@@ -1,7 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
-const TOKEN_LIFETIME_SECONDS = 30 * 86400;
+const DAY_SECONDS = 86400;
+const TOKEN_LIFETIME_SECONDS = 30 * DAY_SECONDS;
 const payloadSchema = z.object({ w: z.uuid(), exp: z.number().int().positive(), v: z.literal(1) });
 
 function signature(payload: string): Buffer {
@@ -10,8 +11,10 @@ function signature(payload: string): Buffer {
   return createHmac("sha256", secret).update(`vantage/product-email/unsubscribe/v1:${payload}`).digest();
 }
 
+/** Counted from the UTC day of issue, so a retried send on the same day repeats its body for the provider's idempotency key. */
 export function unsubscribeToken(workspaceId: string, now = Date.now()): string {
-  const payload = Buffer.from(JSON.stringify({ w: workspaceId, exp: Math.floor(now / 1000) + TOKEN_LIFETIME_SECONDS, v: 1 })).toString("base64url");
+  const issuedDay = Math.floor(now / 1000 / DAY_SECONDS) * DAY_SECONDS;
+  const payload = Buffer.from(JSON.stringify({ w: workspaceId, exp: issuedDay + TOKEN_LIFETIME_SECONDS, v: 1 })).toString("base64url");
   return `${payload}.${signature(payload).toString("base64url")}`;
 }
 

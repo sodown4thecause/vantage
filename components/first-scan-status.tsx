@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+
+import { formatNextScan } from "@/lib/scan/next-scan";
 
 type Status = {
   run: { status: "queued" | "running" | "done" | "partial" | "failed"; read: number; relevant: number; picked: number; costUsd: string; capped: boolean } | null;
@@ -10,7 +11,6 @@ type Status = {
 };
 
 export function FirstScanStatus({ workspaceId }: { workspaceId: string }) {
-  const router = useRouter();
   const [data, setData] = useState<Status | null>(null);
   const [error, setError] = useState(false);
   const [retrying, setRetrying] = useState(false);
@@ -30,7 +30,7 @@ export function FirstScanStatus({ workspaceId }: { workspaceId: string }) {
         setData(value);
         setError(false);
         const state = value.run?.status;
-        if (state && ["done", "partial"].includes(state) && !refreshed) { refreshed = true; router.refresh(); }
+        if (state && ["done", "partial"].includes(state) && !refreshed) { refreshed = true; window.location.reload(); }
         if (state !== "queued" && state !== "running") return;
       } catch {
         if (controller.signal.aborted) return;
@@ -41,7 +41,7 @@ export function FirstScanStatus({ workspaceId }: { workspaceId: string }) {
     };
     void poll();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [workspaceId, attempt, router]);
+  }, [workspaceId, attempt]);
 
   async function retry() {
     setRetrying(true);
@@ -61,10 +61,7 @@ export function FirstScanStatus({ workspaceId }: { workspaceId: string }) {
   if (!data?.run && !error) return null;
   const run = data?.run;
   const scanning = run?.status === "queued" || run?.status === "running";
-  let next = "";
-  if (data) {
-    try { next = new Intl.DateTimeFormat("en-AU", { timeZone: data.timeZone, dateStyle: "medium", timeStyle: "short" }).format(new Date(data.nextScanAt)); } catch {}
-  }
+  const next = data ? formatNextScan(data.nextScanAt, data.timeZone) : null;
   return <section className="my-6 space-y-3 rounded-xl border border-contour p-5" aria-live="polite" data-testid="first-scan-status">
     <h2 className="text-lg font-semibold">{!run && error ? "Scan status unavailable" : scanning ? "Your first scan is underway" : run?.status === "failed" ? "Your first scan couldn’t finish" : run?.picked ? "Your first conversations are ready" : "Nothing strong yet"}</h2>
     {run && <p>{run.read.toLocaleString("en-AU")} read · {run.relevant.toLocaleString("en-AU")} relevant · {run.picked} worth reviewing</p>}

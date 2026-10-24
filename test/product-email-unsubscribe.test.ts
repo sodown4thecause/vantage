@@ -80,8 +80,9 @@ describe("all product email delivery", () => {
     expect(message.from).toContain("digest@updates.contextfor.dev");
     expect(message.subject).toContain("5 conversations");
     expect(message.headers["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click");
-    const unsubscribe = new URL(message.headers["List-Unsubscribe"].slice(1, -1));
-    expect(verifyUnsubscribeToken(unsubscribe.searchParams.get("token")!)).toBe(WS);
+    const unsubscribeUrl = new URL(message.headers["List-Unsubscribe"].match(/<(https?:[^>]+)>/)![1]!);
+    expect(message.headers["List-Unsubscribe"]).toMatch(/^<mailto:[^>]+>, <https?:/);
+    expect(verifyUnsubscribeToken(unsubscribeUrl.searchParams.get("token")!)).toBe(WS);
     expect(message.html).toContain("Unsubscribe");
     expect(message.html.indexOf("/opportunities/synthetic-0")).toBeLessThan(message.html.indexOf(opportunity.url));
     expect(message.text).toContain("src=email");

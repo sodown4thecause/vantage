@@ -23,3 +23,13 @@ export async function sendFirstScanEmail(workspaceId: string, picked: number, so
     }),
   });
 }
+
+export async function sendWelcomeEmail(workspaceId: string, to: string) {
+  const text = "Thanks for signing up. Finish your product setup and Vantage starts your first scan.";
+  return sendProductEmail({ workspaceId, to, once: "welcome", idempotencyKey: `activation/welcome/${workspaceId}`,
+    render: (unsubscribeUrl) => ({ subject: "Welcome to Vantage",
+      text: `${text}\n\nUnsubscribe: ${unsubscribeUrl}`,
+      html: `<p>${text}</p><p><a href="${unsubscribeUrl}">Unsubscribe</a></p>`,
+    }),
+  });
+}
