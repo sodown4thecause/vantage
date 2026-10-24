@@ -5,6 +5,7 @@ import { mapWithConcurrency } from "@/lib/async/map-with-concurrency";
 import { collectorsByType } from "@/lib/collectors/registry";
 import { runCollector } from "@/lib/collectors/run";
 import { getSemanticMode } from "@/lib/cf/env";
+import { captureServerException } from "@/lib/analytics/server";
 import { isCronAuthorized } from "@/lib/cron/authorize";
 import { claimScanLease, releaseScanLease } from "@/lib/cron/lease";
 import { eligibleSourceCondition, scanNotDueReason, scanOrder } from "@/lib/cron/scan";
@@ -97,7 +98,10 @@ export async function collectSource(input: { workspaceId: string; sourceId: stri
   const result = await runCollector({ collector, workspaceId: input.workspaceId, sourceId: input.sourceId, signal: input.signal });
   if (result.switchedOff) return { kind: "ok", body: { inserted: 0, skipped: 0, switchedOff: result.switchedOff } };
   // Collector errors are retryable by the Workflow step; the message is not returned or logged.
-  if (result.error) return { kind: "failed" };
+  if (result.error) {
+    await captureServerException(new Error("collector failed"), { workspaceId: input.workspaceId, sourceId: input.sourceId, area: "collect" });
+    return { kind: "failed" };
+  }
   return { kind: "ok", body: { inserted: result.inserted, skipped: result.skipped, ...(result.receipt?.health === "degraded" ? { partial: true } : {}) } };
 }
 
@@ -108,7 +112,8 @@ export async function embedWorkspace(workspaceId: string, signal: AbortSignal): 
   try {
     const result = await embedPendingDocuments(workspaceId, { limit: EMBED_DOC_LIMIT, signal });
     return { embedded: result.embedded };
-  } catch {
+  } catch (error) {
+    await captureServerException(error, { workspaceId, area: "embed" });
     console.error("[scan-steps] embed step degraded to keyword-only; scan continues");
     return { embedded: 0 };
   }
@@ -156,7 +161,8 @@ export async function internalStep(
   }
   try {
     return await run(input, AbortSignal.any([req.signal, AbortSignal.timeout(STEP_DEADLINE_MS)]), body);
-  } catch {
+  } catch (error) {
+    await captureServerException(error, { workspaceId: input.workspaceId ?? "unknown", area: name });
     console.error(`[scan-steps] ${name} step failed`);
     return NextResponse.json({ error: "scan step failed" }, { status: 500 });
   }
