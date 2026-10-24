@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { SafeLink } from "@/components/safe-link";
+import { copyThenOpen, writeClipboardDuringClick } from "@/lib/handoff/copy-and-open";
 import { safeHttpUrl } from "@/lib/http/safe-url";
 import type { ContributionReview } from "@/lib/drafting/generate";
 import { contributionRule } from "@/lib/drafting/rules";
@@ -148,59 +149,48 @@ export function DraftPanel({
     }
   }
 
-  async function copyReply(): Promise<{ draftId: string } | null> {
-    if (!draft || !draftMatchesTarget) return null;
+  async function handoff(openAfterCopy: boolean) {
+    const threadUrl = safeHttpUrl(selected?.urlCanonical);
+    if (!draft || !draftMatchesTarget || (openAfterCopy && !threadUrl)) return;
     const revision = ++requestRevision.current;
     setBusy(true);
     setError(null);
     setNotice(null);
-    try {
-      const saved = await postDraft({ action: "update", draftId: draft.id, editedText: edited });
-      if (revision !== requestRevision.current) return null;
-      if (!saved.ok || !saved.draft || saved.draft.quality?.targetDocumentId !== target) {
-        setError(saved.error ?? "Save failed");
-        return null;
-      }
-      const approved = await postDraft({ action: "approve", draftId: saved.draft.id, rulesReviewed: true, factsReviewed: true });
-      if (revision !== requestRevision.current) return null;
-      if (!approved.ok || !approved.draft || approved.draft.quality?.targetDocumentId !== target) {
-        setError(approved.error ?? "This reply cannot be copied yet.");
-        return null;
-      }
-      setDraft(approved.draft);
-      setEdited(approved.draft.editedText);
-      await navigator.clipboard.writeText(approved.draft.editedText);
-      const recorded = await recordEvent("copy", approved.draft.id);
-      if (revision === requestRevision.current) {
-        setNotice(
-          `Copied to your clipboard. Paste it into the thread yourself; Vantage never posts for you.${recorded ? "" : " We could not save this copy to your history."}`,
-        );
-      }
-      return { draftId: approved.draft.id };
-    } catch {
-      if (revision === requestRevision.current) setError("Could not copy. Check clipboard access and try again.");
-      return null;
-    } finally {
-      if (revision === requestRevision.current) setBusy(false);
-    }
-  }
-
-  async function copyAndOpen() {
-    const threadUrl = safeHttpUrl(selected?.urlCanonical);
-    if (!threadUrl) return;
-    const tab = window.open("about:blank", "_blank");
-    if (tab) tab.opener = null;
-    const copied = await copyReply();
-    if (!copied) {
-      tab?.close();
+    let draftId = draft.id;
+    const result = await copyThenOpen({
+      prepare: async () => {
+        const saved = await postDraft({ action: "update", draftId: draft.id, editedText: edited });
+        if (!saved.ok || !saved.draft || saved.draft.quality?.targetDocumentId !== target) throw new Error(saved.error ?? "Save failed");
+        const approved = await postDraft({ action: "approve", draftId: saved.draft.id, rulesReviewed: true, factsReviewed: true });
+        if (!approved.ok || !approved.draft || approved.draft.quality?.targetDocumentId !== target) throw new Error(approved.error ?? "This reply cannot be copied yet.");
+        draftId = approved.draft.id;
+        if (revision === requestRevision.current) {
+          setDraft(approved.draft);
+          setEdited(approved.draft.editedText);
+        }
+        return approved.draft.editedText;
+      },
+      writeClipboard: writeClipboardDuringClick,
+      openThread: () => {
+        const tab = window.open(threadUrl ?? "", "_blank");
+        if (tab) tab.opener = null;
+        return Boolean(tab);
+      },
+      record: (event) => recordEvent(event, draftId),
+    }, { openAfterCopy });
+    if (revision !== requestRevision.current) return;
+    setBusy(false);
+    if (!result.copied) {
+      setError(result.error);
       return;
     }
-    if (!tab) {
-      setNotice((current) => `${current ?? ""} Your browser blocked the new tab, so use Open thread.`.trim());
-      return;
-    }
-    tab.location.href = threadUrl;
-    await recordEvent("open", copied.draftId);
+    setNotice(
+      [
+        "Copied to your clipboard. Paste it into the thread yourself; Vantage never posts for you.",
+        result.copyRecorded ? "" : "We could not save this copy to your history.",
+        openAfterCopy && !result.opened ? "Your browser blocked the new tab, so use Open thread." : "",
+      ].filter(Boolean).join(" "),
+    );
   }
 
   const heading = researchOnly ? "Research brief" : "Your reply";
@@ -283,10 +273,10 @@ export function DraftPanel({
             <div className="space-y-3">
               <p className="max-w-[62ch] text-sm text-ridge">You post this yourself. Check the facts and the rule above first.</p>
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-                <button type="button" disabled={busy} onClick={() => void copyAndOpen()} className="btn btn-lg justify-center disabled:opacity-50">
+                <button type="button" disabled={busy} onClick={() => void handoff(true)} className="btn btn-lg justify-center disabled:opacity-50">
                   {kind === "brief" ? "Copy brief and open source" : "Copy reply and open thread"}
                 </button>
-                <button type="button" disabled={busy} onClick={() => void copyReply()} className="btn btn-quiet justify-center disabled:opacity-50">
+                <button type="button" disabled={busy} onClick={() => void handoff(false)} className="btn btn-quiet justify-center disabled:opacity-50">
                   {kind === "brief" ? "Copy research brief" : "Copy reply"}
                 </button>
                 <SafeLink href={selected?.urlCanonical} className="btn btn-quiet justify-center" onClick={() => void recordEvent("open", draft.id)}>
