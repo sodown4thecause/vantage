@@ -9,5 +9,5 @@ export function nothingStrongReason(read: number): NothingStrongReason {
 
 /** True only on the poll that sees a scan leave the queued or running state, so a page opened after completion does not reload. */
 export function scanJustFinished(wasActive: boolean, status: string | undefined): boolean {
-  return wasActive && (status === "done" || status === "partial" || status === "failed");
+  return wasActive && (status === "done" || status === "partial");
 }

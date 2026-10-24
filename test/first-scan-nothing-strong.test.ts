@@ -18,7 +18,7 @@ describe("scanJustFinished", () => {
   it("is true only when this page saw the scan leave an active state", () => {
     expect(scanJustFinished(true, "done")).toBe(true);
     expect(scanJustFinished(true, "partial")).toBe(true);
-    expect(scanJustFinished(true, "failed")).toBe(true);
+    expect(scanJustFinished(true, "failed")).toBe(false);
   });
 
   it("is false for a page opened after the scan already completed, so it does not reload in a loop", () => {

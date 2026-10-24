@@ -13,7 +13,7 @@ export function firstScanEmailChoice(picked: number, read = 0) {
 }
 
 export async function sendFirstScanEmail(workspaceId: string, picked: number, read = 0) {
-  const [ws] = await getDb().select({ email: workspace.digestEmail }).from(workspace).where(eq(workspace.id, workspaceId)).limit(1);
+  const [ws] = await getDb().select({ email: workspace.activationEmail }).from(workspace).where(eq(workspace.id, workspaceId)).limit(1);
   if (!ws?.email) return;
   const content = firstScanEmailChoice(picked, read);
   const queueUrl = `${appUrl()}/queue?workspaceId=${encodeURIComponent(workspaceId)}`;

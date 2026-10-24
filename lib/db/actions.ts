@@ -30,6 +30,7 @@ export async function createWorkspaceForCurrentUser(name: string) {
     .values({
       name,
       ownerUserId: session.user.id as string,
+      activationEmail: session.user.email ?? null,
       plan: "free",
     })
     .returning();

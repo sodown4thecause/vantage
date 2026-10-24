@@ -3,9 +3,11 @@ import { beforeEach, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({ auth: { ok: false, status: 401 } as { ok: boolean; status?: number }, retry: vi.fn(), db: vi.fn() }));
 vi.mock("@/lib/auth/workspace", () => ({ authorizeWorkspace: vi.fn(async () => state.auth) }));
 vi.mock("@/lib/activation/dispatch", () => ({ firstScan: vi.fn(), startFirstScan: (...args: unknown[]) => state.retry(...args) }));
+vi.mock("@/lib/plans/limits", () => ({ getLimits: async () => ({ scan_interval_hours: 3 }), getWorkspacePlan: async () => "free" }));
 vi.mock("@/lib/db/client", () => ({ getDb: () => state.db() }));
 import { GET, POST } from "@/app/api/workspace/first-scan/route";
 import { authorizeWorkspace } from "@/lib/auth/workspace";
+import { firstScan } from "@/lib/activation/dispatch";
 const WS = "11111111-1111-4111-8111-111111111111";
 beforeEach(() => { state.auth = { ok: false, status: 401 }; state.retry.mockReset(); state.db.mockReset(); vi.mocked(authorizeWorkspace).mockClear(); });
 
@@ -27,4 +29,19 @@ it("validates malformed scope before authorisation and dispatches only the autho
   state.retry.mockResolvedValue({ status: "queued" });
   expect((await POST(new Request("https://test/api/workspace/first-scan", { method: "POST", body: JSON.stringify({ workspaceId: WS }) }))).status).toBe(202);
   expect(state.retry).toHaveBeenCalledExactlyOnceWith(WS, true);
+});
+
+it.each([{ read: 49, sourceIds: ["one", "two"] }, { read: 50, sourceIds: ["one"] }])("bases empty advice on $read documents, not source count", async (run) => {
+  state.auth = { ok: true };
+  vi.mocked(firstScan).mockResolvedValue({ ...run, status: "done", picked: 0 } as Awaited<ReturnType<typeof firstScan>>);
+  state.db.mockReturnValue({
+    update: () => ({ set: () => ({ where: async () => [] }) }),
+    select: () => ({ from: () => ({ where: () => {
+      const rows = [{ timeZone: "UTC", last: null }];
+      return Object.assign(Promise.resolve(rows), { limit: async () => rows });
+    } }) }),
+  });
+  const response = await GET(new Request(`https://test/api/workspace/first-scan?workspaceId=${WS}`));
+  expect(response.status).toBe(200);
+  expect((await response.json()).reason).toContain(run.read < 50 ? "Few sources are configured" : "topics may be too narrow");
 });

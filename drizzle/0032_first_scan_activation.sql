@@ -26,6 +26,7 @@ CREATE TABLE "scan_run" (
 );
 --> statement-breakpoint
 ALTER TABLE "workspace" ADD COLUMN "product_email_suppressed_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "workspace" ADD COLUMN "activation_email" text;--> statement-breakpoint
 ALTER TABLE "product_email_sent" ADD CONSTRAINT "product_email_sent_workspace_id_workspace_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspace"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "scan_run" ADD CONSTRAINT "scan_run_workspace_id_workspace_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspace"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "scan_run_active_workspace_uidx" ON "scan_run" USING btree ("workspace_id") WHERE "scan_run"."status" in ('queued', 'running');--> statement-breakpoint
