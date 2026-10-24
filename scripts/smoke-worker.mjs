@@ -5,7 +5,7 @@ const port = 8799;
 const config = "wrangler.smoke.jsonc";
 const paths = ["/", "/pricing", "/robots.txt", "/auth/sign-in"];
 
-// Remote-only bindings (AI, BROWSER, VECTORIZE) need a Cloudflare token, so the smoke config drops them.
+// Remote-only bindings need a Cloudflare token, so the smoke config leaves them out.
 writeFileSync(
 	config,
 	JSON.stringify({
