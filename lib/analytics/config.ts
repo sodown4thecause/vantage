@@ -20,7 +20,7 @@ export function isReplayExcludedPath(pathname: string): boolean {
   return pathname === "/auth" || pathname.startsWith("/auth/");
 }
 
-/** Session replay stays off until a privacy page exists. Set NEXT_PUBLIC_POSTHOG_REPLAY=true at build time to enable it. */
+/** Session replay stays off until a privacy page exists. Set NEXT_PUBLIC_POSTHOG_REPLAY=1 at build time to enable it. */
 export function replayEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_POSTHOG_REPLAY === "true";
+  return process.env.NEXT_PUBLIC_POSTHOG_REPLAY === "1";
 }
