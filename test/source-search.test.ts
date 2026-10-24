@@ -37,6 +37,7 @@ vi.mock("@/lib/collectors/run", () => ({
   },
 }));
 vi.mock("@/lib/opportunities/run", () => ({ buildOpportunities: async () => ({}) }));
+vi.mock("@/lib/profile/repository", () => ({ PROFILE_SOURCE_NAME: "Profile: Hacker News", getLatestMonitoringProfile: async () => ({ id: "profile" }) }));
 vi.mock("@/lib/db/client", () => ({
   getDb: () => {
     state.dbCalls++;

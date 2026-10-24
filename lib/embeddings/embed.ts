@@ -48,7 +48,17 @@ export async function embedTexts(texts: string[], ctx: EmbedContext): Promise<nu
 
       let vectors: unknown[];
       try {
-        const response = await ai.run(EMBEDDING_MODEL, { text: inputs }, { gateway: { id: "vantage" } });
+        let response: unknown;
+        try {
+          response = await ai.run(EMBEDDING_MODEL, { text: inputs }, { gateway: { id: "vantage" } });
+        } catch (gatewayErr) {
+          if (ctx.signal?.aborted) return null;
+          // The AI Gateway may be missing or unavailable in an environment; the model itself still works without it.
+          console.error("[embed] gateway call failed, retrying without gateway", {
+            error: gatewayErr instanceof Error ? gatewayErr.name : "unknown",
+          });
+          response = await ai.run(EMBEDDING_MODEL, { text: inputs });
+        }
         if (!isEmbeddingResponse(response) || response.data.length !== inputs.length) {
           await recordEmbedCost(ctx, tokens, false);
           return null;

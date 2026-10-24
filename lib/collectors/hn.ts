@@ -30,6 +30,8 @@ function queriesFromConfig(config: Record<string, unknown>): string[] {
   return ["Show HN"];
 }
 
+const HN_FETCH_TIMEOUT_MS = 8_000;
+
 async function fetchAlgoliaPage(
   query: string,
   numericFilters: string,
@@ -42,7 +44,7 @@ async function fetchAlgoliaPage(
   url.searchParams.set("hitsPerPage", "20");
   url.searchParams.set("page", String(page));
   url.searchParams.set("numericFilters", numericFilters);
-  const res = await fetch(url, { next: { revalidate: 0 }, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(4_000)]) : AbortSignal.timeout(4_000) });
+  const res = await fetch(url, { next: { revalidate: 0 }, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(HN_FETCH_TIMEOUT_MS)]) : AbortSignal.timeout(HN_FETCH_TIMEOUT_MS) });
   if (!res.ok) {
     throw new Error(`Algolia HN error ${res.status}`);
   }
@@ -68,13 +70,25 @@ export const hnCollector: Collector = {
 
     const byId = new Map<string, AlgoliaHit>();
 
+    let failedPages = 0;
+    let firstFailure = "";
+    let attemptedPages = 0;
     // ponytail: sample at most two pages across five queries; use a backfill job for history.
     for (const q of queries) {
       let page = 0;
       let nbPages = 1;
       while (page < nbPages && page < maxPages) {
         ctx.signal?.throwIfAborted();
-        const batch = await fetchAlgoliaPage(q, numericFilters, page, ctx.signal);
+        attemptedPages += 1;
+        let batch: Awaited<ReturnType<typeof fetchAlgoliaPage>>;
+        try {
+          batch = await fetchAlgoliaPage(q, numericFilters, page, ctx.signal);
+        } catch (error) {
+          ctx.signal?.throwIfAborted();
+          failedPages += 1;
+          firstFailure ||= error instanceof Error ? error.message : String(error);
+          break;
+        }
         nbPages = batch.nbPages;
         for (const hit of batch.hits) {
           if (hit.objectID) byId.set(hit.objectID, hit);
@@ -83,6 +97,9 @@ export const hnCollector: Collector = {
         if (batch.hits.length === 0) break;
       }
     }
+
+    if (failedPages === attemptedPages) throw new Error(firstFailure);
+    const partial = failedPages > 0;
 
     const documents: NewDocument[] = [];
     for (const hit of byId.values()) {
@@ -109,6 +126,15 @@ export const hnCollector: Collector = {
         rawSnapshotRef: `hn:${hit.objectID}`,
         metadata: { objectID: hit.objectID, querySource: "algolia" },
       });
+    }
+
+    if (partial) {
+      return {
+        documents,
+        partial: true,
+        coverageReason: `Hacker News search was partly unavailable (${failedPages} of ${attemptedPages} requests failed). The next scan retries the same window.`,
+        nextState: { cursor: String(since) },
+      };
     }
 
     return {
