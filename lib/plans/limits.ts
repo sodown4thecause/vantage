@@ -1,6 +1,6 @@
 import { eq, inArray, sql } from "drizzle-orm";
 
-import { effectivePlanSql, userHasPaidPlan, userIsPaidSql } from "@/lib/billing/entitlement";
+import { effectivePlanSql, userHasPaidPlan, userIsPaidSql, workspaceIsTrialingSql } from "@/lib/billing/entitlement";
 import { getDb } from "@/lib/db/client";
 import { numericField, rowsOf } from "@/lib/db/rows";
 import { planLimit, workspace, workspaceUsage } from "@/lib/db/schema";
@@ -21,15 +21,19 @@ import {
 const METERED: Record<
   MeteredKey,
   {
-    column: "scored_leads" | "deep_searches" | "seo_credits" | "seo_questions";
-    field: "scoredLeads" | "deepSearches" | "seoCredits" | "seoQuestions";
+    column: "scored_leads" | "deep_searches" | "seo_credits" | "seo_questions" | "content_posts";
+    field: "scoredLeads" | "deepSearches" | "seoCredits" | "seoQuestions" | "contentPosts";
     window: "day" | "month";
+    /** A lower limit that applies while the owner's subscription is still trialing. */
+    trialLimit?: number;
   }
 > = {
   scored_leads_per_day: { column: "scored_leads", field: "scoredLeads", window: "day" },
   deep_searches_per_month: { column: "deep_searches", field: "deepSearches", window: "month" },
   seo_credits_per_month: { column: "seo_credits", field: "seoCredits", window: "month" },
   seo_questions_per_month: { column: "seo_questions", field: "seoQuestions", window: "month" },
+  // One post during the 7-day trial bounds the paid-provider giveaway to about $1.
+  content_posts_per_month: { column: "content_posts", field: "contentPosts", window: "month", trialLimit: 1 },
 };
 
 export function isMeteredKey(key: LimitKey): key is MeteredKey {
@@ -113,11 +117,27 @@ async function readUsage(workspaceId: string, key: MeteredKey, now: Date): Promi
   return Array.isArray(rows) ? Number(rows[0]?.value ?? 0) : 0;
 }
 
+/** The trial cap for a key, when the workspace's owner is still inside their Polar trial. */
+async function readTrialLimit(workspaceId: string, key: MeteredKey): Promise<number | null> {
+  const trialLimit = METERED[key].trialLimit;
+  if (trialLimit === undefined) return null;
+  try {
+    const result = await getDb().execute(sql`select ${workspaceIsTrialingSql(sql`${workspaceId}::uuid`)} as "trialing"`);
+    const row = rowsOf(result)[0] as { trialing?: unknown } | undefined;
+    return row?.trialing === true || row?.trialing === "t" ? trialLimit : null;
+  } catch (err) {
+    // Fail closed: an unreadable trial state keeps the trial cap, never the full plan limit.
+    console.error("[plans/limits] trial state unreadable", { key, error: err instanceof Error ? err.message : String(err) });
+    return trialLimit;
+  }
+}
+
 /** Read-only: how much of a metered limit is used. Does not consume. */
 export async function checkLimit(workspaceId: string, key: MeteredKey, now: Date = new Date()): Promise<LimitCheck> {
   const plan = await getWorkspacePlan(workspaceId);
   const limits = await getLimits(plan);
-  return evaluateLimit(limits[key], await readUsage(workspaceId, key, now));
+  const trialLimit = await readTrialLimit(workspaceId, key);
+  return evaluateLimit(trialLimit ?? limits[key], await readUsage(workspaceId, key, now));
 }
 
 /** Pure count check for static limits (projects, keywords, sources). */
@@ -149,10 +169,13 @@ export async function consume(
   // The plan is the effective one (operator grant or live subscription), read inside the same statement.
   const plan = effectivePlanSql(workspaceId);
   const fallback = sql`case when ${plan} = 'pro' then ${DEFAULT_LIMITS.pro[key]}::int else ${DEFAULT_LIMITS.free[key]}::int end`;
-  const limitExpr = sql`coalesce(
+  const planLimitExpr = sql`coalesce(
     (select "value" from "plan_limit" where "plan" = ${plan} and "key" = ${key}),
     (select "value" from "plan_limit" where "plan" = 'free' and "key" = ${key}),
     ${fallback})`;
+  const trialLimit = METERED[key].trialLimit;
+  const limitExpr = trialLimit === undefined ? planLimitExpr :
+    sql`case when ${workspaceIsTrialingSql(sql`${workspaceId}::uuid`)} then ${trialLimit}::int else ${planLimitExpr} end`;
 
   const result = await getDb().execute(sql`
     insert into "workspace_usage" ("workspace_id", "period", ${col})
@@ -211,6 +234,7 @@ const LIMIT_LABELS: Record<LimitKey, string> = {
   scan_interval_hours: "scan interval",
   seo_credits_per_month: "SEO credits per month",
   seo_questions_per_month: "SEO agent questions per month",
+  content_posts_per_month: "content posts per month",
 };
 
 const SINGULAR_LABELS: Partial<Record<LimitKey, string>> = { projects: "project", keywords: "keyword", sources: "source" };
@@ -274,12 +298,14 @@ export async function getPlanUsage(workspaceId: string, counts: { keywords: numb
   const limits = await getLimits(plan);
   const scored = await readUsage(workspaceId, "scored_leads_per_day", now);
   const deep = await readUsage(workspaceId, "deep_searches_per_month", now);
+  const content = await readUsage(workspaceId, "content_posts_per_month", now);
   const used: Partial<Record<LimitKey, number>> = {
     projects: counts.projects,
     keywords: counts.keywords,
     sources: counts.sources,
     scored_leads_per_day: scored,
     deep_searches_per_month: deep,
+    content_posts_per_month: content,
   };
   return {
     plan,

@@ -21,6 +21,17 @@ export function userIsPaidSql(userIdExpr: SQL): SQL<boolean> {
   )`;
 }
 
+/** SQL: true when the workspace's owner has a subscription still inside its Polar trial. */
+export function workspaceIsTrialingSql(workspaceIdExpr: SQL): SQL<boolean> {
+  return sql<boolean>`exists (
+    select 1 from "workspace" "wt"
+    join "billing_subscription" "bst" on "bst"."user_id" = "wt"."owner_user_id"
+    where "wt"."id" = ${workspaceIdExpr}
+      and "bst"."status" = 'trialing'
+      and ("bst"."ended_at" is null or "bst"."ended_at" > now())
+  )`;
+}
+
 /**
  * SQL: the effective plan of one workspace. Pro when an operator granted it (`workspace.plan`)
  * or the workspace owner has a live Pro subscription; otherwise free.

@@ -4,10 +4,10 @@ import type { PlanId } from "@/lib/plans/types";
  * Polar products sold on /pricing. Product ids differ between the sandbox and production
  * organizations, so each plan lists both.
  *
- * REPLACE the placeholder ids with the product ids from the Polar dashboard
- * (Products → ⋯ → Copy product id). Until then checkout refuses the plan with
- * "not configured" instead of calling Polar. Prices shown here are labels only; Polar
- * charges what the product's price says.
+ * The $5/$48 products were retired with nobody subscribed; checkout refuses a plan whose
+ * product id is still a placeholder ("not configured") instead of calling Polar. Fill in
+ * the ids from the Polar dashboard for the $19 products (Products → ⋯ → Copy product id).
+ * Prices shown here are labels only; Polar charges what the product's price says.
  */
 export type BillingServer = "sandbox" | "production";
 
@@ -25,23 +25,23 @@ export const BILLING_PLANS: readonly BillingPlan[] = [
   {
     key: "pro_monthly",
     name: "Pro monthly",
-    priceLabel: "$5",
+    priceLabel: "$19",
     interval: "month",
     grants: "pro",
     productIds: {
       sandbox: "REPLACE_WITH_SANDBOX_PRO_MONTHLY_PRODUCT_ID",
-      production: "0e072813-4013-4995-8ae8-917320151539",
+      production: "REPLACE_WITH_PRODUCTION_PRO_MONTHLY_PRODUCT_ID",
     },
   },
   {
     key: "pro_yearly",
     name: "Pro yearly",
-    priceLabel: "$48",
+    priceLabel: "$180",
     interval: "year",
     grants: "pro",
     productIds: {
       sandbox: "REPLACE_WITH_SANDBOX_PRO_YEARLY_PRODUCT_ID",
-      production: "9046f05b-e8da-4a30-862e-d886308cda2c",
+      production: "REPLACE_WITH_PRODUCTION_PRO_YEARLY_PRODUCT_ID",
     },
   },
 ];

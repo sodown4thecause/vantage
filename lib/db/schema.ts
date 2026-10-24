@@ -807,6 +807,7 @@ export const workspaceUsage = pgTable(
     deepSearches: integer("deep_searches").notNull().default(0),
     seoCredits: integer("seo_credits").notNull().default(0),
     seoQuestions: integer("seo_questions").notNull().default(0),
+    contentPosts: integer("content_posts").notNull().default(0),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -1060,3 +1061,82 @@ export const seoMessage = pgTable(
   },
   (table) => [index("seo_message_conversation_created_idx").on(table.conversationId, table.createdAt)],
 );
+
+export const contentProfileStatusEnum = pgEnum("content_profile_status", [
+  "draft",
+  "approved",
+]);
+
+export const contentProfile = pgTable(
+  "content_profiles",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    status: contentProfileStatusEnum("status").notNull().default("draft"),
+    /** Who the site is for, in the owner's words. */
+    audience: text("audience").notNull().default(""),
+    /** Product facts, each a short checkable statement. */
+    facts: jsonb("facts").$type<string[]>().notNull().default([]),
+    /** Claims the product must never make. A banned claim is a hard publishing stop. */
+    bannedClaims: jsonb("banned_claims").$type<string[]>().notNull().default([]),
+    /** 2–3 samples of the owner's own writing. */
+    voiceSamples: jsonb("voice_samples").$type<string[]>().notNull().default([]),
+    bannedPhrases: jsonb("banned_phrases").$type<string[]>().notNull().default([]),
+    houseStyle: text("house_style").notNull().default(""),
+    /** Competitor domains for keyword-gap runs (up to 3, set in Profile). */
+    competitors: jsonb("competitors").$type<string[]>().notNull().default([]),
+    /** The LLM's proposed profile, kept until the owner edits and approves their own version. */
+    draft: jsonb("draft").$type<Record<string, unknown>>().notNull().default({}),
+    /** Provenance of the crawl that produced the draft (map + scraped pages). */
+    sourcePages: jsonb("source_pages")
+      .$type<Array<{ url: string; title: string; scrapedAt: string }>>()
+      .notNull()
+      .default([]),
+    /** SHA-256 of the canonical approved revision; edits after approval invalidate the hash. */
+    approvedHash: text("approved_hash"),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("content_profile_workspace_uidx").on(table.workspaceId)],
+);
+
+export const contentLedgerSourceEnum = pgEnum("content_ledger_source", [
+  "sitemap",
+  "published",
+  "manual",
+]);
+
+export const contentLedger = pgTable(
+  "content_ledger",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    title: text("title").notNull().default(""),
+    targetKeyword: text("target_keyword"),
+    secondaryKeywords: jsonb("secondary_keywords").$type<string[]>().notNull().default([]),
+    /** Unknown when the sitemap does not carry it; never invented. */
+    publishedDate: date("published_date", { mode: "string" }),
+    refreshDate: date("refresh_date", { mode: "string" }),
+    /** Vectorize id for the page's embedding (`content-ledger:<id>`); vectors live in Vectorize. */
+    embeddingId: text("embedding_id"),
+    source: contentLedgerSourceEnum("source").notNull().default("sitemap"),
+    /** The content asset that published this row, when it was published through Content. */
+    assetId: uuid("asset_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("content_ledger_workspace_url_uidx").on(table.workspaceId, table.url),
+    uniqueIndex("content_ledger_workspace_id_uidx").on(table.workspaceId, table.id),
+  ],
+);
+
+
+export type ContentProfile = typeof contentProfile.$inferSelect;
+export type ContentLedgerRow = typeof contentLedger.$inferSelect;

@@ -8,7 +8,7 @@ import { DEFAULT_LIMITS } from "@/lib/plans/types";
 
 export const metadata: Metadata = {
   title: "Pricing",
-  description: "Start free. Upgrade to Pro for more sources, more keywords and scans every three hours.",
+  description: "Start free. Upgrade to Pro for more sources, more keywords, the content pipeline and scans every three hours.",
   alternates: { canonical: "/pricing" },
 };
 
@@ -34,6 +34,7 @@ function features(plan: "free" | "pro"): string[] {
     ...(l.deep_searches_per_month ? [`${l.deep_searches_per_month} deep searches a month`] : []),
     ...(l.seo_questions_per_month ? [`${l.seo_questions_per_month} SEO agent questions a month`] : []),
     ...(l.seo_credits_per_month ? [`${l.seo_credits_per_month} SEO data credits a month`] : []),
+    ...(l.content_posts_per_month ? [`${l.content_posts_per_month} content posts a month`] : []),
   ];
 }
 
