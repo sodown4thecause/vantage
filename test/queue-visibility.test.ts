@@ -41,3 +41,18 @@ it("applies live evidence eligibility in SQL before the five-card limit", async 
   expect(query).toContain("'mocked'");
   expect(query).toContain('"document"."workspace_id" <> "opportunity"."workspace_id"');
 });
+
+it("limits the queue to a day's picks and skips opportunities shown on earlier days, keeping every eligibility rule", async () => {
+  await listOpportunityQueue({ workspaceId: "ws-1", onlyIds: ["op-1"], excludeIds: ["op-0"] });
+  const query = new PgDialect().sqlToQuery(state.predicate!);
+  expect(query.sql).toContain('"opportunity"."id" in ($');
+  expect(query.sql).toContain('"opportunity"."id" not in ($');
+  expect(query.params).toEqual(expect.arrayContaining(["ws-1", "op-1", "op-0"]));
+  expect(query.sql).toContain("not exists (select 1");
+});
+
+it("returns nothing, without querying, for an empty set of picks", async () => {
+  state.predicate = undefined;
+  expect(await listOpportunityQueue({ workspaceId: "ws-1", onlyIds: [] })).toEqual([]);
+  expect(state.predicate).toBeUndefined();
+});
