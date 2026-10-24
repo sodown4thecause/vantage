@@ -1130,3 +1130,39 @@ export const savedArtifact = pgTable(
     check("saved_artifact_lane_check", sql`${table.lane} in ('gtm', 'seo', 'geo', 'content')`),
   ],
 );
+
+/**
+ * Cached summary of a page linked from a short link post, one row per normalised URL (issue #99).
+ * Shared across workspaces like the other provider caches; `attempts` and `lastAttemptAt` back the
+ * 24-hour retry rule (at most two tries), a 30-day-old `ok` row means no fetch.
+ */
+export const linkEnrichment = pgTable("link_enrichments", {
+  urlHash: text("url_hash").primaryKey(),
+  url: text("url").notNull(),
+  kind: text("kind").$type<"page" | "youtube">().notNull(),
+  title: text("title"),
+  summary: text("summary"),
+  status: text("status").$type<"ok" | "skipped" | "failed">().notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }).defaultNow().notNull(),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }),
+  costUsd: numeric("cost_usd", { precision: 12, scale: 6 }).notNull().default("0"),
+});
+
+/** Per-topic mention counts the scan job upserts after the filters run (issue #99). */
+export const topicVolumeDaily = pgTable(
+  "topic_volume_daily",
+  {
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    topic: text("topic").notNull(),
+    source: text("source").notNull(),
+    day: date("day").notNull(),
+    mentions: integer("mentions").notNull().default(0),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.topic, table.source, table.day] }),
+    index("topic_volume_daily_workspace_day_idx").on(table.workspaceId, table.day),
+  ],
+);
