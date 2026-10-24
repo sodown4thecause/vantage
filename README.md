@@ -1,38 +1,98 @@
 # [contextfor.dev](https://contextfor.dev)
 
-**Find the people already asking for what you build.**
+**One low-effort workspace for getting a product found: community listening, SEO, AI visibility (GEO) and content.**
 
-Vantage reads Reddit, Hacker News, X, YouTube, Product Hunt, Substack, GitHub,
-Stack Overflow, LinkedIn and your own feeds, scores what it finds for buying
-intent, and puts the conversations worth joining in front of the workspace
-owner. You write the reply — Vantage never posts on your behalf.
+Vantage (the product behind contextfor.dev) replaces the separate listening, SEO,
+AI-visibility, link-building and content tools a founder would otherwise stitch
+together. You describe your product once, through a short AI interview, and the
+workspace keeps working in the background:
 
-## Stack
+- **GTM lane.** Reads Reddit, Hacker News, X, YouTube, Product Hunt, Substack,
+  GitHub, Stack Overflow, LinkedIn and your own feeds. It scores every
+  conversation on fit, intent, evidence, momentum and timing, then emails up to
+  five ranked conversations a day that are worth joining, each with a grounded
+  draft reply. **You write and post the reply. Vantage never posts for you.**
+- **SEO and GEO lane.** An AI agent over DataForSEO and Google Search Console
+  data covers keywords, SERPs, backlinks and referring domains. It also checks
+  whether answer engines (ChatGPT, Perplexity, Google AI Overviews) cite you.
+  Paid calls need your approval before they run.
+- **Content lane.** Turns what the listening and SEO lanes find into posts and
+  social copy, grounded in your own knowledge base and run through a humaniser.
+  Vantage writes the social content but doesn't schedule or post it. It points
+  you to open-source schedulers instead.
+- **AI workspace.** A single chat with three suggested prompts at all times.
+  Answers come back as text plus visuals (rendered threads, backlink tables and
+  graphs), and anything worth keeping is saved as an artifact.
 
-- **Next.js 16** (App Router) + TypeScript + Tailwind v4
-- **Neon** Postgres via **Drizzle ORM** (`neon-http` driver, pooled endpoint)
-- **Neon Auth** (Managed Better Auth), constructed lazily so builds need no secrets
-- **Cloudflare Workers** — custom domain `contextfor.dev`, static assets,
-  Cron Trigger, Browser / AI / Vectorize / R2 / Workflows bindings
-- **Greptile** for AI pull-request review, **GitHub Actions** for CI/CD
+## How it works
 
-## The product
+1. **Onboard from a URL.** Paste your site and the interview drafts your
+   monitoring profile (audience, problems, competitors, sources) for you to
+   confirm.
+2. **Scan.** An hourly Cloudflare Cron starts one durable Workflow per due
+   workspace. Collectors fetch new conversations within a daily paid-provider
+   budget.
+3. **Rank.** Documents are embedded, deduplicated and scored. A learning loop
+   re-weights ranking from your approvals, rejections and outcomes.
+4. **Ground and draft.** Retrieval-augmented generation (RAG) pulls the most
+   relevant passages from your knowledge base so a draft cites real evidence
+   rather than inventing it.
+5. **Deliver.** A daily digest arrives at the hour you choose, and the
+   workspace holds the full queue, the SEO/GEO agent and saved artifacts.
 
-| Surface | What it does |
-|---------|--------------|
-| Sign-up / onboarding | Create a workspace per product or brand you monitor |
-| Sources | Collector feeds with health, last-poll time, pause/resume and per-collector validation |
-| Collect | Manual run per source, or the scheduled sweep |
-| Queue / review | Leads ranked by intent, with the original post, the reason it scored and the provider it came from; approve, reject and record outcomes |
-| Settings | Plan, sources and digest delivery |
-| Daily digest | Up to five top-ranked conversations, emailed once a day at your chosen hour |
+## Services and stack
 
-Documents store `metadata.provider` and `metadata.mocked`, and the UI shows
-both — fixture sample data can never pass itself off as a real lead. Collectors
-fail closed before saving fixtures in production unless `ALLOW_FIXTURES=true`
-explicitly permits an intentional demo. Other values do not opt in. Persisted
-samples stay marked as mocked, their source coverage stays degraded, and they
-remain excluded from the live opportunity queue.
+| Area | Service | Status |
+|------|---------|--------|
+| App | Next.js 16 (App Router), React 19, TypeScript, Tailwind v4 | Live |
+| Hosting | Cloudflare Workers via OpenNext: Cron, Workflows, Queues, R2, Browser Rendering, rate limiting | Live |
+| Database | Neon Postgres + Drizzle ORM (additive migrations) | Live |
+| Auth | Neon Auth (managed Better Auth), email OTP | Live |
+| Billing | Polar: Pro at $19/mo (founding price), checkout, webhooks and customer portal | Live |
+| AI | Vercel AI SDK 7 (tool calling with tool approval) through Vercel AI Gateway | Live |
+| Embeddings + RAG | Workers AI embeddings (Qwen3) + Cloudflare Vectorize | Live |
+| Embeddings + RAG (next) | Neon pgvector (halfvec) + pg_search hybrid search, Jina v5 embeddings and Jina reranker v3 | Planned |
+| Research | Tako Search via AI Gateway, with Linkup as fallback | Live |
+| SEO / GEO data | DataForSEO (Labs, SERP, Backlinks, AI Optimization), cached per workspace | Live |
+| Search Console | Google Search Console OAuth for first-party SEO data | Planned |
+| Collection | Scavio, TinyFish, Firecrawl, HN Algolia, YouTube Data API, Product Hunt GraphQL, RSS | Live |
+| Transactional email | Resend (digests and account email from `updates.contextfor.dev`) | Live |
+| Newsletter | MailerLite for opted-in newsletters (`news.contextfor.dev`) | Planned |
+| Bot protection | Cloudflare Turnstile on public endpoints | Live |
+| Product analytics | PostHog: funnel events and browser error tracking, proxied first-party | In review |
+| Worker errors | Cloudflare Workers Issues (no SDK) | In review |
+| CI/CD | GitHub Actions (lint, typecheck, tests, migration drift, bundle-size gate, staging auto-deploy, gated production) | Live |
+
+## Roadmap
+
+**Now (launch)**
+- Production acceptance of the unified workspace and the AI interview onboarding
+- Reddit lane through Firecrawl search, with Scavio hydration for the daily top five
+- PostHog funnel and Workers Issues alerts
+- Signed one-click digest unsubscribe (RFC 8058)
+
+**Next**
+- Move RAG to Neon pgvector + pg_search with Jina v5 embeddings and the Jina reranker
+- Google Search Console connection, plus a public SEO/GEO case study with ourselves as client zero
+- Link enrichment and week-over-week topic trends
+- MailerLite newsletter for opted-in users
+- Landing-page lead capture
+
+**Later**
+- **MCP server.** Read your queue, opportunities and SEO data from Claude, Cursor or any MCP client, with a read-only tier on Free.
+- **Agent skills.** A published `SKILL.md` so coding and research agents can use Vantage as a skill.
+- Source discovery that suggests new communities, forums and newsletters for your niche
+- More lanes (newsletters, podcasts, forums) and team workspaces
+- Content calendar export to open-source schedulers (for example pendpost). Vantage still won't post for you.
+
+## Principles
+
+- **Never posts on your behalf.** Every reply and social post is yours to send.
+- **Evidence over invention.** Drafts are grounded in sources you can see.
+  Fixture data is labelled as mocked, and production fails closed rather than
+  showing it as a real lead.
+- **Spend is visible.** Paid provider calls are budgeted, metered per workspace,
+  and AI tool calls that cost money ask first.
 
 ## Blog
 
@@ -171,8 +231,9 @@ pnpm deploy
 
 ### Cron
 
-The `staging` environment schedules `0 */3 * * *` (every 3 hours, UTC);
-top-level and production cron lists are empty. `worker-entry.mjs` adds the
+Production schedules `0 * * * *` (hourly, UTC) and staging `0 */3 * * *`
+(every 3 hours). Digests go out at each workspace's chosen hour, and scans are
+gated by the plan's scan interval. `worker-entry.mjs` adds the
 `scheduled` handler missing from the adapter. With the configured `SCAN` binding,
 it starts per-workspace scan Workflows, requests cost rollup, then POSTs to
 `/api/cron/digest`. Without `SCAN`, it calls `/api/cron/tick`, which performs the
