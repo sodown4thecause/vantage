@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   eligible: [] as Array<{ id: string }>,
   sourceRow: null as Record<string, unknown> | null,
   dueWorkspaces: [] as Array<{ id: string }>,
+  dueThrow: null as Error | null,
   limits: [] as unknown[],
   writes: [] as Array<{ table: string; set: Record<string, unknown>; where: unknown }>,
   dueWhere: undefined as unknown,
@@ -59,6 +60,7 @@ function readRows(ops: Op[]) {
   if (from === source) return find(ops, "orderBy") ? state.eligible : state.sourceRow ? [state.sourceRow] : [];
   if (from === workspace) {
     state.dueWhere = find(ops, "where")?.args[0];
+    if (state.dueThrow) throw state.dueThrow;
     return state.dueWorkspaces;
   }
   return [];
@@ -134,6 +136,7 @@ beforeEach(() => {
   state.eligible = [];
   state.sourceRow = { id: SRC, workspaceId: WS, type: "hn", lane: "free", health: "healthy", config: {}, etag: null, lastModified: null, cursor: null };
   state.dueWorkspaces = [{ id: WS }];
+  state.dueThrow = null;
   state.limits = [];
   state.writes = [];
   state.hashes = new Set();
@@ -170,6 +173,14 @@ describe("internal scan step routes: validation", () => {
 });
 
 describe("due", () => {
+  it("logs the error class when the lookup throws, without the message", async () => {
+    state.dueThrow = Object.assign(new Error("select secret from workspace"), { name: "NeonDbError" });
+    const response = await call(dueRoute);
+    expect(response.status).toBe(500);
+    expect(console.error).toHaveBeenCalledWith("[scan-due] lookup failed", "NeonDbError");
+    expect(console.error).not.toHaveBeenCalledWith(expect.stringContaining("select secret"));
+  });
+
   it("returns workspaces whose cadence has elapsed", async () => {
     const response = await call(dueRoute);
     expect(await response.json()).toEqual({ workspaceIds: [WS] });

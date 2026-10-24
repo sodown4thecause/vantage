@@ -9,8 +9,12 @@ import * as schema from "@/lib/db/schema";
 type VantageDb = ReturnType<typeof drizzle<typeof schema>>;
 type PostgresJsInstance = { db: PostgresJsDatabase<typeof schema>; client: { end(options?: { timeout?: number }): Promise<void> } };
 
+// A cold Worker isolate plus a just-woken Neon compute has exceeded 10s (staging
+// due step, 2026-10-24 09:00 UTC: compute started in 360ms, the lookup then aborted).
+const NEON_HTTP_TIMEOUT_MS = 20_000;
+
 neonConfig.fetchFunction = (input: RequestInfo | URL, init?: RequestInit) => {
-  const timeout = AbortSignal.timeout(10_000);
+  const timeout = AbortSignal.timeout(NEON_HTTP_TIMEOUT_MS);
   return fetch(input, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout });
 };
 
