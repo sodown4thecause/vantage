@@ -84,6 +84,8 @@ jobs:
             echo "::error::.open-next/worker.js is over 10 MB"
             exit 1
           fi
+      - name: Smoke test built Worker (wrangler dev)
+        run: pnpm cf:smoke
       - name: Validate complete Worker upload (dry run)
         run: pnpm exec wrangler deploy --dry-run --env staging --outdir .wrangler/audit-bundle
       - uses: actions/upload-artifact@v7
