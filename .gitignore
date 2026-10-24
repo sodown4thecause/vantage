@@ -49,3 +49,14 @@ worker-entry.d.ts
 
 # Claude Code agent worktrees (local only)
 /.claude/worktrees/
+
+# Mikk internal
+.mikk/
+
+# Mikk generated artifacts stay local-only; mikk.json (the contract) is committed.
+mikk.lock.json
+.mikkignore
+.clinerules
+
+# This is a pnpm repo; never commit an npm lockfile.
+package-lock.json

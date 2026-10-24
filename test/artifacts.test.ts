@@ -1,5 +1,5 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const ctx = vi.hoisted(() => ({ env: undefined as unknown, throws: false }));
@@ -12,6 +12,7 @@ vi.mock("@opennextjs/cloudflare", () => ({
 
 import { artifactKey, putArtifact } from "@/lib/r2/artifacts";
 import { createFakeR2 } from "./helpers/fake-r2";
+import { repoSourceFiles } from "./helpers/repo-files";
 
 const WS = "0b8f3c2e-7d1a-4e5b-9c6d-1a2b3c4d5e6f";
 const ID = "5f1e2d3c-4b5a-4968-8777-665544332211";
@@ -115,23 +116,14 @@ describe("wrangler bindings", () => {
 describe("single entry point", () => {
   it("no file outside lib/r2/artifacts.ts and lib/cf/env.ts mentions ARTIFACTS", () => {
     const root = process.cwd();
-    const skip = new Set(["node_modules", ".next", ".open-next", ".git", ".claude", ".wrangler", "docs", "drizzle"]);
+    const skip = [".next", ".open-next", ".claude", ".wrangler", "docs", "drizzle"];
     const allowed = new Set(["lib/r2/artifacts.ts", "lib/cf/env.ts"]);
-    const hits: string[] = [];
-    const walk = (dir: string) => {
-      for (const name of readdirSync(dir)) {
-        if (skip.has(name)) continue;
-        const full = join(dir, name);
-        if (statSync(full).isDirectory()) walk(full);
-        else if (/\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$/.test(name) && !name.endsWith(".d.ts")) {
-          const rel = relative(root, full);
-          const posixRel = rel.replaceAll("\\", "/");
-          if (allowed.has(posixRel) || posixRel.startsWith("test/")) continue;
-          if (/\bARTIFACTS\b/.test(readFileSync(full, "utf8"))) hits.push(rel);
-        }
-      }
-    };
-    walk(root);
+    const hits = repoSourceFiles(skip).filter(
+      (rel) =>
+        !allowed.has(rel) &&
+        !rel.startsWith("test/") &&
+        /\bARTIFACTS\b/.test(readFileSync(join(root, rel), "utf8")),
+    );
     expect(hits).toEqual([]);
     // Positive control: the allowed module really is the one that names the binding.
     expect(readFileSync(join(root, "lib/r2/artifacts.ts"), "utf8")).toMatch(/\bARTIFACTS\b/);

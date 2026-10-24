@@ -1,0 +1,102 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "name": "vantage",
+    "description": "Vantage reads Reddit, Hacker News, X, YouTube, Product Hunt, Substack, GitHub, Stack Overflow, LinkedIn and customer RSS feeds, scores buying intent, and surfaces conversations worth joining for human-posted replies.",
+    "language": "typescript",
+    "entryPoints": [
+      "lib/auth/server.ts",
+      "lib/env/server.ts"
+    ]
+  },
+  "declared": {
+    "modules": [
+      {
+        "id": "components",
+        "name": "Components",
+        "description": "Shared page chrome rendered around every app page: Shell (header with the Vantage mark, workspace nav — Queue, Sources, Profile, Plan, Digest — and workspaceId-threaded links) and PageHead (page title plus optional lede). Pure UI with no db, cron, or data dependencies; imported by roughly a dozen pages under app/.",
+        "intent": "Shared UI shell used by all app pages",
+        "paths": [
+          "components/shell.tsx"
+        ],
+        "entryFunctions": []
+      },
+      {
+        "id": "opportunities",
+        "name": "Opportunities",
+        "description": "Client-side DraftPanel for the opportunity detail page: select a target conversation, create/regenerate/update/approve a reply draft through /api/drafts, honour venue posting rules from lib/drafting/rules (research-brief mode where AI text is prohibited), and surface ContributionReview quality signals. Vantage never auto-posts — the human copies the approved reply and opens the conversation themselves.",
+        "intent": "Human-in-the-loop reply drafting on the opportunity detail page",
+        "paths": [
+          "app/opportunities/[id]/draft-panel.tsx"
+        ],
+        "entryFunctions": []
+      },
+      {
+        "id": "plans",
+        "name": "Plans",
+        "description": "Plan and limit engine for the free/pro tiers: normalizes the plan, merges plan_limit database rows over DEFAULT_LIMITS, checks static count limits (keywords, sources, projects) and atomically consumes metered keys (scored_leads_per_day, deep_searches_per_month) with consume/release on workspace_usage. Also owns isScanDue scan-interval logic plus getPlanUsage and featureEnabled helpers. Consumed by the cron scan, opportunities run, db/source actions, and the Plan settings page.",
+        "intent": "Tiered limit retrieval, checking, and metered consumption",
+        "paths": [
+          "lib/plans/limits.ts"
+        ],
+        "entryFunctions": []
+      },
+      {
+        "id": "test",
+        "name": "Test",
+        "description": "node:test suite (excluded from Vitest, run via node --test) covering runScan in worker/scan-run.mjs. Injected fakeStep/fakeCall fakes assert step ordering (plan, collect, embed, build, finish), retry and timeout options, exact request bodies, 409 skip semantics, partial status on collect failure, and that finish always releases the workspace scan lease.",
+        "intent": "Verification of worker/scan-run.mjs scan orchestration",
+        "paths": [
+          "test/scan-run.test.mjs"
+        ],
+        "entryFunctions": []
+      },
+      {
+        "id": "worker",
+        "name": "Worker",
+        "description": "Cloudflare Workflows implementation of the workspace scan. worker/scan-run.mjs defines the step sequence (plan lease, concurrent per-source collect with retries, embed, build, and finish releasing the lease) with injected step and call so the logic stays runtime-independent; worker/workflows.mjs exports the ScanWorkspace entrypoint that wires real calls through the WORKER_SELF_REFERENCE binding with the CRON secret, passing 409 through and stopping retry loops for non-retryable errors. Re-exported by worker-entry.mjs for cron mode.",
+        "intent": "Cloudflare Workflows orchestration of workspace scans",
+        "paths": [
+          "worker/scan-run.mjs",
+          "worker/workflows.mjs"
+        ],
+        "entryFunctions": []
+      }
+    ],
+    "constraints": [
+      "module:components cannot import module:worker",
+      "module:components cannot import module:plans",
+      "module:components cannot import module:opportunities",
+      "module:components cannot import module:test",
+      "module:worker cannot import module:test",
+      "module:worker cannot import module:components",
+      "module:worker cannot import module:opportunities",
+      "module:worker cannot import module:plans",
+      "module:plans cannot import module:opportunities",
+      "module:plans cannot import module:worker",
+      "module:plans cannot import module:test",
+      "module:plans cannot import module:components",
+      "module:test cannot import module:components",
+      "module:test cannot import module:plans",
+      "module:test cannot import module:opportunities",
+      "module:opportunities cannot import module:test",
+      "module:opportunities cannot import module:worker"
+    ],
+    "decisions": []
+  },
+  "overwrite": {
+    "mode": "never",
+    "requireConfirmation": true
+  },
+  "policies": {
+    "maxRiskScore": 70,
+    "maxImpactNodes": 10,
+    "protectedModules": [
+      "auth",
+      "security",
+      "billing"
+    ],
+    "enforceStrictBoundaries": true,
+    "requireReasoningForCritical": true
+  }
+}

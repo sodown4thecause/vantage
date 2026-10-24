@@ -1,5 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { readFileSync } from "node:fs";
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
 vi.mock("@/lib/db/client", () => ({ getDb: () => ({}) }));
@@ -25,6 +24,7 @@ import {
 } from "@/lib/browser/run";
 import { createFakeBrowser, type FakeBrowserOptions } from "./helpers/fake-browser";
 import { createFakeR2 } from "./helpers/fake-r2";
+import { repoSourceFiles } from "./helpers/repo-files";
 
 function setup(fake: FakeBrowserOptions = {}, over: Partial<BrowserRunDeps> = {}) {
   const { binding, calls } = createFakeBrowser(fake);
@@ -307,23 +307,13 @@ describe("limits and failures", () => {
 
 describe("single entry point", () => {
   it("no file outside lib/browser/run.ts touches the BROWSER binding", () => {
-    const root = process.cwd();
-    const skip = new Set(["node_modules", ".next", ".open-next", ".git", ".claude", ".wrangler", "docs", "drizzle"]);
-    const hits: string[] = [];
-    const walk = (dir: string) => {
-      for (const name of readdirSync(dir)) {
-        if (skip.has(name)) continue;
-        const full = join(dir, name);
-        if (statSync(full).isDirectory()) walk(full);
-        else if (/\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$/.test(name) && !name.endsWith(".d.ts")) {
-          const rel = relative(root, full);
-          const posixRel = rel.replaceAll("\\", "/");
-          if (posixRel === "lib/browser/run.ts" || posixRel.startsWith("test/")) continue;
-          if (/quickAction|\bBROWSER\b/.test(readFileSync(full, "utf8"))) hits.push(rel);
-        }
-      }
-    };
-    walk(root);
+    const skip = [".next", ".open-next", ".claude", ".wrangler", "docs", "drizzle"];
+    const hits = repoSourceFiles(skip).filter(
+      (rel) =>
+        rel !== "lib/browser/run.ts" &&
+        !rel.startsWith("test/") &&
+        /quickAction|\bBROWSER\b/.test(readFileSync(rel, "utf8")),
+    );
     expect(hits).toEqual([]);
   });
 });

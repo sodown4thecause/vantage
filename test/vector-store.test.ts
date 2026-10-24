@@ -1,5 +1,5 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const ctx = vi.hoisted(() => ({ env: undefined as unknown, throws: false }));
@@ -12,6 +12,7 @@ vi.mock("@opennextjs/cloudflare", () => ({
 
 import { deleteVectors, queryVectors, upsertVectors, type VectorItem } from "@/lib/embeddings/store";
 import { createFakeVectorize } from "./helpers/fake-vectorize";
+import { repoSourceFiles } from "./helpers/repo-files";
 
 function bind(fake: ReturnType<typeof createFakeVectorize> | null) {
   ctx.throws = false;
@@ -148,23 +149,14 @@ describe("failure handling", () => {
 describe("single entry point", () => {
   it("no file outside lib/embeddings/store.ts and lib/cf/env.ts touches the VECTORIZE binding", () => {
     const root = process.cwd();
-    const skip = new Set(["node_modules", ".superpowers", ".next", ".open-next", ".git", ".claude", ".wrangler", "docs", "drizzle"]);
+    const skip = [".superpowers", ".next", ".open-next", ".claude", ".wrangler", "docs", "drizzle"];
     const allowed = new Set(["lib/embeddings/store.ts", "lib/cf/env.ts"]);
-    const hits: string[] = [];
-    const walk = (dir: string) => {
-      for (const name of readdirSync(dir)) {
-        if (skip.has(name)) continue;
-        const full = join(dir, name);
-        if (statSync(full).isDirectory()) walk(full);
-        else if (/\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$/.test(name) && !name.endsWith(".d.ts")) {
-          const rel = relative(root, full);
-          const posixRel = rel.replaceAll("\\", "/");
-          if (allowed.has(posixRel) || posixRel.startsWith("test/")) continue;
-          if (/\bVECTORIZE\b|\bgetVectorize\b/.test(readFileSync(full, "utf8"))) hits.push(rel);
-        }
-      }
-    };
-    walk(root);
+    const hits = repoSourceFiles(skip).filter(
+      (rel) =>
+        !allowed.has(rel) &&
+        !rel.startsWith("test/") &&
+        /\bVECTORIZE\b|\bgetVectorize\b/.test(readFileSync(join(root, rel), "utf8")),
+    );
     expect(hits).toEqual([]);
-  }, 30_000);
+  });
 });
