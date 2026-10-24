@@ -111,10 +111,29 @@ test("rethrows other create failures after attempting every workspace", async ()
   await assert.rejects(worker.scheduled(scanController, env), /1 of 2 scan instances failed/);
   assert.equal(creates.length, 2);
 });
-test("fails the Workflow scheduled invocation when the due lookup fails", async () => {
+test("retries a 5xx due lookup once, then starts scans from the second response", async () => {
+  let dueCalls = 0;
+  const { env, creates } = scanEnv();
+  const inner = env.WORKER_SELF_REFERENCE.fetch;
+  env.WORKER_SELF_REFERENCE.fetch = async (request) => {
+    if (new URL(request.url).pathname === "/api/internal/scan/due" && dueCalls++ === 0) {
+      return new Response("scan step failed", { status: 500 });
+    }
+    return inner(request);
+  };
+  await worker.scheduled(scanController, env);
+  assert.equal(dueCalls, 2);
+  assert.equal(creates.length, 2);
+});
+test("fails the Workflow scheduled invocation when the due lookup fails twice", async () => {
+  let dueCalls = 0;
   const { env } = scanEnv();
-  env.WORKER_SELF_REFERENCE = { fetch: async () => new Response("nope", { status: 500 }) };
+  env.WORKER_SELF_REFERENCE = { fetch: async (request) => {
+    if (new URL(request.url).pathname === "/api/internal/scan/due") dueCalls += 1;
+    return new Response("nope", { status: 500 });
+  } };
   await assert.rejects(worker.scheduled(scanController, env), /500/);
+  assert.equal(dueCalls, 2);
 });
 test("triggers the daily cost rollup through the self-reference binding after starting scans", async () => {
   const { env, creates, rollups } = scanEnv();
