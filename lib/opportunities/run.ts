@@ -7,6 +7,7 @@ import {
   featuresFromRecord,
   recommendedAction,
 } from "@/lib/opportunities/features";
+import { parseContentKind } from "@/lib/opportunities/content-kind";
 import type {
   BuildOpportunitiesResult,
   OpportunityCardView,
@@ -460,6 +461,7 @@ export async function getOpportunityDetail(opts: {
     platform: e.doc.platform,
     contentMd: e.doc.contentMd,
     discoveryOnly: e.doc.metadata?.discoveryOnly === true,
+    contentKind: parseContentKind(e.doc.metadata?.contentKind),
     existingReplies: Array.isArray(e.doc.metadata?.topComments ?? e.doc.metadata?.topReplies)
       ? ((e.doc.metadata?.topComments ?? e.doc.metadata?.topReplies) as unknown[]).slice(0, 10).flatMap((reply) => {
         if (typeof reply === "string") return [reply.slice(0, 2_000)];

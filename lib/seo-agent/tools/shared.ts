@@ -97,14 +97,14 @@ export function forModelData(source: DataSource, value: unknown): { source: Data
   return { source, data: forModel(value) };
 }
 
-export function addCard(ctx: ToolContext, card: { tool: string; title: string; cached: boolean; data: unknown }): void {
+export function addCard(ctx: ToolContext, card: { tool: string; title: string; cached: boolean; data: unknown; sandbox?: boolean }): void {
   ctx.cards.push({
     tool: card.tool,
     title: card.title,
     fetchedAt: card.cached ? null : new Date().toISOString(),
     cached: card.cached,
     data: forCard(card.data),
-    sandbox: dataForSeoConfig()?.env !== "live",
+    sandbox: card.sandbox ?? dataForSeoConfig()?.env !== "live",
   });
 }
 

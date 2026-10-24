@@ -3,6 +3,9 @@
 .text { white-space: pre-wrap; font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
 .link { color: var(--signal); font-size: 12px; overflow-wrap: anywhere; }
 .thread { border: 1px solid var(--contour); border-radius: 12px; padding: 16px; background: var(--sheet); }
+.researchCard { display: grid; gap: 8px; border: 1px solid var(--contour); border-radius: 12px; padding: 16px; background: var(--sheet); }
+.researchCard h3 { font-size: 13px; font-weight: 600; line-height: 1.5; }
+.researchCard p { font-size: 14px; line-height: 1.65; color: var(--ink); overflow-wrap: anywhere; }
 .threadMeta { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; color: var(--ridge); margin-bottom: 8px; }
 .thread h3 { font-size: 14px; font-weight: 500; line-height: 1.5; margin-bottom: 8px; }
 .thread > p { font-size: 13px; color: var(--ridge); line-height: 1.6; margin-bottom: 10px; overflow-wrap: anywhere; }

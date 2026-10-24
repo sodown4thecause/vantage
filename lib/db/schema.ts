@@ -795,6 +795,18 @@ export const providerBudgetReservation = pgTable(
   (table) => [primaryKey({ columns: [table.day, table.provider] })],
 );
 
+export const workspaceProviderQuota = pgTable(
+  "workspace_provider_quota",
+  {
+    workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+    day: date("day").notNull(),
+    provider: text("provider").notNull(),
+    action: text("action").notNull(),
+    attempts: integer("attempts").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.workspaceId, table.day, table.provider, table.action] })],
+);
+
 export const publicVisitor = pgTable(
   "public_visitor",
   {

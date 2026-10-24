@@ -10,6 +10,7 @@ import { appendTurn, ConversationNotFoundError, getConversation } from "@/lib/se
 import { INTERVIEW_CARD_TOOL } from "@/lib/onboarding/interview";
 import { seoModels } from "@/lib/seo-agent/models";
 import { redditThreadBlocks } from "@/lib/workspace/blocks";
+import { takoResearchBlocks } from "@/lib/research/blocks";
 
 const bodySchema = z.object({
   workspaceId: z.uuid(),
@@ -55,7 +56,7 @@ export async function POST(req: Request): Promise<Response> {
       workspaceId, message, profile, evidence, history: existing?.messages ?? [], signal: req.signal,
     });
     // Evidence cards come from stored documents, never from model output.
-    const blocks = redditThreadBlocks(evidence);
+    const blocks = [...redditThreadBlocks(evidence), ...(result.takoResults ?? []).flatMap(takoResearchBlocks)].slice(0, 12);
     step = "persist";
     const { id } = await appendTurn(workspaceId, existing?.id ?? { title: message.slice(0, 80) }, { content: message }, {
       content: result.answer,

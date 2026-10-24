@@ -580,9 +580,9 @@ describe("tool gating", () => {
     expect(ctx.notices).toEqual([DATAFORSEO_PAUSED]);
   });
 
-  it("gives the GEO intent its three tools plus follow-ups", () => {
+  it("gives the GEO intent its data tools, research tools and follow-ups", () => {
     const names = Object.keys(toolsFor("geo_visibility", makeCtx()));
-    expect(names).toEqual(["llm_response", "ai_keyword_volume", "google_serp", "suggest_follow_ups"]);
+    expect(names).toEqual(["llm_response", "ai_keyword_volume", "google_serp", "tako_search", "web_research", "linkup_fetch", "suggest_follow_ups"]);
   });
 });
 
@@ -612,39 +612,49 @@ describe("tool definitions", () => {
     expect(schema.safeParse({ domain: "example.com", extra: 1 }).success).toBe(false);
   });
 
-  it("marks every tool strict", () => {
+  it("marks host-executed tools strict while leaving provider tools in their native form", () => {
     for (const [name, definition] of Object.entries(toolsFor("all", makeCtx()))) {
+      if (name === "tako_search") continue;
       expect(definition.strict, name).toBe(true);
     }
   });
 
-  it("gives keywords intent its five data tools plus follow-ups", () => {
+  it("gives keywords intent its data tools, research tools and follow-ups", () => {
     expect(Object.keys(toolsFor("keywords", makeCtx()))).toEqual([
       "keyword_ideas",
       "keyword_overview",
       "ranked_keywords",
       "competitor_domains",
       "keyword_gap",
+      "tako_search",
+      "web_research",
+      "linkup_fetch",
       "suggest_follow_ups",
     ]);
   });
 
-  it("gives backlinks intent its four tools plus follow-ups", () => {
+  it("gives backlinks intent its data tools, research tools and follow-ups", () => {
     expect(Object.keys(toolsFor("backlinks", makeCtx()))).toEqual([
       "backlink_summary",
       "referring_domains",
       "backlink_gap",
       "anchors",
+      "tako_search",
+      "web_research",
+      "linkup_fetch",
       "suggest_follow_ups",
     ]);
   });
 
-  it("gives content intent its four data tools plus follow-ups", () => {
+  it("gives content intent its data tools, research tools and follow-ups", () => {
     expect(Object.keys(toolsFor("content", makeCtx()))).toEqual([
       "keyword_ideas",
       "keyword_overview",
       "google_serp",
       "ranked_keywords",
+      "tako_search",
+      "web_research",
+      "linkup_fetch",
       "suggest_follow_ups",
     ]);
   });
@@ -661,10 +671,13 @@ describe("tool definitions", () => {
       "keyword_gap",
       "keyword_ideas",
       "keyword_overview",
+      "linkup_fetch",
       "llm_response",
       "ranked_keywords",
       "referring_domains",
       "suggest_follow_ups",
+      "tako_search",
+      "web_research",
     ]);
   });
 

@@ -1,9 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   authorize: vi.fn(), consume: vi.fn(), release: vi.fn(), profile: vi.fn(),
   queue: vi.fn(), detail: vi.fn(), get: vi.fn(), create: vi.fn(), append: vi.fn(),
-  generate: vi.fn(), paid: vi.fn(), cost: vi.fn(),
+  generate: vi.fn(), paid: vi.fn(), cost: vi.fn(), recordCost: vi.fn(),
 }));
 vi.mock("@/lib/auth/workspace", () => ({ authorizeWorkspace: mocks.authorize }));
 vi.mock("@/lib/plans/limits", () => ({ consume: mocks.consume, release: mocks.release }));
@@ -19,6 +19,7 @@ vi.mock("@/lib/seo-agent/models", () => ({
 vi.mock("@/lib/providers/paid-call", () => ({
   runPaidCall: mocks.paid, PaidCallDeniedError: class extends Error {},
 }));
+vi.mock("@/lib/costs/ledger", () => ({ recordCost: mocks.recordCost }));
 vi.mock("ai", async (original) => ({ ...await original<typeof import("ai")>(), generateText: mocks.generate }));
 
 import { POST } from "@/app/api/gtm/chat/route";
@@ -41,6 +42,7 @@ const request = (body: object = {}) => new Request("https://contextfor.dev/api/g
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.stubEnv("TAKO_SEARCH_USD", "");
   mocks.authorize.mockResolvedValue({ ok: true });
   mocks.consume.mockResolvedValue({ allowed: true });
   mocks.profile.mockResolvedValue(null);
@@ -51,12 +53,15 @@ beforeEach(() => {
   mocks.append.mockResolvedValue({ id: CONV });
   mocks.generate.mockResolvedValue({ output: { answer: "Review the supplied conversation.", actions }, usage: { inputTokens: 10, outputTokens: 20 } });
   mocks.cost.mockReturnValue(0.001);
+  mocks.recordCost.mockResolvedValue(true);
   mocks.paid.mockImplementation(async (_meta, work) => {
     const result = await work();
     if (result.error) throw result.error;
     return result.value;
   });
 });
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe("GTM chat boundary", () => {
   it("refunds a failed atomic turn save without persisting separate messages", async () => {
@@ -120,7 +125,12 @@ describe("GTM chat boundary", () => {
     expect(stored.parts.cards[0]).toMatchObject({ tool: "gtm_journey", sandbox: false, data: { actions, evidence: [evidence] } });
     expect(stored.parts.followUps).toEqual({ seo: actions[0]!.prompt, geo: actions[1]!.prompt, content: actions[2]!.prompt });
     expect(mocks.paid).toHaveBeenCalledWith(expect.objectContaining({ context: { workspaceId: WS, sourceKey: "gtm" }, provider: "gateway", action: "gtm_chat" }), expect.any(Function));
-    expect(mocks.generate).toHaveBeenCalledWith(expect.objectContaining({ maxRetries: 0 }));
+    expect(mocks.generate).toHaveBeenCalledWith(expect.objectContaining({
+      maxRetries: 0,
+      tools: { tako_search: expect.any(Object) },
+      toolApproval: { tako_search: expect.any(Function) },
+      stopWhen: expect.any(Function),
+    }));
     expect(mocks.cost).toHaveBeenCalledWith("test-model", expect.objectContaining({ inputTokens: 10, outputTokens: 20 }));
     expect(mocks.release).not.toHaveBeenCalled();
   });
@@ -131,6 +141,27 @@ describe("GTM chat boundary", () => {
     const body = await (await POST(request())).json() as { blocks: unknown[] };
     expect(body.blocks).toEqual([expect.objectContaining({ type: "reddit_thread", subreddit: "SaaS", score: 12, comments: [{ body: "Try a spreadsheet first", score: null }] })]);
     expect(mocks.append.mock.calls[0]![3].parts.cards[0].data.blocks).toEqual(body.blocks);
+  });
+
+  it("renders Tako web citations and data cards in the workspace answer", async () => {
+    const output = {
+      web_results: [{ title: "Source report", url: "https://example.com/report", snippet: "A grounded excerpt." }],
+      cards: [{ title: "Market value", webpage_url: "https://example.com/market", content: { card_data: { value: 42, unit: "USD" } } }],
+    };
+    mocks.generate.mockImplementationOnce(async (...args: unknown[]) => {
+      const options = args[0] as Record<string, unknown>;
+      const onStepFinish = options.onStepFinish as (event: never) => Promise<void>;
+      await onStepFinish({ toolResults: [{ toolName: "tako_search", toolCallId: "gtm-tako", output }] } as never);
+      return { output: { answer: "Review the supplied conversation.", actions }, usage: { inputTokens: 10, outputTokens: 20 } };
+    });
+    const response = await POST(request());
+    const body = await response.json() as { blocks: Array<Record<string, unknown>> };
+    expect(body.blocks).toEqual([
+      expect.objectContaining({ type: "research_card", title: "Market value", value: "value: 42 · unit: USD", sourceUrl: "https://example.com/market" }),
+      expect.objectContaining({ type: "research_card", title: "Source report", value: "A grounded excerpt.", sourceUrl: "https://example.com/report" }),
+    ]);
+    expect(mocks.append.mock.calls[0]![3].parts.cards[0].data.blocks).toEqual(body.blocks);
+    expect(mocks.recordCost).toHaveBeenCalledWith(expect.objectContaining({ provider: "gateway", action: "tako_search", unitCostUsd: 0, sourceKey: "gtm" }));
   });
 
   it.each([0, 2, 4])("rejects %i follow-ups and releases the question", async (length) => {

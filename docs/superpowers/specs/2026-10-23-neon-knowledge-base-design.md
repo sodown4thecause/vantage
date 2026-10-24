@@ -1,6 +1,6 @@
 # Neon knowledge base: v2 design and migration gate
 
-**Status:** Draft for review; this change is schema and design only. It remains blocked on Liam's approval and Neon rejecting `pg_search` on the isolated probe branch. Do not implement ingestion or retrieval, apply a production migration, or mark the PR ready until those blockers are resolved.
+**Status:** Draft for review; this change is schema and design only. It remains blocked on Liam's approval and a decision for the unavailable `pg_search` extension. Do not implement ingestion or retrieval, apply a production migration, or mark the PR ready until those blockers are resolved.
 
 ## Scope and boundaries
 
@@ -28,6 +28,6 @@ This draft does not implement ingestion, embedding calls, search queries, `searc
 
 The extension check ran only on the isolated Neon branch `kb-extensions-probe-issue-103-pr-112`, created from `main`; neither `main` nor `staging` was changed. `CREATE EXTENSION IF NOT EXISTS vector VERSION '0.8.6'` succeeded and was verified as version 0.8.6. Neon rejected `CREATE EXTENSION IF NOT EXISTS pg_search` with “extension \"pg_search\" is deprecated and no longer allowed.” The probe compute is suspended. Do not apply the current BM25 migration to any branch until the keyword-search design is resolved; v2 explicitly requests `pg_search`, so this draft does not silently substitute a GIN fallback.
 
-For any later supported extension test, create an isolated branch first, enable the required extensions there, verify their versions, then apply the migration only on that isolated branch. Never run this test or migration on `main` or `staging`. The migration number stays 0031 while PR #96 is open because #96 owns 0031; renumber this migration after #96 merges.
+For any later supported extension test, create an isolated branch first, enable the required extensions there, verify their versions, then apply the migration only on that isolated branch. Never run this test or migration on `main` or `staging`. PR #96 has merged and owns migration 0031. The KB schema and scope migrations are now numbered 0032 and 0033, respectively, after the latest `main` migration journal was refreshed.
 
 The schema contract tests cover nullability, the global/private constraint, chunk ordering, vector dimensions, and index definitions. Local checks cover lint, typecheck, and Vitest. The DDL has not been applied to Neon; only the isolated extension statements above were attempted.

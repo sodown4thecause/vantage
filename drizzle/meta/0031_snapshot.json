@@ -1,5 +1,5 @@
 {
-  "id": "63de20c2-a01c-4ca4-b9cc-34ff16988673",
+  "id": "0e31b525-f777-4c31-b898-88abce37c9e0",
   "prevId": "88093bdc-9fc6-434d-bd24-235a2abb3aa5",
   "version": "7",
   "dialect": "postgresql",
@@ -1069,294 +1069,6 @@
             "id"
           ],
           "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.kb_chunks": {
-      "name": "kb_chunks",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "document_id": {
-          "name": "document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ord": {
-          "name": "ord",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "header": {
-          "name": "header",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "text": {
-          "name": "text",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "embedding": {
-          "name": "embedding",
-          "type": "halfvec(1024)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tsv": {
-          "name": "tsv",
-          "type": "tsvector",
-          "primaryKey": false,
-          "notNull": true,
-          "generated": {
-            "as": "to_tsvector('simple', coalesce(\"header\", '') || ' ' || \"text\")",
-            "type": "stored"
-          }
-        },
-        "chunker_version": {
-          "name": "chunker_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "content_hash": {
-          "name": "content_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "kb_chunks_document_ord_uidx": {
-          "name": "kb_chunks_document_ord_uidx",
-          "columns": [
-            {
-              "expression": "document_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "ord",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "kb_chunks_embedding_hnsw_idx": {
-          "name": "kb_chunks_embedding_hnsw_idx",
-          "columns": [
-            {
-              "expression": "embedding",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last",
-              "opclass": "halfvec_cosine_ops"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "hnsw",
-          "with": {}
-        },
-        "kb_chunks_bm25_idx": {
-          "name": "kb_chunks_bm25_idx",
-          "columns": [
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "header",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "text",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "bm25",
-          "with": {
-            "key_field": "'id'"
-          }
-        }
-      },
-      "foreignKeys": {
-        "kb_chunks_document_id_kb_documents_id_fk": {
-          "name": "kb_chunks_document_id_kb_documents_id_fk",
-          "tableFrom": "kb_chunks",
-          "tableTo": "kb_documents",
-          "columnsFrom": [
-            "document_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.kb_documents": {
-      "name": "kb_documents",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "source_url": {
-          "name": "source_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "published_at": {
-          "name": "published_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "captured_at": {
-          "name": "captured_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "tier": {
-          "name": "tier",
-          "type": "kb_tier",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "hub": {
-          "name": "hub",
-          "type": "kb_hub",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "content_hash": {
-          "name": "content_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "kb_documents_workspace_hub_published_idx": {
-          "name": "kb_documents_workspace_hub_published_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "hub",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "published_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "kb_documents_workspace_source_idx": {
-          "name": "kb_documents_workspace_source_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "source_url",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "kb_documents_workspace_id_workspace_id_fk": {
-          "name": "kb_documents_workspace_id_workspace_id_fk",
-          "tableFrom": "kb_documents",
-          "tableTo": "workspace",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -3737,6 +3449,73 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.workspace_provider_quota": {
+      "name": "workspace_provider_quota",
+      "schema": "",
+      "columns": {
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "day": {
+          "name": "day",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "workspace_provider_quota_workspace_id_workspace_id_fk": {
+          "name": "workspace_provider_quota_workspace_id_workspace_id_fk",
+          "tableFrom": "workspace_provider_quota",
+          "tableTo": "workspace",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "workspace_provider_quota_workspace_id_day_provider_action_pk": {
+          "name": "workspace_provider_quota_workspace_id_day_provider_action_pk",
+          "columns": [
+            "workspace_id",
+            "day",
+            "provider",
+            "action"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.workspace_usage": {
       "name": "workspace_usage",
       "schema": "",
@@ -3821,27 +3600,6 @@
     }
   },
   "enums": {
-    "public.kb_hub": {
-      "name": "kb_hub",
-      "schema": "public",
-      "values": [
-        "gtm",
-        "seo-geo",
-        "content",
-        "coding",
-        "community-rules"
-      ]
-    },
-    "public.kb_tier": {
-      "name": "kb_tier",
-      "schema": "public",
-      "values": [
-        "A",
-        "B",
-        "C",
-        "D"
-      ]
-    },
     "public.lead_status": {
       "name": "lead_status",
       "schema": "public",

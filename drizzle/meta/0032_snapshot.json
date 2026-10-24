@@ -1,6 +1,6 @@
 {
-  "id": "f554adbf-e20b-4475-b0cf-fcf184d30fa6",
-  "prevId": "63de20c2-a01c-4ca4-b9cc-34ff16988673",
+  "id": "70f32c54-5302-441b-9463-eafec2315623",
+  "prevId": "0e31b525-f777-4c31-b898-88abce37c9e0",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1282,21 +1282,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "scope": {
-          "name": "scope",
-          "type": "kb_scope",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'private'"
-        },
-        "approved": {
-          "name": "approved",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "workspace_id": {
           "name": "workspace_id",
           "type": "uuid",
@@ -1378,12 +1363,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "kb_documents_scope_workspace_check": {
-          "name": "kb_documents_scope_workspace_check",
-          "value": "(\"kb_documents\".\"scope\" = 'global' and \"kb_documents\".\"workspace_id\" is null and \"kb_documents\".\"approved\") or (\"kb_documents\".\"scope\" = 'private' and \"kb_documents\".\"workspace_id\" is not null)"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.lead": {
@@ -3757,6 +3737,73 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.workspace_provider_quota": {
+      "name": "workspace_provider_quota",
+      "schema": "",
+      "columns": {
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "day": {
+          "name": "day",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "workspace_provider_quota_workspace_id_workspace_id_fk": {
+          "name": "workspace_provider_quota_workspace_id_workspace_id_fk",
+          "tableFrom": "workspace_provider_quota",
+          "tableTo": "workspace",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "workspace_provider_quota_workspace_id_day_provider_action_pk": {
+          "name": "workspace_provider_quota_workspace_id_day_provider_action_pk",
+          "columns": [
+            "workspace_id",
+            "day",
+            "provider",
+            "action"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.workspace_usage": {
       "name": "workspace_usage",
       "schema": "",
@@ -3850,14 +3897,6 @@
         "content",
         "coding",
         "community-rules"
-      ]
-    },
-    "public.kb_scope": {
-      "name": "kb_scope",
-      "schema": "public",
-      "values": [
-        "global",
-        "private"
       ]
     },
     "public.kb_tier": {
