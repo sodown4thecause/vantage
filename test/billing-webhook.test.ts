@@ -182,4 +182,26 @@ describe("Polar webhook endpoint", () => {
     expect(subscriptionWrites()).toEqual([]);
     expect(db.inserts.map(i => i.table)).toEqual(["billing_webhook_event"]);
   });
+
+  it("records subscribed once, for subscription.active only, after the delivery is processed", async () => {
+    const trackSubscribed = vi.fn(async () => {});
+    get.mockResolvedValue(subscription());
+    await handlePolarWebhook(delivery("subscription.active", subscription()), deps({ trackSubscribed }));
+    expect(trackSubscribed).toHaveBeenCalledWith("user_1", PRO_MONTHLY);
+
+    trackSubscribed.mockClear();
+    await handlePolarWebhook(delivery("subscription.updated", subscription()), deps({ trackSubscribed }));
+    db.claim = "processed";
+    await handlePolarWebhook(delivery("subscription.active", subscription(), { id: "msg_dup" }), deps({ trackSubscribed }));
+    expect(trackSubscribed).not.toHaveBeenCalled();
+  });
+
+  it("does not record subscribed when processing fails or there is no external customer", async () => {
+    const trackSubscribed = vi.fn(async () => {});
+    get.mockRejectedValue(new Error("polar down"));
+    await handlePolarWebhook(delivery("subscription.active", subscription()), deps({ trackSubscribed }));
+    get.mockResolvedValue(subscription({ customer: { external_id: null } }));
+    await handlePolarWebhook(delivery("subscription.active", subscription({ customer: { external_id: null } })), deps({ trackSubscribed }));
+    expect(trackSubscribed).not.toHaveBeenCalled();
+  });
 });

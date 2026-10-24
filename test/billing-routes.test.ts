@@ -66,6 +66,18 @@ describe("checkout route", () => {
     });
   });
 
+  it("records checkout_started by user id and plan once the checkout exists", async () => {
+    create.mockResolvedValue({ url: "https://sandbox.polar.sh/checkout/abc" });
+    const track = vi.fn(async () => {});
+    await createCheckout(post({ productId: PRO_MONTHLY }), deps({ track }));
+    expect(track).toHaveBeenCalledWith("user_1", "pro_monthly");
+
+    track.mockClear();
+    create.mockRejectedValue(new Error("polar down"));
+    await createCheckout(post({ productId: PRO_MONTHLY }), deps({ track }));
+    expect(track).not.toHaveBeenCalled();
+  });
+
   it("only sells products listed in the config", async () => {
     const res = await createCheckout(post({ productId: "33333333-3333-4333-8333-333333333333" }), deps());
     expect(location(res)).toBe(`${ORIGIN}/pricing?error=unknown-product`);

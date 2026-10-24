@@ -1,5 +1,7 @@
 import { errors } from "@polar-sh/sdk/2026-10";
 
+import { FunnelEvent } from "@/lib/analytics/events";
+import { captureServerEvent } from "@/lib/analytics/server";
 import { appUrl } from "@/lib/app-url";
 import { auth } from "@/lib/auth/server";
 import { userHasPaidPlan } from "@/lib/billing/entitlement";
@@ -11,7 +13,12 @@ export type BillingRouteDeps = {
   polar: () => PolarClient;
   isPaid: (userId: string) => Promise<boolean>;
   origin: () => string;
+  /** Funnel analytics; defaults to PostHog. Never affects the redirect. */
+  track?: (userId: string, plan: string) => Promise<void>;
 };
+
+const trackCheckout = (userId: string, plan: string) =>
+  captureServerEvent(FunnelEvent.CheckoutStarted, userId, { plan });
 
 const defaultDeps: BillingRouteDeps = {
   session: async () => {
@@ -59,6 +66,7 @@ export async function createCheckout(request: Request, deps: BillingRouteDeps = 
       success_url: `${origin}/success?checkout_id={CHECKOUT_ID}`,
       return_url: `${origin}/pricing`,
     });
+    await (deps.track ?? trackCheckout)(user.id, plan.key);
     return redirectTo(checkout.url);
   } catch (error) {
     if (error instanceof BillingNotConfiguredError) return pricingWith(origin, "not-configured");

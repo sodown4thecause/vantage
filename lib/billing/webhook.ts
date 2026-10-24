@@ -1,6 +1,8 @@
 import { errors, webhooks } from "@polar-sh/sdk/2026-10";
 import { and, eq, isNull, lt, sql } from "drizzle-orm";
 
+import { FunnelEvent } from "@/lib/analytics/events";
+import { captureServerEvent } from "@/lib/analytics/server";
 import { billingServer, getPolar, type PolarClient } from "@/lib/billing/polar";
 import { recordPaidOrder, syncSubscription, type PolarSubscriptionLike } from "@/lib/billing/sync";
 import { getDb } from "@/lib/db/client";
@@ -24,7 +26,12 @@ const CLAIM_TIMEOUT_SECONDS = 120;
 export type WebhookDeps = {
   polar: () => PolarClient;
   secret: () => string | undefined;
+  /** Funnel analytics for a newly active subscription; defaults to PostHog. Never affects the response. */
+  trackSubscribed?: (userId: string, productId: string | undefined) => Promise<void>;
 };
+
+const trackSubscribed = (userId: string, productId: string | undefined) =>
+  captureServerEvent(FunnelEvent.Subscribed, userId, productId ? { product_id: productId } : {});
 
 const defaultDeps: WebhookDeps = {
   polar: () => getPolar(),
@@ -95,6 +102,15 @@ async function applyEvent(type: HandledEvent, data: Record<string, unknown>, pol
   }
 }
 
+/** `subscribed` for subscriptions bought through our checkout, which carry the Neon Auth user id as external id. */
+async function trackActive(data: Record<string, unknown>, deps: WebhookDeps): Promise<void> {
+  const customer = data.customer as { external_id?: unknown } | null | undefined;
+  const userId = typeof customer?.external_id === "string" ? customer.external_id.trim() : "";
+  if (!userId) return;
+  const productId = typeof data.product_id === "string" ? data.product_id : undefined;
+  await (deps.trackSubscribed ?? trackSubscribed)(userId, productId);
+}
+
 /**
  * POST /api/webhooks/polar. Verifies the Standard Webhooks signature with POLAR_WEBHOOK_SECRET,
  * processes each `webhook-id` once, and answers 5xx on failure so Polar retries.
@@ -135,6 +151,8 @@ export async function handlePolarWebhook(request: Request, deps: WebhookDeps = d
   try {
     await applyEvent(event.type, event.data as Record<string, unknown>, deps.polar());
     await getDb().update(billingWebhookEvent).set({ processedAt: new Date() }).where(eq(billingWebhookEvent.id, id));
+    // After processedAt, so a Polar retry of the same delivery (answered as a duplicate above) is never counted twice.
+    if (event.type === "subscription.active") await trackActive(event.data as Record<string, unknown>, deps);
     return new Response(null, { status: 202 });
   } catch (error) {
     // Release the claim so Polar's retry processes the event again. Log the class only.

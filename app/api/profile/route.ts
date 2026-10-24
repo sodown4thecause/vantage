@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { FunnelEvent } from "@/lib/analytics/events";
+import { captureServerEvent } from "@/lib/analytics/server";
 import { authorizeWorkspace } from "@/lib/auth/workspace";
 import {
   getLatestMonitoringProfile,
@@ -93,6 +95,8 @@ export async function POST(req: Request) {
       input: validated.value,
     });
     await indexSavedProfile(workspaceId, profile.id);
+    // Every saved form is a confirmed profile; PostHog funnels count the first per person.
+    await captureServerEvent(FunnelEvent.ProfileConfirmed, authorization.userId, { source: "form" });
     return NextResponse.json({ profile }, { status: 201 });
   } catch (err) {
     if (err instanceof PlanLimitError) {

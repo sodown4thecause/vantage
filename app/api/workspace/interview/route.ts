@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { FunnelEvent } from "@/lib/analytics/events";
+import { captureServerEvent } from "@/lib/analytics/server";
 import { authorizeWorkspace } from "@/lib/auth/workspace";
 import { setDigestSchedule } from "@/lib/digest/preferences";
 import { deriveProfileFromUrl } from "@/lib/onboarding/derive";
@@ -140,6 +142,7 @@ export async function POST(req: Request): Promise<Response> {
       console.error("[interview route] profile save failed");
       return await reply("I couldn’t save your profile just now. Send any message to try again.", { answers, draft, complete: false });
     }
+    await captureServerEvent(FunnelEvent.ProfileConfirmed, authorization.userId, { source: "interview" });
     try {
       await indexSavedProfile(workspaceId, profileId);
     } catch {
