@@ -494,24 +494,26 @@ export const opportunityOutcome = pgTable("opportunity_outcome", {
 ]);
 
 /**
- * The five conversations a workspace was shown on a local day. Ranks 1-5 are unique per day, so a
- * day can never hold more than five picks and "yesterday's five" stays a fixed list.
+ * Every conversation a workspace was shown on a local day. This is the durable shown history. A pick
+ * holds one of the day's five slots while its rank is 1-5 (unique per day); when it stops being
+ * eligible its rank is cleared to free the slot, and the row stays so it is never picked again on
+ * another day and still appears in the day's follow-up list.
  */
 export const opportunityPick = pgTable("opportunity_pick", {
   workspaceId: uuid("workspace_id")
     .notNull()
     .references(() => workspace.id, { onDelete: "cascade" }),
   pickDate: date("pick_date", { mode: "string" }).notNull(),
-  rank: integer("rank").notNull(),
+  rank: integer("rank"),
   opportunityId: uuid("opportunity_id")
     .notNull()
     .references(() => opportunity.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
-  primaryKey({ columns: [table.workspaceId, table.pickDate, table.rank] }),
-  uniqueIndex("opportunity_pick_day_opportunity_uidx").on(table.workspaceId, table.pickDate, table.opportunityId),
+  primaryKey({ columns: [table.workspaceId, table.pickDate, table.opportunityId] }),
+  uniqueIndex("opportunity_pick_day_rank_uidx").on(table.workspaceId, table.pickDate, table.rank).where(sql`${table.rank} is not null`),
   index("opportunity_pick_opportunity_idx").on(table.workspaceId, table.opportunityId),
-  check("opportunity_pick_rank_check", sql`${table.rank} between 1 and 5`),
+  check("opportunity_pick_rank_check", sql`${table.rank} is null or ${table.rank} between 1 and 5`),
 ]);
 
 export type OpportunityDraft = typeof opportunityDraft.$inferSelect;

@@ -1,5 +1,5 @@
 {
-  "id": "d2e50503-3c6d-469a-8f71-f94d8a96bcdd",
+  "id": "14adf97f-1428-4beb-a286-5ba9a122ea6f",
   "prevId": "b45f361a-3cdb-438f-b83d-2e01a972ab40",
   "version": "7",
   "dialect": "postgresql",
@@ -1920,7 +1920,7 @@
           "name": "rank",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "opportunity_id": {
           "name": "opportunity_id",
@@ -1937,8 +1937,8 @@
         }
       },
       "indexes": {
-        "opportunity_pick_day_opportunity_uidx": {
-          "name": "opportunity_pick_day_opportunity_uidx",
+        "opportunity_pick_day_rank_uidx": {
+          "name": "opportunity_pick_day_rank_uidx",
           "columns": [
             {
               "expression": "workspace_id",
@@ -1953,13 +1953,14 @@
               "nulls": "last"
             },
             {
-              "expression": "opportunity_id",
+              "expression": "rank",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": true,
+          "where": "\"opportunity_pick\".\"rank\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -2015,12 +2016,12 @@
         }
       },
       "compositePrimaryKeys": {
-        "opportunity_pick_workspace_id_pick_date_rank_pk": {
-          "name": "opportunity_pick_workspace_id_pick_date_rank_pk",
+        "opportunity_pick_workspace_id_pick_date_opportunity_id_pk": {
+          "name": "opportunity_pick_workspace_id_pick_date_opportunity_id_pk",
           "columns": [
             "workspace_id",
             "pick_date",
-            "rank"
+            "opportunity_id"
           ]
         }
       },
@@ -2029,7 +2030,7 @@
       "checkConstraints": {
         "opportunity_pick_rank_check": {
           "name": "opportunity_pick_rank_check",
-          "value": "\"opportunity_pick\".\"rank\" between 1 and 5"
+          "value": "\"opportunity_pick\".\"rank\" is null or \"opportunity_pick\".\"rank\" between 1 and 5"
         }
       },
       "isRLSEnabled": false
