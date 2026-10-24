@@ -22,6 +22,7 @@ import {
   document,
   opportunity,
   opportunityEvidence,
+  opportunityPick,
   type Opportunity,
   type DocumentRecord,
 } from "@/lib/db/schema";
@@ -385,10 +386,19 @@ export async function buildOpportunities(opts: {
   };
 }
 
+/**
+ * The live queue, best first. `onlyIds` limits it to named opportunities (a day's picks) and
+ * `excludeIds` and `notPickedBeforeDay` skip ones already shown; all keep every eligibility rule below.
+ */
 export async function listOpportunityQueue(opts: {
   workspaceId: string;
   limit?: number;
+  onlyIds?: string[];
+  excludeIds?: string[];
+  /** Skip opportunities that were a daily pick on any day other than this local day (YYYY-MM-DD). */
+  notPickedBeforeDay?: string;
 }): Promise<OpportunityCardView[]> {
+  if (opts.onlyIds && opts.onlyIds.length === 0) return [];
   const db = getDb();
   const limit = Math.min(Math.max(opts.limit ?? 5, 1), 5);
   const profile = await getLatestMonitoringProfile(opts.workspaceId);
@@ -400,6 +410,14 @@ export async function listOpportunityQueue(opts: {
       and(
         eq(opportunity.workspaceId, opts.workspaceId),
         inArray(opportunity.status, QUEUE_STATUSES),
+        opts.onlyIds ? inArray(opportunity.id, opts.onlyIds) : undefined,
+        opts.excludeIds?.length ? notInArray(opportunity.id, opts.excludeIds) : undefined,
+        opts.notPickedBeforeDay
+          ? sql`not exists (select 1 from ${opportunityPick}
+            where ${opportunityPick.workspaceId} = ${opportunity.workspaceId}
+            and ${opportunityPick.opportunityId} = ${opportunity.id}
+            and ${opportunityPick.pickDate} <> ${opts.notPickedBeforeDay})`
+          : undefined,
         sql`${opportunity.features}->>'profileVersion' = ${String(profile.version)}`,
         sql`exists (select 1 from ${opportunityEvidence}
           where ${opportunityEvidence.opportunityId} = ${opportunity.id})`,
