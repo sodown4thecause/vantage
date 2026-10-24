@@ -2,21 +2,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   fetchImpl: null as null | ((url: string, init?: RequestInit) => Promise<Response>),
-  db: {} as unknown,
+  // Digest delivery resolves the workspace permission row before the provider
+  // call; stub the database so the stalled fetch below is the provider call,
+  // not the database query behind it.
+  workspaceRows: [] as Array<{ id: string }>,
 }));
 
-// The permission queries must never reach a real driver: under fake timers the
-// driver's own fetch would hang on the stubbed global below, which is why CI
-// (where a database is configured) timed out here while local runs passed.
-vi.mock("@/lib/db/client", () => ({ getDb: () => state.db }));
-vi.mock("@/lib/analytics/activation", () => ({ captureActivation: vi.fn(async () => {}) }));
+vi.mock("@/lib/db/client", () => ({
+  getDb: () => ({
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => state.workspaceRows,
+        }),
+      }),
+    }),
+  }),
+}));
 
-const wsRow = { id: "workspace-1", digestEnabled: true, digestEmail: "founder@example.com" };
-state.db = {
-  select: () => ({ from: () => ({ where: () => ({ limit: async () => [wsRow] }) }) }),
-  insert: () => { throw new Error("insert not expected"); },
-  update: () => { throw new Error("update not expected"); },
-} as never;
 import { renderDigestEmail, sendDigestEmail } from "@/lib/digest/send";
 
 const opportunities = [
@@ -40,6 +43,10 @@ const opportunities = [
 
 beforeEach(() => {
   vi.stubEnv("RESEND_API_KEY", "");
+  // The unsubscribe token is HMAC-signed with CRON_SECRET; without it the send
+  // fails before the provider call and this suite would assert nothing.
+  vi.stubEnv("CRON_SECRET", "test-cron-secret");
+  state.workspaceRows = [{ id: "workspace-1" }];
   vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
     if (!state.fetchImpl) throw new Error("fetch not expected");
     return state.fetchImpl(String(url), init);
@@ -48,6 +55,7 @@ beforeEach(() => {
 
 afterEach(() => {
   state.fetchImpl = null;
+  state.workspaceRows = [];
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
