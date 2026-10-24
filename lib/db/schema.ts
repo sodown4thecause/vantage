@@ -115,9 +115,6 @@ export const kbHubEnum = pgEnum("kb_hub", [
 const halfvec1024 = customType<{ data: string; driverData: string }>({
   dataType: () => "halfvec(1024)",
 });
-const tsvector = customType<{ data: string; driverData: string }>({
-  dataType: () => "tsvector",
-});
 
 export const workspace = pgTable("workspace", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -271,9 +268,6 @@ export const kbChunk = pgTable(
     header: text("header").notNull().default(""),
     text: text("text").notNull(),
     embedding: halfvec1024("embedding"),
-    tsv: tsvector("tsv")
-      .generatedAlwaysAs(sql`to_tsvector('simple', coalesce("header", '') || ' ' || "text")`)
-      .notNull(),
     chunkerVersion: text("chunker_version").notNull(),
     contentHash: text("content_hash").notNull(),
   },

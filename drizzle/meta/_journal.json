@@ -229,15 +229,8 @@
     {
       "idx": 32,
       "version": "7",
-      "when": 1792836820178,
-      "tag": "0032_whole_dreadnoughts",
-      "breakpoints": true
-    },
-    {
-      "idx": 33,
-      "version": "7",
-      "when": 1792836828296,
-      "tag": "0033_loving_rhino",
+      "when": 1792837646586,
+      "tag": "0032_kb_design_scope",
       "breakpoints": true
     }
   ]

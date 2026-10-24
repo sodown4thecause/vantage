@@ -1,7 +1,5 @@
--- Prerequisite: enable pgvector 0.8.6 and pg_search on an isolated Neon branch before applying this migration.
-CREATE EXTENSION IF NOT EXISTS vector VERSION '0.8.6';--> statement-breakpoint
-CREATE EXTENSION IF NOT EXISTS pg_search;--> statement-breakpoint
 CREATE TYPE "public"."kb_hub" AS ENUM('gtm', 'seo-geo', 'content', 'coding', 'community-rules');--> statement-breakpoint
+CREATE TYPE "public"."kb_scope" AS ENUM('global', 'private');--> statement-breakpoint
 CREATE TYPE "public"."kb_tier" AS ENUM('A', 'B', 'C', 'D');--> statement-breakpoint
 CREATE TABLE "kb_chunks" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
@@ -10,7 +8,6 @@ CREATE TABLE "kb_chunks" (
 	"header" text DEFAULT '' NOT NULL,
 	"text" text NOT NULL,
 	"embedding" halfvec(1024),
-	"tsv" "tsvector" GENERATED ALWAYS AS (to_tsvector('simple', coalesce("header", '') || ' ' || "text")) STORED NOT NULL,
 	"chunker_version" text NOT NULL,
 	"content_hash" text NOT NULL
 );
@@ -23,8 +20,11 @@ CREATE TABLE "kb_documents" (
 	"captured_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"tier" "kb_tier" NOT NULL,
 	"hub" "kb_hub" NOT NULL,
+	"scope" "kb_scope" DEFAULT 'private' NOT NULL,
+	"approved" boolean DEFAULT false NOT NULL,
 	"workspace_id" uuid,
-	"content_hash" text NOT NULL
+	"content_hash" text NOT NULL,
+	CONSTRAINT "kb_documents_scope_workspace_check" CHECK (("kb_documents"."scope" = 'global' and "kb_documents"."workspace_id" is null and "kb_documents"."approved") or ("kb_documents"."scope" = 'private' and "kb_documents"."workspace_id" is not null))
 );
 --> statement-breakpoint
 ALTER TABLE "kb_chunks" ADD CONSTRAINT "kb_chunks_document_id_kb_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."kb_documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

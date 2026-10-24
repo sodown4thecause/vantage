@@ -1,5 +1,5 @@
 {
-  "id": "70f32c54-5302-441b-9463-eafec2315623",
+  "id": "fdf10f65-2f91-4c21-a511-200cc54ee442",
   "prevId": "0e31b525-f777-4c31-b898-88abce37c9e0",
   "version": "7",
   "dialect": "postgresql",
@@ -1120,16 +1120,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "tsv": {
-          "name": "tsv",
-          "type": "tsvector",
-          "primaryKey": false,
-          "notNull": true,
-          "generated": {
-            "as": "to_tsvector('simple', coalesce(\"header\", '') || ' ' || \"text\")",
-            "type": "stored"
-          }
-        },
         "chunker_version": {
           "name": "chunker_version",
           "type": "text",
@@ -1282,6 +1272,21 @@
           "primaryKey": false,
           "notNull": true
         },
+        "scope": {
+          "name": "scope",
+          "type": "kb_scope",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'private'"
+        },
+        "approved": {
+          "name": "approved",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "workspace_id": {
           "name": "workspace_id",
           "type": "uuid",
@@ -1363,7 +1368,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "kb_documents_scope_workspace_check": {
+          "name": "kb_documents_scope_workspace_check",
+          "value": "(\"kb_documents\".\"scope\" = 'global' and \"kb_documents\".\"workspace_id\" is null and \"kb_documents\".\"approved\") or (\"kb_documents\".\"scope\" = 'private' and \"kb_documents\".\"workspace_id\" is not null)"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.lead": {
@@ -3897,6 +3907,14 @@
         "content",
         "coding",
         "community-rules"
+      ]
+    },
+    "public.kb_scope": {
+      "name": "kb_scope",
+      "schema": "public",
+      "values": [
+        "global",
+        "private"
       ]
     },
     "public.kb_tier": {

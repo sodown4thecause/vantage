@@ -61,7 +61,7 @@ describe("knowledge base database contract", () => {
     const columns = getTableColumns(kbChunk);
     expect(columns.embedding.getSQLType()).toBe("halfvec(1024)");
     expect(columns.embedding.notNull).toBe(false);
-    expect(columns.tsv.getSQLType()).toBe("tsvector");
+    expect(columns).not.toHaveProperty("tsv");
     expect(columns.chunkerVersion.notNull).toBe(true);
     expect(columns.contentHash.notNull).toBe(true);
 
