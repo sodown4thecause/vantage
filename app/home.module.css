@@ -6,6 +6,25 @@
 }
 
 .hero { max-width: 720px; padding: 28px 0 44px; }
+.claimNote { color: var(--ridge); font-size: 12px; margin-top: 16px; }
+.badge { display: inline-block; font-size: 10px; color: var(--signal); border: 1px solid var(--contour); border-radius: 4px; padding: 1px 5px; vertical-align: middle; }
+.tourBox { background: var(--sheet); border: 1px solid var(--contour-strong); border-radius: 10px; padding: 24px; margin-top: 28px; }
+.tourBox > label { font-size: 20px; font-weight: 500; }
+.tourBox p { color: var(--ridge); font-size: 12px; margin: 10px 0; }
+.tourBox textarea, .tourBox input { display: block; width: 100%; border: 1px solid var(--contour); border-radius: 7px; background: var(--paper); color: var(--ink); padding: 12px; font: inherit; margin: 12px 0; }
+.tourBox textarea:focus-visible, .tourBox input:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
+.tourBox button:disabled { cursor: not-allowed; opacity: .5; }
+.forums { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 14px 0; }
+.forums li { border: 1px solid var(--contour); border-radius: 4px; padding: 3px 8px; font-size: 11px; overflow-wrap: anywhere; }
+.leadForm { border-top: 1px solid var(--contour); padding-top: 20px; margin-top: 20px; }
+.leadForm h2 { font-size: 20px; line-height: 1.4; }
+.leadForm label { display: block; margin-top: 16px; font-size: 12px; }
+.leadForm button { margin-top: 14px; }
+.mission { max-width: 760px; color: var(--ridge); margin: 22px 0; font-size: 16px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 14px; margin: 28px 0; }
+.tiles article { border: 1px solid var(--contour); border-radius: 8px; padding: 22px; background: var(--sheet); }
+.tiles h3 { font-size: 15px; font-weight: 500; }
+.tiles p { color: var(--ridge); font-size: 12px; margin-top: 10px; }
 .eyebrow { color: var(--ridge); font-size: 12px; font-weight: 500; letter-spacing: 0; }
 .hero h1 { margin: 16px 0 20px; font-size: clamp(34px, 4.4vw, 54px); font-weight: 500; letter-spacing: -.045em; line-height: 1.12; }
 .intro { max-width: 590px; color: var(--ridge); font-size: 16px; line-height: 1.75; }

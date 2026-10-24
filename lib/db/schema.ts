@@ -270,6 +270,25 @@ export const semanticShadow = pgTable(
   ],
 );
 
+export const publicProductLead = pgTable("public_product_lead", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: text("email").notNull().unique(),
+  productDescription: text("product_description").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const heroExample = pgTable("hero_example", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  platform: text("platform").notNull(),
+  community: text("community").notNull(),
+  title: text("title").notNull(),
+  sourceUrl: text("source_url").notNull(),
+  excerpt: text("excerpt").notNull(),
+  postedAt: timestamp("posted_at", { withTimezone: true }).notNull(),
+  approvedBy: text("approved_by"),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+});
+
 export const lead = pgTable("lead", {
   id: uuid("id").defaultRandom().primaryKey(),
   workspaceId: uuid("workspace_id")
