@@ -460,6 +460,10 @@ export const opportunityOutcomeEventEnum = pgEnum("opportunity_outcome_event", [
   "published_url",
   "utm_click",
   "conversion",
+  "copy",
+  "open",
+  "sent",
+  "replied",
 ]);
 
 /** Append-only outcome/feedback audit log (Slice 5). */
@@ -487,6 +491,27 @@ export const opportunityOutcome = pgTable("opportunity_outcome", {
     table.workspaceId,
     table.idempotencyKey,
   ),
+]);
+
+/**
+ * The five conversations a workspace was shown on a local day. Ranks 1-5 are unique per day, so a
+ * day can never hold more than five picks and "yesterday's five" stays a fixed list.
+ */
+export const opportunityPick = pgTable("opportunity_pick", {
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => workspace.id, { onDelete: "cascade" }),
+  pickDate: date("pick_date", { mode: "string" }).notNull(),
+  rank: integer("rank").notNull(),
+  opportunityId: uuid("opportunity_id")
+    .notNull()
+    .references(() => opportunity.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.workspaceId, table.pickDate, table.rank] }),
+  uniqueIndex("opportunity_pick_day_opportunity_uidx").on(table.workspaceId, table.pickDate, table.opportunityId),
+  index("opportunity_pick_opportunity_idx").on(table.workspaceId, table.opportunityId),
+  check("opportunity_pick_rank_check", sql`${table.rank} between 1 and 5`),
 ]);
 
 export type OpportunityDraft = typeof opportunityDraft.$inferSelect;

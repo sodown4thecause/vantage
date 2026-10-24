@@ -28,13 +28,15 @@ describe("north-star metric week bounds", () => {
         { event: "useful", createdAt: new Date("2026-09-15T11:00:00.000Z") },
         { event: "not_useful", createdAt: new Date("2026-09-15T12:00:00.000Z") },
         { event: "acted_on", createdAt: new Date("2026-09-16T09:00:00.000Z") },
+        { event: "sent", createdAt: new Date("2026-09-17T09:00:00.000Z") },
+        { event: "copy", createdAt: new Date("2026-09-17T09:30:00.000Z") },
         { event: "acted_on", createdAt: new Date("2026-09-10T09:00:00.000Z") }, // prior week
       ],
     });
-    expect(stats.actedOnCount).toBe(1);
+    expect(stats.actedOnCount).toBe(2);
     expect(stats.usefulCount).toBe(2);
     expect(stats.notUsefulCount).toBe(1);
     expect(stats.precision).toBeCloseTo(2 / 3);
-    expect(stats.actionRate).toBeCloseTo(0.1);
+    expect(stats.actionRate).toBeCloseTo(0.2);
   });
 });
