@@ -37,8 +37,8 @@
     "fast-xml-parser": "^5.11.1",
     "next": "16.4.3",
     "postgres": "^3.4.9",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "scavio": "^0.16.0",
     "zod": "4.6.7"
   },
