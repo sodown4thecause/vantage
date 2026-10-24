@@ -105,12 +105,11 @@ export async function scanSource(workspaceId: string, sourceId: string): Promise
     const result = await withWorkspaceScanLease(workspaceId, async signal => {
       const receipt = await runCollector({ workspaceId, sourceId, collector, signal });
       if (receipt.error || receipt.switchedOff) return { receipt, queueRefreshed: false };
-      if (!(await getLatestMonitoringProfile(workspaceId))) return { receipt, queueRefreshed: false, noProfile: true };
       try {
+        if (!(await getLatestMonitoringProfile(workspaceId))) return { receipt, queueRefreshed: false, noProfile: true };
         await buildOpportunities({ workspaceId, limitDocs: 50, signal });
         return { receipt, queueRefreshed: true };
       } catch (error) {
-        if (signal.aborted) throw error;
         logScanSourceFailure("opportunity-build", workspaceId, sourceId, error, { inserted: receipt.inserted });
         return { receipt, queueRefreshed: false };
       }

@@ -132,7 +132,8 @@ export const hnCollector: Collector = {
       return {
         documents,
         partial: true,
-        coverageReason: `Hacker News search was partly unavailable (${failedPages} of ${attemptedPages} requests failed: ${firstFailure}). The next scan retries the same window.`,
+        coverageReason: `Hacker News search was partly unavailable (${failedPages} of ${attemptedPages} requests failed). The next scan retries the same window.`,
+        nextState: { cursor: String(since) },
       };
     }
 

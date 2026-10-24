@@ -94,6 +94,17 @@ describe("embedTexts", () => {
     expect(run).toHaveBeenCalledTimes(2);
     expect(run.mock.calls[1]).toHaveLength(2);
   });
+  it("does not retry without the gateway when the scan stopped during the call", async () => {
+    const controller = new AbortController();
+    const run = vi.fn(async () => {
+      controller.abort();
+      throw new Error("Gateway unavailable");
+    });
+    state.ai = { run };
+    await expect(embedTexts(["hello"], { ...ctx, signal: controller.signal })).resolves.toBeNull();
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
   it("logs only the error class when cost metering fails", async () => {
     state.ai = createFakeAi().binding;
     state.costError = new TypeError("postgres://user:secret@db.internal/vantage");
