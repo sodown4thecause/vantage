@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { authorizeWorkspace } from "@/lib/auth/workspace";
+import { contentKindLabel } from "@/lib/opportunities/content-kind";
 import { getOpportunityDetail } from "@/lib/opportunities/run";
 
 import { safeHttpUrl } from "@/lib/http/safe-url";
@@ -157,7 +158,7 @@ export default async function OpportunityDetailPage({
                     <span className="font-semibold leading-snug">{e.title || "Source link unavailable"}</span>
                   )}
                   <p className="text-sm text-ridge">
-                    {[e.platform, e.provider, e.postedAt].filter(Boolean).join(", ")}
+                    {[e.platform, e.provider, contentKindLabel(e.contentKind), e.postedAt].filter(Boolean).join(", ")}
                   </p>
                   <p className="quote whitespace-pre-wrap">
                     {e.contentMd.slice(0, 500)}
