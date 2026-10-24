@@ -124,6 +124,7 @@ export const workspace = pgTable("workspace", {
     .default({}),
   /** Daily digest delivery, opt-in per workspace. */
   digestEnabled: boolean("digest_enabled").notNull().default(false),
+  productEmailSuppressedAt: timestamp("product_email_suppressed_at", { withTimezone: true }),
   digestEmail: text("digest_email"),
   digestHourUtc: integer("digest_hour_utc").notNull().default(13),
   /** Local send hour in `digestTimeZone` (IANA, e.g. Australia/Brisbane). When both are set they replace the UTC hour. */
@@ -140,6 +141,35 @@ export const workspace = pgTable("workspace", {
     .defaultNow()
     .notNull(),
 });
+
+export const scanRun = pgTable("scan_run", {
+  id: text("id").primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+  kind: text("kind").$type<"first" | "scheduled">().notNull(),
+  status: text("status").$type<"queued" | "running" | "done" | "partial" | "failed">().notNull().default("queued"),
+  read: integer("read").notNull().default(0),
+  relevant: integer("relevant").notNull().default(0),
+  picked: integer("picked").notNull().default(0),
+  costUsd: numeric("cost_usd", { precision: 12, scale: 6 }).notNull().default("0"),
+  reservedUsd: numeric("reserved_usd", { precision: 12, scale: 6 }).notNull().default("0"),
+  hydrationAttempts: integer("hydration_attempts").notNull().default(0),
+  capped: boolean("capped").notNull().default(false),
+  leaseToken: uuid("lease_token").notNull(),
+  sourceIds: jsonb("source_ids").$type<string[]>(),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("scan_run_active_workspace_uidx").on(table.workspaceId).where(sql`${table.status} in ('queued', 'running')`),
+  index("scan_run_workspace_idx").on(table.workspaceId),
+]);
+
+export const productEmailSent = pgTable("product_email_sent", {
+  workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(),
+  claimedAt: timestamp("claimed_at", { withTimezone: true }).defaultNow().notNull(),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+}, (table) => [primaryKey({ columns: [table.workspaceId, table.kind] })]);
 
 export const source = pgTable(
   "source",

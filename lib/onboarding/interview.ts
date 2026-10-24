@@ -354,7 +354,7 @@ export function completionMessage(answers: InterviewAnswers, digestSaved = true)
   return [
     `${digestSaved ? "You’re all set. " : ""}I’ve saved the product profile for ${hostOf(answers.productUrl)}.`,
     digest,
-    "Next, run a scan to bring in your first conversations. You write every reply; nothing is posted on your behalf.",
+    "You write every reply; nothing is posted on your behalf.",
   ].join("\n\n");
 }
 

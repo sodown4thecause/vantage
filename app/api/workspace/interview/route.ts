@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { startFirstScan } from "@/lib/activation/dispatch";
 
 import { authorizeWorkspace } from "@/lib/auth/workspace";
 import { setDigestSchedule } from "@/lib/digest/preferences";
@@ -63,7 +64,10 @@ export async function POST(req: Request): Promise<Response> {
 
     const existing = conversationId ? await loadInterview(workspaceId, conversationId) : null;
     if (conversationId && !existing) return Response.json({ error: "not_found" }, { status: 404 });
-    if (existing?.state.complete) return Response.json({ error: "already_complete" }, { status: 409 });
+    if (existing?.state.complete) {
+      await startFirstScan(workspaceId);
+      return Response.json({ error: "already_complete" }, { status: 409 });
+    }
     const current = await getLatestMonitoringProfile(workspaceId);
     let answers: InterviewAnswers = existing?.state.answers ?? {};
     let draft: ProfileDraft | undefined = existing?.state.draft;
@@ -154,7 +158,11 @@ export async function POST(req: Request): Promise<Response> {
         console.error("[interview route] digest save failed");
       }
     }
-    return await reply(completionMessage(answers, digestSaved), { answers, draft, complete: digestSaved }, undefined, true);
+    const scan = await startFirstScan(workspaceId);
+    const scanMessage = scan.status === "failed"
+      ? "Your first scan couldn’t start. Open your opportunity queue to retry."
+      : "Your first scan is queued or underway. Open your opportunity queue to check its progress.";
+    return await reply(`${completionMessage(answers, digestSaved)}\n\n${scanMessage}`, { answers, draft, complete: digestSaved }, undefined, true);
   } catch (error) {
     if (error instanceof ConversationNotFoundError) return Response.json({ error: "not_found" }, { status: 404 });
     console.error("[interview route] failed");

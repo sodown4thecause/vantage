@@ -220,6 +220,7 @@ export async function buildOpportunities(opts: {
     }
   }
   let upserted = 0;
+  let relevant = 0;
   let budgetLimited = 0;
   let leadCapReached = false;
 
@@ -366,6 +367,7 @@ export async function buildOpportunities(opts: {
         });
     }
     upserted += 1;
+    if (status !== "ignore") relevant += 1;
   }
 
   const top = await listOpportunityQueue({
@@ -377,6 +379,7 @@ export async function buildOpportunities(opts: {
     scanned: normalized.length,
     clusters: clusters.size,
     upserted,
+    relevant,
     top,
     ...(budgetLimited > 0 ? { coverage: "budget_limited" as const, budgetLimited } : {}),
   };

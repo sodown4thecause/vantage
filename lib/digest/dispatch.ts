@@ -49,6 +49,7 @@ export async function runDueDigests(
     then ${localSlot} else ${utcSlot} end)`;
   const eligible = and(
     eq(workspace.digestEnabled, true),
+    isNull(workspace.productEmailSuppressedAt),
     sql`nullif(btrim(${workspace.digestEmail}), '') is not null`,
     or(isNull(workspace.digestLastSentAt), and(
       lt(workspace.digestLastSentAt, latestSlot),
@@ -124,6 +125,8 @@ export async function runDueDigests(
       const [owned] = await db.select({ id: workspace.id }).from(workspace)
         .where(and(
           eq(workspace.id, ws.id),
+          eq(workspace.digestEnabled, true),
+          isNull(workspace.productEmailSuppressedAt),
           eq(workspace.digestLeaseToken, token),
           gt(workspace.digestLeaseUntil, sql`now()`),
         )).limit(1);

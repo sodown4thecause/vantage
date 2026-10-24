@@ -4,13 +4,13 @@ import { workspace } from "@/lib/db/schema";
 import { ScanLeaseBusyError } from "@/lib/cron/lease-error";
 
 // Single conditional UPDATE: succeeds only when the lease is unset or expired (neon-http has no transactions).
-export async function claimScanLease(workspaceId: string, ttlMinutes: number): Promise<string | null> {
+export async function claimScanLease(workspaceId: string, ttlMinutes: number, existingToken?: string): Promise<string | null> {
   if (!Number.isInteger(ttlMinutes) || ttlMinutes <= 0) throw new RangeError("ttlMinutes must be a positive integer.");
   const db = getDb();
-  const token = crypto.randomUUID();
+  const token = existingToken ?? crypto.randomUUID();
   const [claimed] = await db.update(workspace).set({
     scanLeaseToken: token, scanLeaseUntil: sql`now() + make_interval(mins => ${ttlMinutes}::int)`,
-  }).where(and(eq(workspace.id, workspaceId), or(isNull(workspace.scanLeaseUntil), lt(workspace.scanLeaseUntil, sql`now()`))))
+  }).where(and(eq(workspace.id, workspaceId), or(isNull(workspace.scanLeaseUntil), lt(workspace.scanLeaseUntil, sql`now()`), existingToken ? eq(workspace.scanLeaseToken, existingToken) : undefined)))
     .returning({ id: workspace.id });
   return claimed ? token : null;
 }
