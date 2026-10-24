@@ -38,11 +38,11 @@ try {
 	let ready = false;
 	for (let i = 0; i < 90 && !ready; i++) {
 		await new Promise((r) => setTimeout(r, 1000));
-		ready = await fetch(base + "/robots.txt").then(() => true, () => false);
+		ready = await fetch(base + "/robots.txt", { signal: AbortSignal.timeout(5000) }).then(() => true, () => false);
 	}
 	if (!ready) throw new Error("Worker did not start within 90s");
 	for (const path of paths) {
-		const res = await fetch(base + path, { redirect: "manual" });
+		const res = await fetch(base + path, { redirect: "manual", signal: AbortSignal.timeout(30000) });
 		const ok = res.status < 400;
 		console.log((ok ? "ok   " : "FAIL ") + res.status + " " + path);
 		if (!ok) failed = true;

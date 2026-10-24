@@ -35,6 +35,7 @@
 	"env": {
 		"staging": {
 			"name": "vantage-staging",
+			"workers_dev": true,
 			"build": { "command": "" },
 			"routes": [],
 			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "vantage-staging" }],
