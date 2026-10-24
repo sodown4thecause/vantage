@@ -103,6 +103,7 @@ export const opportunityStatusEnum = pgEnum("opportunity_status", [
 ]);
 
 export const kbTierEnum = pgEnum("kb_tier", ["A", "B", "C", "D"]);
+export const kbScopeEnum = pgEnum("kb_scope", ["global", "private"]);
 export const kbHubEnum = pgEnum("kb_hub", [
   "gtm",
   "seo-geo",
@@ -236,13 +237,19 @@ export const kbDocument = pgTable(
     capturedAt: timestamp("captured_at", { withTimezone: true }).defaultNow().notNull(),
     tier: kbTierEnum("tier").notNull(),
     hub: kbHubEnum("hub").notNull(),
-    /** Null marks a globally shared source; non-null rows belong to one workspace. */
+    scope: kbScopeEnum("scope").notNull().default("private"),
+    approved: boolean("approved").notNull().default(false),
+    /** Null is reserved for approved global material; private rows require a workspace. */
     workspaceId: uuid("workspace_id").references(() => workspace.id, {
       onDelete: "cascade",
     }),
     contentHash: text("content_hash").notNull(),
   },
   (table) => [
+    check(
+      "kb_documents_scope_workspace_check",
+      sql`(${table.scope} = 'global' and ${table.workspaceId} is null and ${table.approved}) or (${table.scope} = 'private' and ${table.workspaceId} is not null)`,
+    ),
     index("kb_documents_workspace_hub_published_idx").on(
       table.workspaceId,
       table.hub,

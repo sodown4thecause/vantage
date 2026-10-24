@@ -7,6 +7,7 @@ import {
   kbChunk,
   kbDocument,
   kbHubEnum,
+  kbScopeEnum,
   kbTierEnum,
   semanticShadow,
   sourceTypeEnum,
@@ -35,6 +36,25 @@ describe("knowledge base database contract", () => {
         "kb_documents_workspace_source_idx",
       ]),
     );
+  });
+
+  it("requires private documents to be workspace-scoped and global documents approved", () => {
+    expect(kbScopeEnum.enumValues).toEqual(["global", "private"]);
+    const columns = getTableColumns(kbDocument);
+    expect(columns.scope.notNull).toBe(true);
+    expect(columns.approved.notNull).toBe(true);
+    expect(columns.workspaceId.notNull).toBe(false);
+
+    const constraint = getTableConfig(kbDocument).checks.find(
+      (candidate) => candidate.name === "kb_documents_scope_workspace_check",
+    );
+    expect(constraint).toBeDefined();
+    const predicate = constraint ? new PgDialect().sqlToQuery(constraint.value).sql : "";
+    expect(predicate).toContain('"scope" = \'global\'');
+    expect(predicate).toContain('"workspace_id" is null');
+    expect(predicate).toContain('"approved"');
+    expect(predicate).toContain('"scope" = \'private\'');
+    expect(predicate).toContain('"workspace_id" is not null');
   });
 
   it("stores ordered half-precision chunks with vector and BM25 indexes", () => {

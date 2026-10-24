@@ -34,7 +34,9 @@ describe("repository delivery contract", () => {
     const journal = JSON.parse(read("drizzle/meta/_journal.json")) as {
       entries: Array<{ tag: string }>;
     };
-    const migration = read(`drizzle/${journal.entries.at(-1)?.tag}.sql`);
+    const migration = journal.entries
+      .map((entry) => read(`drizzle/${entry.tag}.sql`))
+      .find((sql) => sql.includes("CREATE EXTENSION IF NOT EXISTS pg_search;")) ?? "";
     const vector = migration.indexOf("CREATE EXTENSION IF NOT EXISTS vector VERSION '0.8.6';");
     const search = migration.indexOf("CREATE EXTENSION IF NOT EXISTS pg_search;");
 

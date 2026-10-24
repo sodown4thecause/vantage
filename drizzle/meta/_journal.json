@@ -225,6 +225,13 @@
       "when": 1792792929560,
       "tag": "0031_clumsy_wild_child",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792834532301,
+      "tag": "0032_rich_thunderball",
+      "breakpoints": true
     }
   ]
 }
