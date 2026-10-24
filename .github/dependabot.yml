@@ -7,10 +7,6 @@ updates:
       day: monday
       timezone: Australia/Sydney
     open-pull-requests-limit: 5
-    ignore:
-      # eslint-config-next stays pinned to the installed next minor. Remove together with a next upgrade.
-      - dependency-name: "eslint-config-next"
-        versions: [">=16.4.0"]
     groups:
       next-react:
         patterns: ["next", "eslint-config-next", "react", "react-dom", "@types/react", "@types/react-dom"]
