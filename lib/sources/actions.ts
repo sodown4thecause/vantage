@@ -16,7 +16,7 @@ import { runCollector } from "@/lib/collectors/run";
 import { withWorkspaceScanLease } from "@/lib/cron/lease";
 import { ScanLeaseBusyError } from "@/lib/cron/lease-error";
 import { buildOpportunities } from "@/lib/opportunities/run";
-import { PROFILE_SOURCE_NAME } from "@/lib/profile/repository";
+import { PROFILE_SOURCE_NAME, getLatestMonitoringProfile } from "@/lib/profile/repository";
 import { enqueueEmbedJob } from "@/lib/cf/queue";
 import { getSemanticMode } from "@/lib/cf/env";
 import { buildSearchSource } from "@/lib/sources/search";
@@ -86,6 +86,14 @@ export async function addSearchSource(workspaceId: string, _previous: SourceActi
   }
 }
 
+function logScanSourceFailure(stage: string, workspaceId: string, sourceId: string, error: unknown, extra: Record<string, unknown> = {}) {
+  console.error("[scan-source] failed", {
+    stage, workspaceId, sourceId, ...extra,
+    errorName: error instanceof Error ? error.name : typeof error,
+    error: (error instanceof Error ? error.message : String(error)).slice(0, 300),
+  });
+}
+
 export async function scanSource(workspaceId: string, sourceId: string): Promise<SourceActionState> {
   try {
     const authorization = await authorizeWorkspace(workspaceId);
@@ -96,12 +104,29 @@ export async function scanSource(workspaceId: string, sourceId: string): Promise
     if (row.health === "paused") return { message: "This source is paused." };
     const result = await withWorkspaceScanLease(workspaceId, async signal => {
       const receipt = await runCollector({ workspaceId, sourceId, collector, signal });
-      if (!receipt.error && !receipt.switchedOff) await buildOpportunities({ workspaceId, limitDocs: 50, signal });
-      return receipt;
+      if (receipt.error || receipt.switchedOff) return { receipt, queueRefreshed: false };
+      if (!(await getLatestMonitoringProfile(workspaceId))) return { receipt, queueRefreshed: false, noProfile: true };
+      try {
+        await buildOpportunities({ workspaceId, limitDocs: 50, signal });
+        return { receipt, queueRefreshed: true };
+      } catch (error) {
+        if (signal.aborted) throw error;
+        logScanSourceFailure("opportunity-build", workspaceId, sourceId, error, { inserted: receipt.inserted });
+        return { receipt, queueRefreshed: false };
+      }
     });
     revalidatePath("/settings/sources"); revalidatePath("/queue");
-    return result.error ? { error: "Source could not be scanned. Check its coverage status." } : { message: result.switchedOff ? "Source is paused by the operator." : "Source scanned. The opportunity queue is refreshed." };
-  } catch { return { error: "Source could not be scanned. Check provider access, budget, and coverage." }; }
+    const { receipt } = result;
+    if (receipt.error) return { error: "Source could not be scanned. Check its coverage status." };
+    if (receipt.switchedOff) return { message: "Source is paused by the operator." };
+    if (result.queueRefreshed) return { message: "Source scanned. The opportunity queue is refreshed." };
+    const saved = receipt.inserted > 0 ? `Source scanned and ${receipt.inserted} new document${receipt.inserted === 1 ? "" : "s"} saved.` : "Source scanned.";
+    return { message: result.noProfile ? `${saved} Finish your monitoring profile to build the opportunity queue.` : `${saved} The opportunity queue could not be refreshed and will update on the next scan.` };
+  } catch (error) {
+    logScanSourceFailure("scan", workspaceId, sourceId, error);
+    if (error instanceof ScanLeaseBusyError) return { error: "A scan is already running for this workspace. Try again in a minute." };
+    return { error: "Source could not be scanned. Check provider access, budget, and coverage." };
+  }
 }
 
 export async function scanNow(workspaceId: string): Promise<SourceActionState> {

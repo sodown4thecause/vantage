@@ -82,6 +82,18 @@ describe("embedTexts", () => {
     await expect(embedTexts(["hello"], ctx)).resolves.toBeNull();
   });
 
+  it("retries without the gateway option when the gateway call fails", async () => {
+    const run = vi.fn(async (_model: string, _input: unknown, options?: unknown) => {
+      if (options) throw new Error("AiGatewayError: 503");
+      return { data: [fakeVector("hello")] };
+    });
+    state.ai = { run };
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const out = await embedTexts(["hello"], { sourceKey: "test" });
+    expect(out).toEqual([fakeVector("hello")]);
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[1]).toHaveLength(2);
+  });
   it("logs only the error class when cost metering fails", async () => {
     state.ai = createFakeAi().binding;
     state.costError = new TypeError("postgres://user:secret@db.internal/vantage");

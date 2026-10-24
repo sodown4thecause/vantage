@@ -16,3 +16,18 @@ it("honours the pilot page bound and avoids per-item enrichment", async () => {
   expect(request).toHaveBeenCalledTimes(1);
   expect(result.documents).toHaveLength(1);
 });
+it("returns a partial result when only some Algolia requests time out", async () => {
+  const request = vi.fn()
+    .mockResolvedValueOnce(Response.json({ hits: [{ objectID: "1", title: "Agent evaluation" }], nbPages: 1 }))
+    .mockRejectedValueOnce(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
+  vi.stubGlobal("fetch", request);
+  const result = await hnCollector.run({ workspaceId: "ws", sourceId: "source", config: { queries: ["agents", "evals"], maxPages: 1 } });
+  expect(result.documents).toHaveLength(1);
+  expect(result.partial).toBe(true);
+  expect(result.coverageReason).toContain("1 of 2");
+  expect(result.nextState).toBeUndefined();
+});
+it("still fails when every Algolia request times out", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new DOMException("The operation was aborted due to timeout", "TimeoutError")));
+  await expect(hnCollector.run({ workspaceId: "ws", sourceId: "source", config: { queries: ["agents"], maxPages: 1 } })).rejects.toThrow(/timeout/);
+});
