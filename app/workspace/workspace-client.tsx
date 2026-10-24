@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { ProfileDraftCard } from "@/components/profile-draft-card";
 import { SafeLink } from "@/components/safe-link";
+import { TopicTrends } from "@/components/topic-trends";
 import { BlockList, SaveButton, type SavedArtifactSummary } from "@/components/workspace-blocks";
 import { WorkspaceFrame } from "@/components/workspace-frame";
 import { gtmResponseSchema } from "@/lib/gtm/schema";
@@ -307,6 +308,7 @@ export function WorkspaceClient({ workspaceId, productName: initialProductName, 
         <p>○ Write your first blog<small>Coming with Content</small></p>
       </section> : <button type="button" className={s.setup} onClick={() => setShowSetup(true)}>Show setup checklist</button>}>
       <div className={s.body}>
+        <TopicTrends workspaceId={workspaceId} />
         <section className={s.conversation} aria-label="GTM assistant">
           <div className={s.scroll}>
             {setupOpen ? <div className={s.setupIntro}>
