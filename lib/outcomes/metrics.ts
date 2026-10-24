@@ -18,7 +18,7 @@ export function utcWeekBounds(now: Date = new Date()): {
 }
 
 export function computeNorthStar(input: {
-  events: Array<{ event: OutcomeEvent; createdAt: Date }>;
+  events: Array<{ event: OutcomeEvent; createdAt: Date; opportunityId?: string }>;
   weekStartUtc: Date;
   weekEndUtc: Date;
   /** Opportunities that appeared in queue this week (or proxy). */
@@ -33,8 +33,10 @@ export function computeNorthStar(input: {
   const inWeek = input.events.filter(
     (e) => e.createdAt >= input.weekStartUtc && e.createdAt < input.weekEndUtc,
   );
-  // "sent" is the owner marking a reply as sent themselves; it replaced the old "acted on" button.
-  const actedOnCount = inWeek.filter((e) => e.event === "acted_on" || e.event === "sent").length;
+  // "sent" and "replied" are the owner's own marks and replaced the old "acted on" button. A
+  // conversation marked both counts once.
+  const acted = inWeek.filter((e) => e.event === "acted_on" || e.event === "sent" || e.event === "replied");
+  const actedOnCount = new Set(acted.map((e, index) => e.opportunityId ?? `event-${index}`)).size;
   const usefulCount = inWeek.filter((e) => e.event === "useful").length;
   const notUsefulCount = inWeek.filter((e) => e.event === "not_useful").length;
   const judged = usefulCount + notUsefulCount;

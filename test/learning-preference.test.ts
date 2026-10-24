@@ -401,6 +401,10 @@ describe("conservative per-workspace learning", () => {
   it("never learns from edits or clicks on our own output", () => {
     expect(decisionForEvent("useful")).toBe("positive");
     expect(decisionForEvent("acted_on")).toBe("positive");
+    expect(decisionForEvent("sent")).toBe("positive");
+    expect(decisionForEvent("replied")).toBe("positive");
+    expect(decisionForEvent("copy")).toBe("none");
+    expect(decisionForEvent("open")).toBe("none");
     expect(decisionForEvent("rejected")).toBe("negative");
     expect(decisionForEvent("not_useful")).toBe("negative");
     expect(decisionForEvent("draft_edit")).toBe("none");

@@ -80,7 +80,8 @@ const POLICY_TEXT: Record<SubredditPolicy, (name: string) => string> = {
 export function ruleLineFor(urlCanonical: string, subreddit?: string | null): RuleLine {
   const name = subredditOf(urlCanonical, subreddit);
   if (!name) return { text: "Check this community's rules before you reply.", url: null, checked: null };
-  const rule = SUBREDDIT_RULES[name.toLowerCase()];
+  const key = name.toLowerCase();
+  const rule = Object.hasOwn(SUBREDDIT_RULES, key) ? SUBREDDIT_RULES[key] : undefined;
   if (!rule) {
     return { text: `We have no stored rule for r/${name} yet. Check its rules before you reply.`, url: `https://www.reddit.com/r/${name}/about/rules/`, checked: null };
   }

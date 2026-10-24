@@ -144,6 +144,7 @@ export async function getNorthStarMetric(opts: {
     events: events.map((e) => ({
       event: e.event as OutcomeEvent,
       createdAt: e.createdAt,
+      opportunityId: e.opportunityId,
     })),
     weekStartUtc,
     weekEndUtc,

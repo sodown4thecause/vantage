@@ -56,3 +56,12 @@ it("returns nothing, without querying, for an empty set of picks", async () => {
   expect(await listOpportunityQueue({ workspaceId: "ws-1", onlyIds: [] })).toEqual([]);
   expect(state.predicate).toBeUndefined();
 });
+
+it("excludes anything picked on another day with a workspace-scoped NOT EXISTS over the full pick history", async () => {
+  await listOpportunityQueue({ workspaceId: "ws-1", notPickedBeforeDay: "2026-10-24" });
+  const query = new PgDialect().sqlToQuery(state.predicate!);
+  expect(query.sql).toContain('from "opportunity_pick"');
+  expect(query.sql).toContain('"opportunity_pick"."workspace_id" = "opportunity"."workspace_id"');
+  expect(query.sql).toContain('"opportunity_pick"."pick_date" <> $');
+  expect(query.params).toContain("2026-10-24");
+});
