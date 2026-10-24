@@ -192,7 +192,7 @@ export async function enrichLinkDocuments(
 }
 
 /** The first candidate URL that is enrichable on a link post, or null. */
-export function firstEnrichableLink(doc: Pick<DocumentRecord, "urlCanonical" | "title" | "contentMd">): { url: string; urlHash: string; kind: LinkedKind } | null {
+export function firstEnrichableLink(doc: Pick<DocumentRecord, "urlCanonical" | "title" | "contentMd"> & Partial<Pick<DocumentRecord, "metadata">>): { url: string; urlHash: string; kind: LinkedKind } | null {
   if (!isLinkPost(doc)) return null;
   for (const candidate of candidateLinkUrls(doc)) {
     if (isSkippedHost(candidate)) continue;

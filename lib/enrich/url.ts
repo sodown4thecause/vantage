@@ -64,10 +64,12 @@ export function candidateLinkUrls(doc: {
   urlCanonical: string;
   title: string | null;
   contentMd: string;
+  metadata?: Record<string, unknown> | null;
 }): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const raw of [...(doc.contentMd.match(URL_RE) ?? []), doc.urlCanonical]) {
+  const outboundUrl = typeof doc.metadata?.outboundUrl === "string" ? [doc.metadata.outboundUrl] : [];
+  for (const raw of [...(doc.contentMd.match(URL_RE) ?? []), ...outboundUrl, doc.urlCanonical]) {
     const link = normaliseLinkedUrl(raw);
     if (!link || seen.has(link.url)) continue;
     seen.add(link.url);

@@ -58,6 +58,24 @@ describe("skip rules", () => {
 });
 
 describe("candidateLinkUrls", () => {
+  it.each(["https://example.com/article", "https://youtu.be/abc"])("selects a Reddit outbound link: %s", outboundUrl => {
+    const doc = {
+      urlCanonical: "https://www.reddit.com/r/SaaS/comments/1",
+      title: "News",
+      contentMd: "# News",
+      metadata: { outboundUrl },
+    };
+    expect(candidateLinkUrls(doc)).toEqual([outboundUrl, doc.urlCanonical]);
+    expect(firstEnrichableLink(doc)?.url).toBe(outboundUrl);
+  });
+
+  it("ignores malformed outbound metadata and deduplicates normalized URLs", () => {
+    const doc = { urlCanonical: "https://example.com/a", title: null, contentMd: "https://example.com/a" };
+    expect(candidateLinkUrls({ ...doc, metadata: { outboundUrl: 42 } })).toEqual([doc.urlCanonical]);
+    expect(candidateLinkUrls({ ...doc, metadata: { outboundUrl: "javascript:alert" } })).toEqual([doc.urlCanonical]);
+    expect(candidateLinkUrls({ ...doc, metadata: { outboundUrl: "https://example.com/a?utm_source=reddit" } })).toEqual([doc.urlCanonical]);
+  });
+
   it("prefers URLs in the body and de-duplicates", () => {
     const links = candidateLinkUrls({
       urlCanonical: "https://example.com/canonical",

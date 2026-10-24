@@ -89,6 +89,7 @@ export const redditCollector: Collector = {
           publicationDateMissing,
           partial: publicationDateMissing,
           topComments: p.topComments,
+          outboundUrl: p.outboundUrl,
         },
       };
     });

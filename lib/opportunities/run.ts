@@ -193,6 +193,10 @@ export async function buildOpportunities(opts: {
   // fit and intent score the page too. Best effort: any failure scores unenriched.
   try {
     const linked = await enrichLinkDocuments(live, { workspaceId: opts.workspaceId, signal: opts.signal });
+    for (const row of live) {
+      const context = linked.get(row.id);
+      if (context) row.metadata = { ...row.metadata, linkedContext: context };
+    }
     await attachLinkedContext(live.map((row) => row.id), linked, opts.workspaceId);
   } catch {
     console.error("[opportunities] link enrichment skipped; scoring without it");
