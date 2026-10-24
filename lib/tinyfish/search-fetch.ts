@@ -36,7 +36,7 @@ export async function tinyFishSearch(
   },
 ): Promise<TinyFishSearchHit[]> {
   opts?.signal?.throwIfAborted();
-  const client = opts?.client ?? createTinyFishClient(undefined, opts?.signal);
+  const client = opts?.client ?? (await createTinyFishClient(undefined, opts?.signal));
   const ctx = opts?.ctx ?? { sourceKey: "tinyfish" };
   const response = await withCost(
     { sourceKey: ctx.sourceKey, workspaceId: ctx.workspaceId, provider: "tinyfish", action: "search" },
@@ -74,7 +74,7 @@ export async function tinyFishFetchMarkdown(
 ): Promise<TinyFishFetchedPage[]> {
   if (urls.length === 0) return [];
   opts?.signal?.throwIfAborted();
-  const client = opts?.client ?? createTinyFishClient(undefined, opts?.signal);
+  const client = opts?.client ?? (await createTinyFishClient(undefined, opts?.signal));
   const ctx = opts?.ctx ?? { sourceKey: "tinyfish" };
   // SDK batches; keep requests small and stable.
   const batchSize = 10;
