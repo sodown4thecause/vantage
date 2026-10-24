@@ -83,7 +83,7 @@ export async function firstScanStep(workspaceId: string, body: Record<string, un
         read: finished.read, relevant: finished.relevant, picked: finished.picked, status, cost_usd: Number(finished.costUsd),
       });
       console.info("[activation] first scan finished", { workspaceId, status, costUsd: finished.costUsd });
-      if (status !== "failed") await sendFirstScanEmail(workspaceId, finished.picked, finished.sourceIds?.length ?? 0).catch(() => console.error("[activation] email unavailable"));
+      if (status !== "failed") await sendFirstScanEmail(workspaceId, finished.picked, finished.read).catch(() => console.error("[activation] email unavailable"));
     }
     return Response.json({ status });
   }

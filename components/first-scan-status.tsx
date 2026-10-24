@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { formatNextScan } from "@/lib/scan/next-scan";
+import { scanJustFinished } from "@/lib/scan/nothing-strong";
 
 type Status = {
   run: { status: "queued" | "running" | "done" | "partial" | "failed"; read: number; relevant: number; picked: number; costUsd: string; capped: boolean } | null;
@@ -19,7 +20,7 @@ export function FirstScanStatus({ workspaceId }: { workspaceId: string }) {
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let refreshed = false;
+    let wasActive = false;
     const started = Date.now();
     const poll = async () => {
       try {
@@ -30,8 +31,10 @@ export function FirstScanStatus({ workspaceId }: { workspaceId: string }) {
         setData(value);
         setError(false);
         const state = value.run?.status;
-        if (state && ["done", "partial"].includes(state) && !refreshed) { refreshed = true; window.location.reload(); }
-        if (state !== "queued" && state !== "running") return;
+        const active = state === "queued" || state === "running";
+        if (active) wasActive = true;
+        if (scanJustFinished(wasActive, state)) { window.location.reload(); return; }
+        if (!active) return;
       } catch {
         if (controller.signal.aborted) return;
         setError(true);

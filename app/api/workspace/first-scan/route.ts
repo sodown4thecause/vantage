@@ -6,6 +6,7 @@ import { authorizeWorkspace } from "@/lib/auth/workspace";
 import { getDb } from "@/lib/db/client";
 import { scanRun, source, workspace } from "@/lib/db/schema";
 import { getLimits, getWorkspacePlan } from "@/lib/plans/limits";
+import { nothingStrongReason } from "@/lib/scan/nothing-strong";
 import { eligibleSourceCondition } from "@/lib/cron/scan";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export async function GET(req: Request) {
     ));
     const run = await firstScan(workspaceId);
     const [ws] = await db.select({ timeZone: workspace.digestTimeZone }).from(workspace).where(eq(workspace.id, workspaceId)).limit(1);
-    const [poll] = await db.select({ last: sql<Date | string | null>`max(${source.lastPolledAt})`, count: sql<number>`count(*)` })
+    const [poll] = await db.select({ last: sql<Date | string | null>`max(${source.lastPolledAt})` })
       .from(source).where(and(eligibleSourceCondition(workspaceId),
         or(isNull(source.lastPolledAt), lt(source.lastPolledAt, sql`now() + interval '5 minutes'`))));
     const limits = await getLimits(await getWorkspacePlan(workspaceId));
@@ -33,7 +34,7 @@ export async function GET(req: Request) {
       run: run ? { status: run.status, read: run.read, relevant: run.relevant, picked: run.picked,
         costUsd: run.costUsd, capped: run.capped, startedAt: run.startedAt, finishedAt: run.finishedAt } : null,
       nextScanAt, timeZone: ws?.timeZone ?? "UTC",
-      reason: Number(run?.sourceIds?.length ?? poll?.count ?? 0) < 2 ? "Few sources are configured. Check your sources or add one." : "Your topics may be too narrow. Try broader wording in your profile.",
+      reason: nothingStrongReason(run?.read ?? 0) === "few_sources" ? "Few sources are configured. Check your sources or add one." : "Your topics may be too narrow. Try broader wording in your profile.",
     }, { headers: { "cache-control": "no-store" } });
   } catch {
     return Response.json({ error: "Scan status is unavailable. Please try again." }, { status: 503 });

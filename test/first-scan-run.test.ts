@@ -40,7 +40,7 @@ it("a capped scan preserves real results, honest counters, cost and a partial te
   expect((await call("build")).status).toBe(200);
   expect(state.run).toMatchObject({ read: 10, relevant: 3, picked: 2, capped: true, costUsd: "0.04" });
   expect(await (await call("finish")).json()).toEqual({ status: "partial" });
-  expect(state.emails).toHaveBeenCalledWith(WS, 2, 1);
+  expect(state.emails).toHaveBeenCalledWith(WS, 2, 10);
   expect(state.released).toHaveBeenCalledWith(WS, LEASE);
   expect(state.scopes.every((scope) => scope.includes(WS) && scope.includes(LEASE))).toBe(true);
   expect(await (await call("finish")).json()).toEqual({ status: "partial" });
@@ -52,7 +52,7 @@ it("distinguishes zero results from failure without creating picks", async () =>
   await call("build");
   expect(await (await call("finish")).json()).toEqual({ status: "done" });
   expect(state.run.picked).toBe(0);
-  expect(state.emails).toHaveBeenCalledWith(WS, 0, 1);
+  expect(state.emails).toHaveBeenCalledWith(WS, 0, 10);
   state.run.status = "running";
   expect(await (await call("finish", { failed: true })).json()).toEqual({ status: "failed" });
   expect(state.emails).toHaveBeenCalledTimes(1);
