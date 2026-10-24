@@ -1,18 +1,25 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 
 import { JsonLd } from "@/components/json-ld";
 import { Shell } from "@/components/shell";
+import { ProductTourBox } from "@/components/product-tour-box";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth/server";
 import { getCurrentWorkspace } from "@/lib/auth/workspace";
 import { formatDate, getAllPosts } from "@/lib/blog";
 import { createWorkspaceForCurrentUser } from "@/lib/db/actions";
 import { getLatestMonitoringProfile } from "@/lib/profile/repository";
-import { SITE_DESCRIPTION, SITE_NAME, SOURCES, absoluteUrl } from "@/lib/site";
+import { SOURCES, absoluteUrl } from "@/lib/site";
 
 import styles from "./home.module.css";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: { absolute: "Vantage: the go-to-market workspace for AI and developer tools" },
+  description: "Find the conversations worth joining. Search research and content drafting are coming soon. You write every reply; Vantage never posts for you.",
+};
 
 async function startWorkspace(form: FormData) {
   "use server";
@@ -23,16 +30,16 @@ async function startWorkspace(form: FormData) {
 
 const STEPS: { title: string; body: string }[] = [
   {
-    title: "Describe your product once",
-    body: "Paste your URL or a few lines about what you build and who it is for. That profile drives every ranking.",
+    title: "Paste your URL",
+    body: "We draft your profile, you confirm. Your product and audience guide what we find.",
   },
   {
-    title: "It reads the places your buyers talk",
-    body: "Collectors check each source on a schedule, drop duplicates and score every conversation for fit, intent, evidence, momentum and timing.",
+    title: "Review five conversations",
+    body: "Review your daily picks and the sources behind them. Your local-hour digest keeps the list close.",
   },
   {
-    title: "You get a short list, and you reply",
-    body: "Up to five conversations a day, in your queue and in an email at the hour you choose. Each one links to the posts that justify it. You write the reply.",
+    title: "Copy, open and reply",
+    body: "Copy your reply, open the source and decide what to say. Vantage never posts, comments or votes on your behalf.",
   },
 ];
 
@@ -52,7 +59,7 @@ const NEVER: [string, string][] = [
 
 const FAQ: { q: string; a: string }[] = [
   {
-    q: "Does contextfor.dev post replies for me?",
+    q: "Does Vantage post replies for me?",
     a: "No. It finds and ranks conversations, and can suggest an approach, but it never posts, comments or sends messages on your behalf. You write and send every reply from your own account.",
   },
   {
@@ -69,7 +76,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Is there a free plan?",
-    a: "Yes. Create a free account to set up a workspace, connect sources and get your daily list. Paid plans with more sources and faster scans are on the way.",
+    a: "Yes. Start free to set up a workspace and explore relevant conversations. See pricing for current plan limits and upgrade options.",
   },
 ];
 
@@ -87,25 +94,25 @@ export default async function Home() {
       "@context": "https://schema.org",
       "@type": "Organization",
       "@id": absoluteUrl("/#organization"),
-      name: SITE_NAME,
+      name: "Vantage",
       url: absoluteUrl("/"),
     },
     {
       "@context": "https://schema.org",
       "@type": "WebSite",
       "@id": absoluteUrl("/#website"),
-      name: SITE_NAME,
+      name: "Vantage",
       url: absoluteUrl("/"),
       publisher: { "@id": absoluteUrl("/#organization") },
     },
     {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
-      name: SITE_NAME,
+      name: "Vantage",
       url: absoluteUrl("/"),
       applicationCategory: "BusinessApplication",
       operatingSystem: "Web",
-      description: SITE_DESCRIPTION,
+      description: "Vantage finds conversations worth joining. You write every reply; Vantage never posts for you.",
       offers: { "@type": "Offer", price: "0", priceCurrency: "USD", description: "Free plan" },
       publisher: { "@id": absoluteUrl("/#organization") },
     },
@@ -125,13 +132,14 @@ export default async function Home() {
       <JsonLd data={jsonLd} />
       <div className={styles.home}>
         <section className={styles.hero} aria-labelledby="home-heading">
-          <p className={styles.eyebrow}>Your go-to-market workspace</p>
-          <h1 id="home-heading">Find the conversations<br />worth showing up for.</h1>
+          <p className={styles.eyebrow}>Launch is the new bottleneck.</p>
+          <h1 id="home-heading">You can ship in a weekend. Getting noticed still takes a team.</h1>
           <p className={styles.intro}>
-            A quieter way to find your next customers. contextfor.dev reads the
-            places they talk and brings you up to five relevant conversations a day,
-            with the evidence behind each one. You write every reply.
+            Vantage is the go-to-market workspace for AI and developer tools. It finds
+            conversations worth joining and puts the evidence in front of you. You write every reply.
           </p>
+          <p className={styles.claimNote}>Search reporting and content drafting <span className={styles.badge}>Coming soon</span>.</p>
+          <ProductTourBox />
           {session?.user ? (
             <form action={startWorkspace} className={styles.createForm}>
               <label htmlFor="workspace-name">Name your workspace</label>
@@ -144,64 +152,26 @@ export default async function Home() {
           ) : (
             <>
               <div className={styles.heroActions}>
-                <Link href="/auth/sign-up" className={styles.primary}>Create a free account <span aria-hidden="true">↗</span></Link>
-                <Link href="/tour" className={styles.secondary}>Explore the workspace <span aria-hidden="true">→</span></Link>
+                <Link href="/auth/sign-up" className={styles.primary}>Start free <span aria-hidden="true">↗</span></Link>
+                <Link href="/pricing" className={styles.secondary}>See pricing <span aria-hidden="true">→</span></Link>
               </div>
               <p className={styles.signIn}>Already have an account? <Link href="/auth/sign-in">Sign in</Link></p>
             </>
           )}
         </section>
 
-        <figure className={styles.preview} aria-labelledby="preview-caption">
-          <figcaption id="preview-caption" className={styles.previewCaption}>
-            <span><span className={styles.statusDot} />A look inside your workspace</span>
-            <span>Static preview · sample data</span>
-          </figcaption>
-          <div className={styles.previewBody}>
-            <div className={styles.previewSidebar} aria-hidden="true">
-              <div className={styles.previewBrand}>c<span>contextfor.dev</span></div>
-              <p>Acme workspace</p>
-              <div className={styles.selectedNav}>◈ <span>GTM workspace</span></div>
-              <div>☷ <span>Queue</span><small>3</small></div>
-              <div>⌁ <span>Sources</span></div>
-              <div>◎ <span>Profile</span></div>
-              <div className={styles.sidebarBottom}><span className={styles.avatar}>A</span>Acme Analytics</div>
-            </div>
-            <div className={styles.previewMain}>
-              <div className={styles.previewTopbar}><span>GTM workspace</span><span>Acme Analytics</span></div>
-              <div className={styles.previewColumns}>
-                <div className={styles.previewConversation}>
-                  <div className={styles.previewAnswer}>
-                    <span className={styles.assistantMark} aria-hidden="true">c</span>
-                    <p className={styles.responseLabel}>Your next move</p>
-                    <h2>Start with a useful conversation.</h2>
-                    <p>There’s a founder looking for a simpler way to track brand mentions. The problem fits your product, and the thread is still active.</p>
-                    <p className={styles.actionLabel}>Three ways forward</p>
-                    <ol className={styles.nextActions}>
-                      <li><span>01</span><div>Review the conversation<small>Read the source and check the fit.</small></div><span aria-hidden="true">↗</span></li>
-                      <li><span>02</span><div>Find the right angle<small>Lead with an answer, not a pitch.</small></div><span aria-hidden="true">→</span></li>
-                      <li><span>03</span><div>Keep your queue focused<small>Review the next relevant conversation.</small></div><span aria-hidden="true">→</span></li>
-                    </ol>
-                  </div>
-                  <div className={styles.composer}>
-                    <span>Ask about your next move…</span>
-                    <div><small>Sample workspace · not interactive</small><span aria-hidden="true">↑</span></div>
-                  </div>
-                  <p className={styles.previewDisclaimer}>You decide what to say. Nothing is posted for you.</p>
-                </div>
-                <aside className={styles.evidence} aria-label="Illustrative source evidence">
-                  <p className={styles.actionLabel}>The context</p>
-                  <div className={styles.evidenceHeading}><span className={styles.sourceIcon}>r</span><div>Reddit<small>Illustrative forum conversation</small></div></div>
-                  <h3>Looking for a simpler way to track mentions</h3>
-                  <blockquote>“How are other small teams keeping track of where people mention their product? I’m trying to move beyond checking everything manually.”</blockquote>
-                  <div className={styles.evidenceSignal}><span>Product fit</span><strong>Strong</strong></div>
-                  <div className={styles.evidenceSignal}><span>Intent</span><strong>Asking for a solution</strong></div>
-                  <p className={styles.evidenceNote}>An illustrative example, not a live lead or a customer quote.</p>
-                </aside>
-              </div>
-            </div>
+        <section className={styles.section} aria-labelledby="mission-heading">
+          <div className={styles.sectionHeading}><p className={styles.eyebrow}>Our mission</p><h2 id="mission-heading">Everyone’s shipping. Few are launching.</h2></div>
+          <p className={styles.mission}>AI agents made building fast. Distribution didn’t keep up. Launching still means stitching together a listening tool, an SEO suite, an AI-visibility tracker, a link-building service and a content calendar, then finding the hours to use them. Vantage puts it in one workspace run by an AI that knows your product.</p>
+          <p className={styles.claimNote}>That’s the direction. Search reporting and content drafting are coming soon. Vantage never publishes for you.</p>
+          <div className={styles.tiles}>
+            <article><h3>Social listening</h3><p>Up to five ranked conversations a day. You write every reply; Vantage never posts.</p></article>
+            <article><h3>SEO <span className={styles.badge}>Coming soon</span></h3><p>Keywords, rankings and Search Console reporting in plain English. These workflows are coming soon.</p></article>
+            <article><h3>AI search visibility <span className={styles.badge}>Coming soon</span></h3><p>Citation reporting for AI answers is coming soon.</p></article>
+            <article><h3>Content and social <span className={styles.badge}>Coming soon</span></h3><p>Turn useful research into drafts. You decide what to publish and where.</p></article>
           </div>
-        </figure>
+          <Link href="/tour" className={styles.secondary}>Explore the sample workspace →</Link>
+        </section>
 
         <section aria-labelledby="sources-heading" className={styles.sources}>
           <h2 id="sources-heading">Context from the places your buyers talk</h2>
@@ -209,7 +179,7 @@ export default async function Home() {
         </section>
 
         <section id="how-it-works" aria-labelledby="how-heading" className={styles.section}>
-          <div className={styles.sectionHeading}><p className={styles.eyebrow}>A focused daily workflow</p><h2 id="how-heading">Less searching. More context.</h2></div>
+          <div className={styles.sectionHeading}><p className={styles.eyebrow}>How it works</p><h2 id="how-heading">Three steps to your next move.</h2></div>
           <ol className={styles.steps}>
             {STEPS.map((step, i) => (
               <li key={step.title}><span className={styles.stepNumber}>{String(i + 1).padStart(2, "0")}</span><div><h3>{step.title}</h3><p>{step.body}</p></div></li>
@@ -240,8 +210,8 @@ export default async function Home() {
         </section>
 
         <section className={styles.closing}>
-          <div><p className={styles.eyebrow}>Start with the right context</p><h2>Your next conversation is a better place to start.</h2><p>A short list. The evidence behind it. The reply is yours.</p></div>
-          {!session?.user && <Link href="/auth/sign-up" className={styles.primary}>Create a free account <span aria-hidden="true">↗</span></Link>}
+          <div><h2>Ship it. Then let people know.</h2><p>The next move is yours.</p></div>
+          {!session?.user && <Link href="/auth/sign-up" className={styles.primary}>Start free <span aria-hidden="true">↗</span></Link>}
         </section>
       </div>
     </Shell>
