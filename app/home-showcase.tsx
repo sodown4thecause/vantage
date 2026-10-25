@@ -23,7 +23,7 @@ const SEARCH_QUESTIONS = [
 ] as const;
 
 function ViewContent({ view }: { view: ViewId }) {
-  const top = QUEUE[0]!;
+  const top = QUEUE[0];
 
   if (view === "gtm") {
     return (
