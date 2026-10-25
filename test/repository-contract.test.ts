@@ -29,32 +29,4 @@ describe("repository delivery contract", () => {
       expect(() => read(`drizzle/meta/${String(entry.idx).padStart(4, "0")}_snapshot.json`)).not.toThrow();
     }
   });
-
-  it("keeps the complete KB contract in one provisional generated migration without enabling extensions", () => {
-    const journal = JSON.parse(read("drizzle/meta/_journal.json")) as {
-      entries: Array<{ idx: number; tag: string }>;
-    };
-    const kbMigrations = journal.entries.filter((entry) =>
-      read(`drizzle/${entry.tag}.sql`).includes('CREATE TABLE "kb_documents"'),
-    );
-    expect(kbMigrations).toHaveLength(1);
-    const entry = kbMigrations[0];
-    const migration = read(`drizzle/${entry.tag}.sql`);
-
-    expect(migration).not.toMatch(/CREATE EXTENSION/i);
-    expect(migration).not.toContain('"tsv"');
-    expect(migration).toContain('"embedding" halfvec(1024)');
-    expect(migration).toContain('"scope" "kb_scope" DEFAULT \'private\' NOT NULL');
-    expect(migration).toContain('"approved" boolean DEFAULT false NOT NULL');
-    expect(migration).toContain('CONSTRAINT "kb_documents_scope_workspace_check" CHECK');
-    expect(migration).toContain('CREATE INDEX "kb_chunks_bm25_idx"');
-    expect(migration).toContain('CREATE INDEX "kb_chunks_embedding_hnsw_idx"');
-
-    const snapshot = JSON.parse(read(`drizzle/meta/${String(entry.idx).padStart(4, "0")}_snapshot.json`));
-    const previous = JSON.parse(read(`drizzle/meta/${String(entry.idx - 1).padStart(4, "0")}_snapshot.json`));
-    expect(snapshot.prevId).toBe(previous.id);
-    expect(snapshot.tables["public.kb_documents"].checkConstraints)
-      .toHaveProperty("kb_documents_scope_workspace_check");
-    expect(snapshot.tables["public.kb_chunks"].columns.embedding.type).toBe("halfvec(1024)");
-  });
 });

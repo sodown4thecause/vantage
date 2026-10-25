@@ -5,7 +5,6 @@ import type { SavedArtifactLane } from "@/lib/workspace/saved-artifact-types";
 import {
   boolean,
   check,
-  customType,
   date,
   index,
   integer,
@@ -101,20 +100,6 @@ export const opportunityStatusEnum = pgEnum("opportunity_status", [
   "opportunity",
   "review",
 ]);
-
-export const kbTierEnum = pgEnum("kb_tier", ["A", "B", "C", "D"]);
-export const kbScopeEnum = pgEnum("kb_scope", ["global", "private"]);
-export const kbHubEnum = pgEnum("kb_hub", [
-  "gtm",
-  "seo-geo",
-  "content",
-  "coding",
-  "community-rules",
-]);
-
-const halfvec1024 = customType<{ data: string; driverData: string }>({
-  dataType: () => "halfvec(1024)",
-});
 
 export const workspace = pgTable("workspace", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -220,66 +205,6 @@ export const document = pgTable(
     index("document_unembedded_idx")
       .on(table.workspaceId)
       .where(sql`${table.embeddedAt} is null`),
-  ],
-);
-
-/** Curated global or workspace-owned source metadata for the read-only KB. */
-export const kbDocument = pgTable(
-  "kb_documents",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    sourceUrl: text("source_url").notNull(),
-    title: text("title"),
-    publishedAt: timestamp("published_at", { withTimezone: true }),
-    capturedAt: timestamp("captured_at", { withTimezone: true }).defaultNow().notNull(),
-    tier: kbTierEnum("tier").notNull(),
-    hub: kbHubEnum("hub").notNull(),
-    scope: kbScopeEnum("scope").notNull().default("private"),
-    approved: boolean("approved").notNull().default(false),
-    /** Null is reserved for approved global material; private rows require a workspace. */
-    workspaceId: uuid("workspace_id").references(() => workspace.id, {
-      onDelete: "cascade",
-    }),
-    contentHash: text("content_hash").notNull(),
-  },
-  (table) => [
-    check(
-      "kb_documents_scope_workspace_check",
-      sql`(${table.scope} = 'global' and ${table.workspaceId} is null and ${table.approved}) or (${table.scope} = 'private' and ${table.workspaceId} is not null)`,
-    ),
-    index("kb_documents_workspace_hub_published_idx").on(
-      table.workspaceId,
-      table.hub,
-      table.publishedAt,
-    ),
-    index("kb_documents_workspace_source_idx").on(table.workspaceId, table.sourceUrl),
-  ],
-);
-
-/** Heading-aware chunks; vectors and full-text indexes are separate from opportunity scoring. */
-export const kbChunk = pgTable(
-  "kb_chunks",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    documentId: uuid("document_id")
-      .notNull()
-      .references(() => kbDocument.id, { onDelete: "cascade" }),
-    ord: integer("ord").notNull(),
-    header: text("header").notNull().default(""),
-    text: text("text").notNull(),
-    embedding: halfvec1024("embedding"),
-    chunkerVersion: text("chunker_version").notNull(),
-    contentHash: text("content_hash").notNull(),
-  },
-  (table) => [
-    uniqueIndex("kb_chunks_document_ord_uidx").on(table.documentId, table.ord),
-    index("kb_chunks_embedding_hnsw_idx").using(
-      "hnsw",
-      table.embedding.op("halfvec_cosine_ops"),
-    ),
-    index("kb_chunks_bm25_idx")
-      .using("bm25", table.id, table.header, table.text)
-      .with({ key_field: "'id'" }),
   ],
 );
 

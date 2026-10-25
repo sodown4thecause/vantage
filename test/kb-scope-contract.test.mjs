@@ -1,77 +1,89 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
+import { fileURLToPath } from "node:url";
 
-import { PgDialect, getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 
-import { kbDocument } from "../lib/db/schema";
+const read = (relative) => readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
 
-const constraint = getTableConfig(kbDocument).checks.find(
-  (candidate) => candidate.name === "kb_documents_scope_workspace_check",
-);
-const predicate = new PgDialect().sqlToQuery(constraint.value).sql;
-const spec = readFileSync(
-  new URL("../docs/superpowers/specs/2026-10-23-neon-knowledge-base-design.md", import.meta.url),
-  "utf8",
-);
-const readContract = spec.match(/```sql\n([\s\S]*?)\n```/)[1];
+const ddl = read("../docs/superpowers/specs/2026-10-23-neon-knowledge-base-schema.sql");
+const spec = read("../docs/superpowers/specs/2026-10-23-neon-knowledge-base-design.md");
 
-describe("KB scope SQL contracts (in-memory SQLite, not a runtime reader)", () => {
-  it.each([
-    ["private", "synthetic-workspace-a", 0, true],
-    ["private", "synthetic-workspace-a", 1, true],
-    ["private", null, 0, false],
-    ["private", null, 1, false],
-    ["global", null, 1, true],
-    ["global", null, 0, false],
-    ["global", "synthetic-workspace-a", 0, false],
-    ["global", "synthetic-workspace-a", 1, false],
-    [null, "synthetic-workspace-a", 1, false],
-    ["private", "synthetic-workspace-a", null, false],
-  ])("scope=%s workspace=%s approved=%s accepted=%s", (scope, workspaceId, approved, accepted) => {
-    const db = new DatabaseSync(":memory:");
-    try {
-      db.exec(`CREATE TABLE kb_documents (
-        scope TEXT NOT NULL,
-        workspace_id TEXT,
-        approved INTEGER NOT NULL,
-        CHECK (${predicate})
-      )`);
-      const insert = () => db.prepare("INSERT INTO kb_documents VALUES (?, ?, ?)")
-        .run(scope, workspaceId, approved);
-      if (accepted) expect(insert).not.toThrow();
-      else expect(insert).toThrow(/constraint failed/i);
-    } finally {
-      db.close();
-    }
+const scopeCheck = ddl
+  .split("\n")
+  .find((line) => line.includes("CONSTRAINT kb_documents_scope_workspace_check"))
+  .trim()
+  .replace("CONSTRAINT kb_documents_scope_workspace_check CHECK ", "");
+
+const readBoundary = spec
+  .match(/```sql\n(SELECT id FROM kb_documents[\s\S]*?)```/)[1]
+  .replaceAll("$1", "?");
+
+const openScopedTable = () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`CREATE TABLE kb_documents (
+    id TEXT PRIMARY KEY,
+    scope TEXT NOT NULL,
+    approved BOOLEAN NOT NULL,
+    workspace_id TEXT,
+    CONSTRAINT kb_documents_scope_workspace_check CHECK ${scopeCheck}
+  )`);
+  return db;
+};
+
+describe("KB scope constraint", () => {
+  it("accepts approved global rows without a workspace and private rows with one", () => {
+    const db = openScopedTable();
+    const insert = db.prepare("INSERT INTO kb_documents (id, scope, approved, workspace_id) VALUES (?, ?, ?, ?)");
+    insert.run("global-approved", "global", 1, null);
+    insert.run("private-approved", "private", 1, "w1");
+    insert.run("private-unapproved", "private", 0, "w1");
+    expect(db.prepare("SELECT COUNT(*) AS n FROM kb_documents").get().n).toBe(3);
   });
 
-  it("limits the proposed reader to approved globals and the authorised workspace", () => {
-    const db = new DatabaseSync(":memory:");
-    try {
-      db.exec(`CREATE TABLE kb_documents (
-        id TEXT PRIMARY KEY,
-        scope TEXT NOT NULL,
-        workspace_id TEXT,
-        approved INTEGER NOT NULL,
-        CHECK (${predicate})
-      )`);
-      const insert = db.prepare("INSERT INTO kb_documents VALUES (?, ?, ?, ?)");
-      insert.run("global-approved", "global", null, 1);
-      insert.run("private-a-approved", "private", "synthetic-workspace-a", 1);
-      insert.run("private-a-proposed", "private", "synthetic-workspace-a", 0);
-      insert.run("private-b-approved", "private", "synthetic-workspace-b", 1);
-      insert.run("private-b-proposed", "private", "synthetic-workspace-b", 0);
+  it("rejects global rows with a workspace, unapproved global rows and private rows without a workspace", () => {
+    const db = openScopedTable();
+    const insert = db.prepare("INSERT INTO kb_documents (id, scope, approved, workspace_id) VALUES (?, ?, ?, ?)");
+    expect(() => insert.run("global-with-workspace", "global", 1, "w1")).toThrow(/CHECK constraint failed/);
+    expect(() => insert.run("global-unapproved", "global", 0, null)).toThrow(/CHECK constraint failed/);
+    expect(() => insert.run("private-without-workspace", "private", 1, null)).toThrow(/CHECK constraint failed/);
+  });
+});
 
-      const ids = (workspaceId) => db.prepare(readContract)
-        .all({ "$1": workspaceId }).map((row) => row.id);
-      expect(ids("synthetic-workspace-a")).toEqual(["global-approved", "private-a-approved"]);
-      expect(ids("synthetic-workspace-b")).toEqual(["global-approved", "private-b-approved"]);
-      expect(ids("synthetic-workspace-c")).toEqual(["global-approved"]);
-      expect(ids(null)).toEqual(["global-approved"]);
-      expect(ids("synthetic-workspace-a' OR 1=1 --")).toEqual(["global-approved"]);
-    } finally {
-      db.close();
-    }
+describe("KB read boundary", () => {
+  it("returns only approved rows the authorised workspace may read", () => {
+    const db = openScopedTable();
+    const insert = db.prepare("INSERT INTO kb_documents (id, scope, approved, workspace_id) VALUES (?, ?, ?, ?)");
+    insert.run("global-approved", "global", 1, null);
+    insert.run("private-w1-approved", "private", 1, "w1");
+    insert.run("private-w1-unapproved", "private", 0, "w1");
+    insert.run("private-w2-approved", "private", 1, "w2");
+    const visible = (workspace) =>
+      db.prepare(readBoundary).all(workspace).map((row) => row.id);
+    expect(visible("w1")).toEqual(["global-approved", "private-w1-approved"]);
+    expect(visible("w2")).toEqual(["global-approved", "private-w2-approved"]);
+    expect(visible("w3")).toEqual(["global-approved"]);
+  });
+});
+
+describe("PostgreSQL design artifact", () => {
+  it("declares built-in full-text search and halfvec embeddings without any extension", () => {
+    expect(ddl).not.toMatch(/CREATE EXTENSION/i);
+    expect(ddl).not.toMatch(/pg_search|bm25/i);
+    expect(ddl).toContain(
+      "tsv tsvector GENERATED ALWAYS AS (to_tsvector('simple', coalesce(header, '') || ' ' || text)) STORED NOT NULL",
+    );
+    expect(ddl).toContain("CREATE INDEX kb_chunks_tsv_gin_idx ON kb_chunks USING gin (tsv);");
+    expect(ddl).toContain("embedding halfvec(1024)");
+    expect(ddl).toContain(
+      "CREATE INDEX kb_chunks_embedding_hnsw_idx ON kb_chunks USING hnsw (embedding halfvec_cosine_ops);",
+    );
+  });
+
+  it("keeps the unnumbered KB design out of the executable Drizzle schema and migrations", () => {
+    expect(read("../lib/db/schema.ts")).not.toContain("kb_documents");
+    const journal = JSON.parse(read("../drizzle/meta/_journal.json"));
+    expect(journal.entries.map((entry) => entry.tag).filter((tag) => /kb/i.test(tag))).toEqual([]);
+    expect(readdirSync(fileURLToPath(new URL("../drizzle", import.meta.url))).filter((name) => /kb/i.test(name))).toEqual([]);
   });
 });
