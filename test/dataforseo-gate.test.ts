@@ -125,6 +125,58 @@ describe("DataForSEO spend gate", () => {
     });
   });
   afterEach(() => vi.unstubAllEnvs());
+  describe("live-only research endpoints", () => {
+    const forbidden = [
+      "/v3/serp/google/organic/task_post",
+      "/v3/serp/google/organic/task_get/advanced/task-id",
+      "/v3/backlinks/summary/not_live",
+      "/v3/backlinks/summary/live?mode=standard",
+      "/v3/appendix/user_data",
+      "/v3/ai_optimization/chat_gpt/llm_responses/models",
+      "https://api.dataforseo.com/v3/backlinks/summary/live",
+    ];
+
+    it.each(forbidden)("rejects %s before any side effect, even with cached data", async (endpoint) => {
+      configure("live");
+      mocks.read.mockResolvedValue([{ rank: 7 }]);
+      const fetchImpl = makeFetch();
+
+      await expect(run({ endpoint }, { fetchImpl: asFetch(fetchImpl) })).rejects.toThrow(
+        "DataForSEO research requires an allowlisted live endpoint.",
+      );
+      expect(mocks.read).not.toHaveBeenCalled();
+      expect(mocks.write).not.toHaveBeenCalled();
+      expect(mocks.consume).not.toHaveBeenCalled();
+      expect(mocks.release).not.toHaveBeenCalled();
+      expect(mocks.execute).not.toHaveBeenCalled();
+      expect(mocks.runPaidCall).not.toHaveBeenCalled();
+      expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it.each(forbidden)("rejects cache-only reads for %s before reading snapshots", async (endpoint) => {
+      configure("live");
+      mocks.read.mockResolvedValue([{ rank: 7 }]);
+
+      await expect(peekDataForSeo(endpoint, TASK, FRESHNESS)).rejects.toThrow(
+        "DataForSEO research requires an allowlisted live endpoint.",
+      );
+      expect(mocks.read).not.toHaveBeenCalled();
+      expect(mocks.consume).not.toHaveBeenCalled();
+      expect(mocks.execute).not.toHaveBeenCalled();
+      expect(mocks.runPaidCall).not.toHaveBeenCalled();
+    });
+
+    it("validates endpoints even when credentials are missing", async () => {
+      configure("unconfigured");
+      const endpoint = "/v3/serp/google/organic/task_post";
+      await expect(run({ endpoint })).rejects.toThrow("DataForSEO research requires an allowlisted live endpoint.");
+      await expect(peekDataForSeo(endpoint, TASK, FRESHNESS)).rejects.toThrow(
+        "DataForSEO research requires an allowlisted live endpoint.",
+      );
+      expect(mocks.read).not.toHaveBeenCalled();
+      expect(mocks.consume).not.toHaveBeenCalled();
+    });
+  });
 
   describe("runDataForSeo", () => {
     it("denies as not_configured before any cache read, credit or fetch", async () => {

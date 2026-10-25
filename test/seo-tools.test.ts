@@ -375,11 +375,12 @@ describe("tool gating", () => {
     const rows = Array.from({ length: 1000 }, (_, i) => ({ domain: `site${i}.com`, rank: i, backlinks: 1, spamScore: 0, firstSeen: null }));
     mocks.fetchReferringDomains.mockResolvedValue({ value: rows, cached: false });
     const ctx = makeCtx(new QuestionBudget(3));
-    const result = await run(toolsFor("backlinks", ctx), "referring_domains", { domain: "example.com" }) as { source: string; data: { rows: unknown[]; total: number } };
+    const result = await run(toolsFor("backlinks", ctx), "referring_domains", { domain: "example.com" }) as { source: string; data: { rows: unknown[]; total: number; truncated?: boolean } };
     expect(result.source).toBe("live");
     expect(result.data.rows).toHaveLength(25);
     expect(result.data.rows[0]).toEqual(rows[0]);
     expect(result.data.total).toBe(1000);
+    expect(result.data.truncated).toBe(true);
     expect(ctx.cards[0]?.data).toHaveLength(100);
   });
 
@@ -388,7 +389,7 @@ describe("tool gating", () => {
     mocks.peekDataForSeo.mockImplementation(async (endpoint: string) => (endpoint === "/v3/backlinks/referring_domains/live" ? rows : null));
     const ctx = makeCtx(new QuestionBudget(3));
     const result = await run(toolsFor("backlinks", ctx), "referring_domains", { domain: "example.com" });
-    expect(result).toEqual({ source: "cached", data: { rows: rows.slice(0, 25), total: 1000 } });
+    expect(result).toEqual({ source: "cached", data: { rows: rows.slice(0, 25), total: 1000, truncated: true } });
     expect(ctx.cards[0]?.data).toHaveLength(100);
     expect(ctx.budget.spent).toBe(0);
   });

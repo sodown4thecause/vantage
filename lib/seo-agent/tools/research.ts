@@ -31,7 +31,7 @@ export function researchTools(ctx: ToolContext) {
         try {
           const result = await searchLinkup(input, { workspaceId: ctx.workspaceId, signal: abortSignal ?? ctx.signal });
           addCard(ctx, { tool: "web_research", title: "Linkup web research", cached: result.cached, data: result.value, sandbox: false });
-          return forModelData(result.cached ? "cached" : "live", result.value);
+          return forModelData(result.cached ? "cached" : "live", result.value, "web_research");
         } catch (error) {
           return linkupFailure(ctx, error);
         }
@@ -46,7 +46,7 @@ export function researchTools(ctx: ToolContext) {
         try {
           const result = await fetchLinkupPage(url, { workspaceId: ctx.workspaceId, signal: abortSignal ?? ctx.signal });
           addCard(ctx, { tool: "linkup_fetch", title: "Linkup page fetch", cached: result.cached, data: result.value, sandbox: false });
-          return forModelData(result.cached ? "cached" : "live", result.value);
+          return forModelData(result.cached ? "cached" : "live", result.value, "linkup_fetch");
         } catch (error) {
           return linkupFailure(ctx, error);
         }

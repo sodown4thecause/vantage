@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { dataForSeoConfig } from "@/lib/dataforseo/config";
+import { filterToolEvidence } from "@/lib/dataforseo/field-filter";
 import { DataForSeoDeniedError } from "@/lib/dataforseo/gate";
 import { PaidCallDeniedError } from "@/lib/providers/paid-call";
 import type { QuestionBudget } from "@/lib/seo-agent/budget";
@@ -71,30 +72,44 @@ export function failureCode(ctx: ToolContext, err: unknown): string {
 export const MODEL_ROW_LIMIT = 25;
 /** Rows a card keeps for the owner's view. */
 export const CARD_ROW_LIMIT = 100;
+const CARD_STRING_LIMIT = 8_000;
 
 /**
  * What the model sees. A list becomes its first rows plus the full count, so a 1000-row result cannot flood the
- * context. Objects (summaries, SERP and LLM answers) pass through unchanged.
+ * context. Prefer filterToolEvidence via forModelData when the tool name is known.
  */
 export function forModel(value: unknown): unknown {
   if (!Array.isArray(value)) return value;
   return { rows: value.slice(0, MODEL_ROW_LIMIT), total: value.length };
 }
 
-/** What a card keeps: a list is cut to CARD_ROW_LIMIT rows, anything else is stored unchanged. */
+function boundCardValue(value: unknown, depth = 0): unknown {
+  if (typeof value === "string") return value.length <= CARD_STRING_LIMIT ? value : value.slice(0, CARD_STRING_LIMIT);
+  if (Array.isArray(value)) return value.slice(0, CARD_ROW_LIMIT).map((item) => boundCardValue(item, depth + 1));
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+      out[key] = boundCardValue(nested, depth + 1);
+    }
+    return out;
+  }
+  return value;
+}
+
+/** What a card keeps: lists are cut to CARD_ROW_LIMIT rows and nested strings are bounded. */
 export function forCard(value: unknown): unknown {
-  return Array.isArray(value) ? value.slice(0, CARD_ROW_LIMIT) : value;
+  return boundCardValue(value);
 }
 
 /** Where a data result came from. "cached" results may be up to the cache window old; "live" results were just fetched. */
 export type DataSource = "live" | "cached";
 
 /**
- * What the model sees of a data result: its source and the value, shaped by forModel. The source lets the model call
- * the figures live or cached without inventing a date. Errors and approval requests are control results, not data.
+ * What the model sees of a data result: its source and the value, projected and bounded for the tool. The source lets
+ * the model call the figures live or cached without inventing a date. Errors and approval requests are control results.
  */
-export function forModelData(source: DataSource, value: unknown): { source: DataSource; data: unknown } {
-  return { source, data: forModel(value) };
+export function forModelData(source: DataSource, value: unknown, tool: string): { source: DataSource; data: unknown } {
+  return { source, data: filterToolEvidence(tool, value) };
 }
 
 export function addCard(ctx: ToolContext, card: { tool: string; title: string; cached: boolean; data: unknown; sandbox?: boolean }): void {
@@ -129,7 +144,7 @@ export async function runGated<T>(ctx: ToolContext, call: GatedCall<T>): Promise
     const hit = await call.peek();
     if (hit !== null) {
       addCard(ctx, { tool: call.tool, title: call.title, cached: true, data: hit });
-      return forModelData("cached", hit);
+      return forModelData("cached", hit, call.tool);
     }
   } catch {
     return { error: "failed" };
@@ -144,7 +159,7 @@ export async function runGated<T>(ctx: ToolContext, call: GatedCall<T>): Promise
     const { value, cached } = await call.fetch();
     if (cached) ctx.budget.refund(call.credits);
     addCard(ctx, { tool: call.tool, title: call.title, cached, data: value });
-    return forModelData(cached ? "cached" : "live", value);
+    return forModelData(cached ? "cached" : "live", value, call.tool);
   } catch (err) {
     ctx.budget.refund(call.credits);
     return { error: failureCode(ctx, err) };

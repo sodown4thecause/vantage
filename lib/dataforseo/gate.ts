@@ -7,6 +7,7 @@ import { dataForSeoCacheKey, readDataForSeoCache, writeDataForSeoCache } from "@
 import type { LlmEngine } from "@/lib/dataforseo/ai-optimization";
 import { DataForSeoApiError, dataForSeoGet, dataForSeoPost, getDataForSeoBalance } from "@/lib/dataforseo/client";
 import { type DataForSeoConfig, usableDataForSeoConfig } from "@/lib/dataforseo/config";
+import { assertLiveResearchEndpoint } from "@/lib/dataforseo/endpoints";
 import { isRecord } from "@/lib/dataforseo/shared";
 import { consume, release } from "@/lib/plans/limits";
 import { runPaidCall } from "@/lib/providers/paid-call";
@@ -96,20 +97,22 @@ async function assertDailyCap(config: DataForSeoConfig, estimateUsd: number, now
 
 /**
  * Order (each step decides; the first refusal stops the call):
- *   1. config missing, or sandbox in production without ALLOW_FIXTURES -> not_configured
- *   2. cache hit -> return it (no credit, no fetch)
- *   3. consume the call's SEO credits; refused -> credits_exhausted
- *   4. from here, any throw releases those credits exactly once and rethrows
- *      5. live only: balance floor and alert threshold
- *      6. today's DataForSEO spend plus the estimate must fit the daily cap
- *      7. the paid call, through runPaidCall
- *   8. append the trimmed value as a dated snapshot (a failed write never releases the credit)
+ *   1. endpoint is not an allowlisted live research path -> throw
+ *   2. config missing, or sandbox in production without ALLOW_FIXTURES -> not_configured
+ *   3. cache hit -> return it (no credit, no fetch)
+ *   4. consume the call's SEO credits; refused -> credits_exhausted
+ *   5. from here, any throw releases those credits exactly once and rethrows
+ *      6. live only: balance floor and alert threshold
+ *      7. today's DataForSEO spend plus the estimate must fit the daily cap
+ *      8. the paid call, through runPaidCall
+ *   9. append the trimmed value as a dated snapshot (a failed write never releases the credit)
  * runPaidCall charges its estimate for any throw that is not a DataForSeoApiError with a known cost.
  */
 export async function runDataForSeo<R, T>(
   req: GateRequest<R, T>,
   opts: GateOptions = {},
 ): Promise<{ value: T; cached: boolean }> {
+  assertLiveResearchEndpoint(req.endpoint);
   const config = usableDataForSeoConfig();
   if (!config) throw deny("not_configured");
   const credits = req.credits ?? 1;
@@ -168,6 +171,7 @@ export async function peekDataForSeo<T>(
   task: Record<string, unknown>,
   freshnessSeconds: number,
 ): Promise<T | null> {
+  assertLiveResearchEndpoint(endpoint);
   const config = usableDataForSeoConfig();
   if (!config) return null;
   return readDataForSeoCache<T>(dataForSeoCacheKey(config.env, endpoint, task), freshnessSeconds);
