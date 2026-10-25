@@ -16,7 +16,7 @@
 }
 .eyebrow::before { content: ""; width: 1.15rem; height: 1px; background: var(--signal); }
 
-.indexTitle {
+.indexHeader .indexTitle {
   max-width: 16ch;
   margin: 1.1rem 0 0;
   font-size: clamp(3rem, 5.6vw, 4.5rem);
@@ -57,7 +57,7 @@
   font-variant-numeric: tabular-nums;
 }
 .postMeta time { color: var(--sage); }
-.postTitle {
+.post .postTitle {
   margin: 0;
   font-size: clamp(1.3rem, 2vw, 1.65rem);
   font-weight: 400;
@@ -77,7 +77,7 @@
 .postDescription { max-width: 65ch; margin: .55rem 0 .9rem; color: var(--ridge); }
 
 .articleHeader { display: grid; gap: 1.25rem; max-width: 48rem; }
-.articleTitle {
+.articleHeader .articleTitle {
   max-width: 18ch;
   margin: 0;
   font-size: clamp(2.75rem, 5vw, 4.5rem);
@@ -114,12 +114,12 @@
 
 @media (max-width: 760px) {
   .indexHeader { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; padding-bottom: 2rem; }
-  .indexTitle { font-size: clamp(2.65rem, 10vw, 3.8rem); }
+  .indexHeader .indexTitle { font-size: clamp(2.65rem, 10vw, 3.8rem); }
   .tags { margin-bottom: 1.5rem; }
   .post { grid-template-columns: minmax(0, 1fr); gap: .55rem; padding: 1.25rem 0; }
   .postMeta { display: flex; flex-wrap: wrap; gap: .25rem .8rem; }
   .articleHeader { gap: 1rem; }
-  .articleTitle { font-size: clamp(2.5rem, 10vw, 3.8rem); }
+  .articleHeader .articleTitle { font-size: clamp(2.5rem, 10vw, 3.8rem); }
 }
 
 @media (prefers-reduced-motion: reduce) {

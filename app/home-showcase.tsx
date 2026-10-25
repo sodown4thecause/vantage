@@ -204,6 +204,7 @@ export function HomeShowcase() {
             })}
           </div>
           <div
+            key={selected.id}
             id={`${id}-${selected.id}-panel`}
             role="tabpanel"
             aria-labelledby={`${id}-${selected.id}-tab`}
