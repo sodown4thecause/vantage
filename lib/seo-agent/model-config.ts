@@ -8,7 +8,13 @@ export const DEFAULT_CLASSIFIER_MODEL = "reflection/beam";
 
 type Env = Record<string, string | undefined>;
 
-export type SeoModels = { executor: string; classifier: string; fallback: string | null };
+export type SeoModels = {
+  executor: string;
+  classifier: string;
+  /** Owner-facing writeup model; defaults to the executor when unset. */
+  summarizer: string;
+  fallback: string | null;
+};
 
 function nonBlank(value: string | undefined): string | null {
   const trimmed = value?.trim();
@@ -19,12 +25,17 @@ export function executorModel(env: Env = process.env): string {
   return nonBlank(env.SEO_AGENT_MODEL) ?? DEFAULT_EXECUTOR_MODEL;
 }
 
+export function summarizerModel(env: Env = process.env): string {
+  return nonBlank(env.SEO_SUMMARIZER_MODEL) ?? executorModel(env);
+}
+
 /** Null when the gateway key is blank, so the agent is off rather than failing per request. */
 export function seoModels(env: Env = process.env): SeoModels | null {
   if (!nonBlank(env.AI_GATEWAY_API_KEY)) return null;
   return {
     executor: executorModel(env),
     classifier: nonBlank(env.SEO_CLASSIFIER_MODEL) ?? DEFAULT_CLASSIFIER_MODEL,
+    summarizer: summarizerModel(env),
     fallback: nonBlank(env.SEO_AGENT_FALLBACK_MODEL),
   };
 }

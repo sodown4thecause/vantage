@@ -16,10 +16,12 @@ import { runPaidCall } from "@/lib/providers/paid-call";
 import { isTakoFilterRequest, normalizeTakoSearchOutput, takoSearchTool, takoWebResultCount, TakoSearchMeter } from "@/lib/research/tako";
 import { EndpointAttemptBudget, QuestionBudget, autoCreditsFromEnv } from "@/lib/seo-agent/budget";
 import type { Classification, Intent } from "@/lib/seo-agent/classify";
+import { collectEvidence, packetFromContext } from "@/lib/seo-agent/collect";
 import type { ExecutionState, FollowUps, PlannedCall, ResultCard, SeoMessageStatus } from "@/lib/seo-agent/conversations";
 import { classifierProviderOptions, costOfUsage, gatewayProvider, seoModels } from "@/lib/seo-agent/models";
 import { conceptPrompt, systemPrompt, type PromptProfile } from "@/lib/seo-agent/prompt";
 import { fallbackFollowUps } from "@/lib/seo-agent/suggestions";
+import { SUMMARIZER_ESTIMATE_USD, summarizeEvidence, writeText as writeSummarizerText } from "@/lib/seo-agent/summarize";
 import { toolsForIntent } from "@/lib/seo-agent/tools";
 import { followUpTools } from "@/lib/seo-agent/tools/follow-ups";
 import { researchTools } from "@/lib/seo-agent/tools/research";
@@ -118,7 +120,12 @@ const LIFECYCLE_CHUNKS = new Set(["start", "start-step", "finish-step", "finish"
  */
 type PaidOutcome = { costUsd?: number; error?: Error };
 
-function reserveAnswer(workspaceId: string, signal: AbortSignal | undefined) {
+function reserveGatewayCall(
+  workspaceId: string,
+  signal: AbortSignal | undefined,
+  action: "seo_execute" | "seo_summarize",
+  estimateUsd: number,
+) {
   let markStarted!: () => void;
   const started = new Promise<void>((resolve) => { markStarted = resolve; });
   let deliver!: (outcome: PaidOutcome) => void;
@@ -132,8 +139,8 @@ function reserveAnswer(workspaceId: string, signal: AbortSignal | undefined) {
   const done = runPaidCall<void>({
     context: { workspaceId, sourceKey: "seo" },
     provider: "gateway",
-    action: "seo_execute",
-    estimateUsd: EXECUTOR_ESTIMATE_USD,
+    action,
+    estimateUsd,
     signal,
   }, async () => {
     markStarted();
@@ -145,6 +152,10 @@ function reserveAnswer(workspaceId: string, signal: AbortSignal | undefined) {
   signal?.addEventListener("abort", () => settle({ error: new Error("SEO agent request aborted") }), { once: true });
   return { started, done, settle };
 }
+
+const reserveAnswer = (workspaceId: string, signal: AbortSignal | undefined) =>
+  reserveGatewayCall(workspaceId, signal, "seo_execute", EXECUTOR_ESTIMATE_USD);
+
 
 /** Per-answer spend bookkeeping, shared by every model attempt of one answer. */
 type Meter = { started: number; finished: number; spendUsd: number; unpriced: boolean; erred: boolean };
@@ -327,7 +338,6 @@ export async function runAgent(
   const intent: Intent = input.classification.intent;
   const concept = !approved && (intent === "concept" || intent === "out_of_scope");
 
-  // Every model object is built before the reservation: a throw after it would leave the reservation open.
   const executor = { id: models.executor, model: gatewayProvider()(models.executor) };
   const classifier = { id: models.classifier, model: gatewayProvider()(models.classifier) };
   const fallback = models.fallback ? { id: models.fallback, model: gatewayProvider()(models.fallback) } : null;
@@ -345,175 +355,229 @@ export async function runAgent(
     notices: [],
     signal,
   };
-  // An approved run streams with suggest_follow_ups only: its lookups have already run in answerInto.
-  const tools = concept ? {} : approved ? followUpTools(ctx) : chooseTools(ctx, intent);
-  const primary = concept ? classifier : executor;
-  const primaryOptions: ProviderOptions = concept
-    ? classifierProviderOptions()
-    : { ...EXECUTOR_OPTIONS, gateway: models.fallback ? { models: [models.fallback] } : {} };
-  const primaryMaxTokens = concept ? CONCEPT_MAX_OUTPUT_TOKENS : EXECUTOR_MAX_OUTPUT_TOKENS;
-  const system: SystemModelMessage = {
-    role: "system",
-    content: concept ? conceptPrompt(profile) : systemPrompt(profile),
-    providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
-  };
-  const answer = reserveAnswer(input.workspaceId, signal);
-  await Promise.race([answer.started, answer.done]);
 
-  const meter: Meter = { started: 0, finished: 0, spendUsd: 0, unpriced: false, erred: false };
+  const outcomeOf = (status: AgentStatus, content: string, followUps: FollowUps): AgentOutcome => ({
+    status,
+    content,
+    cards: ctx.cards,
+    followUps,
+    plan: budget.planned,
+    notices: ctx.notices,
+    creditsUsed: budget.spent,
+    execution: { rootMessageId, attemptedEndpoints: attempts.attempted },
+  });
+  const fallbackChips = () => fallbackFollowUps(profile, intent);
 
-  /** A structured follow-up call for concept answers. Any failure, including a budget denial, gives the fallback. */
-  const conceptFollowUps = async (answerText: string): Promise<FollowUps | undefined> => {
-    try {
-      return await runPaidCall<FollowUps>({
-        context: { workspaceId: input.workspaceId, sourceKey: "seo" },
-        provider: "gateway",
-        action: "seo_classify",
-        estimateUsd: FOLLOW_UP_ESTIMATE_USD,
-        signal,
-      }, async () => {
-        const result = await generator({
-          model: classifier.model,
-          system: FOLLOW_UP_SYSTEM,
-          prompt: `Answer (data): ${JSON.stringify(answerText)}\nQuestion (data): ${JSON.stringify(input.question)}`,
-          output: Output.object({ schema: FOLLOW_UP_SCHEMA }),
-          providerOptions: classifierProviderOptions(),
-          maxOutputTokens: FOLLOW_UP_MAX_OUTPUT_TOKENS,
-          maxRetries: 0,
-          abortSignal: signal,
+  // Concept / out-of-scope: single streaming path, no data tools.
+  if (concept) {
+    const tools = {};
+    const primary = classifier;
+    const primaryOptions: ProviderOptions = classifierProviderOptions();
+    const primaryMaxTokens = CONCEPT_MAX_OUTPUT_TOKENS;
+    const system: SystemModelMessage = {
+      role: "system",
+      content: conceptPrompt(profile),
+      providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
+    };
+    const answer = reserveAnswer(input.workspaceId, signal);
+    await Promise.race([answer.started, answer.done]);
+    const meter: Meter = { started: 0, finished: 0, spendUsd: 0, unpriced: false, erred: false };
+
+    const conceptFollowUps = async (answerText: string): Promise<FollowUps | undefined> => {
+      try {
+        return await runPaidCall<FollowUps>({
+          context: { workspaceId: input.workspaceId, sourceKey: "seo" },
+          provider: "gateway",
+          action: "seo_classify",
+          estimateUsd: FOLLOW_UP_ESTIMATE_USD,
+          signal,
+        }, async () => {
+          const result = await generator({
+            model: classifier.model,
+            system: FOLLOW_UP_SYSTEM,
+            prompt: `Answer (data): ${JSON.stringify(answerText)}\nQuestion (data): ${JSON.stringify(input.question)}`,
+            output: Output.object({ schema: FOLLOW_UP_SCHEMA }),
+            providerOptions: classifierProviderOptions(),
+            maxOutputTokens: FOLLOW_UP_MAX_OUTPUT_TOKENS,
+            maxRetries: 0,
+            abortSignal: signal,
+          });
+          const parsed = FOLLOW_UP_SCHEMA.safeParse(result.output);
+          if (!parsed.success) throw new Error("Follow-ups failed the schema.");
+          const usage = result.usage;
+          const followUps = {
+            seo: parsed.data.seo.trim(),
+            geo: parsed.data.geo.trim(),
+            content: parsed.data.content.trim(),
+          };
+          if (!Object.values(followUps).every((line) => line.length > 0)) throw new Error("Follow-ups were blank.");
+          return {
+            value: followUps,
+            costUsd: costOfUsage(models.classifier, {
+              inputTokens: usage.inputTokens,
+              outputTokens: usage.outputTokens,
+              cachedInputTokens: usage.inputTokenDetails?.cacheReadTokens,
+            }),
+          };
         });
-        const parsed = FOLLOW_UP_SCHEMA.safeParse(result.output);
-        if (!parsed.success) throw new Error("Follow-ups failed the schema.");
-        const usage = result.usage;
-        const followUps = {
-          seo: parsed.data.seo.trim(),
-          geo: parsed.data.geo.trim(),
-          content: parsed.data.content.trim(),
-        };
-        if (!Object.values(followUps).every((line) => line.length > 0)) throw new Error("Follow-ups were blank.");
-        return {
-          value: followUps,
-          costUsd: costOfUsage(models.classifier, {
-            inputTokens: usage.inputTokens,
-            outputTokens: usage.outputTokens,
-            cachedInputTokens: usage.inputTokenDetails?.cacheReadTokens,
-          }),
-        };
-      });
-    } catch (err) {
-      console.error("[seo-agent] follow-ups failed", { error: err instanceof Error ? err.name : "unknown" });
-      return undefined;
-    }
-  };
-
-  /** Streams the answer. Retries once on the fallback model only when the first try was refused before any content. */
-  const answerInto = async (writer: UIMessageStreamWriter): Promise<AgentOutcome> => {
-    const results = approved ? await runApprovedCalls(ctx, approved) : null;
-    const messages: ModelMessage[] = [
-      ...input.history,
-      { role: "user", content: results ? approvedTurn(results) : questionTurn(input) },
-    ];
-    const takoMeter = new TakoSearchMeter(input.workspaceId, "seo", signal);
-    const onStepFinish: NonNullable<AttemptArgs["onStepFinish"]> = async ({ toolResults }) => {
-      for (const value of toolResults as unknown as ObservedToolResult[]) {
-        if (value.toolName !== "tako_search") continue;
-        const output = value.output;
-        if (typeof value.toolCallId === "string") await takoMeter.complete(value.toolCallId, output);
-        const data = normalizeTakoSearchOutput(output);
-        if (data.web_results.length > 0 || data.cards.length > 0) {
-          addCard(ctx, { tool: "tako_search", title: "Tako Search", cached: false, data, sandbox: false });
-        }
+      } catch (err) {
+        console.error("[seo-agent] follow-ups failed", { error: err instanceof Error ? err.name : "unknown" });
+        return undefined;
       }
     };
-    const toolApproval: AttemptArgs["toolApproval"] = "tako_search" in tools ? {
-      tako_search: (_input, { toolCallId }) => takoMeter.approve(toolCallId),
-    } : undefined;
-    const prepareStep: NonNullable<AttemptArgs["prepareStep"]> = ({ steps }) => {
-      const calls = steps.flatMap((step) => step.toolCalls as unknown as ObservedToolCall[]);
-      const takoCall = calls.findLast((call) => call.toolName === "tako_search");
-      if (!takoCall) return undefined;
-      const results = steps.flatMap((step) => step.toolResults as unknown as ObservedToolResult[]);
-      if (results.some((result) => result.toolName === "web_research")) return undefined;
-      const result = results.findLast((item) => item.toolName === "tako_search"
-        && (typeof takoCall.toolCallId !== "string" || item.toolCallId === takoCall.toolCallId));
-      if (!isTakoFilterRequest(takoCall.input) && takoWebResultCount(result?.output) >= 3) return undefined;
-      return { activeTools: ["web_research"], toolChoice: { type: "tool", toolName: "web_research" } };
-    };
-    const attemptArgs = { streamer, system, messages, tools, signal, meter, onStepFinish, prepareStep, toolApproval };
-    let attempt = await runAttempt({
-      ...attemptArgs,
-      modelId: primary.id,
-      model: primary.model,
-      providerOptions: primaryOptions,
-      maxOutputTokens: primaryMaxTokens,
-      writer,
-    });
-    await takoMeter.settlePending();
-    if (attempt.kind === "refused" && !attempt.flushed && fallback) {
-      attempt = await runAttempt({
+
+    const answerInto = async (writer: UIMessageStreamWriter): Promise<AgentOutcome> => {
+      const messages: ModelMessage[] = [
+        ...input.history,
+        { role: "user", content: questionTurn(input) },
+      ];
+      const attemptArgs = { streamer, system, messages, tools, signal, meter, writer };
+      let attempt = await runAttempt({
         ...attemptArgs,
-        modelId: fallback.id,
-        model: fallback.model,
-        providerOptions: concept ? {} : EXECUTOR_OPTIONS,
+        modelId: primary.id,
+        model: primary.model,
+        providerOptions: primaryOptions,
         maxOutputTokens: primaryMaxTokens,
-        writer,
       });
-      await takoMeter.settlePending();
-    }
-
-    const outcome = (status: AgentStatus, content: string, followUps: FollowUps): AgentOutcome => ({
-      status,
-      content,
-      cards: ctx.cards,
-      followUps,
-      plan: budget.planned,
-      notices: ctx.notices,
-      creditsUsed: budget.spent,
-      execution: { rootMessageId, attemptedEndpoints: attempts.attempted },
-    });
-    const fallbackChips = () => fallbackFollowUps(profile, intent);
-
-    if (attempt.kind === "error") {
-      // A tool call may have been shown, but with no answer text the question got no answer.
-      if (attempt.text.trim() === "") {
-        writeText(writer, FAILURE_COPY);
-        return outcome("failed", "", ctx.followUps ?? fallbackChips());
+      if (attempt.kind === "refused" && !attempt.flushed && fallback) {
+        attempt = await runAttempt({
+          ...attemptArgs,
+          modelId: fallback.id,
+          model: fallback.model,
+          providerOptions: {},
+          maxOutputTokens: primaryMaxTokens,
+        });
       }
-      return outcome("incomplete", attempt.text, ctx.followUps ?? fallbackChips());
-    }
-    if (attempt.kind === "refused") {
-      writeText(writer, REFUSAL_COPY);
-      return outcome("refused", "", ctx.followUps ?? fallbackChips());
-    }
-    if (!attempt.flushed) {
-      writeText(writer, FAILURE_COPY);
-      return outcome("failed", "", ctx.followUps ?? fallbackChips());
-    }
-    const generated = concept && attempt.text.trim() !== "" ? await conceptFollowUps(attempt.text) : undefined;
-    // A request aborted before the attempt finished leaves a cut-off answer, which is kept but not complete.
-    const status: AgentStatus = signal?.aborted ? "incomplete" : "complete";
-    return outcome(status, attempt.text, ctx.followUps ?? generated ?? fallbackChips());
-  };
+      if (attempt.kind === "error") {
+        if (attempt.text.trim() === "") {
+          writeText(writer, FAILURE_COPY);
+          return outcomeOf("failed", "", ctx.followUps ?? fallbackChips());
+        }
+        return outcomeOf("incomplete", attempt.text, ctx.followUps ?? fallbackChips());
+      }
+      if (attempt.kind === "refused") {
+        writeText(writer, REFUSAL_COPY);
+        return outcomeOf("refused", "", ctx.followUps ?? fallbackChips());
+      }
+      if (!attempt.flushed) {
+        writeText(writer, FAILURE_COPY);
+        return outcomeOf("failed", "", ctx.followUps ?? fallbackChips());
+      }
+      const generated = attempt.text.trim() !== "" ? await conceptFollowUps(attempt.text) : undefined;
+      const status: AgentStatus = signal?.aborted ? "incomplete" : "complete";
+      return outcomeOf(status, attempt.text, ctx.followUps ?? generated ?? fallbackChips());
+    };
 
+    return {
+      messageId,
+      async write(writer) {
+        let result: AgentOutcome;
+        try {
+          result = await answerInto(writer);
+        } catch (err) {
+          console.error("[seo-agent] answer failed", { error: err instanceof Error ? err.name : "unknown" });
+          meter.erred = true;
+          writeText(writer, FAILURE_COPY);
+          result = outcomeOf("failed", "", ctx.followUps ?? fallbackChips());
+        }
+        const complete = meter.finished === meter.started && !meter.unpriced;
+        answer.settle(meter.erred ? { error: new Error("SEO agent model call failed") } : { costUsd: complete ? meter.spendUsd : undefined });
+        writer.write({
+          type: "message-metadata",
+          messageMetadata: {
+            conversationId: input.conversationId,
+            messageId,
+            status: storedStatus(result),
+            cards: result.cards,
+            followUps: result.followUps,
+            plan: result.plan,
+            notices: result.notices,
+            creditsUsed: result.creditsUsed,
+            execution: result.execution,
+          },
+        });
+        await answer.done.catch((err: unknown) => {
+          console.error("[seo-agent] answer ledger failed", { error: err instanceof Error ? err.name : "unknown" });
+        });
+        return result;
+      },
+    };
+  }
+
+  // Data path: collect evidence (tools), then summarize for the owner.
   return {
     messageId,
     async write(writer) {
       let result: AgentOutcome;
       try {
-        result = await answerInto(writer);
+        if (approved) {
+          await runApprovedCalls(ctx, approved);
+        } else {
+          await collectEvidence({
+            workspaceId: input.workspaceId,
+            question: input.question,
+            history: input.history,
+            intent,
+            profile,
+            classificationHints: {
+              domains: input.classification.domains,
+              keywords: input.classification.keywords,
+              engines: input.classification.engines,
+            },
+          }, ctx, models.executor, { signal, deps: { generateText: generator } });
+        }
+
+        const packet = packetFromContext(ctx, input.question || "Approved lookups", input.history, profile);
+
+        const answer = reserveGatewayCall(input.workspaceId, signal, "seo_summarize", SUMMARIZER_ESTIMATE_USD);
+        await Promise.race([answer.started, answer.done]);
+        let spendUsd = 0;
+        let unpriced = false;
+        let erred = false;
+        const summarized = await summarizeEvidence({
+          workspaceId: input.workspaceId,
+          question: input.question || packet.question,
+          packet,
+          profile,
+          intent,
+          modelId: models.summarizer,
+          fallbackModelId: models.fallback,
+          ctx,
+          writer,
+          signal,
+          deps: { streamText: streamer },
+          onUsage: (cost) => {
+            if (cost === undefined) unpriced = true;
+            else spendUsd += cost;
+          },
+        });
+        erred = summarized.erred;
+        if (summarized.kind === "error") {
+          if (summarized.text.trim() === "") {
+            writeSummarizerText(writer, FAILURE_COPY);
+            result = outcomeOf("failed", "", summarized.followUps);
+          } else {
+            result = outcomeOf("incomplete", summarized.text, summarized.followUps);
+          }
+        } else if (summarized.kind === "refused") {
+          writeSummarizerText(writer, REFUSAL_COPY);
+          result = outcomeOf("refused", "", summarized.followUps);
+        } else if (!summarized.flushed) {
+          writeSummarizerText(writer, FAILURE_COPY);
+          result = outcomeOf("failed", "", summarized.followUps);
+        } else {
+          const status: AgentStatus = signal?.aborted ? "incomplete" : "complete";
+          result = outcomeOf(status, summarized.text, summarized.followUps);
+        }
+        answer.settle(erred ? { error: new Error("SEO summarizer failed") } : { costUsd: unpriced ? undefined : spendUsd });
+        await answer.done.catch((err: unknown) => {
+          console.error("[seo-agent] summarizer ledger failed", { error: err instanceof Error ? err.name : "unknown" });
+        });
       } catch (err) {
         console.error("[seo-agent] answer failed", { error: err instanceof Error ? err.name : "unknown" });
-        meter.erred = true;
         writeText(writer, FAILURE_COPY);
-        result = {
-          status: "failed", content: "", cards: ctx.cards, followUps: ctx.followUps ?? fallbackFollowUps(profile, intent),
-          plan: budget.planned, notices: ctx.notices, creditsUsed: budget.spent,
-          execution: { rootMessageId, attemptedEndpoints: attempts.attempted },
-        };
+        result = outcomeOf("failed", "", fallbackChips());
       }
-      // Estimate when any attempt errored or a model call did not report usage; otherwise the summed real cost.
-      const complete = meter.finished === meter.started && !meter.unpriced;
-      answer.settle(meter.erred ? { error: new Error("SEO agent model call failed") } : { costUsd: complete ? meter.spendUsd : undefined });
       writer.write({
         type: "message-metadata",
         messageMetadata: {
@@ -527,9 +591,6 @@ export async function runAgent(
           creditsUsed: result.creditsUsed,
           execution: result.execution,
         },
-      });
-      await answer.done.catch((err: unknown) => {
-        console.error("[seo-agent] answer ledger failed", { error: err instanceof Error ? err.name : "unknown" });
       });
       return result;
     },
