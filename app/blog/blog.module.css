@@ -110,7 +110,7 @@
   letter-spacing: -.04em;
   line-height: 1.15;
 }
-.articleCta > p { max-width: 52ch; margin: .5rem 0 0; color: var(--ridge); }
+.articleCta > p:not(.articleCtaTitle) { max-width: 52ch; margin: .5rem 0 0; color: var(--ridge); }
 
 @media (max-width: 760px) {
   .indexHeader { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; padding-bottom: 2rem; }
