@@ -143,8 +143,8 @@ async function approvePlan(
   if (!conversation.messages.some((message) => message.id === messageId)) return json({ error: "not_found" }, 404);
 
   // The claim is one conditional update, so a double click cannot run the plan twice.
-  const plan = await claimPlan(workspaceId, messageId);
-  if (!plan || plan.length === 0) return json({ error: "already_run" }, 409);
+  const claimed = await claimPlan(workspaceId, messageId);
+  if (!claimed || claimed.plan.length === 0) return json({ error: "already_run" }, 409);
 
   try {
     const profile = toAgentProfile(await getLatestMonitoringProfile(workspaceId));
@@ -155,7 +155,8 @@ async function approvePlan(
       history: historyOf(conversation.messages),
       classification: APPROVAL_CLASSIFICATION,
       profile,
-      approved: plan,
+      approved: claimed.plan,
+      execution: claimed.execution,
     }, { signal: req.signal });
     return answerResponse({ workspaceId, conversationId, run, approvedMessageId: messageId });
   } catch (err) {
@@ -241,7 +242,14 @@ async function runTurn(
     writer.write({ type: "text-delta", id, delta: FAILURE_COPY });
     writer.write({ type: "text-end", id });
     outcome = {
-      status: "failed", content: "", cards: [], followUps: { seo: "", geo: "", content: "" }, plan: [], notices: [], creditsUsed: 0,
+      status: "failed",
+      content: "",
+      cards: [],
+      followUps: { seo: "", geo: "", content: "" },
+      plan: [],
+      notices: [],
+      creditsUsed: 0,
+      execution: { rootMessageId: args.run.messageId, attemptedEndpoints: 0 },
     };
   }
   const returned = await settleTurn({ ...args, messageId: args.run.messageId }, outcome);
@@ -281,7 +289,13 @@ async function settleTurn(
       id: args.messageId,
       role: "assistant",
       content: outcome.content,
-      parts: { cards: outcome.cards, followUps: outcome.followUps, plan: outcome.plan, notices: outcome.notices },
+      parts: {
+        cards: outcome.cards,
+        followUps: outcome.followUps,
+        plan: outcome.plan,
+        notices: outcome.notices,
+        execution: outcome.execution,
+      },
       status: storedStatus(outcome),
       creditsUsed: outcome.creditsUsed,
     });

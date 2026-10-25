@@ -65,8 +65,10 @@ const request = (overrides: Partial<GateRequest<Row, Trimmed[]>> = {}): GateRequ
   trim,
   ...overrides,
 });
-const run = (overrides?: Partial<GateRequest<Row, Trimmed[]>>, opts: { signal?: AbortSignal; fetchImpl?: typeof fetch; now?: Date } = {}) =>
-  runDataForSeo<Row, Trimmed[]>(request(overrides), { now, ...opts });
+const run = (
+  overrides?: Partial<GateRequest<Row, Trimmed[]>>,
+  opts: { signal?: AbortSignal; fetchImpl?: typeof fetch; now?: Date; reserveEndpointAttempt?: (count?: number) => boolean } = {},
+) => runDataForSeo<Row, Trimmed[]>(request(overrides), { now, ...opts });
 
 function configure(mode: "live" | "sandbox" | "unconfigured") {
   vi.stubEnv("DATAFORSEO_USERNAME", "");
@@ -417,6 +419,30 @@ describe("DataForSEO spend gate", () => {
       expect(mocks.release).toHaveBeenCalledExactlyOnceWith("ws-1", CREDIT, 1, now);
       expect(callsTo(fetchImpl, "/v3/backlinks")).toHaveLength(0);
       expect(mocks.write).not.toHaveBeenCalled();
+    });
+
+    it("refuses over the endpoint attempt ceiling after preflight and before dispatch", async () => {
+      configure("live");
+      const fetchImpl = makeFetch({ balance: 100 });
+      const reserveEndpointAttempt = vi.fn(() => false);
+      await expect(run({}, { fetchImpl: asFetch(fetchImpl), reserveEndpointAttempt })).rejects.toMatchObject({
+        name: "DataForSeoDeniedError",
+        code: "attempt_limit",
+      });
+      expect(reserveEndpointAttempt).toHaveBeenCalledExactlyOnceWith(1);
+      expect(mocks.consume).toHaveBeenCalled();
+      expect(mocks.release).toHaveBeenCalledExactlyOnceWith("ws-1", CREDIT, 1, now);
+      expect(mocks.runPaidCall).not.toHaveBeenCalled();
+      expect(callsTo(fetchImpl, "/v3/backlinks")).toHaveLength(0);
+    });
+
+    it("does not consume an attempt slot on a cache hit", async () => {
+      configure("live");
+      mocks.read.mockResolvedValue([{ rank: 7 }]);
+      const reserveEndpointAttempt = vi.fn(() => true);
+      await expect(run({}, { reserveEndpointAttempt })).resolves.toMatchObject({ cached: true });
+      expect(reserveEndpointAttempt).not.toHaveBeenCalled();
+      expect(mocks.consume).not.toHaveBeenCalled();
     });
   });
 

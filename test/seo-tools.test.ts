@@ -94,7 +94,7 @@ vi.mock("@/lib/dataforseo/ai-optimization", async (importOriginal) => ({
 
 import { DataForSeoDeniedError } from "@/lib/dataforseo/gate";
 import { PaidCallDeniedError } from "@/lib/providers/paid-call";
-import { QuestionBudget, autoCreditsFromEnv, geoAlwaysAsk } from "@/lib/seo-agent/budget";
+import { EndpointAttemptBudget, QuestionBudget, autoCreditsFromEnv, geoAlwaysAsk } from "@/lib/seo-agent/budget";
 import { toolsForIntent } from "@/lib/seo-agent/tools";
 import { addCard, type ToolContext } from "@/lib/seo-agent/tools/shared";
 
@@ -132,8 +132,8 @@ const answer = {
   mentionsBrand: true,
 };
 
-function makeCtx(budget = new QuestionBudget(3)): ToolContext {
-  return { workspaceId: WORKSPACE, budget, brandDomains: ["example.com"], cards: [], notices: [] };
+function makeCtx(budget = new QuestionBudget(3), attempts = new EndpointAttemptBudget()): ToolContext {
+  return { workspaceId: WORKSPACE, budget, attempts, brandDomains: ["example.com"], cards: [], notices: [] };
 }
 
 function toolsFor(intent: Parameters<typeof toolsForIntent>[0], ctx: ToolContext): Record<string, Runnable> {
@@ -237,6 +237,25 @@ describe("QuestionBudget", () => {
     budget.tryReserve(call(1, { keywords: ["crm"] }), false);
     budget.tryReserve(call(1, { keywords: ["crm"] }), false);
     expect(budget.planned).toHaveLength(1);
+  });
+});
+
+describe("EndpointAttemptBudget", () => {
+  it("allows four attempts and refuses the fifth without changing state", () => {
+    const attempts = new EndpointAttemptBudget();
+    expect([1, 1, 1, 1].map((n) => attempts.tryReserve(n))).toEqual([true, true, true, true]);
+    expect(attempts.attempted).toBe(4);
+    expect(attempts.tryReserve(1)).toBe(false);
+    expect(attempts.attempted).toBe(4);
+    expect(attempts.remaining()).toBe(0);
+  });
+
+  it("reserves multi-slot calls atomically and inherits prior attempts", () => {
+    const attempts = new EndpointAttemptBudget(4, 2);
+    expect(attempts.tryReserve(2)).toBe(true);
+    expect(attempts.attempted).toBe(4);
+    expect(attempts.tryReserve(1)).toBe(false);
+    expect(new EndpointAttemptBudget(4, 9).attempted).toBe(4);
   });
 });
 

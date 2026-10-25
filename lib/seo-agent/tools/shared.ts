@@ -4,13 +4,15 @@ import { dataForSeoConfig } from "@/lib/dataforseo/config";
 import { filterToolEvidence } from "@/lib/dataforseo/field-filter";
 import { DataForSeoDeniedError } from "@/lib/dataforseo/gate";
 import { PaidCallDeniedError } from "@/lib/providers/paid-call";
-import type { QuestionBudget } from "@/lib/seo-agent/budget";
+import type { EndpointAttemptBudget, QuestionBudget } from "@/lib/seo-agent/budget";
 import type { FollowUps, PlannedCall, ResultCard } from "@/lib/seo-agent/conversations";
 
 /** Per-request state shared by the tools. The route reads cards, notices and followUps after the stream ends. */
 export type ToolContext = {
   workspaceId: string;
   budget: QuestionBudget;
+  /** Per-question uncached DataForSEO endpoint attempt ceiling. */
+  attempts: EndpointAttemptBudget;
   brandDomains: string[];
   cards: ResultCard[];
   notices: string[];
@@ -27,6 +29,7 @@ const CREDITS_EXHAUSTED = "You have used this month's SEO credits. They reset on
 const DENIAL_NOTICES: Record<string, string> = {
   not_configured: "SEO data is not set up yet.",
   credits_exhausted: CREDITS_EXHAUSTED,
+  attempt_limit: "This question has used its live lookup limit.",
 };
 
 /** Input fields shared by the tool definitions. Trimming here keeps the schema and the normalised input in step. */
@@ -181,4 +184,7 @@ export async function settleAll<I, T>(items: I[], run: (item: I) => Promise<T>):
   );
 }
 
-export const gateOptions = (ctx: ToolContext) => ({ signal: ctx.signal });
+export const gateOptions = (ctx: ToolContext) => ({
+  signal: ctx.signal,
+  reserveEndpointAttempt: (count = 1) => ctx.attempts.tryReserve(count),
+});

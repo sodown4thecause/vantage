@@ -14,9 +14,9 @@ import { z } from "zod";
 import { dataForSeoAvailable } from "@/lib/dataforseo/config";
 import { runPaidCall } from "@/lib/providers/paid-call";
 import { isTakoFilterRequest, normalizeTakoSearchOutput, takoSearchTool, takoWebResultCount, TakoSearchMeter } from "@/lib/research/tako";
-import { QuestionBudget, autoCreditsFromEnv } from "@/lib/seo-agent/budget";
+import { EndpointAttemptBudget, QuestionBudget, autoCreditsFromEnv } from "@/lib/seo-agent/budget";
 import type { Classification, Intent } from "@/lib/seo-agent/classify";
-import type { FollowUps, PlannedCall, ResultCard, SeoMessageStatus } from "@/lib/seo-agent/conversations";
+import type { ExecutionState, FollowUps, PlannedCall, ResultCard, SeoMessageStatus } from "@/lib/seo-agent/conversations";
 import { classifierProviderOptions, costOfUsage, gatewayProvider, seoModels } from "@/lib/seo-agent/models";
 import { conceptPrompt, systemPrompt, type PromptProfile } from "@/lib/seo-agent/prompt";
 import { fallbackFollowUps } from "@/lib/seo-agent/suggestions";
@@ -38,6 +38,8 @@ export type AgentRunInput = {
   profile: AgentProfile;
   /** A plan the owner approved. Runs exactly these calls, with no new credits and no re-planning. */
   approved?: PlannedCall[];
+  /** Prior attempt ledger for an approval continuation. New questions omit this. */
+  execution?: ExecutionState;
 };
 
 export type AgentStatus = "complete" | "incomplete" | "refused" | "failed";
@@ -51,6 +53,8 @@ export type AgentOutcome = {
   plan: PlannedCall[];
   notices: string[];
   creditsUsed: number;
+  /** Attempt ledger for this question root, including uncached dispatches from this turn. */
+  execution: ExecutionState;
 };
 
 /** How an answer is stored and shown: a plan waits for approval; a partial, failed or refused answer is incomplete. */
@@ -329,10 +333,13 @@ export async function runAgent(
   const fallback = models.fallback ? { id: models.fallback, model: gatewayProvider()(models.fallback) } : null;
 
   const messageId = crypto.randomUUID();
+  const rootMessageId = input.execution?.rootMessageId ?? messageId;
   const budget = new QuestionBudget(approved ? 0 : autoCreditsFromEnv(), approved ?? []);
+  const attempts = new EndpointAttemptBudget(undefined, input.execution?.attemptedEndpoints ?? 0);
   const ctx: ToolContext = {
     workspaceId: input.workspaceId,
     budget,
+    attempts,
     brandDomains: profile.productDomain ? [profile.productDomain] : [],
     cards: [],
     notices: [],
@@ -462,6 +469,7 @@ export async function runAgent(
       plan: budget.planned,
       notices: ctx.notices,
       creditsUsed: budget.spent,
+      execution: { rootMessageId, attemptedEndpoints: attempts.attempted },
     });
     const fallbackChips = () => fallbackFollowUps(profile, intent);
 
@@ -500,6 +508,7 @@ export async function runAgent(
         result = {
           status: "failed", content: "", cards: ctx.cards, followUps: ctx.followUps ?? fallbackFollowUps(profile, intent),
           plan: budget.planned, notices: ctx.notices, creditsUsed: budget.spent,
+          execution: { rootMessageId, attemptedEndpoints: attempts.attempted },
         };
       }
       // Estimate when any attempt errored or a model call did not report usage; otherwise the summed real cost.
@@ -516,6 +525,7 @@ export async function runAgent(
           plan: result.plan,
           notices: result.notices,
           creditsUsed: result.creditsUsed,
+          execution: result.execution,
         },
       });
       await answer.done.catch((err: unknown) => {

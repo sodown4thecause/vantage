@@ -172,7 +172,10 @@ beforeEach(() => {
       workspaceId: WS_A,
       role: "assistant",
       content: "Here is the plan",
-      parts: { plan: [{ tool: "backlinks", input: { target: "example.com" }, credits: 2 }] },
+      parts: {
+        plan: [{ tool: "backlinks", input: { target: "example.com" }, credits: 2 }],
+        execution: { rootMessageId: MSG_A, attemptedEndpoints: 1 },
+      },
       status: "needs_approval",
       creditsUsed: 0,
       createdAt: NOW,
@@ -183,7 +186,10 @@ beforeEach(() => {
       workspaceId: WS_B,
       role: "assistant",
       content: "Other plan",
-      parts: { plan: [{ tool: "serp", input: {}, credits: 1 }] },
+      parts: {
+        plan: [{ tool: "serp", input: {}, credits: 1 }],
+        execution: { rootMessageId: MSG_B, attemptedEndpoints: 0 },
+      },
       status: "needs_approval",
       creditsUsed: 0,
       createdAt: NOW,
@@ -248,10 +254,13 @@ describe("getConversation", () => {
           id: MSG_A,
           role: "assistant",
           content: "Here is the plan",
-          parts: { plan: [{ tool: "backlinks", input: { target: "example.com" }, credits: 2 }] },
-          status: "needs_approval",
-          creditsUsed: 0,
-          createdAt: NOW.toISOString(),
+        parts: {
+          plan: [{ tool: "backlinks", input: { target: "example.com" }, credits: 2 }],
+          execution: { rootMessageId: MSG_A, attemptedEndpoints: 1 },
+        },
+        status: "needs_approval",
+        creditsUsed: 0,
+        createdAt: NOW.toISOString(),
         },
       ],
     });
@@ -336,7 +345,10 @@ describe("unclaimPlan", () => {
   it("lets the owner claim the plan again after it was returned", async () => {
     await claimPlan(WS_A, MSG_A);
     await unclaimPlan(WS_A, MSG_A);
-    expect(await claimPlan(WS_A, MSG_A)).toHaveLength(1);
+    expect(await claimPlan(WS_A, MSG_A)).toEqual({
+      plan: [{ tool: "backlinks", input: { target: "example.com" }, credits: 2 }],
+      execution: { rootMessageId: MSG_A, attemptedEndpoints: 1 },
+    });
   });
 
   it("does nothing to a plan that is not approved, or that belongs to another workspace", async () => {
@@ -353,7 +365,10 @@ describe("claimPlan", () => {
   it("approves the plan with one conditional UPDATE and returns the planned calls", async () => {
     const plan = await claimPlan(WS_A, MSG_A);
 
-    expect(plan).toEqual([{ tool: "backlinks", input: { target: "example.com" }, credits: 2 }]);
+    expect(plan).toEqual({
+      plan: [{ tool: "backlinks", input: { target: "example.com" }, credits: 2 }],
+      execution: { rootMessageId: MSG_A, attemptedEndpoints: 1 },
+    });
     expect(callsOf("select")).toEqual([]);
     const updates = callsOf("update", "seo_message");
     expect(updates).toHaveLength(1);
@@ -371,12 +386,18 @@ describe("claimPlan", () => {
   });
 
   it("returns null when the plan was already claimed", async () => {
-    expect(await claimPlan(WS_A, MSG_A)).toHaveLength(1);
+    expect(await claimPlan(WS_A, MSG_A)).not.toBeNull();
     expect(await claimPlan(WS_A, MSG_A)).toBeNull();
   });
 
-  it("returns an empty plan when the message carries no planned calls", async () => {
+  it("returns null when the message carries no planned calls or execution metadata", async () => {
     store.messages[0] = { ...store.messages[0], parts: {} };
-    expect(await claimPlan(WS_A, MSG_A)).toEqual([]);
+    expect(await claimPlan(WS_A, MSG_A)).toBeNull();
+    store.messages[0] = {
+      ...store.messages[0],
+      status: "needs_approval",
+      parts: { plan: [{ tool: "backlinks", input: { target: "example.com" }, credits: 2 }] },
+    };
+    expect(await claimPlan(WS_A, MSG_A)).toBeNull();
   });
 });

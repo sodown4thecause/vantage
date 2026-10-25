@@ -43,11 +43,25 @@ export type PlannedCall = {
   credits: number;
 };
 
+/** Server-owned attempt accounting for a question root and its approval continuations. */
+export type ExecutionState = {
+  /** Assistant message id that opened this question's attempt ledger. */
+  rootMessageId: string;
+  /** Uncached DataForSEO endpoint attempts already consumed on this root. */
+  attemptedEndpoints: number;
+};
+
 export type SeoMessageParts = {
   cards?: ResultCard[];
   followUps?: FollowUps;
   plan?: PlannedCall[];
   notices?: string[];
+  execution?: ExecutionState;
+};
+
+export type ClaimedPlan = {
+  plan: PlannedCall[];
+  execution: ExecutionState;
 };
 
 /** A stored message as the agent and the chat page read it. Dates are ISO strings. */
@@ -212,12 +226,23 @@ export async function appendTurn(
   return { id: conversationId };
 }
 
+function parseExecution(value: unknown): ExecutionState | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const rootMessageId = typeof record.rootMessageId === "string" ? record.rootMessageId.trim() : "";
+  const attempted = record.attemptedEndpoints;
+  if (!rootMessageId) return null;
+  if (typeof attempted !== "number" || !Number.isFinite(attempted) || attempted < 0 || !Number.isInteger(attempted)) return null;
+  return { rootMessageId, attemptedEndpoints: attempted };
+}
+
 /**
- * Atomically moves a plan from `needs_approval` to `approved`. Returns the planned calls when this
- * call made the transition, or null when the message is missing, belongs to another workspace, or
- * was already claimed. The single conditional UPDATE is what prevents a double charge.
+ * Atomically moves a plan from `needs_approval` to `approved`. Returns the planned calls and server-owned execution
+ * state when this call made the transition. Returns null when the message is missing, belongs to another workspace,
+ * was already claimed, has no plan, or lacks execution metadata (legacy plans must be re-asked, not re-granted a full
+ * attempt allowance). The single conditional UPDATE is what prevents a double charge.
  */
-export async function claimPlan(workspaceId: string, messageId: string): Promise<PlannedCall[] | null> {
+export async function claimPlan(workspaceId: string, messageId: string): Promise<ClaimedPlan | null> {
   const [row] = await getDb()
     .update(seoMessage)
     .set({ status: "approved" })
@@ -230,7 +255,13 @@ export async function claimPlan(workspaceId: string, messageId: string): Promise
     )
     .returning({ parts: seoMessage.parts });
   if (!row) return null;
-  return row.parts.plan ?? [];
+  const plan = row.parts.plan ?? [];
+  const execution = parseExecution(row.parts.execution);
+  if (plan.length === 0 || !execution) {
+    // Leave the row approved without runnable work so a double-click still sees already_run, not a free retry.
+    return null;
+  }
+  return { plan, execution };
 }
 
 /**

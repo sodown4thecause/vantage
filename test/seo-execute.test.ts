@@ -606,8 +606,10 @@ describe("runAgent: the final message metadata", () => {
         plan: outcome.plan,
         notices: outcome.notices,
         creditsUsed: outcome.creditsUsed,
+        execution: outcome.execution,
       },
     });
+    expect(outcome.execution).toEqual({ rootMessageId: run.messageId, attemptedEndpoints: expect.any(Number) });
   });
 
   it("gives every run its own uuid message id", async () => {
@@ -622,7 +624,16 @@ describe("runAgent: the final message metadata", () => {
 });
 
 describe("storedStatus", () => {
-  const base: AgentOutcome = { status: "complete", content: "Answer.", cards: [], followUps: { seo: "a", geo: "b", content: "c" }, plan: [], notices: [], creditsUsed: 0 };
+  const base: AgentOutcome = {
+    status: "complete",
+    content: "Answer.",
+    cards: [],
+    followUps: { seo: "a", geo: "b", content: "c" },
+    plan: [],
+    notices: [],
+    creditsUsed: 0,
+    execution: { rootMessageId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", attemptedEndpoints: 0 },
+  };
 
   it("is complete for an answer with no plan", () => {
     expect(storedStatus(base)).toBe("complete");
