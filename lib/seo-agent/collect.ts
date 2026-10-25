@@ -15,6 +15,7 @@ import { costOfUsage, gatewayProvider } from "@/lib/seo-agent/models";
 import { collectorPrompt, type PromptProfile } from "@/lib/seo-agent/prompt";
 import { toolsForIntent } from "@/lib/seo-agent/tools";
 import { followUpTools } from "@/lib/seo-agent/tools/follow-ups";
+import { insightTools } from "@/lib/seo-agent/tools/insights";
 import { researchTools } from "@/lib/seo-agent/tools/research";
 import { addCard, addNotice, type ToolContext } from "@/lib/seo-agent/tools/shared";
 
@@ -62,7 +63,12 @@ function questionTurn(question: string, hints: CollectInput["classificationHints
 function chooseTools(ctx: ToolContext, intent: Intent): Record<string, Tool> {
   if (!dataForSeoAvailable()) {
     addNotice(ctx, NOT_SET_UP_NOTICE);
-    return { ...followUpTools(ctx), ...researchTools(ctx), tako_search: takoSearchTool() };
+    return {
+      ...followUpTools(ctx),
+      ...researchTools(ctx),
+      ...insightTools(ctx, ctx.insightRetriever),
+      tako_search: takoSearchTool(),
+    };
   }
   return toolsForIntent(intent, ctx);
 }

@@ -17,6 +17,7 @@ import { isTakoFilterRequest, normalizeTakoSearchOutput, takoSearchTool, takoWeb
 import { EndpointAttemptBudget, QuestionBudget, autoCreditsFromEnv } from "@/lib/seo-agent/budget";
 import type { Classification, Intent } from "@/lib/seo-agent/classify";
 import { collectEvidence, packetFromContext } from "@/lib/seo-agent/collect";
+import { createInsightRetriever } from "@/lib/seo-agent/insights";
 import type { ExecutionState, FollowUps, PlannedCall, ResultCard, SeoMessageStatus } from "@/lib/seo-agent/conversations";
 import { classifierProviderOptions, costOfUsage, gatewayProvider, seoModels } from "@/lib/seo-agent/models";
 import { conceptPrompt, systemPrompt, type PromptProfile } from "@/lib/seo-agent/prompt";
@@ -354,6 +355,7 @@ export async function runAgent(
     cards: [],
     notices: [],
     signal,
+    insightRetriever: createInsightRetriever(),
   };
 
   const outcomeOf = (status: AgentStatus, content: string, followUps: FollowUps): AgentOutcome => ({

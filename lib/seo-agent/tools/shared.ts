@@ -6,6 +6,7 @@ import { DataForSeoDeniedError } from "@/lib/dataforseo/gate";
 import { PaidCallDeniedError } from "@/lib/providers/paid-call";
 import type { EndpointAttemptBudget, QuestionBudget } from "@/lib/seo-agent/budget";
 import type { FollowUps, PlannedCall, ResultCard } from "@/lib/seo-agent/conversations";
+import type { InsightRetriever } from "@/lib/seo-agent/insights";
 
 /** Per-request state shared by the tools. The route reads cards, notices and followUps after the stream ends. */
 export type ToolContext = {
@@ -18,6 +19,8 @@ export type ToolContext = {
   notices: string[];
   followUps?: FollowUps;
   signal?: AbortSignal;
+  /** Optional knowledge-base reader. Absent or null means search_insights is not offered. */
+  insightRetriever?: InsightRetriever | null;
 };
 
 export const MAX_KEYWORDS = 20;

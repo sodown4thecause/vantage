@@ -228,6 +228,45 @@ function projectSearchHit(row: Record<string, unknown>): Record<string, Json> | 
   };
 }
 
+function projectInsightPassage(row: Record<string, unknown>): Record<string, Json> | null {
+  const id = pickString(row, "id");
+  const sourceUrl = pickString(row, "sourceUrl");
+  const text = pickString(row, "text");
+  const retrievedAt = pickString(row, "retrievedAt");
+  if (!id || !sourceUrl || !text || !retrievedAt) return null;
+  if (!isPublicHttpUrl(sourceUrl)) return null;
+  const limitationsRaw = Array.isArray(row.limitations) ? row.limitations : [];
+  const limitations = limitationsRaw
+    .map((item) => (typeof item === "string" ? clipString(item, 240).value : null))
+    .filter((item): item is string => Boolean(item))
+    .slice(0, 8);
+  return {
+    id,
+    sourceUrl,
+    text,
+    publishedAt: pickString(row, "publishedAt"),
+    updatedAt: pickString(row, "updatedAt"),
+    retrievedAt,
+    limitations,
+  };
+}
+
+function projectInsights(value: unknown): Json {
+  if (Array.isArray(value)) {
+    const data = listResult(value, projectInsightPassage);
+    return data.truncated ? { passages: data.rows, total: data.total, truncated: true } : { passages: data.rows, total: data.total };
+  }
+  if (!isRecord(value)) return { unsupported: true };
+  const raw = Array.isArray(value.passages) ? value.passages : [];
+  const data = listResult(raw, projectInsightPassage);
+  const total = typeof value.total === "number" && Number.isFinite(value.total) ? value.total : data.total;
+  return {
+    passages: data.rows,
+    total,
+    ...(data.truncated || total > data.rows.length ? { truncated: true } : {}),
+  };
+}
+
 function projectWebResearch(value: unknown): Json {
   if (Array.isArray(value)) {
     const data = listResult(value, projectSearchHit);
@@ -388,6 +427,13 @@ export function projectToolFields(tool: string, value: unknown): ProjectedToolFi
         if (isRecord(data) && data.unsupported === true) return { unsupported: true as const };
         const truncated = isRecord(data) && data.truncated === true
           || (isRecord(data) && Array.isArray(data.rows) && data.truncated === true);
+        return { data, truncated: Boolean(truncated) };
+      })();
+    case "search_insights":
+      return (() => {
+        const data = projectInsights(value);
+        if (isRecord(data) && data.unsupported === true) return { unsupported: true as const };
+        const truncated = isRecord(data) && data.truncated === true;
         return { data, truncated: Boolean(truncated) };
       })();
     default:

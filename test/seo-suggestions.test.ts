@@ -56,24 +56,24 @@ const OCT_19 = new Date("2026-10-19T12:00:00Z");
 const DAY_MS = 86_400_000;
 
 const SEO_TEMPLATES = [
-  "Which keywords does rival.io rank for that contextfor doesn't?",
-  "Who links to rival.io but not to contextfor.dev?",
-  "What are the top Google results for 'developer seo' right now?",
+  "Which search phrases does rival.io win that contextfor does not?",
+  "Which sites recommend rival.io but not contextfor.dev?",
+  "Who appears on Google for 'developer seo' right now?",
 ];
 const GEO_TEMPLATES = [
-  "Does ChatGPT mention contextfor when people ask about developer seo?",
-  "Which sites do AI answers cite for 'developer seo'?",
-  "How much AI search volume does 'developer seo' get?",
+  "Do AI assistants mention contextfor when people ask about developer seo?",
+  "Which websites do AI answers recommend for 'developer seo'?",
+  "How often do people ask AI tools about 'developer seo'?",
 ];
 const CONTENT_TEMPLATES = [
-  "What should our next blog post target to win 'developer seo' searches?",
-  "Which 'developer seo' questions are people asking that we haven't covered?",
-  "Plan a comparison post: contextfor vs rival.io",
+  "What should we research next to compete on 'developer seo'?",
+  "Which 'developer seo' questions still need a clear answer from us?",
+  "What would a fair contextfor vs rival.io comparison cover?",
 ];
 const GENERIC = {
-  seo: "What keywords should a new developer tool target first?",
-  geo: "How do AI assistants decide which tools to recommend?",
-  content: "What blog topics bring developer tools signups?",
+  seo: "Who appears on Google for developer-tool searches?",
+  geo: "Do AI assistants mention tools like ours?",
+  content: "What research would shape our next comparison brief?",
 };
 
 const texts = (chips: Chip[]) => chips.map((chip) => chip.text);
@@ -170,17 +170,17 @@ describe("starterChips", () => {
   it("labels each starter chip with its tool's cost", () => {
     const chips = starterChips(FULL, OCT_19);
     // SEO index 1 is backlink_gap (two sides, two credits); GEO index 1 is llm_response (always asked); content index 1 is keyword_ideas.
-    expect(labels(chips)).toEqual(["~2 credits", "Needs approval", "~1 credit"]);
+    expect(labels(chips)).toEqual(["Est. ~2 credits", "Needs approval", "Est. ~1 credit"]);
   });
 
   it("labels GEO chips as two credits when the always-ask rule is off", () => {
     const chips = starterChips(FULL, OCT_19, false);
-    expect(chips[1]!.costLabel).toBe("~2 credits");
+    expect(chips[1]!.costLabel).toBe("Est. ~2 credits");
   });
 
   it("reads the always-ask rule from the environment when no flag is passed", () => {
     vi.stubEnv("SEO_AGENT_GEO_ALWAYS_ASK", "false");
-    expect(starterChips(FULL, OCT_19)[1]!.costLabel).toBe("~2 credits");
+    expect(starterChips(FULL, OCT_19)[1]!.costLabel).toBe("Est. ~2 credits");
   });
 
   it("labels generic chips as free", () => {
@@ -243,9 +243,9 @@ describe("costLabel", () => {
     expect(costLabel(null, false, true)).toBe("Free");
   });
 
-  it("is Free when the call is cached, whatever the tool", () => {
-    expect(costLabel("ranked_keywords", true, false)).toBe("Free");
-    expect(costLabel("llm_response", true, true)).toBe("Free");
+  it("is Free (cached) when the call is cached, whatever the tool", () => {
+    expect(costLabel("ranked_keywords", true, false)).toBe("Free (cached)");
+    expect(costLabel("llm_response", true, true)).toBe("Free (cached)");
   });
 
   it("is Needs approval for llm_response while GEO asks", () => {
@@ -253,16 +253,16 @@ describe("costLabel", () => {
   });
 
   it("is about two credits for llm_response when GEO does not ask", () => {
-    expect(costLabel("llm_response", false, false)).toBe("~2 credits");
+    expect(costLabel("llm_response", false, false)).toBe("Est. ~2 credits");
   });
 
   it("is about two credits for backlink_gap", () => {
-    expect(costLabel("backlink_gap", false, true)).toBe("~2 credits");
+    expect(costLabel("backlink_gap", false, true)).toBe("Est. ~2 credits");
   });
 
   it("is about one credit for any other tool", () => {
-    expect(costLabel("ranked_keywords", false, true)).toBe("~1 credit");
-    expect(costLabel("google_serp", false, false)).toBe("~1 credit");
+    expect(costLabel("ranked_keywords", false, true)).toBe("Est. ~1 credit");
+    expect(costLabel("google_serp", false, false)).toBe("Est. ~1 credit");
   });
 });
 
@@ -312,7 +312,7 @@ describe("withCacheLabels", () => {
     const chips = await withCacheLabels(starterChips(FULL, DAY0), FULL);
     expect(mocks.peekRankedKeywords).toHaveBeenCalledWith("rival.io");
     expect(mocks.peekKeywordIdeas).toHaveBeenCalledWith(["developer seo"]);
-    expect(labels(chips)).toEqual(["Free", "Needs approval", "Free"]);
+    expect(labels(chips)).toEqual(["Free (cached)", "Needs approval", "Free (cached)"]);
   });
 
   it("marks SERP, AI volume and keyword-gap chips Free when cached", async () => {
@@ -323,7 +323,7 @@ describe("withCacheLabels", () => {
     expect(mocks.peekGoogleSerp).toHaveBeenCalledWith("developer seo");
     expect(mocks.peekAiKeywordVolume).toHaveBeenCalledWith(["developer seo"]);
     expect(mocks.peekKeywordGap).toHaveBeenCalledWith("contextfor.dev", "rival.io");
-    expect(labels(chips)).toEqual(["Free", "Free", "Free"]);
+    expect(labels(chips)).toEqual(["Free (cached)", "Free (cached)", "Free (cached)"]);
   });
 
   it("marks the backlink-gap chip Free only when both sides' referring-domains calls are cached", async () => {
@@ -333,7 +333,7 @@ describe("withCacheLabels", () => {
     const own = referringDomainsTask("contextfor.dev");
     expect(mocks.peekDataForSeo).toHaveBeenCalledWith(rival.endpoint, rival.task, FRESHNESS_SECONDS.backlinks);
     expect(mocks.peekDataForSeo).toHaveBeenCalledWith(own.endpoint, own.task, FRESHNESS_SECONDS.backlinks);
-    expect(chips[0]!.costLabel).toBe("Free");
+    expect(chips[0]!.costLabel).toBe("Free (cached)");
   });
 
   it("keeps the backlink-gap chip at its default when only the competitor side is cached", async () => {
@@ -342,7 +342,7 @@ describe("withCacheLabels", () => {
       JSON.stringify(task) === JSON.stringify(rival.task) ? [] : null);
     const chips = await withCacheLabels(starterChips(FULL, OCT_19), FULL);
     expect(mocks.peekDataForSeo).toHaveBeenCalledTimes(2);
-    expect(chips[0]!.costLabel).toBe("~2 credits");
+    expect(chips[0]!.costLabel).toBe("Est. ~2 credits");
   });
 
   it("keeps the backlink-gap chip at its default when only the product side is cached", async () => {
@@ -350,7 +350,7 @@ describe("withCacheLabels", () => {
     mocks.peekDataForSeo.mockImplementation(async (endpoint: string, task: Record<string, unknown>) =>
       JSON.stringify(task) === JSON.stringify(own.task) ? [] : null);
     const chips = await withCacheLabels(starterChips(FULL, OCT_19), FULL);
-    expect(chips[0]!.costLabel).toBe("~2 credits");
+    expect(chips[0]!.costLabel).toBe("Est. ~2 credits");
   });
 
   it("never peeks llm_response, so GEO chips keep their label even when other calls are cached", async () => {
@@ -362,22 +362,38 @@ describe("withCacheLabels", () => {
 
   it("keeps the default label on a cache miss", async () => {
     const chips = await withCacheLabels(starterChips(FULL, OCT_19), FULL);
-    expect(labels(chips)).toEqual(["~2 credits", "Needs approval", "~1 credit"]);
+    expect(labels(chips)).toEqual(["Est. ~2 credits", "Needs approval", "Est. ~1 credit"]);
   });
 
   it("keeps the default label when a peek throws", async () => {
     mocks.peekKeywordIdeas.mockRejectedValue(new Error("database unavailable"));
     mocks.peekDataForSeo.mockRejectedValue(new Error("database unavailable"));
     const chips = await withCacheLabels(starterChips(FULL, OCT_19), FULL);
-    expect(labels(chips)).toEqual(["~2 credits", "Needs approval", "~1 credit"]);
+    expect(labels(chips)).toEqual(["Est. ~2 credits", "Needs approval", "Est. ~1 credit"]);
   });
 
   it("leaves generic chips and unknown chips untouched", async () => {
     const generic = starterChips(EMPTY, OCT_19);
-    const unknown: Chip[] = [{ category: "seo", text: "Something else entirely", costLabel: "~1 credit" }];
+    const unknown: Chip[] = [{ category: "seo", text: "Something else entirely", costLabel: "Est. ~1 credit" }];
     expect(await withCacheLabels(generic, EMPTY)).toEqual(generic);
     expect(await withCacheLabels(unknown, FULL)).toEqual(unknown);
     expect(mocks.peekRankedKeywords).not.toHaveBeenCalled();
     expect(mocks.peekDataForSeo).not.toHaveBeenCalled();
+  });
+});
+
+describe("annotateJourney", () => {
+  it("marks exactly one chip recommended with a reason", () => {
+    const chips = starterChips(FULL, OCT_19, true, "seo");
+    expect(chips.filter((chip) => chip.recommended)).toHaveLength(1);
+    const recommended = chips.find((chip) => chip.recommended)!;
+    expect(recommended.category).toBe("seo");
+    expect(recommended.reason).toMatch(/rival\.io|search|Google/i);
+  });
+
+  it("prefers GEO when the active lane is GEO", () => {
+    const chips = starterChips(FULL, OCT_19, true, "geo");
+    expect(chips.find((chip) => chip.recommended)?.category).toBe("geo");
+    expect(chips.find((chip) => chip.recommended)?.reason).toMatch(/GEO/i);
   });
 });
