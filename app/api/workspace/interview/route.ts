@@ -125,12 +125,15 @@ export async function POST(req: Request): Promise<Response> {
       return await reply(`${retry.error} ${prompt.question}`, { answers: retry.answers, draft, complete: false }, prompt);
     }
 
+    let skippedNotice: string | undefined;
     let profileId: string;
     await appendMessage(workspaceId, id, {
       role: "assistant", content: "Saving your product setup…", parts: { cards: [interviewCard({ answers, draft, complete: false })] },
     });
     try {
-      profileId = (await saveMonitoringProfile({ workspaceId, input: validated.value, profileId: id })).id;
+      const saved = await saveMonitoringProfile({ workspaceId, input: validated.value, profileId: id });
+      profileId = saved.id;
+      skippedNotice = saved.skippedSources?.message;
     } catch (error) {
       if (error instanceof PlanLimitError) {
         const rest = { ...answers };
@@ -159,7 +162,7 @@ export async function POST(req: Request): Promise<Response> {
     const scanMessage = scan.status === "failed"
       ? "Your first scan couldn’t start. Open your opportunity queue to retry."
       : "Your first scan is queued or underway. Open your opportunity queue to check its progress.";
-    return await reply(`${completionMessage(answers, digestSaved)}\n\n${scanMessage}`, { answers, draft, complete: digestSaved }, undefined, true);
+    return await reply(`${completionMessage(answers, digestSaved)}\n\n${scanMessage}${skippedNotice ? `\n\n${skippedNotice}` : ""}`, { answers, draft, complete: digestSaved }, undefined, true);
   } catch (error) {
     if (error instanceof ConversationNotFoundError) return Response.json({ error: "not_found" }, { status: 404 });
     console.error("[interview route] failed");

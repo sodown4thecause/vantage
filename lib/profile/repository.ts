@@ -14,6 +14,7 @@ import { pickForumDomains } from "@/lib/communities/forum-packs";
 import { assertWithinCount } from "@/lib/plans/limits";
 import { PlanLimitError } from "@/lib/plans/types";
 import { retrieveProductMaterial } from "@/lib/profile/retrieve";
+import { skippedSourcesNotice } from "@/lib/profile/skipped-sources";
 import type {
   MonitoringProfileInput,
   MonitoringProfileView,
@@ -133,10 +134,11 @@ export async function saveMonitoringProfile(args: {
     if (latest && latest.version > row.version) return toProfileView(row);
   }
   const topics = row.topics ?? [];
-  await provisionProfileSources(args.workspaceId, topics, row.productUrl,
+  const review = await provisionProfileSources(args.workspaceId, topics, row.productUrl,
     [row.productDescription, row.targetCustomer, topics.join(" ")].join(" "),
     { profile: { productDescription: row.productDescription, targetCustomer: row.targetCustomer, competitors: row.competitors ?? [] } });
-  return toProfileView(row);
+  const skippedSources = skippedSourcesNotice(topics, review);
+  return skippedSources ? { ...toProfileView(row), skippedSources } : toProfileView(row);
 }
 
 export const PROFILE_SOURCE_NAME = "Profile: Hacker News";
