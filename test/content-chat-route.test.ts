@@ -96,6 +96,15 @@ describe("POST /api/content/chat", () => {
     }));
   });
 
+  it("preserves exact text for metered draft-edit requests while ordinary turns remain trimmed", async () => {
+    const message = "Save these edits.\n\nExact body:\n  Edited copy.  ";
+    const response = await POST(request({ workspaceId, message, preserveText: true }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.createThread).toHaveBeenCalledWith(workspaceId, message);
+    expect(mocks.appendMessage).toHaveBeenCalledWith(expect.objectContaining({ workspaceId, threadId, role: "user", content: message }));
+  });
+
   it("reuses the saved user turn when retrying and excludes the failed assistant response", async () => {
     mocks.getThread.mockResolvedValue({
       thread: { id: threadId },

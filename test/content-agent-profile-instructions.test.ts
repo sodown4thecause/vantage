@@ -7,7 +7,8 @@ describe("Content agent brand voice instructions", () => {
     const instructions = buildContentAgentInstructions(null);
     expect(instructions).toContain("five-question interview one question at a time");
     expect(instructions).toContain("Invite an optional pasted writing sample");
-    expect(instructions).toContain("Do not create a draft before a profile has been saved");
+    expect(instructions).toContain("Do not create a new draft before a profile has been saved");
+    expect(instructions).toContain("use update_content_draft without requiring an interview");
   });
 
   it("injects a saved profile into every draft and offers profile updates", () => {
@@ -19,7 +20,7 @@ describe("Content agent brand voice instructions", () => {
       avoid: ["hype"],
     });
     expect(instructions).toContain("follow it for every draft");
-    expect(instructions).toContain("show the full humanised draft body in the conversation");
+    expect(instructions).toContain("displays the full humanised body in an editable private-draft card");
     expect(instructions).toContain("call the matching ranked conversation, ranked keyword, or competitor gap source tool first");
     expect(instructions).toContain("Supported draft formats: blog outline, full blog post, X thread, LinkedIn post, Reddit reply, Hacker News reply, and newsletter section.");
     expect(instructions).toContain("Do not invent evidence, sources, metrics, or claims.");

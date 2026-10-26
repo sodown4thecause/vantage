@@ -42,7 +42,8 @@ export async function POST(request: Request): Promise<Response> {
   const parsed = contentChatRequestSchema.safeParse(raw);
   if (!parsed.success) return json({ error: "invalid_request" }, 400);
 
-  const { workspaceId, threadId: requestedThreadId, message } = parsed.data;
+  const { workspaceId, threadId: requestedThreadId } = parsed.data;
+  const message = parsed.data.preserveText ? parsed.data.message : parsed.data.message.trim();
   const retry = parsed.data.retry === true;
   const authorization = await authorizeWorkspace(workspaceId);
   if (!authorization.ok) return json({ error: authorization.error }, authorization.status);

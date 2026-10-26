@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   sourceOptions: undefined as unknown,
   appendSourceCitations: vi.fn(),
   saveProfile: vi.fn(),
+  updateDraft: vi.fn(),
 }));
 
 vi.mock("ai", () => ({
@@ -21,15 +22,24 @@ vi.mock("@/lib/content-agent/sources", () => ({
   appendContentSourceCitations: mocks.appendSourceCitations,
   createContentSourceTools: mocks.createSourceTools,
 }));
-vi.mock("@/lib/content-agent/repository", () => ({ saveContentBrandVoiceProfile: mocks.saveProfile }));
+vi.mock("@/lib/content-agent/repository", () => ({
+  saveContentBrandVoiceProfile: mocks.saveProfile,
+  updateContentDraft: mocks.updateDraft,
+}));
 
 import { createContentAgent } from "@/lib/content-agent/agent";
 
 type DraftTool = {
   execute: (input: { title: string; body: string; format: "blog_post" }, options: { abortSignal?: AbortSignal }) => Promise<unknown>;
 };
+type DraftUpdateTool = {
+  execute: (input: { draftId: string; title: string; body: string }) => Promise<unknown>;
+};
 
-type AgentOptions = { tools: Record<string, unknown> & { save_content_draft: DraftTool } };
+type AgentOptions = { tools: Record<string, unknown> & {
+  save_content_draft: DraftTool;
+  update_content_draft: DraftUpdateTool;
+} };
 type SourceNotice = { citations: Array<{ title: string; url: string }>; unsafeCitation: boolean };
 type SourceOptions = { workspaceId: string; onLookup: (notice: SourceNotice) => void };
 
@@ -75,6 +85,7 @@ beforeEach(() => {
     return missing.length ? `${body.trimEnd()}\n\nSources:\n${missing.map((citation) => `- ${citation.url}`).join("\n")}` : body.trim();
   });
   mocks.saveProfile.mockReset();
+  mocks.updateDraft.mockReset();
 });
 
 describe("Content draft tool output", () => {
@@ -108,7 +119,29 @@ describe("Content draft tool output", () => {
       "ranked_keyword_source",
       "save_brand_voice_profile",
       "save_content_draft",
+      "update_content_draft",
     ]);
+  });
+
+  it("saves exact edits to an existing workspace draft through the update tool", async () => {
+    const edited = { id: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a13", title: "Edited title", body: "Exact owner-edited body." };
+    mocks.updateDraft.mockResolvedValue(edited);
+    createAgent();
+    const tool = (mocks.agentOptions as AgentOptions).tools.update_content_draft;
+
+    await expect(tool.execute({ draftId: edited.id, title: edited.title, body: edited.body })).resolves.toEqual({
+      saved: true,
+      draftId: edited.id,
+      title: edited.title,
+      body: edited.body,
+    });
+    expect(mocks.updateDraft).toHaveBeenCalledWith({
+      workspaceId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a11",
+      draftId: edited.id,
+      title: edited.title,
+      body: edited.body,
+    });
+    expect(mocks.createDraft).not.toHaveBeenCalled();
   });
 
   it("appends returned citations before humanising a source-backed draft", async () => {
