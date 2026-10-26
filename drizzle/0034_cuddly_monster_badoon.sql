@@ -39,4 +39,5 @@ ALTER TABLE "content_message" ADD CONSTRAINT "content_message_thread_id_content_
 ALTER TABLE "content_thread" ADD CONSTRAINT "content_thread_workspace_id_workspace_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspace"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "content_draft_workspace_updated_idx" ON "content_draft" USING btree ("workspace_id","updated_at");--> statement-breakpoint
 CREATE INDEX "content_message_workspace_thread_created_idx" ON "content_message" USING btree ("workspace_id","thread_id","created_at");--> statement-breakpoint
+CREATE INDEX "content_message_thread_id_idx" ON "content_message" USING btree ("thread_id");--> statement-breakpoint
 CREATE INDEX "content_thread_workspace_updated_idx" ON "content_thread" USING btree ("workspace_id","updated_at");

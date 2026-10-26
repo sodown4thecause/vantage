@@ -34,6 +34,7 @@ export async function createContentAgentResponse(args: {
   let deliver!: (outcome: PaidOutcome) => void;
   const finished = new Promise<PaidOutcome>((resolve) => { deliver = resolve; });
   let settled = false;
+  let expectedPaidError: Error | undefined;
   const settle = (outcome: PaidOutcome) => {
     if (settled) return;
     settled = true;
@@ -53,10 +54,18 @@ export async function createContentAgentResponse(args: {
       ? { value: undefined, costUsd: outcome.costUsd }
       : { error: outcome.error, costUsd: outcome.costUsd };
   });
-  // Attach a rejection handler now; the paid operation settles after the response starts streaming.
-  void paidCall.catch((error: unknown) => {
-    if (!settled) settle({ error: error instanceof Error ? error : new Error("Content agent failed") });
-  });
+  // Keep a handled promise so stream callbacks can wait for ledger and budget settlement before closing.
+  const paidCallSettled = paidCall.then(
+    () => undefined,
+    (error: unknown) => {
+      if (!settled) settle({ error: error instanceof Error ? error : new Error("Content agent failed") });
+      if (error !== expectedPaidError) {
+        console.error("[content-agent] paid call settlement failed", {
+          error: error instanceof Error ? error.name : "unknown",
+        });
+      }
+    },
+  );
   await Promise.race([started, paidCall]);
 
   const messageId = crypto.randomUUID();
@@ -64,7 +73,15 @@ export async function createContentAgentResponse(args: {
   let priced = true;
   let spendUsd = 0;
   const measuredCost = () => steps > 0 && priced ? spendUsd : undefined;
-  const abort = () => settle({ error: new Error("Content stream stopped"), costUsd: measuredCost() });
+  const abortedCost = () => Math.max(
+    contentAgentEstimateUsd() * (steps + 1),
+    spendUsd + contentAgentEstimateUsd(),
+  );
+  const abort = () => {
+    const error = new Error("Content stream stopped");
+    expectedPaidError = error;
+    settle({ error, costUsd: abortedCost() });
+  };
   args.abortSignal.addEventListener("abort", abort, { once: true });
   if (args.abortSignal.aborted) abort();
 
@@ -92,6 +109,7 @@ export async function createContentAgentResponse(args: {
       },
       onEnd: async ({ responseMessage, outcome }) => {
         const status = statusOf(outcome.status);
+        let persistenceError: unknown;
         try {
           await upsertContentAssistantMessage({
             id: messageId,
@@ -100,20 +118,31 @@ export async function createContentAgentResponse(args: {
             content: textOf(responseMessage),
             status,
           });
-          settle(status === "complete"
-            ? { costUsd: measuredCost() }
-            : { error: new Error("Content agent turn did not complete"), costUsd: measuredCost() });
+          if (status === "complete") {
+            settle({ costUsd: measuredCost() });
+          } else {
+            const error = new Error("Content agent turn did not complete");
+            expectedPaidError = error;
+            settle({ error, costUsd: measuredCost() });
+          }
         } catch (error) {
-          settle({ error: error instanceof Error ? error : new Error("Content message could not be saved"), costUsd: measuredCost() });
-          throw error;
+          persistenceError = error;
+          const paidError = error instanceof Error ? error : new Error("Content message could not be saved");
+          expectedPaidError = paidError;
+          settle({ error: paidError, costUsd: measuredCost() });
         } finally {
           args.abortSignal.removeEventListener("abort", abort);
         }
+        await paidCallSettled;
+        if (persistenceError !== undefined) throw persistenceError;
       },
     });
   } catch (error) {
-    settle({ error: error instanceof Error ? error : new Error("Content agent failed"), costUsd: measuredCost() });
+    const paidError = error instanceof Error ? error : new Error("Content agent failed");
+    expectedPaidError = paidError;
+    settle({ error: paidError, costUsd: measuredCost() });
     args.abortSignal.removeEventListener("abort", abort);
+    await paidCallSettled;
     throw error;
   }
 }

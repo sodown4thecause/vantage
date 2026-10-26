@@ -1185,6 +1185,7 @@ export const contentMessage = pgTable(
   },
   (table) => [
     index("content_message_workspace_thread_created_idx").on(table.workspaceId, table.threadId, table.createdAt),
+    index("content_message_thread_id_idx").on(table.threadId),
     check("content_message_role_check", sql`${table.role} in ('user', 'assistant')`),
     check("content_message_status_check", sql`${table.status} in ('streaming', 'complete', 'incomplete', 'failed')`),
   ],

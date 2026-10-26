@@ -15,6 +15,7 @@ export const contentChatRequestSchema = z.object({
   workspaceId: z.uuid(),
   threadId: z.uuid().optional(),
   message: z.string().trim().min(1).max(4000),
+  retry: z.boolean().optional(),
 });
 export type ContentChatRequest = z.infer<typeof contentChatRequestSchema>;
 

@@ -60,7 +60,7 @@ export function ContentWorkspaceClient({
   const selectThread = (nextThreadId: string) => {
     if (threadId === nextThreadId) return;
     setThreadId(nextThreadId);
-    router.replace(`/content?${new URLSearchParams({ workspaceId, threadId: nextThreadId }).toString()}`);
+    void router.replace(`/content?${new URLSearchParams({ workspaceId, threadId: nextThreadId }).toString()}`);
   };
   const [messages] = useState(() => selectedThreadId
     ? initialMessages.map((message) => fromHistory(message, selectedThreadId))
@@ -78,18 +78,19 @@ export function ContentWorkspaceClient({
       }
       return response;
     },
-    prepareSendMessagesRequest: ({ messages: requestMessages, body }) => {
+    prepareSendMessagesRequest: ({ messages: requestMessages, body, trigger }) => {
       const latestUser = requestMessages.findLast((message) => message.role === "user");
       return {
         body: {
           workspaceId: typeof body?.workspaceId === "string" ? body.workspaceId : workspaceId,
           threadId: typeof body?.threadId === "string" ? body.threadId : undefined,
           message: latestUser ? textOf(latestUser) : "",
+          retry: body?.retry === true || trigger === "regenerate-message",
         },
       };
     },
   });
-  const { messages: turns, sendMessage, status, error, stop } = useChat<ContentChatMessage>({
+  const { messages: turns, sendMessage, setMessages, clearError, status, error, stop } = useChat<ContentChatMessage>({
     transport,
     messages,
     onFinish: ({ message }) => {
@@ -106,6 +107,15 @@ export function ContentWorkspaceClient({
     const prompt = text.trim();
     if (!prompt || busy) return;
     void sendMessage({ text: prompt }, { body: { workspaceId, threadId: threadId ?? undefined } });
+  };
+  const retry = () => {
+    if (!latestUser || !threadId || busy) return;
+    const latestUserIndex = turns.findLastIndex((message) => message.role === "user");
+    setMessages(turns.slice(0, latestUserIndex + 1));
+    clearError();
+    void sendMessage({ text: latestPrompt, messageId: latestUser.id }, {
+      body: { workspaceId, threadId, retry: true },
+    });
   };
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -162,7 +172,7 @@ export function ContentWorkspaceClient({
 
       {error && <div className={s.error} role="alert">
         <p>The assistant couldn’t finish that turn. Your writing is still here.</p>
-        {latestPrompt && <button type="button" className={s.retry} onClick={() => send(latestPrompt)}>Retry this request</button>}
+        {latestPrompt && threadId && <button type="button" className={s.retry} onClick={retry}>Retry this request</button>}
       </div>}
       {busy && <div className={s.liveStatus} role="status">
         <span>Writing in progress</span><button type="button" className={s.stop} onClick={() => void stop()}>Stop</button>

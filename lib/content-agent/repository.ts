@@ -40,6 +40,24 @@ export async function getContentThread(workspaceId: string, threadId: string): P
   return { thread, messages };
 }
 
+/** Loads only a bounded recent context for a model turn; the page uses getContentThread for full display history. */
+export async function getContentThreadContext(
+  workspaceId: string,
+  threadId: string,
+  limit = 40,
+): Promise<{ thread: ContentThreadRow; messages: ContentMessageRow[] } | null> {
+  const [thread] = await getDb().select().from(contentThread)
+    .where(and(eq(contentThread.workspaceId, workspaceId), eq(contentThread.id, threadId)))
+    .limit(1);
+  if (!thread) return null;
+  const safeLimit = Number.isFinite(limit) ? Math.floor(limit) : 40;
+  const messages = await getDb().select().from(contentMessage)
+    .where(and(eq(contentMessage.workspaceId, workspaceId), eq(contentMessage.threadId, threadId)))
+    .orderBy(desc(contentMessage.createdAt))
+    .limit(Math.max(1, Math.min(safeLimit, 40)));
+  return { thread, messages: messages.reverse() };
+}
+
 export async function appendContentMessage(args: {
   workspaceId: string;
   threadId: string;

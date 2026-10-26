@@ -3,11 +3,12 @@ import type { UIMessage } from "ai";
 import { authorizeWorkspace } from "@/lib/auth/workspace";
 import { createContentAgent } from "@/lib/content-agent/agent";
 import { contentChatRequestSchema } from "@/lib/content-agent/contracts";
+import { contentAgentHistory } from "@/lib/content-agent/history";
 import { contentAgentModels } from "@/lib/content-agent/models";
 import {
   appendContentMessage,
   createContentThread,
-  getContentThread,
+  getContentThreadContext,
   type ContentMessageRow,
 } from "@/lib/content-agent/repository";
 import { createContentAgentResponse } from "@/lib/content-agent/stream";
@@ -41,33 +42,42 @@ export async function POST(request: Request): Promise<Response> {
   if (!parsed.success) return json({ error: "invalid_request" }, 400);
 
   const { workspaceId, threadId: requestedThreadId, message } = parsed.data;
+  const retry = parsed.data.retry === true;
   const authorization = await authorizeWorkspace(workspaceId);
-  if (!authorization.ok) return json({ error: "forbidden" }, 403);
+  if (!authorization.ok) return json({ error: authorization.error }, authorization.status);
+  if (retry && !requestedThreadId) return json({ error: "retry_requires_thread" }, 400);
 
   const models = contentAgentModels();
   if (!models) return json({ error: "not_configured" }, 503);
 
-  const existing = requestedThreadId ? await getContentThread(workspaceId, requestedThreadId) : null;
+  const existing = requestedThreadId ? await getContentThreadContext(workspaceId, requestedThreadId) : null;
   if (requestedThreadId && !existing) return json({ error: "not_found" }, 404);
 
   let threadId = existing?.thread.id;
-  let priorMessages = existing?.messages ?? [];
   try {
+    if (retry && !existing) return json({ error: "not_found" }, 404);
+    const priorMessages = existing?.messages ?? [];
+    const latestUserIndex = priorMessages.findLastIndex((row) => row.role === "user");
+    const latestUserMessage = latestUserIndex >= 0 ? priorMessages[latestUserIndex] : undefined;
+    if (retry && (!latestUserMessage || latestUserMessage.content !== message)) {
+      return json({ error: "retry_mismatch" }, 409);
+    }
     if (!threadId) {
       const thread = await createContentThread(workspaceId, message);
       threadId = thread.id;
-      priorMessages = [];
     }
-    const userMessage = await appendContentMessage({
-      workspaceId,
-      threadId,
-      role: "user",
-      content: message,
-    });
-    const uiMessages = [
-      ...priorMessages.map((row) => toUiMessage(row, threadId!)),
-      toUiMessage(userMessage, threadId),
-    ];
+    const userMessage = retry
+      ? latestUserMessage!
+      : await appendContentMessage({
+        workspaceId,
+        threadId,
+        role: "user",
+        content: message,
+      });
+    const messagesForAgent = contentAgentHistory(retry
+      ? priorMessages.slice(0, latestUserIndex + 1)
+      : [...priorMessages, userMessage]);
+    const uiMessages = messagesForAgent.map((row) => toUiMessage(row, threadId!));
     const agent = createContentAgent({ workspaceId, threadId, models });
     return await createContentAgentResponse({
       workspaceId,

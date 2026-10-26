@@ -24,6 +24,23 @@ import { createContentAgentResponse } from "@/lib/content-agent/stream";
 const workspaceId = "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a11";
 const threadId = "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a12";
 const responseMessage = { id: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a13", role: "assistant", parts: [{ type: "text", text: "A useful draft." }] };
+type StreamOptions = {
+  onStepEnd: (event: { usage: unknown }) => void;
+  onUIMessageStepEnd: (event: { responseMessage: typeof responseMessage }) => Promise<void>;
+  onEnd: (event: { responseMessage: typeof responseMessage; outcome: { status: "completed" | "failed" | "aborted" | "unknown" } }) => Promise<void>;
+};
+
+async function startStream(controller: AbortController): Promise<StreamOptions> {
+  await createContentAgentResponse({
+    workspaceId,
+    threadId,
+    agent: { id: "content-agent", tools: {}, stream: vi.fn() } as never,
+    messages: [],
+    abortSignal: controller.signal,
+    models: { apiKey: "test-key", model: "anthropic/claude-sonnet-5.5" },
+  });
+  return mocks.streamOptions as StreamOptions;
+}
 
 beforeEach(() => {
   mocks.meta = undefined;
@@ -66,11 +83,7 @@ describe("Content agent stream metering and persistence", () => {
       signal: controller.signal,
     }));
 
-    const options = mocks.streamOptions as {
-      onStepEnd: (event: unknown) => void;
-      onUIMessageStepEnd: (event: { responseMessage: typeof responseMessage }) => Promise<void>;
-      onEnd: (event: { responseMessage: typeof responseMessage; outcome: { status: "completed" } }) => Promise<void>;
-    };
+    const options = mocks.streamOptions as StreamOptions;
     options.onStepEnd({ usage: { inputTokens: 100, outputTokens: 10, inputTokenDetails: { cacheReadTokens: 20 } } });
     await options.onUIMessageStepEnd({ responseMessage });
     await options.onEnd({ responseMessage, outcome: { status: "completed" } });
@@ -78,6 +91,38 @@ describe("Content agent stream metering and persistence", () => {
     expect(mocks.upsert).toHaveBeenLastCalledWith(expect.objectContaining({
       id: expect.any(String), workspaceId, threadId, content: "A useful draft.", status: "complete",
     }));
-    await vi.waitFor(() => expect(mocks.workResult).toEqual({ value: undefined, costUsd: 0.000264 }));
+    expect(mocks.workResult).toEqual({ value: undefined, costUsd: 0.000264 });
+  });
+
+  it("records failed turns before the stream end callback resolves", async () => {
+    const options = await startStream(new AbortController());
+    await options.onEnd({ responseMessage, outcome: { status: "failed" } });
+
+    expect(mocks.upsert).toHaveBeenLastCalledWith(expect.objectContaining({ status: "failed" }));
+    expect(mocks.workResult).toEqual({ error: expect.any(Error), costUsd: undefined });
+  });
+
+  it("charges completed steps plus a conservative estimate when stopped mid-turn", async () => {
+    const controller = new AbortController();
+    const options = await startStream(controller);
+    options.onStepEnd({ usage: { inputTokens: 100, outputTokens: 10, inputTokenDetails: { cacheReadTokens: 20 } } });
+
+    controller.abort();
+    await options.onEnd({ responseMessage, outcome: { status: "aborted" } });
+
+    expect(mocks.upsert).toHaveBeenLastCalledWith(expect.objectContaining({ status: "incomplete" }));
+    expect(mocks.workResult).toEqual(expect.objectContaining({
+      error: expect.any(Error),
+      costUsd: expect.any(Number),
+    }));
+    expect((mocks.workResult as { costUsd: number }).costUsd).toBeGreaterThan(0.000264);
+  });
+
+  it("settles the paid call when final assistant persistence fails", async () => {
+    const options = await startStream(new AbortController());
+    mocks.upsert.mockRejectedValueOnce(new Error("db unavailable"));
+
+    await expect(options.onEnd({ responseMessage, outcome: { status: "completed" } })).rejects.toThrow("db unavailable");
+    expect(mocks.workResult).toEqual(expect.objectContaining({ error: expect.any(Error) }));
   });
 });
