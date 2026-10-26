@@ -2,14 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   allowed: true,
+  authorizeWorkspace: vi.fn(),
   update: vi.fn(),
 }));
 
-vi.mock("@/lib/auth/workspace", () => ({
-  authorizeWorkspace: vi.fn(async () => state.allowed
-    ? { ok: true, userId: "user-a" }
-    : { ok: false, status: 403, error: "forbidden" }),
-}));
+vi.mock("@/lib/auth/workspace", () => ({ authorizeWorkspace: state.authorizeWorkspace }));
 vi.mock("@/lib/content-agent/repository", () => ({ updateContentDraftStatus: state.update }));
 
 import { PATCH } from "@/app/api/content/drafts/[id]/route";
@@ -38,6 +35,9 @@ function draft(overrides: Partial<ContentDraftRow> = {}): ContentDraftRow {
 
 beforeEach(() => {
   state.allowed = true;
+  state.authorizeWorkspace.mockReset().mockImplementation(async () => state.allowed
+    ? { ok: true, userId: "user-a" }
+    : { ok: false, status: 403, error: "forbidden" });
   state.update.mockReset().mockResolvedValue(draft({ status: "ready" }));
 });
 
@@ -45,6 +45,26 @@ describe("Content library sources and filters", () => {
   it("extracts and deduplicates safe HTTP(S) links from Markdown", () => {
     expect(contentDraftSourceLinks("[guide](https://example.com/guide) and https://example.com/guide. javascript:alert(1) ftp://files.example/a"))
       .toEqual(["https://example.com/guide"]);
+  });
+
+  it("keeps balanced URL parentheses and strips Markdown emphasis delimiters", () => {
+    expect(contentDraftSourceLinks(
+      "[wiki](https://en.wikipedia.org/wiki/Foo_(bar)) **https://a.com/x** _https://a.com/y_ **[guide](https://docs.example/Path_(intro))**",
+    )).toEqual([
+      "https://en.wikipedia.org/wiki/Foo_(bar)",
+      "https://a.com/x",
+      "https://a.com/y",
+      "https://docs.example/Path_(intro)",
+    ]);
+  });
+
+  it("exports complete parenthesized and emphasized source URLs", () => {
+    const output = contentDraftsAsMarkdown(draft({
+      body: "[wiki](https://en.wikipedia.org/wiki/Foo_(bar)) and **https://a.com/x**",
+    }));
+
+    expect(output).toContain("- [en.wikipedia.org](https://en.wikipedia.org/wiki/Foo_(bar))");
+    expect(output).toContain("- [a.com](https://a.com/x)");
   });
 
   it("filters saved drafts by status, format, and source host", () => {
@@ -83,6 +103,7 @@ describe("Content draft status route", () => {
     const response = await PATCH(patch(WORKSPACE_A, "ready"), { params });
 
     expect(response.status).toBe(200);
+    expect(state.authorizeWorkspace).toHaveBeenCalledWith(WORKSPACE_A);
     expect(state.update).toHaveBeenCalledWith(WORKSPACE_A, DRAFT_A, "ready");
     expect(await response.json()).toMatchObject({ draft: { id: DRAFT_A, status: "ready" } });
   });

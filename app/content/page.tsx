@@ -5,9 +5,12 @@ import { z } from "zod";
 import { PageHead, Shell } from "@/components/shell";
 import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
 import { getContentBrandVoiceProfile, getContentThread, listContentDrafts, listContentThreads } from "@/lib/content-agent/repository";
+import { listOpportunityQueue } from "@/lib/opportunities/run";
+import { getLatestMonitoringProfile } from "@/lib/profile/repository";
 
 import { ContentLibrary } from "./content-library";
 import { ContentWorkspaceClient } from "./content-workspace-client";
+import { buildSuggestedPrompts } from "./suggested-prompts";
 
 export const metadata: Metadata = { title: "Content", robots: { index: false } };
 export const dynamic = "force-dynamic";
@@ -21,12 +24,14 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
 
   const requestedThreadId = z.uuid().safeParse(params.threadId?.trim());
   const selected = requestedThreadId.success ? await getContentThread(workspaceId, requestedThreadId.data) : null;
-  const [threads, drafts, brandVoiceProfile] = await Promise.all([
+  const [threads, drafts, brandVoiceProfile, opportunities, keywordProfile] = await Promise.all([
     listContentThreads(workspaceId),
     listContentDrafts(workspaceId),
     getContentBrandVoiceProfile(workspaceId),
+    listOpportunityQueue({ workspaceId, limit: 3 }),
+    getLatestMonitoringProfile(workspaceId),
   ]);
-  const libraryKey = `${workspaceId}:${drafts.map((draft) => `${draft.id}:${draft.updatedAt.getTime()}`).join("|")}`;
+  const suggestedPrompts = buildSuggestedPrompts({ workspaceId, opportunities, profile: keywordProfile });
 
   return <Shell workspaceId={workspaceId} active="content" wide>
     <PageHead
@@ -41,7 +46,8 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
       threads={threads}
       drafts={drafts.slice(0, 6)}
       brandVoiceProfile={brandVoiceProfile}
+      suggestedPrompts={suggestedPrompts}
     />
-    <ContentLibrary key={libraryKey} workspaceId={workspaceId} initialDrafts={drafts} />
+    <ContentLibrary key={workspaceId} workspaceId={workspaceId} initialDrafts={drafts} />
   </Shell>;
 }

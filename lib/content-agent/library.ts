@@ -10,12 +10,33 @@ export type ContentLibraryFilters = {
   source: string;
 };
 
-const markdownLinkPattern = /https?:\/\/[^\s<>"'`\])}]+/gi;
+const markdownLinkPattern = /https?:\/\/[^\s<>"'`]+/gi;
+
+function cleanMarkdownUrl(match: string, markdown: string, index: number): string {
+  let candidate = match;
+  const beforeLink = markdown.slice(0, index);
+  const emphasisMarker = /(\*{1,3}|_{1,3})\[[^\]]*\]\($/.exec(beforeLink)?.[1]
+    ?? /(\*{1,3}|_{1,3})$/.exec(beforeLink)?.[1];
+  if (emphasisMarker && candidate.endsWith(emphasisMarker)) {
+    candidate = candidate.slice(0, -emphasisMarker.length);
+  }
+
+  candidate = candidate.replace(/[.,!?;:]+$/, "");
+  for (const [opening, closing] of [["(", ")"], ["[", "]"], ["{", "}"]] as const) {
+    while (candidate.endsWith(closing)) {
+      const openings = candidate.split(opening).length - 1;
+      const closings = candidate.split(closing).length - 1;
+      if (closings <= openings) break;
+      candidate = candidate.slice(0, -1);
+    }
+  }
+  return candidate;
+}
 
 export function contentDraftSourceLinks(markdown: string): string[] {
   const links = new Set<string>();
   for (const match of markdown.matchAll(markdownLinkPattern)) {
-    const candidate = match[0].replace(/[.,!?;:]+$/, "");
+    const candidate = cleanMarkdownUrl(match[0], markdown, match.index ?? 0);
     try {
       const url = new URL(candidate);
       if (url.protocol === "http:" || url.protocol === "https:") links.add(url.toString());

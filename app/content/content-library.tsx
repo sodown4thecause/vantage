@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import type { ContentDraftRow } from "@/lib/content-agent/repository";
 import {
@@ -51,13 +52,22 @@ export function ContentLibrary({ workspaceId, initialDrafts }: {
   workspaceId: string;
   initialDrafts: ContentDraftRow[];
 }) {
-  const [drafts, setDrafts] = useState(initialDrafts);
+  const router = useRouter();
+  const [draftUpdates, setDraftUpdates] = useState<Record<string, ContentDraftRow>>({});
   const [statusFilter, setStatusFilter] = useState<ContentDraftStatusFilter>("all");
   const [formatFilter, setFormatFilter] = useState<ContentDraftFormatFilter>("all");
   const [sourceFilter, setSourceFilter] = useState("all");
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [updatingIds, setUpdatingIds] = useState<ReadonlySet<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
+  const latestRequestByDraft = useRef(new Map<string, number>());
 
+  const drafts = useMemo(() => initialDrafts.map((serverDraft) => {
+    const updatedDraft = draftUpdates[serverDraft.id];
+    if (!updatedDraft || serverDraft.status === updatedDraft.status || serverDraft.updatedAt >= updatedDraft.updatedAt) {
+      return serverDraft;
+    }
+    return updatedDraft;
+  }).sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime()), [draftUpdates, initialDrafts]);
   const sourceDomains = useMemo(() => contentDraftSourceDomains(drafts), [drafts]);
   const visibleDrafts = useMemo(() => contentDraftsForLibrary(drafts, {
     status: statusFilter,
@@ -66,7 +76,9 @@ export function ContentLibrary({ workspaceId, initialDrafts }: {
   }), [drafts, formatFilter, sourceFilter, statusFilter]);
 
   const updateStatus = async (draftId: string, status: ContentDraftRow["status"]) => {
-    setUpdatingId(draftId);
+    const requestVersion = (latestRequestByDraft.current.get(draftId) ?? 0) + 1;
+    latestRequestByDraft.current.set(draftId, requestVersion);
+    setUpdatingIds((current) => new Set(current).add(draftId));
     setError(null);
     try {
       const response = await fetch(`/api/content/drafts/${encodeURIComponent(draftId)}`, {
@@ -78,17 +90,30 @@ export function ContentLibrary({ workspaceId, initialDrafts }: {
       const result = await response.json() as {
         draft: Omit<ContentDraftRow, "createdAt" | "updatedAt"> & { createdAt: string; updatedAt: string };
       };
-      const updatedDraft: ContentDraftRow = {
-        ...result.draft,
-        createdAt: new Date(result.draft.createdAt),
-        updatedAt: new Date(result.draft.updatedAt),
-      };
-      setDrafts((current) => current.map((draft) => draft.id === draftId ? updatedDraft : draft)
-        .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime()));
+      if (latestRequestByDraft.current.get(draftId) === requestVersion) {
+        setDraftUpdates((current) => ({
+          ...current,
+          [draftId]: {
+            ...result.draft,
+            createdAt: new Date(result.draft.createdAt),
+            updatedAt: new Date(result.draft.updatedAt),
+          },
+        }));
+        router.refresh();
+      }
     } catch {
-      setError("Draft status could not be saved. Try again.");
+      if (latestRequestByDraft.current.get(draftId) === requestVersion) {
+        setError("Draft status could not be saved. Try again.");
+      }
     } finally {
-      setUpdatingId(null);
+      if (latestRequestByDraft.current.get(draftId) === requestVersion) {
+        latestRequestByDraft.current.delete(draftId);
+        setUpdatingIds((current) => {
+          const next = new Set(current);
+          next.delete(draftId);
+          return next;
+        });
+      }
     }
   };
 
@@ -152,7 +177,7 @@ export function ContentLibrary({ workspaceId, initialDrafts }: {
                   <select
                     aria-label={`Status for ${draft.title}`}
                     value={draft.status}
-                    disabled={updatingId === draft.id}
+                    disabled={updatingIds.has(draft.id)}
                     onChange={(event) => void updateStatus(draft.id, event.target.value as ContentDraftRow["status"])}
                   >
                     {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
