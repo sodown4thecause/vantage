@@ -129,22 +129,44 @@ const formatLabels: Record<ContentDraftFormat, string> = {
   newsletter_section: "Newsletter section",
 };
 
+type ContentDraftSectionRange = { start: number; end: number; text: string };
+
+function contentDraftSectionRanges(body: string): ContentDraftSectionRange[] {
+  const ranges: ContentDraftSectionRange[] = [];
+  const addSection = (start: number, end: number) => {
+    const raw = body.slice(start, end);
+    const text = raw.trim();
+    if (!text) return;
+    const sectionStart = start + raw.length - raw.trimStart().length;
+    ranges.push({ start: sectionStart, end: sectionStart + text.length, text });
+  };
+  const separator = /\n[^\S\n]*\n+/g;
+  let segmentStart = 0;
+  for (const match of body.matchAll(separator)) {
+    const separatorStart = match.index;
+    addSection(segmentStart, separatorStart);
+    segmentStart = separatorStart + match[0].length;
+  }
+  addSection(segmentStart, body.length);
+  return ranges;
+}
+
 export function contentDraftSections(body: string): string[] {
-  return body.trim().split(/\n\s*\n/).map((section) => section.trim()).filter(Boolean);
+  return contentDraftSectionRanges(body).map((section) => section.text);
 }
 
 export function replaceContentDraftSection(body: string, sectionIndex: number, replacement: string, expectedOriginal?: string): string {
-  const sections = contentDraftSections(body);
+  const sections = contentDraftSectionRanges(body);
   if (!Number.isInteger(sectionIndex) || sectionIndex < 0 || sectionIndex >= sections.length) {
     throw new Error("The requested section does not exist in this draft.");
   }
-  if (expectedOriginal !== undefined && sections[sectionIndex] !== expectedOriginal) {
+  const section = sections[sectionIndex]!;
+  if (expectedOriginal !== undefined && section.text !== expectedOriginal) {
     throw new Error("The draft section changed after regeneration began.");
   }
   const next = replacement.trim();
   if (!next) throw new Error("A regenerated section cannot be empty.");
-  sections[sectionIndex] = next;
-  return sections.join("\n\n");
+  return `${body.slice(0, section.start)}${next}${body.slice(section.end)}`;
 }
 
 export function buildContentSectionRegenerationPrompt(draft: ContentCardDraft, sectionIndex: number): string {

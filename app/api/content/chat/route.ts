@@ -5,10 +5,12 @@ import { createContentAgent } from "@/lib/content-agent/agent";
 import { contentChatRequestSchema } from "@/lib/content-agent/contracts";
 import { contentAgentHistory } from "@/lib/content-agent/history";
 import { contentAgentModels } from "@/lib/content-agent/models";
+import { extractContentSourceCitations } from "@/lib/content-agent/sources";
 import {
   appendContentMessage,
   createContentThread,
   getContentBrandVoiceProfile,
+  getContentDraft,
   getContentThreadContext,
   type ContentMessageRow,
 } from "@/lib/content-agent/repository";
@@ -54,11 +56,18 @@ export async function POST(request: Request): Promise<Response> {
 
   let threadId: string | undefined;
   try {
-    const [existing, brandVoiceProfile] = await Promise.all([
+    const [existing, brandVoiceProfile, originalDraft] = await Promise.all([
       requestedThreadId ? getContentThreadContext(workspaceId, requestedThreadId) : Promise.resolve(null),
       getContentBrandVoiceProfile(workspaceId),
+      parsed.data.repurposeDraft ? getContentDraft(workspaceId, parsed.data.repurposeDraft.draftId) : Promise.resolve(null),
     ]);
     if ((retry || requestedThreadId) && !existing) return json({ error: "not_found" }, 404);
+    if (parsed.data.repurposeDraft && (!originalDraft || (requestedThreadId && originalDraft.threadId !== requestedThreadId))) {
+      return json({ error: "not_found" }, 404);
+    }
+    if (parsed.data.repurposeDraft && originalDraft?.format === parsed.data.repurposeDraft.format) {
+      return json({ error: "invalid_repurpose_format" }, 400);
+    }
     threadId = existing?.thread.id;
 
     const priorMessages = existing?.messages ?? [];
@@ -89,6 +98,7 @@ export async function POST(request: Request): Promise<Response> {
       models,
       brandVoiceProfile,
       ...(parsed.data.draftUpdate ? { draftUpdate: parsed.data.draftUpdate } : {}),
+      ...(originalDraft ? { repurposeCitations: extractContentSourceCitations(originalDraft.body) } : {}),
     });
     return await createContentAgentResponse({
       workspaceId,
