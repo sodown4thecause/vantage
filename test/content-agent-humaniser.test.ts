@@ -41,8 +41,9 @@ beforeEach(() => {
   });
   mocks.paidCall.mockReset().mockImplementation(async (meta: unknown, work: () => Promise<unknown>) => {
     mocks.paidMeta = meta;
-    const result = await work() as { value: unknown; costUsd?: number };
+    const result = await work() as { value?: unknown; error?: Error; costUsd?: number };
     mocks.paidResult = result;
+    if (result.error) throw result.error;
     return result.value;
   });
 });
@@ -61,6 +62,10 @@ describe("Content brand-voice humaniser", () => {
       profile,
       models: { apiKey: "test-key", model: "anthropic/claude-sonnet-5.5" },
     })).rejects.toThrow("The Content humaniser output was truncated.");
+    expect(mocks.paidResult).toEqual({
+      error: expect.objectContaining({ message: "The Content humaniser output was truncated." }),
+      costUsd: 0.0502,
+    });
   });
 
   it("rewrites every supplied draft under its saved voice and a separate Gateway reservation", async () => {

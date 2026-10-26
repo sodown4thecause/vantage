@@ -13,7 +13,7 @@ export async function humaniseContentDraft(args: {
   models: ContentAgentModels;
   signal?: AbortSignal;
 }): Promise<string> {
-  return runPaidCall({
+  return runPaidCall<string>({
     context: { workspaceId: args.workspaceId, sourceKey: "content" },
     provider: "gateway",
     action: "content_humaniser",
@@ -39,7 +39,10 @@ export async function humaniseContentDraft(args: {
       abortSignal: args.signal,
     });
     if (result.finishReason === "length") {
-      throw new Error("The Content humaniser output was truncated.");
+      return {
+        error: new Error("The Content humaniser output was truncated."),
+        costUsd: contentUsageCost(args.models.model, result.usage),
+      };
     }
     const text = result.text.trim();
     if (!text) throw new Error("The Content humaniser returned an empty draft.");

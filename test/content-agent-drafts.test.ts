@@ -26,6 +26,16 @@ beforeEach(() => {
 });
 
 describe("Content private draft saving", () => {
+  it("rejects invalid draft input before the paid humanisation call", async () => {
+    await expect(createHumanisedContentDraft({
+      ...args,
+      draft: { ...args.draft, title: " " },
+      profile,
+    })).rejects.toMatchObject({ name: "ZodError" });
+    expect(mocks.humanise).not.toHaveBeenCalled();
+    expect(mocks.createDraft).not.toHaveBeenCalled();
+  });
+
   it("requires a saved workspace voice and humanises the persisted body", async () => {
     const error = await createHumanisedContentDraft({ ...args, profile: null }).catch((value: unknown) => value);
     expect(error).toBeInstanceOf(ContentBrandVoiceRequiredError);
