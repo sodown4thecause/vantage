@@ -7,3 +7,5 @@ export * from "@/lib/agents/discovery/persist";
 export * from "@/lib/agents/discovery/profile";
 export * from "@/lib/agents/discovery/apply";
 export * from "@/lib/agents/discovery/relevance-ai";
+export * from "@/lib/agents/discovery/store";
+export * from "@/lib/agents/discovery/reservation";

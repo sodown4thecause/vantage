@@ -1,11 +1,8 @@
 import { isStepCount, ToolLoopAgent, type LanguageModel } from "ai";
 
-import {
-  assertDiscoveryBudget,
-  sourceKeyFor,
-  type DiscoveryKind,
-  type SpentReader,
-} from "@/lib/agents/discovery/budget";
+import { sourceKeyFor, type DiscoveryKind } from "@/lib/agents/discovery/budget";
+import { reserveDiscoveryBudget } from "@/lib/agents/discovery/reservation";
+import type { BudgetStore } from "@/lib/agents/discovery/store";
 import type { CompetitorProposal, KeywordProposal, ProfileProposal, ProposalToolResult } from "@/lib/agents/discovery/proposals";
 import {
   createDiscoveryContext,
@@ -28,8 +25,6 @@ import { costOfUsage, gatewayProvider, seoModels } from "@/lib/seo-agent/models"
 
 const STEP_LIMIT = 10;
 const MAX_OUTPUT_TOKENS = 2048;
-/** The least a run can usefully do. Below this much budget the run is denied before the model is called. */
-const MIN_RUN_USD = 0.02;
 const MAX_RESERVE_USD = 0.15;
 /** Charged for a model step when the model has no price in the table, so an unpriced model cannot run for free. */
 const UNPRICED_STEP_USD = 0.01;
@@ -57,7 +52,8 @@ export type DiscoveryRunDeps = {
   judgeModel?: LanguageModel;
   judge?: RelevanceJudge;
   env?: Record<string, string | undefined>;
-  readSpent?: SpentReader;
+  /** Where the per-workspace budget is reserved. Defaults to the Neon table. */
+  store?: BudgetStore;
   now?: Date;
   runPaidCall?: typeof realRunPaidCall;
   tools?: Partial<DiscoveryDeps>;
@@ -98,7 +94,9 @@ export async function runDiscovery(
     modelId = models.executor;
   }
 
-  const remaining = await assertDiscoveryBudget(input.workspaceId, kind, MIN_RUN_USD, { readSpent: deps.readSpent, env, now: deps.now });
+  // Reserve first, in one atomic statement, so two simultaneous runs cannot both pass the cap. Throws when nothing is left.
+  const reservation = await reserveDiscoveryBudget(input.workspaceId, kind, { store: deps.store, env, now: deps.now });
+  const remaining = reservation.reservedUsd;
   const ctx = createDiscoveryContext({
     workspaceId: input.workspaceId, productUrl: input.productUrl, kind, remainingUsd: remaining, signal: input.signal, deps: deps.tools,
     judge: deps.judge ?? createRelevanceJudge({
@@ -109,33 +107,38 @@ export async function runDiscovery(
   const paid = deps.runPaidCall ?? realRunPaidCall;
   let modelCostUsd = 0;
 
-  await paid<true>({
-    context: { workspaceId: input.workspaceId, sourceKey },
-    provider: "gateway",
-    action: `discovery_${kind}`,
-    estimateUsd: Math.min(MAX_RESERVE_USD, remaining),
-    signal: input.signal,
-  }, async () => {
-    const agent = new ToolLoopAgent({
-      model,
-      instructions: INSTRUCTIONS,
-      tools: discoveryTools(ctx),
-      stopWhen: [isStepCount(STEP_LIMIT), () => outOfBudget(ctx)],
-      maxOutputTokens: MAX_OUTPUT_TOKENS,
-      maxRetries: 0,
-      onStepEnd: (stepResult) => {
-        const cost = (modelId && costOfUsage(modelId, {
-          inputTokens: stepResult.usage.inputTokens,
-          outputTokens: stepResult.usage.outputTokens,
-          cachedInputTokens: stepResult.usage.inputTokenDetails?.cacheReadTokens,
-        })) || UNPRICED_STEP_USD;
-        modelCostUsd += cost;
-        ctx.spentUsd += cost;
-      },
+  try {
+    await paid<true>({
+      context: { workspaceId: input.workspaceId, sourceKey },
+      provider: "gateway",
+      action: `discovery_${kind}`,
+      estimateUsd: Math.min(MAX_RESERVE_USD, remaining),
+      signal: input.signal,
+    }, async () => {
+      const agent = new ToolLoopAgent({
+        model,
+        instructions: INSTRUCTIONS,
+        tools: discoveryTools(ctx),
+        stopWhen: [isStepCount(STEP_LIMIT), () => outOfBudget(ctx)],
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
+        maxRetries: 0,
+        onStepEnd: (stepResult) => {
+          const cost = (modelId && costOfUsage(modelId, {
+            inputTokens: stepResult.usage.inputTokens,
+            outputTokens: stepResult.usage.outputTokens,
+            cachedInputTokens: stepResult.usage.inputTokenDetails?.cacheReadTokens,
+          })) || UNPRICED_STEP_USD;
+          modelCostUsd += cost;
+          ctx.spentUsd += cost;
+        },
+      });
+      await agent.generate({ prompt: JSON.stringify({ task: kind === "initial" ? "initial workspace discovery" : "review the workspace's sources", productUrl: input.productUrl }), abortSignal: input.signal });
+      return { value: true as const, costUsd: modelCostUsd };
     });
-    await agent.generate({ prompt: JSON.stringify({ task: kind === "initial" ? "initial workspace discovery" : "review the workspace's sources", productUrl: input.productUrl }), abortSignal: input.signal });
-    return { value: true as const, costUsd: modelCostUsd };
-  });
+  } finally {
+    // Settle what the run really spent, even when it failed, so unused budget goes back and nothing is double counted.
+    await reservation.settle(ctx.spentUsd);
+  }
 
   return {
     status: ctx.stopped ? "budget_exhausted" : "complete",

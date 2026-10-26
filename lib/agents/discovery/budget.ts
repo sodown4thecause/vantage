@@ -1,14 +1,12 @@
-import { and, eq, gte, sql } from "drizzle-orm";
-
-import { getDb } from "@/lib/db/client";
-import { costEvent } from "@/lib/db/schema";
 import { roundUsd } from "@/lib/costs/ledger";
+import { dbBudgetStore, periodFor, utcDayStart } from "@/lib/agents/discovery/store";
 import { PaidCallDeniedError } from "@/lib/providers/paid-call";
 
 /*
  * Per-workspace spend caps for agent discovery. runPaidCall's own cap is per provider and per day across every
- * workspace, so this adds the per-workspace limit. Spend is read from the cost ledger: every discovery call passes a
- * `sourceKey` below, so what the gateway and Linkup record for a workspace is exactly what counts against it.
+ * workspace, so this adds the per-workspace limit. Runs reserve their share atomically in the discovery_budget table (reservation.ts) and settle the
+ * real cost afterwards; this file holds the caps and a read-only view of what is left. Every discovery call also passes
+ * a `sourceKey` below, so the cost ledger can still be broken down by workspace.
  *
  *  - initial discovery: DISCOVERY_BUDGET_USD, default $0.50 per workspace, one time (all-time spend).
  *  - review loops: DISCOVERY_REVIEW_BUDGET_USD, default $0.05 per workspace per UTC day.
@@ -31,19 +29,9 @@ export const discoveryBudgetUsd = (env: Env = process.env) => positive(env.DISCO
 export const reviewDailyBudgetUsd = (env: Env = process.env) => positive(env.DISCOVERY_REVIEW_BUDGET_USD, DEFAULT_REVIEW_DAILY_BUDGET_USD);
 export const sourceKeyFor = (kind: DiscoveryKind) => (kind === "initial" ? DISCOVERY_SOURCE_KEY : REVIEW_SOURCE_KEY);
 
-export function utcDayStart(now: Date): Date {
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-}
+export { utcDayStart };
 
 export type SpentReader = (workspaceId: string, sourceKey: string, since?: Date) => Promise<number>;
-
-/** Total USD recorded in the cost ledger for one workspace and source key, optionally from `since` onwards. */
-export const readSpentFromLedger: SpentReader = async (workspaceId, sourceKey, since) => {
-  const [row] = await getDb().select({ total: sql<string>`coalesce(sum(${costEvent.costUsd}), 0)` }).from(costEvent)
-    .where(and(eq(costEvent.workspaceId, workspaceId), eq(costEvent.sourceKey, sourceKey), ...(since ? [gte(costEvent.ts, since)] : [])));
-  const total = Number(row?.total ?? 0);
-  return Number.isFinite(total) ? total : 0;
-};
 
 type BudgetDeps = { readSpent?: SpentReader; env?: Env; now?: Date };
 
@@ -51,8 +39,11 @@ type BudgetDeps = { readSpent?: SpentReader; env?: Env; now?: Date };
 export async function remainingDiscoveryBudgetUsd(workspaceId: string, kind: DiscoveryKind, deps: BudgetDeps = {}): Promise<number> {
   const env = deps.env ?? process.env;
   const cap = kind === "initial" ? discoveryBudgetUsd(env) : reviewDailyBudgetUsd(env);
-  const since = kind === "review" ? utcDayStart(deps.now ?? new Date()) : undefined;
-  const spent = await (deps.readSpent ?? readSpentFromLedger)(workspaceId, sourceKeyFor(kind), since);
+  const now = deps.now ?? new Date();
+  const since = kind === "review" ? utcDayStart(now) : undefined;
+  const spent = deps.readSpent
+    ? await deps.readSpent(workspaceId, sourceKeyFor(kind), since)
+    : await dbBudgetStore.committed(workspaceId, periodFor(kind, now));
   return roundUsd(Math.max(0, cap - spent));
 }
 

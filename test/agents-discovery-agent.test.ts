@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { runDiscovery, type DiscoveryRunDeps } from "@/lib/agents/discovery";
 import { PaidCallDeniedError } from "@/lib/providers/paid-call";
+import { memoryBudgetStore } from "./helpers/budget-store";
 
 // Anything that reaches the database fails loudly: agents must never write, and the budget reader is injected.
 vi.mock("@/lib/db/client", () => ({ getDb: () => { throw new Error("agents must not touch the database"); } }));
@@ -31,7 +32,7 @@ function deps(over: Partial<DiscoveryRunDeps> & { script?: unknown[] } = {}) {
   const meta: Array<Record<string, unknown>> = [];
   const model = new MockLanguageModelV4({ doGenerate: (over.script ?? [done]) as never });
   const full: DiscoveryRunDeps = {
-    model, modelId: MODEL_ID, env: {}, readSpent: async () => 0,
+    model, modelId: MODEL_ID, env: {}, store: memoryBudgetStore().store,
     runPaidCall: (async (m: Record<string, unknown>, work: () => Promise<{ value?: unknown; costUsd?: number; error?: Error }>) => {
       meta.push(m);
       const outcome = await work();
@@ -94,7 +95,7 @@ describe("runDiscovery", () => {
   });
 
   it("does not call the model when the workspace's discovery budget is used up", async () => {
-    const { full, model } = deps({ readSpent: async () => 0.5 });
+    const { full, model } = deps({ store: memoryBudgetStore({ "ws|initial": 0.5 }).store });
     await expect(runDiscovery({ workspaceId: "ws", productUrl: "https://contextfor.dev/" }, full))
       .rejects.toMatchObject({ name: "PaidCallDeniedError", code: "budget_exhausted" });
     expect(model.doGenerateCalls).toHaveLength(0);
@@ -103,14 +104,14 @@ describe("runDiscovery", () => {
   it("ends the loop when the run's own spend reaches the remaining budget", async () => {
     // $0.03 left; one model step costs $0.004 but the first read costs $0.001 and the next searches cost $0.005 each.
     const script = Array.from({ length: 10 }, () => step(call("search_web", { query: "alternatives" })));
-    const { full, model } = deps({ script, readSpent: async () => 0.47 });
+    const { full, model } = deps({ script, store: memoryBudgetStore({ "ws|initial": 0.47 }).store });
     const outcome = await runDiscovery({ workspaceId: "ws", productUrl: "https://contextfor.dev/" }, full);
     expect(model.doGenerateCalls.length).toBeLessThan(10);
     expect(outcome.status).toBe("budget_exhausted");
   });
 
   it("uses the review cap and the review source key for a review run", async () => {
-    const { full, meta } = deps({ readSpent: async () => 0 });
+    const { full, meta } = deps();
     await runDiscovery({ workspaceId: "ws", productUrl: "https://contextfor.dev/", kind: "review" }, full);
     expect(meta[0]).toMatchObject({ action: "discovery_review", context: { sourceKey: "discovery_review" } });
     expect(meta[0]!.estimateUsd as number).toBeLessThanOrEqual(0.05);
@@ -118,7 +119,7 @@ describe("runDiscovery", () => {
 
   it("returns not_configured when the AI Gateway key is missing and no model is injected", async () => {
     const outcome = await runDiscovery({ workspaceId: "ws", productUrl: "https://contextfor.dev/" },
-      { env: {}, readSpent: async () => 0 });
+      { env: {}, store: memoryBudgetStore().store });
     expect(outcome.status).toBe("not_configured");
   });
 

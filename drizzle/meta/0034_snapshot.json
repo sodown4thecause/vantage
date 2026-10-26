@@ -1,5 +1,5 @@
 {
-  "id": "9daaf463-9e7b-41a5-9ea6-bb6dc8d79a50",
+  "id": "d7781a35-4982-4910-b8c7-5339e11e7673",
   "prevId": "14adf97f-1428-4beb-a286-5ba9a122ea6f",
   "version": "7",
   "dialect": "postgresql",
@@ -999,6 +999,67 @@
         }
       },
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.discovery_budget": {
+      "name": "discovery_budget",
+      "schema": "",
+      "columns": {
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "period": {
+          "name": "period",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "committed_usd": {
+          "name": "committed_usd",
+          "type": "numeric(12, 6)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "discovery_budget_workspace_id_workspace_id_fk": {
+          "name": "discovery_budget_workspace_id_workspace_id_fk",
+          "tableFrom": "discovery_budget",
+          "tableTo": "workspace",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "discovery_budget_workspace_id_period_pk": {
+          "name": "discovery_budget_workspace_id_period_pk",
+          "columns": [
+            "workspace_id",
+            "period"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

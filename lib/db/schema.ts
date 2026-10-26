@@ -1260,3 +1260,18 @@ export const sourceProposal = pgTable(
     check("source_proposal_status_check", sql`${table.status} in ('reviewed', 'rejected', 'ingested', 'removal_proposed', 'dismissed')`),
   ],
 );
+
+/**
+ * Per-workspace discovery spend, reserved before a run and settled after it (see lib/agents/discovery/reservation.ts).
+ * `period` is "initial" (one time) or "day:YYYY-MM-DD" (review loops, per UTC day). One conditional upsert reserves.
+ */
+export const discoveryBudget = pgTable(
+  "discovery_budget",
+  {
+    workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+    period: text("period").notNull(),
+    committedUsd: numeric("committed_usd", { precision: 12, scale: 6 }).notNull().default("0"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.workspaceId, table.period] })],
+);

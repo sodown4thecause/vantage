@@ -10,6 +10,14 @@ CREATE TABLE "competitor" (
 	CONSTRAINT "competitor_status_check" CHECK ("competitor"."status" in ('proposed', 'accepted', 'rejected'))
 );
 --> statement-breakpoint
+CREATE TABLE "discovery_budget" (
+	"workspace_id" uuid NOT NULL,
+	"period" text NOT NULL,
+	"committed_usd" numeric(12, 6) DEFAULT '0' NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "discovery_budget_workspace_id_period_pk" PRIMARY KEY("workspace_id","period")
+);
+--> statement-breakpoint
 CREATE TABLE "keyword_recommendation" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"workspace_id" uuid NOT NULL,
@@ -62,6 +70,7 @@ CREATE TABLE "source_proposal" (
 );
 --> statement-breakpoint
 ALTER TABLE "competitor" ADD CONSTRAINT "competitor_workspace_id_workspace_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspace"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "discovery_budget" ADD CONSTRAINT "discovery_budget_workspace_id_workspace_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspace"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "keyword_recommendation" ADD CONSTRAINT "keyword_recommendation_workspace_id_workspace_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspace"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "proposed_profile" ADD CONSTRAINT "proposed_profile_workspace_id_workspace_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspace"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "source_proposal" ADD CONSTRAINT "source_proposal_workspace_id_workspace_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspace"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
