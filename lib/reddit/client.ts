@@ -149,7 +149,7 @@ export function hydrateDailyMax(env: NodeJS.ProcessEnv = process.env): number {
 async function hydratePost(post: RedditPost, ctx: CostContext, signal?: AbortSignal): Promise<RedditPost> {
   return runPaidCall({ context: ctx, provider: "scavio", action: HYDRATE_ACTION,
     estimateUsd: 2 * SCAVIO_REQUEST_USD, signal }, async () => {
-    const client = createScavioClient();
+    const client = await createScavioClient();
     const response = await client.reddit.post({ post_id: `t3_${post.id}` });
     signal?.throwIfAborted();
     const nested = response.data;
