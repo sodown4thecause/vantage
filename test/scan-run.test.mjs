@@ -174,6 +174,28 @@ test("forwards bounded scan counts to finish and wraps each workflow callback", 
   assert.ok(spans.every(({ workspaceId }) => workspaceId === "ws-1"));
 });
 
+test("observer failures do not fail or repeat workflow callbacks", async () => {
+  for (const failAfterOperation of [false, true]) {
+    const step = fakeStep();
+    const fake = fakeCall();
+    const result = await runScan(PARAMS, step, fake.call, async (_name, _workspaceId, operation) => {
+      if (failAfterOperation) await operation();
+      throw new Error("telemetry unavailable");
+    });
+    assert.deepEqual(result, { status: "done", failures: 0 });
+    assert.equal(fake.calls.length, 6);
+  }
+
+  const fake = fakeCall({
+    "/api/internal/scan/build": () => { throw new Error("build exploded"); },
+  });
+  await assert.rejects(runScan(PARAMS, fakeStep(), fake.call, async (_name, _workspaceId, operation) => {
+    await operation();
+    throw new Error("telemetry unavailable");
+  }), /build exploded/);
+  assert.equal(fake.calls.at(-1).path, "/api/internal/scan/finish");
+});
+
 test("a plan failure propagates without finishing, because no lease was handed back", async () => {
   const step = fakeStep();
   const fake = fakeCall({

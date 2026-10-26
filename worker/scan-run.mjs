@@ -96,8 +96,21 @@ function observedSteps(step, workspaceId, observeStep) {
       const callbackIndex = args.length - 1;
       const callback = args[callbackIndex];
       if (typeof callback === "function") {
-        args[callbackIndex] = (...callbackArgs) => observeStep(normalizeStepName(name), workspaceId,
-          () => callback(...callbackArgs));
+        args[callbackIndex] = (...callbackArgs) => {
+          let operationPromise;
+          const runOnce = (...innerArgs) => {
+            operationPromise ??= Promise.resolve().then(() => callback(...innerArgs));
+            return operationPromise;
+          };
+          return (async () => {
+            try {
+              await observeStep(normalizeStepName(name), workspaceId, runOnce);
+            } catch {
+              // Observability must not fail a workflow step; runOnce still propagates operation errors.
+            }
+            return await runOnce(...callbackArgs);
+          })();
+        };
       }
       return step.do(name, ...args);
     },
