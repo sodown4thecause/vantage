@@ -108,6 +108,8 @@ describe("guided GTM workspace", () => {
     const html = renderToStaticMarkup(createElement(GtmChatParts, { message, workspaceId: id }));
     expect(html).toContain("Loading confirmed state…");
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Confirm changes<\/button>/);
+    expect(html).toContain('<time dateTime="2026-11-01T00:00:00.000Z"');
+    expect(html).toContain("Expires");
   });
   it.each([new TypeError("Failed to fetch private browser details"), new SyntaxError("Unexpected token from upstream response"), new Error("Internal browser failure"), null])("hides unexpected network and JSON errors (%s)", (error) => {
     expect(workspaceErrorCopy(error)).toBe("That didn’t work. Try again.");

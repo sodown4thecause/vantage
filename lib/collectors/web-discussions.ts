@@ -1,4 +1,5 @@
 import { mapWithConcurrency } from "@/lib/async/map-with-concurrency";
+import { isManualScanBudget } from "@/lib/activation/budget";
 import { BrowserRunError, browserMarkdown } from "@/lib/browser/run";
 import { contentHash } from "@/lib/collectors/hash";
 import { parseValidDate } from "@/lib/collectors/date";
@@ -87,7 +88,9 @@ export const webDiscussionsCollector: Collector = {
     const since = windowStart(ctx, now);
     const lookbackHours = (now.getTime() - since.getTime()) / 3_600_000;
     const costContext = { workspaceId: ctx.workspaceId, sourceKey: ctx.sourceId };
-    const tinyFish = hasTinyFishApiKey();
+    // shortcut: manual scans use reservable Firecrawl search; meter TinyFish and Browser Run before enabling them here.
+    const manualScan = isManualScanBudget();
+    const tinyFish = !manualScan && hasTinyFishApiKey();
     const firecrawl = hasFirecrawlApiKey();
     if (!tinyFish && !firecrawl) throw new Error("Access pending: configure TinyFish or Firecrawl credentials");
 
@@ -167,7 +170,7 @@ export const webDiscussionsCollector: Collector = {
     const unread = [...picked.keys()].filter(url => !pages.has(url)).slice(0, MAX_BROWSER_PAGES);
     const browserRead = new Set<string>();
     let browserUnavailable = false;
-    if (unread.length) {
+    if (unread.length && !manualScan) {
       await mapWithConcurrency(unread, 2, async url => {
         if (browserUnavailable) return;
         try {

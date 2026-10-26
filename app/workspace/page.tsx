@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
@@ -11,6 +12,7 @@ import { getLatestMonitoringProfile } from "@/lib/profile/repository";
 import { getConversation, listConversations } from "@/lib/seo-agent/conversations";
 import { seoModels } from "@/lib/seo-agent/model-config";
 import { getGtmTurnStatus, loadGtmChat } from "@/lib/gtm/chat/store";
+import { GtmChatLimitError } from "@/lib/gtm/chat/types";
 import { getGtmConversationJobs } from "@/lib/gtm/chat/jobs";
 import { getPendingStrategyProposal } from "@/lib/gtm/proposals/repository";
 import { listSavedArtifacts, type SavedArtifactView } from "@/lib/workspace/saved-artifacts";
@@ -47,7 +49,25 @@ export default async function WorkspacePage({ searchParams }: { searchParams: Pr
   ]);
   const details = await Promise.all(queue.map((item) => getOpportunityDetail({ workspaceId, opportunityId: item.id })));
   const evidence = details.filter((item): item is OpportunityDetailView => item !== null);
-  const chat = conversation ? await loadGtmChat({ workspaceId, conversationId: conversation.id }) : { messages: [], revision: 0 };
+  let chat = { messages: [] as Awaited<ReturnType<typeof loadGtmChat>>["messages"], revision: 0 };
+  if (conversation) {
+    try { chat = await loadGtmChat({ workspaceId, conversationId: conversation.id }); }
+    catch (error) {
+      if (!(error instanceof GtmChatLimitError)) throw error;
+      return <Shell workspaceId={workspaceId} active="workspace">
+        <section role="alert"><h1>Conversation history is too large to open</h1>
+          <p>Your earlier conversation remains saved. Start a new conversation to continue.</p>
+          <Link href={`/workspace?workspaceId=${encodeURIComponent(workspaceId)}`}>New conversation</Link>
+        </section>
+        <section aria-label="Confirmed strategy"><h2>Confirmed strategy</h2>
+          {profile ? <><p>{profile.productDescription}</p><p>Audience: {profile.targetCustomer}</p><p>Topics: {profile.topics?.join(", ")}</p></> : <p>No confirmed product profile yet.</p>}
+        </section>
+        <nav aria-label="Saved conversations"><h2>Saved conversations</h2>
+          {conversations.map(item => <Link key={item.id} href={`/workspace?workspaceId=${encodeURIComponent(workspaceId)}&c=${encodeURIComponent(item.id)}`}>{item.title}</Link>)}
+        </nav>
+      </Shell>;
+    }
+  }
   const turn = conversation ? await getGtmTurnStatus({ workspaceId, conversationId: conversation.id }) : null;
   const jobs = conversation ? await getGtmConversationJobs({ workspaceId, conversationId: conversation.id }) : [];
   const proposal = conversation ? await getPendingStrategyProposal({ workspaceId, conversationId: conversation.id }) : null;

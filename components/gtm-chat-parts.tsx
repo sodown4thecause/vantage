@@ -41,6 +41,7 @@ function Proposal({ initial, onConfirmed }: { initial: StrategyProposal; onConfi
   }
   return <section aria-label="Proposed strategy changes" className="my-4 rounded-xl border border-line p-4">
     <h3>Proposed changes</h3><p>Based on strategy version {proposal.strategyVersion}. Status: {proposal.status}.</p>
+    <p>Expires <time dateTime={proposal.expiresAt}>{new Intl.DateTimeFormat("en-AU", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(proposal.expiresAt))} UTC</time>.</p>
     <div className="overflow-x-auto"><table><caption>Exact proposed diff</caption><thead><tr><th scope="col">Field</th><th scope="col">Currently confirmed</th><th scope="col">Proposed</th></tr></thead><tbody>{Object.entries(proposal.payload).flatMap(([field, value]) => {
       if (field === "profile" && value && typeof value === "object") return Object.entries(value).map(([key, next]) => ({ field: `profile.${key}`, before: (confirmed?.profile as Record<string, unknown> | null)?.[key], after: next }));
       return [{ field, before: confirmed?.[field], after: value }];

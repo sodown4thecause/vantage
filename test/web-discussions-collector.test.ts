@@ -32,6 +32,7 @@ vi.mock("@/lib/browser/run", async (importOriginal) => ({
 }));
 
 import { BrowserRunError } from "@/lib/browser/run";
+import { withFirstScanBudget } from "@/lib/activation/budget";
 import { collectorsByType } from "@/lib/collectors/registry";
 import { webDiscussionsCollector } from "@/lib/collectors/web-discussions";
 
@@ -165,6 +166,25 @@ describe("webDiscussionsCollector", () => {
     paid.deny = true;
     searchQuery.mockRejectedValue(new Error("tinyfish down"));
     await expect(webDiscussionsCollector.run(ctx({ kinds: ["forum"] }))).rejects.toThrow(/paid-provider opt-in/);
+  });
+
+  it("never dispatches TinyFish in a manual scan and reports missing metered coverage", async () => {
+    await expect(withFirstScanBudget("ws-1", "chat-test", () => webDiscussionsCollector.run(ctx({ kinds: ["forum"] })), false))
+      .rejects.toThrow(/Access pending|unavailable/);
+    expect(searchQuery).not.toHaveBeenCalled();
+    expect(fetchGetContents).not.toHaveBeenCalled();
+  });
+
+  it("uses only the metered Firecrawl path for manual forum coverage", async () => {
+    vi.stubEnv("FIRECRAWL_API_KEY", "fc-key");
+    vi.stubEnv("FIRECRAWL_CREDIT_USD", "0.001");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ success: true, creditsUsed: 2,
+      data: { web: [{ url: "https://dev.to/a/fc", title: "From Firecrawl", description: "snippet" }] } }))));
+    const result = await withFirstScanBudget("ws-1", "chat-test", () => webDiscussionsCollector.run(ctx({ kinds: ["forum"] })), false);
+    expect(searchQuery).not.toHaveBeenCalled();
+    expect(browserMarkdown).not.toHaveBeenCalled();
+    expect(paid.calls).toEqual([expect.objectContaining({ provider: "firecrawl", action: "search" })]);
+    expect(result.documents).toHaveLength(1);
   });
 
   it("keeps partial results when only some searches fail", async () => {

@@ -30,7 +30,7 @@ export async function firstScanStep(workspaceId: string, body: Record<string, un
       if (!ids) {
         const rows = await db.select({ id: source.id }).from(source).where(and(
           eligibleSourceCondition(workspaceId, { includeKeyed: true }),
-          inArray(source.type, ["hn", "rss", "substack", "github", "stackoverflow", "reddit"]),
+          inArray(source.type, ["hn", "rss", "substack", "github", "stackoverflow", "reddit", ...(run.kind === "manual" ? ["web_search" as const] : [])]),
         )).orderBy(...await scanOrder()).limit(9);
         ids = rows.slice(0, 8).map((row) => row.id);
         if (rows.length > 8) await db.update(scanRun).set({ capped: true }).where(scope);
