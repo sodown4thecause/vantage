@@ -115,6 +115,16 @@ test("a 409 from plan ends the run as skipped without throwing", async () => {
   assert.deepEqual(result, { status: "skipped", failures: 0 });
 });
 
+test("a successful collector with partial results marks the scheduled scan partial", async () => {
+  const fake = fakeCall({
+    "/api/internal/scan/collect": (body) => json({ inserted: 1, skipped: 0, partial: body.sourceId === "src-a" }),
+  });
+  const step = fakeStep();
+  const result = await runScan(PARAMS, step, fake.call);
+  assert.deepEqual(result, { status: "partial", failures: 0 });
+  assert.equal(fake.calls.at(-1).body.status, "partial");
+});
+
 test("one collect step that exhausts its retries yields partial and the run still builds and finishes", async () => {
   const step = fakeStep();
   const fake = fakeCall({

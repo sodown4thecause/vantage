@@ -62,6 +62,7 @@ export async function runScan(params, step, call, observeStep) {
         const result = await step.do(`collect:${sourceId}`, COLLECT_STEP, async () =>
           readJson(await call(COLLECT_PATH, { workspaceId, sourceId }), COLLECT_PATH));
         read += (Number(result.inserted) || 0) + (Number(result.skipped) || 0);
+        if (result.partial === true) status = "partial";
         return true;
       } catch {
         return false;
