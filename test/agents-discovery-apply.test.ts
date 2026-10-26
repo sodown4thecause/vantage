@@ -31,8 +31,8 @@ const proposal = {
 
 describe("confirmProfileProposal", () => {
   it("saves the next monitoring profile version from the proposal without fetching the site", async () => {
-    const { db, ops } = fakeDb([[proposal], [{ version: 2, topics: ["gtm"], competitors: ["syften.com"], docsUrls: [] }]]);
-    expect(await confirmProfileProposal(WS, ID, db)).toEqual({ ok: true, version: 3 });
+    const { db, ops } = fakeDb([[proposal], [{ version: 2, topics: ["gtm"], competitors: ["syften.com"], docsUrls: [] }]], [[{ id: "new-profile-id" }]]);
+    expect(await confirmProfileProposal(WS, ID, db)).toEqual({ ok: true, version: 3, profileId: "new-profile-id" });
     const insert = ops.find((op) => op.kind === "insert" && op.table === monitoringProfile)!;
     expect(insert.values).toMatchObject({
       workspaceId: WS, version: 3, productUrl: "https://contextfor.dev/", productDescription: "Finds conversations.",
@@ -44,8 +44,8 @@ describe("confirmProfileProposal", () => {
   });
 
   it("starts at version 1 for a new workspace and reports a proposal that is not the caller's as not found", async () => {
-    const first = fakeDb([[proposal], []]);
-    expect(await confirmProfileProposal(WS, ID, first.db)).toEqual({ ok: true, version: 1 });
+    const first = fakeDb([[proposal], []], [[{ id: "p1" }]]);
+    expect(await confirmProfileProposal(WS, ID, first.db)).toEqual({ ok: true, version: 1, profileId: "p1" });
     const missing = fakeDb([[]]);
     expect(await confirmProfileProposal(WS, ID, missing.db)).toEqual({ ok: false });
     expect(missing.ops.filter((op) => op.kind !== "select")).toHaveLength(0);

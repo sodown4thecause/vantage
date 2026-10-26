@@ -19,14 +19,14 @@ type Env = Record<string, string | undefined>;
 export type Decision = { ok: true; value?: string } | { ok: false };
 
 /** Saves the confirmed proposal as the workspace's next monitoring profile version. */
-export async function confirmProfileProposal(workspaceId: string, proposalId: string, db: Db = getDb()): Promise<{ ok: true; version: number } | { ok: false }> {
+export async function confirmProfileProposal(workspaceId: string, proposalId: string, db: Db = getDb()): Promise<{ ok: true; version: number; profileId: string } | { ok: false }> {
   const [proposal] = await db.select().from(proposedProfile)
     .where(and(eq(proposedProfile.workspaceId, workspaceId), eq(proposedProfile.id, proposalId), eq(proposedProfile.status, "proposed"))).limit(1);
   if (!proposal) return { ok: false };
   const [latest] = await db.select({ version: monitoringProfile.version, topics: monitoringProfile.topics, competitors: monitoringProfile.competitors, docsUrls: monitoringProfile.docsUrls })
     .from(monitoringProfile).where(eq(monitoringProfile.workspaceId, workspaceId)).orderBy(desc(monitoringProfile.version)).limit(1);
   const version = (latest?.version ?? 0) + 1;
-  await db.insert(monitoringProfile).values({
+  const [saved] = await db.insert(monitoringProfile).values({
     workspaceId, version, productUrl: proposal.productUrl, docsUrls: latest?.docsUrls ?? [],
     productDescription: proposal.description, targetCustomer: proposal.audience,
     competitors: latest?.competitors ?? [], topics: latest?.topics ?? [],
@@ -35,10 +35,11 @@ export async function confirmProfileProposal(workspaceId: string, proposalId: st
     productMaterialStatus: "manual",
     productMaterialText: [proposal.productName, proposal.category, proposal.description, `Audience: ${proposal.audience}`, `Pricing: ${proposal.pricingTier}`, ...proposal.differentiators].join("\n"),
     retrievalNotes: "Drafted by the discovery agent and confirmed by the owner.",
-  });
+  }).returning({ id: monitoringProfile.id });
+  if (!saved) throw new Error("failed to persist monitoring profile");
   await db.update(proposedProfile).set({ status: "accepted", decidedAt: new Date() })
     .where(and(eq(proposedProfile.workspaceId, workspaceId), eq(proposedProfile.id, proposalId)));
-  return { ok: true, version };
+  return { ok: true, version, profileId: saved.id };
 }
 
 export async function decideCompetitor(workspaceId: string, id: string, decision: "accepted" | "rejected", db: Db = getDb()): Promise<Decision> {

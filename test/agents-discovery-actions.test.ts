@@ -8,10 +8,12 @@ const state = vi.hoisted(() => ({
   decideRemoval: vi.fn(),
   queue: vi.fn(),
   ingest: vi.fn(),
+  index: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/workspace", () => ({ authorizeWorkspace: state.authorize }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("@/lib/profile/index-profile", () => ({ indexSavedProfile: state.index }));
 vi.mock("@/lib/db/client", () => ({ getDb: () => { throw new Error("actions must reach the database only through apply.ts"); } }));
 vi.mock("@/lib/agents/discovery/apply", () => ({
   confirmProfileProposal: state.confirm,
@@ -35,7 +37,8 @@ const ID = "22222222-2222-4222-8222-222222222222";
 beforeEach(() => {
   for (const mock of Object.values(state)) mock.mockReset();
   state.authorize.mockResolvedValue({ ok: true, userId: "u" });
-  state.confirm.mockResolvedValue({ ok: true, version: 2 });
+  state.confirm.mockResolvedValue({ ok: true, version: 2, profileId: "pid" });
+  state.index.mockResolvedValue(undefined);
   state.decideCompetitor.mockResolvedValue({ ok: true, value: "syften.com" });
   state.decideKeyword.mockResolvedValue({ ok: true, value: "syften alternative" });
   state.decideRemoval.mockResolvedValue({ ok: true });
@@ -53,7 +56,7 @@ describe("discovery server actions", () => {
       decideSourceRemovalProposal(WS, ID, "accepted"),
     ]);
     for (const result of results) expect(result).toEqual({ ok: false, message: "Unable to update this workspace." });
-    for (const name of ["confirm", "decideCompetitor", "decideKeyword", "decideRemoval", "queue", "ingest"] as const) expect(state[name]).not.toHaveBeenCalled();
+    for (const name of ["confirm", "decideCompetitor", "decideKeyword", "decideRemoval", "queue", "ingest", "index"] as const) expect(state[name]).not.toHaveBeenCalled();
   });
 
   it("reject ids that are not UUIDs before querying", async () => {
@@ -62,9 +65,15 @@ describe("discovery server actions", () => {
     expect(state.authorize).not.toHaveBeenCalled();
   });
 
-  it("confirm the profile for the authorised workspace", async () => {
+  it("confirm the profile for the authorised workspace and index it like any saved profile", async () => {
     expect(await confirmProposedProfile(WS, ID)).toEqual({ ok: true, message: "Profile saved." });
     expect(state.confirm).toHaveBeenCalledWith(WS, ID);
+    expect(state.index).toHaveBeenCalledWith(WS, "pid");
+  });
+
+  it("keep the saved profile even when indexing it fails", async () => {
+    state.index.mockRejectedValue(new Error("queue down"));
+    expect(await confirmProposedProfile(WS, ID)).toEqual({ ok: true, message: "Profile saved." });
   });
 
   it("queue a gated source search when the owner accepts a keyword or competitor, and ingest what passes", async () => {

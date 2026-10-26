@@ -11,6 +11,7 @@ import {
   createDiscoveryContext,
   discoveryTools,
   SEARCH_ESTIMATE_USD,
+  type DiscoveryContext,
   type DiscoveryDeps,
   type ReviewedSource,
 } from "@/lib/agents/discovery/tools";
@@ -70,6 +71,12 @@ const INSTRUCTIONS = [
   "Write in Australian English. Stop once you have proposed what you can support.",
 ].join("\n");
 
+/** True once a tool or provider said stop, or less than one more search remains in the budget. Ends the loop after the step. */
+function outOfBudget(ctx: DiscoveryContext): boolean {
+  if (!ctx.stopped && ctx.remainingUsd - ctx.spentUsd < SEARCH_ESTIMATE_USD) ctx.stopped = true;
+  return ctx.stopped;
+}
+
 export async function runDiscovery(
   input: { workspaceId: string; productUrl: string; kind?: DiscoveryKind; signal?: AbortSignal },
   deps: DiscoveryRunDeps = {},
@@ -106,10 +113,7 @@ export async function runDiscovery(
       model,
       instructions: INSTRUCTIONS,
       tools: discoveryTools(ctx),
-      stopWhen: [
-        isStepCount(STEP_LIMIT),
-        () => ctx.stopped || ctx.remainingUsd - ctx.spentUsd < SEARCH_ESTIMATE_USD ? (ctx.stopped = true) : false,
-      ],
+      stopWhen: [isStepCount(STEP_LIMIT), () => outOfBudget(ctx)],
       maxOutputTokens: MAX_OUTPUT_TOKENS,
       maxRetries: 0,
       onStepEnd: (stepResult) => {

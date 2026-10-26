@@ -12,6 +12,7 @@ import {
 } from "@/lib/agents/discovery/apply";
 import { nameFromUrl } from "@/lib/agents/discovery/profile";
 import { authorizeWorkspace } from "@/lib/auth/workspace";
+import { indexSavedProfile } from "@/lib/profile/index-profile";
 
 /*
  * Server actions the workspace UIs call when the owner answers a proposal card. This is the only place a proposal is
@@ -42,7 +43,10 @@ async function guarded(ids: string[], work: () => Promise<DiscoveryActionResult>
 export async function confirmProposedProfile(workspaceId: string, proposalId: string): Promise<DiscoveryActionResult> {
   return guarded([workspaceId, proposalId], async () => {
     const result = await confirmProfileProposal(workspaceId, proposalId);
-    return result.ok ? { ok: true, message: "Profile saved." } : GONE;
+    if (!result.ok) return GONE;
+    // Same best-effort indexing every other profile save does; a queue problem never undoes the owner's confirmation.
+    try { await indexSavedProfile(workspaceId, result.profileId); } catch { console.error("[discovery] profile index failed"); }
+    return { ok: true, message: "Profile saved." };
   });
 }
 
