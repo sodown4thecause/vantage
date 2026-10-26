@@ -69,10 +69,12 @@ export const sourceReviewSchema = z.object({
 }).strict();
 export type SourceReview = z.infer<typeof sourceReviewSchema>;
 
-/** Why a proposal did not become a card. Duplicates and limits are not errors; the agent is told and moves on. */
+const SKIP_STATUSES = ["duplicate", "limit_reached", "not_ready"] as const;
+
+/** Why a proposal did not become a card. Duplicates, limits and "propose the profile first" are not errors; the agent is told and moves on. */
 const skipped = (kind: "profile" | "competitor" | "keyword") => z.object({
   kind: z.literal(kind),
-  status: z.enum(["duplicate", "limit_reached"]),
+  status: z.enum(SKIP_STATUSES),
   reason: z.string(),
 }).strict();
 
@@ -82,6 +84,6 @@ export const proposalToolResultSchema = z.union([
   z.object({ kind: z.literal("keyword"), status: z.literal("proposed"), proposal: keywordProposalSchema }).strict(),
   z.object({ kind: z.literal("source"), status: z.enum(["proposed", "rejected"]), proposal: sourceProposalSchema, review: sourceReviewSchema }).strict(),
   skipped("profile"), skipped("competitor"), skipped("keyword"),
-  z.object({ kind: z.literal("source"), status: z.enum(["duplicate", "limit_reached"]), reason: z.string() }).strict(),
+  z.object({ kind: z.literal("source"), status: z.enum(SKIP_STATUSES), reason: z.string() }).strict(),
 ]);
 export type ProposalToolResult = z.infer<typeof proposalToolResultSchema>;
