@@ -2,9 +2,11 @@ import { errors, webhooks } from "@polar-sh/sdk/2026-10";
 import { and, eq, isNull, lt, sql } from "drizzle-orm";
 
 import { billingServer, getPolar, type PolarClient } from "@/lib/billing/polar";
+import { captureProductEvent } from "@/lib/analytics/server";
+import { withObservedSpan } from "@/lib/analytics/spans.mjs";
 import { recordPaidOrder, syncSubscription, type PolarSubscriptionLike } from "@/lib/billing/sync";
 import { getDb } from "@/lib/db/client";
-import { billingWebhookEvent } from "@/lib/db/schema";
+import { billingWebhookEvent, workspace } from "@/lib/db/schema";
 
 /** Events this endpoint acts on. Anything else is acknowledged and ignored. */
 export const HANDLED_EVENTS = [
@@ -24,12 +26,22 @@ const CLAIM_TIMEOUT_SECONDS = 120;
 export type WebhookDeps = {
   polar: () => PolarClient;
   secret: () => string | undefined;
+  workspaceIdForUser?: (userId: string) => Promise<string | undefined>;
 };
 
 const defaultDeps: WebhookDeps = {
   polar: () => getPolar(),
   secret: () => process.env.POLAR_WEBHOOK_SECRET?.trim(),
+  workspaceIdForUser: async (userId) => {
+    const [row] = await getDb().select({ id: workspace.id }).from(workspace)
+      .where(eq(workspace.ownerUserId, userId)).limit(1);
+    return row?.id;
+  },
 };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
 
 function isHandled(type: string): type is HandledEvent {
   return (HANDLED_EVENTS as readonly string[]).includes(type);
@@ -70,7 +82,12 @@ async function syncCanonical(polar: PolarClient, id: string, delivered: PolarSub
   await syncSubscription(subscription, billingServer());
 }
 
-async function applyEvent(type: HandledEvent, data: Record<string, unknown>, polar: PolarClient): Promise<void> {
+async function applyEvent(
+  type: HandledEvent,
+  data: Record<string, unknown>,
+  polar: PolarClient,
+  workspaceIdForUser?: (userId: string) => Promise<string | undefined>,
+): Promise<void> {
   switch (type) {
     case "subscription.created":
     case "subscription.updated":
@@ -79,6 +96,15 @@ async function applyEvent(type: HandledEvent, data: Record<string, unknown>, pol
     case "subscription.revoked":
       if (typeof data.id !== "string") throw new Error("subscription event without an id");
       await syncCanonical(polar, data.id, data as unknown as PolarSubscriptionLike);
+      if (type === "subscription.created") {
+        const customer = isRecord(data.customer) ? data.customer : undefined;
+        const userId = typeof customer?.external_id === "string" ? customer.external_id.trim() : "";
+        if (userId) {
+          let workspaceId: string | undefined;
+          try { workspaceId = await workspaceIdForUser?.(userId); } catch { /* analytics lookup must not block webhook processing */ }
+          await captureProductEvent({ event: "subscribed", userId, ...(workspaceId ? { workspaceId } : {}) });
+        }
+      }
       return;
     case "order.paid":
       if (typeof data.id !== "string") throw new Error("order event without an id");
@@ -123,6 +149,7 @@ export async function handlePolarWebhook(request: Request, deps: WebhookDeps = d
     throw error;
   }
   if (!isHandled(event.type)) return new Response(null, { status: 202 });
+  const handledEvent = event.type;
   const id = headers["webhook-id"];
   if (!id || typeof event.data !== "object" || event.data === null) {
     return Response.json({ error: "invalid payload" }, { status: 400 });
@@ -133,8 +160,10 @@ export async function handlePolarWebhook(request: Request, deps: WebhookDeps = d
   if (state === "busy") return Response.json({ error: "in progress" }, { status: 409 });
 
   try {
-    await applyEvent(event.type, event.data as Record<string, unknown>, deps.polar());
-    await getDb().update(billingWebhookEvent).set({ processedAt: new Date() }).where(eq(billingWebhookEvent.id, id));
+    await withObservedSpan("billing.polar_webhook", { source: "webhook", provider: "polar" }, async () => {
+      await applyEvent(handledEvent, event.data as Record<string, unknown>, deps.polar(), deps.workspaceIdForUser);
+      await getDb().update(billingWebhookEvent).set({ processedAt: new Date() }).where(eq(billingWebhookEvent.id, id));
+    });
     return new Response(null, { status: 202 });
   } catch (error) {
     // Release the claim so Polar's retry processes the event again. Log the class only.

@@ -1,8 +1,12 @@
 import { errors } from "@polar-sh/sdk/2026-10";
+import { eq } from "drizzle-orm";
 
 import { appUrl } from "@/lib/app-url";
+import { captureProductEvent } from "@/lib/analytics/server";
 import { auth } from "@/lib/auth/server";
 import { userHasPaidPlan } from "@/lib/billing/entitlement";
+import { getDb } from "@/lib/db/client";
+import { workspace } from "@/lib/db/schema";
 import { BillingNotConfiguredError, billingServer, getPolar, type PolarClient } from "@/lib/billing/polar";
 import { isConfiguredProductId, planForProduct } from "@/lib/billing/products";
 
@@ -10,6 +14,7 @@ export type BillingRouteDeps = {
   session: () => Promise<{ id: string; email?: string | null } | null>;
   polar: () => PolarClient;
   isPaid: (userId: string) => Promise<boolean>;
+  workspaceIdForUser?: (userId: string) => Promise<string | undefined>;
   origin: () => string;
 };
 
@@ -21,6 +26,11 @@ const defaultDeps: BillingRouteDeps = {
   },
   polar: () => getPolar(),
   isPaid: userHasPaidPlan,
+  workspaceIdForUser: async (userId) => {
+    const [row] = await getDb().select({ id: workspace.id }).from(workspace)
+      .where(eq(workspace.ownerUserId, userId)).limit(1);
+    return row?.id;
+  },
   origin: appUrl,
 };
 
@@ -59,6 +69,9 @@ export async function createCheckout(request: Request, deps: BillingRouteDeps = 
       success_url: `${origin}/success?checkout_id={CHECKOUT_ID}`,
       return_url: `${origin}/pricing`,
     });
+    let workspaceId: string | undefined;
+    try { workspaceId = await deps.workspaceIdForUser?.(user.id); } catch { /* analytics lookup must not block checkout */ }
+    await captureProductEvent({ event: "checkout_started", userId: user.id, ...(workspaceId ? { workspaceId } : {}) });
     return redirectTo(checkout.url);
   } catch (error) {
     if (error instanceof BillingNotConfiguredError) return pricingWith(origin, "not-configured");

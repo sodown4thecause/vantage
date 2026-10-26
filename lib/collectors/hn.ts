@@ -6,6 +6,7 @@ import type {
   CollectorResult,
 } from "@/lib/collectors/types";
 import type { NewDocument } from "@/lib/db/schema";
+import { withObservedSpan } from "@/lib/analytics/spans.mjs";
 
 const ALGOLIA = "https://hn.algolia.com/api/v1/search_by_date";
 
@@ -37,6 +38,7 @@ async function fetchAlgoliaPage(
   numericFilters: string,
   page: number,
   signal?: AbortSignal,
+  workspaceId?: string,
 ): Promise<{ hits: AlgoliaHit[]; nbPages: number }> {
   const url = new URL(ALGOLIA);
   url.searchParams.set("query", query);
@@ -44,15 +46,12 @@ async function fetchAlgoliaPage(
   url.searchParams.set("hitsPerPage", "20");
   url.searchParams.set("page", String(page));
   url.searchParams.set("numericFilters", numericFilters);
-  const res = await fetch(url, { next: { revalidate: 0 }, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(HN_FETCH_TIMEOUT_MS)]) : AbortSignal.timeout(HN_FETCH_TIMEOUT_MS) });
-  if (!res.ok) {
-    throw new Error(`Algolia HN error ${res.status}`);
-  }
-  const data = (await res.json()) as {
-    hits: AlgoliaHit[];
-    nbPages?: number;
-  };
-  return { hits: data.hits ?? [], nbPages: data.nbPages ?? 1 };
+  return withObservedSpan("source.fetch", { workspaceId, source: "hn", provider: "algolia" }, async () => {
+    const res = await fetch(url, { next: { revalidate: 0 }, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(HN_FETCH_TIMEOUT_MS)]) : AbortSignal.timeout(HN_FETCH_TIMEOUT_MS) });
+    if (!res.ok) throw new Error(`Algolia HN error ${res.status}`);
+    const data = (await res.json()) as { hits: AlgoliaHit[]; nbPages?: number };
+    return { hits: data.hits ?? [], nbPages: data.nbPages ?? 1 };
+  });
 }
 
 export const hnCollector: Collector = {
@@ -82,7 +81,7 @@ export const hnCollector: Collector = {
         attemptedPages += 1;
         let batch: Awaited<ReturnType<typeof fetchAlgoliaPage>>;
         try {
-          batch = await fetchAlgoliaPage(q, numericFilters, page, ctx.signal);
+          batch = await fetchAlgoliaPage(q, numericFilters, page, ctx.signal, ctx.workspaceId);
         } catch (error) {
           ctx.signal?.throwIfAborted();
           failedPages += 1;

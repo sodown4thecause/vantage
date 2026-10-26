@@ -4,6 +4,7 @@ import { eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
 import { authorizeWorkspace } from "@/lib/auth/workspace";
+import { captureProductEvent } from "@/lib/analytics/server";
 import { clampHour } from "@/lib/digest/schedule";
 import { getDb } from "@/lib/db/client";
 import { workspace } from "@/lib/db/schema";
@@ -96,6 +97,7 @@ export async function unsubscribeDigest(
     return { error: "Could not unsubscribe. Please try again." };
   }
 
+  await captureProductEvent({ event: "unsubscribed", userId: authorization.userId, workspaceId });
   revalidatePath("/settings/digest");
   return { error: null, saved: true };
 }
