@@ -137,6 +137,20 @@ export async function createContentDraft(args: {
   return draft;
 }
 
+export async function updateContentDraft(args: {
+  workspaceId: string;
+  draftId: string;
+  title: string;
+  body: string;
+}): Promise<ContentDraftRow | null> {
+  const [draft] = await getDb().update(contentDraft).set({
+    title: args.title,
+    body: args.body,
+    updatedAt: new Date(),
+  }).where(and(eq(contentDraft.workspaceId, args.workspaceId), eq(contentDraft.id, args.draftId))).returning();
+  return draft ?? null;
+}
+
 export async function listContentDrafts(workspaceId: string, limit?: number): Promise<ContentDraftRow[]> {
   const query = getDb().select().from(contentDraft)
     .where(eq(contentDraft.workspaceId, workspaceId))
@@ -153,4 +167,10 @@ export async function updateContentDraftStatus(
     .where(and(eq(contentDraft.workspaceId, workspaceId), eq(contentDraft.id, draftId)))
     .returning();
   return draft ?? null;
+}
+
+export async function listContentDraftsForThread(workspaceId: string, threadId: string): Promise<ContentDraftRow[]> {
+  return getDb().select().from(contentDraft)
+    .where(and(eq(contentDraft.workspaceId, workspaceId), eq(contentDraft.threadId, threadId)))
+    .orderBy(desc(contentDraft.updatedAt));
 }

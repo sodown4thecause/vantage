@@ -4,13 +4,11 @@ import { z } from "zod";
 
 import { PageHead, Shell } from "@/components/shell";
 import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
-import { getContentBrandVoiceProfile, getContentThread, listContentDrafts, listContentThreads } from "@/lib/content-agent/repository";
-import { listOpportunityQueue } from "@/lib/opportunities/run";
-import { getLatestMonitoringProfile } from "@/lib/profile/repository";
+import { getContentBrandVoiceProfile, getContentThread, listContentDrafts, listContentDraftsForThread, listContentThreads } from "@/lib/content-agent/repository";
+import { getContentSuggestedPrompts } from "@/lib/content-agent/suggested-prompts";
 
 import { ContentLibrary } from "./content-library";
 import { ContentWorkspaceClient } from "./content-workspace-client";
-import { buildSuggestedPrompts } from "./suggested-prompts";
 
 export const metadata: Metadata = { title: "Content", robots: { index: false } };
 export const dynamic = "force-dynamic";
@@ -24,14 +22,13 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
 
   const requestedThreadId = z.uuid().safeParse(params.threadId?.trim());
   const selected = requestedThreadId.success ? await getContentThread(workspaceId, requestedThreadId.data) : null;
-  const [threads, drafts, brandVoiceProfile, opportunities, keywordProfile] = await Promise.all([
+  const [threads, drafts, threadDrafts, brandVoiceProfile, suggestedPrompts] = await Promise.all([
     listContentThreads(workspaceId),
     listContentDrafts(workspaceId),
+    selected ? listContentDraftsForThread(workspaceId, selected.thread.id) : Promise.resolve([]),
     getContentBrandVoiceProfile(workspaceId),
-    listOpportunityQueue({ workspaceId, limit: 3 }),
-    getLatestMonitoringProfile(workspaceId),
+    getContentSuggestedPrompts(workspaceId),
   ]);
-  const suggestedPrompts = buildSuggestedPrompts({ workspaceId, opportunities, profile: keywordProfile });
 
   return <Shell workspaceId={workspaceId} active="content" wide>
     <PageHead
@@ -45,6 +42,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
       initialMessages={selected?.messages ?? []}
       threads={threads}
       drafts={drafts.slice(0, 6)}
+      threadDrafts={threadDrafts}
       brandVoiceProfile={brandVoiceProfile}
       suggestedPrompts={suggestedPrompts}
     />

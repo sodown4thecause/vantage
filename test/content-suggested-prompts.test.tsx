@@ -28,13 +28,14 @@ vi.mock("@/lib/profile/repository", () => ({ getLatestMonitoringProfile: mocks.g
 vi.mock("@/app/content/content-workspace-client", () => ({ ContentWorkspaceClient: () => null }));
 
 import ContentPage from "@/app/content/page";
+import { SuggestedPrompts } from "@/app/content/suggested-prompts";
 import {
   FALLBACK_SUGGESTED_PROMPTS,
-  SuggestedPrompts,
   buildSuggestedPrompts,
-} from "@/app/content/suggested-prompts";
+} from "@/lib/content-agent/suggested-prompts";
 import type { OpportunityCardView } from "@/lib/opportunities/types";
 import type { MonitoringProfileView } from "@/lib/profile/types";
+import { getContentSuggestedPrompts } from "@/lib/content-agent/suggested-prompts";
 
 const WORKSPACE = "11111111-1111-4111-8111-111111111111";
 const OTHER_WORKSPACE = "22222222-2222-4222-8222-222222222222";
@@ -109,6 +110,32 @@ describe("Content suggested prompts", () => {
     })).toEqual(prompts);
   });
 
+  it("loads ranked conversations and current keywords through workspace-scoped readers", async () => {
+    mocks.listOpportunities.mockResolvedValue([
+      opportunity("foreign", OTHER_WORKSPACE, 100, "Foreign customer need"),
+      opportunity("local", WORKSPACE, 80, "Local onboarding question"),
+    ]);
+    mocks.getMonitoringProfile.mockResolvedValue(profile(WORKSPACE, ["onboarding"]));
+
+    const prompts = await getContentSuggestedPrompts(WORKSPACE);
+
+    expect(mocks.listOpportunities).toHaveBeenCalledWith({ workspaceId: WORKSPACE, limit: 3 });
+    expect(mocks.getMonitoringProfile).toHaveBeenCalledWith(WORKSPACE);
+    expect(prompts).toHaveLength(3);
+    expect(prompts.join(" ")).toContain("Local onboarding question");
+    expect(prompts.join(" ")).not.toContain("Foreign customer need");
+  });
+
+  it.each([
+    { opportunities: [], keywordTopics: ["onboarding"] },
+    { opportunities: [opportunity("local", WORKSPACE, 80, "Local onboarding question")], keywordTopics: [] },
+  ])("uses static prompts from the server helper when scan or keyword data is absent", async ({ opportunities, keywordTopics }) => {
+    mocks.listOpportunities.mockResolvedValue(opportunities);
+    mocks.getMonitoringProfile.mockResolvedValue(profile(WORKSPACE, keywordTopics));
+
+    await expect(getContentSuggestedPrompts(WORKSPACE)).resolves.toEqual(FALLBACK_SUGGESTED_PROMPTS);
+  });
+
   it("uses the static fallback if either source is unavailable", () => {
     expect(buildSuggestedPrompts({ workspaceId: WORKSPACE, opportunities: [], profile: profile(WORKSPACE) }))
       .toEqual(FALLBACK_SUGGESTED_PROMPTS);
@@ -134,6 +161,16 @@ describe("Content suggested prompts", () => {
     expect(prompts).toEqual(FALLBACK_SUGGESTED_PROMPTS);
     expect(prompts.join(" ")).not.toContain("Foreign customer need");
     expect(prompts.join(" ")).not.toContain("foreign keyword");
+  });
+
+  it("does not read prompt data when workspace authorization fails", async () => {
+    mocks.authorize.mockResolvedValue({ ok: false });
+
+    await ContentPage({ searchParams: Promise.resolve({ workspaceId: WORKSPACE }) });
+
+    expect(mocks.authorize).toHaveBeenCalledWith(WORKSPACE);
+    expect(mocks.listOpportunities).not.toHaveBeenCalled();
+    expect(mocks.getMonitoringProfile).not.toHaveBeenCalled();
   });
 
   it("passes the authorised workspace to both server readers and renders only its prompt context", async () => {
