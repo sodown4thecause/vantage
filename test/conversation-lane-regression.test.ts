@@ -52,12 +52,13 @@ describe("conversation lane query boundaries", () => {
     expect(sql).toContain('"seo_conversation"."workspace_id" =');
     expect(sql).toContain('"seo_message"."conversation_id" = "seo_conversation"."id"');
     expect(sql).toContain('"seo_message"."workspace_id" =');
-    expect(params.filter((value) => value === workspace)).toHaveLength(3);
+    expect(sql).toContain('from gtm_chat where conversation_id = "seo_conversation"."id" and workspace_id =');
+    expect(params.filter((value) => value === workspace)).toHaveLength(4);
     expect(sql).not.toContain('"seo_conversation"."title"');
     expect(params).not.toContain("Product setup interview");
     expect(params).toContain(JSON.stringify({ cards: [{ tool: "onboarding_interview" }] }));
     expect(params).toContain(JSON.stringify({ cards: [{ tool: "gtm_journey" }] }));
-    expect(sql.match(/not exists/g)).toHaveLength(kind === "research" ? 2 : 1);
+    expect(sql.match(/not exists/g) ?? []).toHaveLength(kind === "research" ? 3 : kind === "interview" ? 2 : 0);
   });
 
   it("preserves the unfiltered default used by interview discovery", async () => {

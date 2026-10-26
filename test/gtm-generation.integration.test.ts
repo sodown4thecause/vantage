@@ -41,7 +41,7 @@ describe.skipIf(!hasGtmTestDatabase)("Postgres generation ownership", () => {
   it("reserves capacity for a terminal assistant before granting generation at the history boundary", async () => {
     const scope = await fixture.seed();
     const messages = Array.from({ length: 199 }, (_, i) => ({ id: String(i), role: "user", parts: [{ type: "text", text: "Earlier" }] }));
-    await fixture.client`insert into gtm_chat (conversation_id, workspace_id, messages, revision) values (${scope.conversationId}, ${scope.workspaceId}, ${fixture.client.json(messages)}, 198)`;
+    await fixture.client`insert into gtm_chat (conversation_id, workspace_id, messages, revision) values (${scope.conversationId}, ${scope.workspaceId}, ${JSON.stringify(messages)}::jsonb, 198)`;
     await expect(claimGtmTurn({ ...scope, expectedRevision: 198, requestId: "full", message: "Start" })).rejects.toThrow("Conversation limit");
     const [row] = await fixture.client`select count(*)::int n from gtm_chat_turn where conversation_id = ${scope.conversationId}`;
     expect(row!.n).toBe(0);
