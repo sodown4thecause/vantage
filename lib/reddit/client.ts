@@ -291,7 +291,10 @@ async function freePosts(query: string, subreddit: string | undefined, limit: nu
     .map(post => ({ ...post, contentKind: "preview" as const }));
   if (!posts.length) return [];
   const pages = await tinyFishFetchMarkdown(posts.map(post => post.url), { ctx, signal: opts.signal,
-    purpose: "Read these public Reddit pages. Preserve literal text; do not log in." });
+    purpose: "Read these public Reddit pages. Preserve literal text; do not log in." }).catch((error: unknown) => {
+      terminalFailure(error, opts.signal);
+      return []; // Optional hydration must not discard genuine search previews.
+    });
   opts.signal?.throwIfAborted();
   return posts.map(post => {
     const page = pages.find(page => threadLink(page.finalUrl ?? page.url)?.id === post.id);

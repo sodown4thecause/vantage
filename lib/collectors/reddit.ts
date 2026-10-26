@@ -101,7 +101,7 @@ export const redditCollector: Collector = {
         ? `${missingPublicationDates} Reddit post(s) have no supplied publication date; recency is unverified.`
         : undefined,
       nextState: {
-        cursor: cursor === undefined ? new Date().toISOString() : cursor,
+        cursor: coveragePartial ? ctx.cursor : cursor === undefined ? new Date().toISOString() : cursor,
       },
     };
   },

@@ -160,6 +160,27 @@ describe("provider order", () => {
     await expect(fetchRedditPostsWithMeta({ ctx: context, signal: abort.signal })).rejects.toMatchObject({ name: "AbortError" });
     expect(search).not.toHaveBeenCalled();
   });
+
+  it("retains discovered TinyFish previews when fetching the Reddit pages fails", async () => {
+    vi.stubEnv("TINYFISH_API_KEY", "test-key");
+    search.mockResolvedValue([{ url: thread("t1"), title: "Synthetic question", snippet: "Literal synthetic excerpt", position: 1 }]);
+    fetchPages.mockRejectedValue(new Error("TinyFish fetch failed (503)"));
+    const result = await fetchRedditPostsWithMeta({ ctx: context });
+    expect(result).toMatchObject({ meta: { provider: "tinyfish_search_fetch" },
+      posts: [{ id: "t1", body: "Literal synthetic excerpt", contentKind: "preview" }] });
+    expect(agentRun).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    new DOMException("Cancelled", "AbortError"),
+    new PaidCallDeniedError("budget_exhausted", "Budget denied"),
+  ])("propagates a TinyFish page-fetch %s instead of falling back", async (failure) => {
+    vi.stubEnv("TINYFISH_API_KEY", "test-key");
+    search.mockResolvedValue([{ url: thread("t1"), title: "Synthetic question", snippet: "Literal synthetic excerpt", position: 1 }]);
+    fetchPages.mockRejectedValue(failure);
+    await expect(fetchRedditPostsWithMeta({ ctx: context })).rejects.toBe(failure);
+    expect(agentRun).not.toHaveBeenCalled();
+  });
 });
 
 describe("Scavio hydration", () => {
