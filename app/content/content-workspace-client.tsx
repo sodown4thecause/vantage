@@ -4,7 +4,7 @@ import { DefaultChatTransport, type UIMessage } from "ai";
 import { useChat } from "@ai-sdk/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useCallback, useMemo, useState, type FormEvent } from "react";
 
 import type { ContentDraftRow, ContentMessageRow, ContentThreadRow } from "@/lib/content-agent/repository";
 
@@ -57,16 +57,16 @@ export function ContentWorkspaceClient({
 }) {
   const router = useRouter();
   const [threadId, setThreadId] = useState<string | null>(selectedThreadId);
-  const selectThread = (nextThreadId: string) => {
-    if (threadId === nextThreadId) return;
+  const selectThread = useCallback((nextThreadId: string) => {
+    if (selectedThreadId === nextThreadId) return;
     setThreadId(nextThreadId);
     void router.replace(`/content?${new URLSearchParams({ workspaceId, threadId: nextThreadId }).toString()}`);
-  };
+  }, [router, selectedThreadId, workspaceId]);
   const [messages] = useState(() => selectedThreadId
     ? initialMessages.map((message) => fromHistory(message, selectedThreadId))
     : []);
   const [input, setInput] = useState("");
-  const transport = new DefaultChatTransport<ContentChatMessage>({
+  const transport = useMemo(() => new DefaultChatTransport<ContentChatMessage>({
     api: "/api/content/chat",
     fetch: async (input, init) => {
       const response = await fetch(input, init);
@@ -89,7 +89,7 @@ export function ContentWorkspaceClient({
         },
       };
     },
-  });
+  }), [selectThread, workspaceId]);
   const { messages: turns, sendMessage, setMessages, clearError, status, error, stop } = useChat<ContentChatMessage>({
     transport,
     messages,
