@@ -14,6 +14,14 @@ export async function proposalActor(workspaceId: string): Promise<string> {
 export const sourceSnapshotSql = (workspaceId: string) => sql`(select coalesce(jsonb_agg(jsonb_build_object('id', id, 'name', name, 'type', type, 'lane', lane, 'config', config - 'lastRun', 'enabled', health <> 'paused') order by id), '[]'::jsonb) from source where workspace_id = ${workspaceId}::uuid)`;
 export const proposalColumns = sql`id, workspace_id as "workspaceId", conversation_id as "conversationId", strategy_version as "strategyVersion", payload, payload_hash as "payloadHash", expires_at::text as "expiresAt", status`;
 
+/** Recover the latest pending confirmation even if its foreground stream stopped before the card arrived. */
+export async function getPendingStrategyProposal(input: { workspaceId: string; conversationId: string }): Promise<StrategyProposal | null> {
+  const { workspaceId, conversationId } = proposalScopeSchema.parse(input);
+  await proposalActor(workspaceId);
+  const [row] = rowsOf(await getDb().execute(sql`select ${proposalColumns} from gtm_proposal where workspace_id = ${workspaceId}::uuid and conversation_id = ${conversationId}::uuid and status = 'pending' and expires_at > now() order by expires_at desc limit 1`)) as StrategyProposal[];
+  return row ?? null;
+}
+
 /** Each statement is submitted in one Neon HTTP transaction; the lock precedes fresh statement snapshots. */
 export async function proposalBatch(workspaceId: string, statements: [SQL, ...SQL[]], lockDomains = false) {
   const db = getDb();

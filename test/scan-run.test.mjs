@@ -197,3 +197,21 @@ test("first scan keeps partial results when one source fails, and records a buil
     assert.equal(calls.at(-1).partial, true);
   }
 });
+
+test("manual scans carry their durable ID and acknowledge cancellation between collect and build", async () => {
+  const calls = [];
+  let acknowledged = false;
+  const result = await runScan({ workspaceId: "ws-1", kind: "manual", runId: "chat-job" }, fakeStep(), async (path, body) => {
+    assert.equal(path, "/api/internal/scan/first");
+    assert.equal(body.runId, "chat-job");
+    calls.push(body.action);
+    if (body.action === "plan") return json({ leaseToken: LEASE, sourceIds: ["src-a"] });
+    if (body.action === "collect") return json({ read: 1 });
+    if (body.action === "read") return json({ cancelled: true });
+    if (body.action === "finish") { acknowledged = true; return json({ status: "cancelled" }); }
+    throw new Error("Must not build after cancellation");
+  });
+  assert.equal(acknowledged, true);
+  assert.deepEqual(calls, ["plan", "collect", "read", "finish"]);
+  assert.deepEqual(result, { status: "cancelled", failures: 0 });
+});

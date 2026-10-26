@@ -253,6 +253,13 @@
       "when": 1792994076898,
       "tag": "0035_next_sauron",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792999733494,
+      "tag": "0036_useful_ironclad",
+      "breakpoints": true
     }
   ]
 }

@@ -33,12 +33,12 @@ export async function getFirstScanStatus(workspaceId: string, storedRun: typeof 
     stale: sql<boolean>`exists (select 1 from ${scanRun} where ${staleFirstScanCondition(workspaceId)})`,
     now: sql<Date>`now()`.mapWith(scanRun.createdAt),
   }).from(workspace).where(eq(workspace.id, workspaceId)).limit(1);
-  const run = storedRun && ws?.stale ? { ...storedRun, status: "failed", finishedAt: ws.now } : storedRun;
+  const run = storedRun?.id === firstScanId(workspaceId) && ws?.stale ? { ...storedRun, status: "failed", finishedAt: ws.now } : storedRun;
   const [poll] = await db.select({ last: sql<Date | string | null>`max(${source.lastPolledAt})` })
     .from(source).where(and(eligibleSourceCondition(workspaceId),
       or(isNull(source.lastPolledAt), lt(source.lastPolledAt, sql`now() + interval '5 minutes'`))));
   let scanHealth: ScanHealth | null = null;
-  if (run && ["done", "partial", "failed"].includes(run.status)) {
+  if (run && ["done", "partial", "failed", "cancelled"].includes(run.status)) {
     const rows = run.startedAt && run.sourceIds?.length ? await db.select({ id: source.id, config: source.config })
       .from(source).where(and(eq(source.workspaceId, workspaceId), inArray(source.id, run.sourceIds))) : [];
     const start = run.startedAt?.getTime() ?? Infinity;
@@ -57,7 +57,7 @@ export async function getFirstScanStatus(workspaceId: string, storedRun: typeof 
     scanHealth = summariseScanHealth({ discovered: receipts.reduce((n, receipt) => n + receipt.discovered, 0),
       verified: receipts.reduce((n, receipt) => n + receipt.verified, 0),
       completed: run.status === "done" && !missing && receipts.every(receipt => receipt.state === "complete"),
-      cancelled: receipts.some(receipt => receipt.state === "cancelled"), issues });
+      cancelled: run.status === "cancelled" || receipts.some(receipt => receipt.state === "cancelled"), issues });
   }
   return { run, timeZone: ws?.timeZone ?? "UTC", lastPolledAt: poll?.last ?? null, scanHealth };
 }

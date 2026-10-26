@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, not, sql } from "drizzle-orm";
+import { and, asc, desc, eq, not, or, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { seoConversation, seoMessage } from "@/lib/db/schema";
@@ -14,9 +14,11 @@ function laneFilter(workspaceId: string, kind?: ConversationKind) {
       and ${seoMessage.workspaceId} = ${workspaceId}
       and ${seoMessage.parts} @> ${JSON.stringify({ cards: [{ tool }] })}::jsonb
   )`;
-  return and(
+  const typed = sql`exists (select 1 from gtm_chat where conversation_id = ${seoConversation.id} and workspace_id = ${workspaceId}::uuid)`;
+  if (kind === "gtm") return or(typed, hasCard("gtm_journey"), hasCard(INTERVIEW_CARD_TOOL));
+  return and(not(typed),
     kind === "interview" ? hasCard(INTERVIEW_CARD_TOOL) : not(hasCard(INTERVIEW_CARD_TOOL)),
-    kind === "gtm" ? hasCard("gtm_journey") : not(hasCard("gtm_journey")),
+    not(hasCard("gtm_journey")),
   );
 }
 

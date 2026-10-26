@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { rowsOf } from "@/lib/db/rows";
 import { applyStrategyProposal } from "@/lib/gtm/proposals/apply";
-import { getStrategyProposal, proposalActor, proposalBatch } from "@/lib/gtm/proposals/repository";
+import { getStrategyProposal, getStrategyState, proposalActor, proposalBatch } from "@/lib/gtm/proposals/repository";
 import { ProposalAuthorizationError, ProposalBusyError, ProposalConflictError, proposalDecisionSchema } from "@/lib/gtm/proposals/types";
 
 type Context = { params: Promise<{ id: string }> };
@@ -14,7 +14,8 @@ export async function GET(request: Request, context: Context) {
   try {
     const { id } = await context.params;
     const params = new URL(request.url).searchParams;
-    return Response.json({ proposal: await getStrategyProposal({ workspaceId: params.get("workspaceId") ?? "", conversationId: params.get("conversationId") ?? "", proposalId: id }) });
+    const scope = { workspaceId: params.get("workspaceId") ?? "", conversationId: params.get("conversationId") ?? "" };
+    return Response.json({ proposal: await getStrategyProposal({ ...scope, proposalId: id }), state: await getStrategyState(scope) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return failure(error); }
 }
 

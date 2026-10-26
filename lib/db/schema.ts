@@ -146,8 +146,8 @@ export const workspace = pgTable("workspace", {
 export const scanRun = pgTable("scan_run", {
   id: text("id").primaryKey(),
   workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
-  kind: text("kind").$type<"first" | "scheduled">().notNull(),
-  status: text("status").$type<"queued" | "running" | "done" | "partial" | "failed">().notNull().default("queued"),
+  kind: text("kind").$type<"first" | "scheduled" | "manual">().notNull(),
+  status: text("status").$type<"queued" | "running" | "done" | "partial" | "failed" | "cancel_requested" | "cancelled">().notNull().default("queued"),
   read: integer("read").notNull().default(0),
   relevant: integer("relevant").notNull().default(0),
   picked: integer("picked").notNull().default(0),
@@ -161,7 +161,7 @@ export const scanRun = pgTable("scan_run", {
   finishedAt: timestamp("finished_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
-  uniqueIndex("scan_run_active_workspace_uidx").on(table.workspaceId).where(sql`${table.status} in ('queued', 'running')`),
+  uniqueIndex("scan_run_active_workspace_uidx").on(table.workspaceId).where(sql`${table.status} in ('queued', 'running', 'cancel_requested')`),
   index("scan_run_workspace_idx").on(table.workspaceId),
 ]);
 
@@ -1126,6 +1126,22 @@ export const gtmChat = pgTable("gtm_chat", {
   check("gtm_chat_revision_check", sql`${table.revision} >= 0 and ${table.revision} <= 200`),
   check("gtm_chat_messages_check", sql`jsonb_typeof(${table.messages}) = 'array' and jsonb_array_length(${table.messages}) <= 200 and octet_length(${table.messages}::text) <= 524288`),
   check("gtm_chat_receipts_check", sql`jsonb_typeof(${table.receipts}) = 'object'`),
+]);
+
+export const gtmChatTurn = pgTable("gtm_chat_turn", {
+  conversationId: uuid("conversation_id").notNull().references(() => seoConversation.id, { onDelete: "cascade" }),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+  requestId: text("request_id").notNull(),
+  token: uuid("token").notNull(),
+  payloadHash: text("payload_hash").notNull(),
+  scanRequested: boolean("scan_requested").notNull().default(false),
+  jobId: text("job_id").references(() => scanRun.id, { onDelete: "set null" }),
+  state: text("state").$type<"running" | "complete" | "interrupted">().notNull().default("running"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+}, table => [
+  primaryKey({ columns: [table.conversationId, table.requestId] }),
+  uniqueIndex("gtm_chat_turn_active_uidx").on(table.conversationId).where(sql`${table.state} = 'running'`),
+  check("gtm_chat_turn_state_check", sql`${table.state} in ('running', 'complete', 'interrupted')`),
 ]);
 
 export const seoMessage = pgTable(

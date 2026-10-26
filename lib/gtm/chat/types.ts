@@ -3,6 +3,9 @@ import { z } from "zod";
 
 import { interviewStateSchema, type InterviewState } from "@/lib/onboarding/interview";
 import type { ResultCard, SeoMessageRow } from "@/lib/seo-agent/conversations";
+import type { StrategyProposal } from "@/lib/gtm/proposals/types";
+import { readScanHealth, type ScanHealth } from "@/lib/scan/health";
+import type { GtmJob } from "./jobs";
 
 export const MAX_GTM_MESSAGES = 200;
 export const MAX_GTM_MESSAGE_BYTES = 32_768;
@@ -17,6 +20,9 @@ export type GtmUIMessage = UIMessage<never, {
   card: ResultCard;
   interview: InterviewState;
   legacy: GtmLegacyContext;
+  proposal: StrategyProposal;
+  job: GtmJob;
+  turn: { state: "complete" | "interrupted" };
 }, { show_card: { input: Record<string, never>; output: ResultCard } }>;
 
 export const gtmCardSchema = z.strictObject({
@@ -26,6 +32,10 @@ export const gtmCardSchema = z.strictObject({
 export const gtmDataSchemas = {
   card: gtmCardSchema,
   interview: interviewStateSchema,
+  // Display-only JSON. The confirmation boundary re-reads and validates the authoritative server proposal.
+  proposal: z.strictObject({ id: z.uuid(), workspaceId: z.uuid(), conversationId: z.uuid(), strategyVersion: z.number().int().nonnegative(), payload: z.custom<StrategyProposal["payload"]>(value => z.record(z.string(), z.json()).safeParse(value).success && gtmJsonBytes(value) <= 65_536), payloadHash: z.string().regex(/^[a-f0-9]{64}$/), expiresAt: z.string().max(100), status: z.enum(["pending", "applied", "denied", "superseded", "expired"]) }),
+  job: z.strictObject({ id: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/), workspaceId: z.uuid(), state: z.enum(["queued", "running", "complete", "partial", "failed", "cancel_requested", "cancelled"]), health: z.custom<ScanHealth>(value => readScanHealth(value) !== undefined).nullable() }),
+  turn: z.strictObject({ state: z.enum(["complete", "interrupted"]) }),
   legacy: z.strictObject({
     status: z.enum(["complete", "incomplete", "needs_approval", "approved"]),
     creditsUsed: z.number().finite().nonnegative(), createdAt: z.string().max(100),
@@ -42,6 +52,9 @@ const partSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("data-card"), id: z.string().max(100).optional(), data: z.unknown() }),
   z.strictObject({ type: z.literal("data-interview"), id: z.string().max(100).optional(), data: z.unknown() }),
   z.strictObject({ type: z.literal("data-legacy"), id: z.string().max(100).optional(), data: z.unknown() }),
+  z.strictObject({ type: z.literal("data-proposal"), id: z.string().max(100).optional(), data: z.unknown() }),
+  z.strictObject({ type: z.literal("data-job"), id: z.string().max(100).optional(), data: z.unknown() }),
+  z.strictObject({ type: z.literal("data-turn"), id: z.string().max(100).optional(), data: z.unknown() }),
   z.strictObject({ type: z.literal("tool-show_card"), toolCallId: z.string().min(1).max(100), state: z.literal("output-available"), input: z.unknown(), output: z.unknown() }),
 ]);
 const messageSchema = z.strictObject({ id: z.string().min(1).max(100), role: z.enum(["user", "assistant"]), parts: z.array(partSchema).min(1).max(64) });

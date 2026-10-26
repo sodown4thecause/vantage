@@ -2,9 +2,9 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { interviewActions, starterActions, WorkspaceClient, WorkspaceRequestError, workspaceErrorCopy } from "@/app/workspace/workspace-client";
-import { promptFor } from "@/lib/onboarding/interview";
+import { starterActions, WorkspaceClient, WorkspaceRequestError, workspaceErrorCopy } from "@/app/workspace/workspace-client";
 import { PRIVATE_PATHS } from "@/lib/seo";
+import Page from "@/app/workspace/page";
 
 const mocks = vi.hoisted(() => ({ authorize: vi.fn(), profile: vi.fn(), queue: vi.fn(), conversation: vi.fn(), detail: vi.fn(), conversations: vi.fn(async () => []), saved: vi.fn(async () => []) }));
 vi.mock("@/lib/auth/workspace", () => ({ authorizeWorkspace: mocks.authorize, getCurrentWorkspace: vi.fn() }));
@@ -60,7 +60,6 @@ describe("guided GTM workspace", () => {
   it("does not read workspace data when authorization fails", async () => {
     vi.clearAllMocks();
     mocks.authorize.mockResolvedValue({ ok: false, status: 403 });
-    const { default: Page } = await import("@/app/workspace/page");
     await Page({ searchParams: Promise.resolve({ workspaceId: "foreign-workspace" }) });
     expect(mocks.profile).not.toHaveBeenCalled();
     expect(mocks.queue).not.toHaveBeenCalled();
@@ -77,7 +76,6 @@ describe("guided GTM workspace", () => {
     mocks.queue.mockResolvedValue([{ id: "lead-1" }]);
     mocks.conversation.mockResolvedValue(null);
     mocks.detail.mockResolvedValue(null);
-    const { default: Page } = await import("@/app/workspace/page");
     const id = "11111111-1111-4111-8111-111111111111";
     await Page({ searchParams: Promise.resolve({ workspaceId: "owned-workspace", c: id }) });
     expect(mocks.profile).toHaveBeenCalledWith("owned-workspace");
@@ -88,26 +86,19 @@ describe("guided GTM workspace", () => {
     expect(mocks.saved).toHaveBeenCalledWith("owned-workspace");
   });
 
-  it("runs the product interview in the workspace for a new user, even without the AI Gateway", () => {
+  it("uses conversational setup with honest configuration and research gaps instead of mandatory questions", () => {
     const html = renderToStaticMarkup(createElement(WorkspaceClient, {
       workspaceId: "workspace-1", productName: "Your product", hasProfile: false, initialEvidence: [], configured: false,
-      interview: { conversationId: null, prompt: promptFor("productUrl", {}), turns: [] },
     }));
-    expect(html).toContain("website address");
-    expect(html).toContain("Question 1 of 7");
-    expect(html).toContain('aria-label="Answer the setup question"');
-    expect(html).toContain('aria-label="Suggested answers"');
-    expect(html).not.toContain("AI Gateway connection");
+    expect(html).toContain("Research gaps");
+    expect(html).not.toContain("Question 1 of 7");
+    expect(html).toContain('aria-label="Ask your GTM assistant"');
+    expect(html).toContain("AI Gateway connection");
     expect(html).not.toContain("/onboarding");
-    expect(html).not.toMatch(/<textarea[^>]*disabled/);
-    expect(html).toContain("nothing is posted on your behalf");
+    expect(html).toContain("Nothing is posted on your behalf");
     expect(html).toContain('aria-labelledby="saved-heading"');
   });
 
-  it("always offers three interview prompts, including while a failed save waits for a retry", () => {
-    expect(interviewActions(undefined)).toHaveLength(3);
-    expect(interviewActions(promptFor("digest", {}))).toHaveLength(3);
-  });
 
   it("lists saved items newest first with their lane and actions", () => {
     const html = renderToStaticMarkup(createElement(WorkspaceClient, {
