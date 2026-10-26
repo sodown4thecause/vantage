@@ -239,6 +239,13 @@
       "when": 1792879577393,
       "tag": "0033_normal_rocket_raccoon",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792989045566,
+      "tag": "0034_fair_dracula",
+      "breakpoints": true
     }
   ]
 }

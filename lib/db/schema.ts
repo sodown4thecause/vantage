@@ -1157,3 +1157,106 @@ export const savedArtifact = pgTable(
     check("saved_artifact_lane_check", sql`${table.lane} in ('gtm', 'seo', 'geo', 'content')`),
   ],
 );
+
+/*
+ * Agent-first discovery (issue #139). Agents write nothing here: a route handler stores each typed proposal as
+ * "proposed", and server actions move it on after the owner confirms. Every row is scoped by workspace.
+ */
+export type ProposalStatus = "proposed" | "accepted" | "rejected";
+export type SourceProposalStatus = "reviewed" | "rejected" | "ingested" | "removal_proposed" | "dismissed";
+
+/** A profile the discovery agent drafted from the owner's site, waiting for the owner to confirm it. */
+export const proposedProfile = pgTable(
+  "proposed_profile",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+    productUrl: text("product_url").notNull(),
+    productName: text("product_name").notNull(),
+    description: text("description").notNull(),
+    category: text("category").notNull(),
+    audience: text("audience").notNull(),
+    pricingTier: text("pricing_tier").notNull(),
+    differentiators: jsonb("differentiators").$type<string[]>().notNull().default([]),
+    evidenceUrl: text("evidence_url").notNull(),
+    status: text("status").$type<ProposalStatus>().notNull().default("proposed"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("proposed_profile_workspace_status_idx").on(table.workspaceId, table.status),
+    check("proposed_profile_status_check", sql`${table.status} in ('proposed', 'accepted', 'rejected')`),
+  ],
+);
+
+/** A competitor the agent found. Accepted ones feed monitoring; rejected ones are remembered so they are not proposed again. */
+export const competitor = pgTable(
+  "competitor",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+    domain: text("domain").notNull(),
+    positioning: text("positioning").notNull(),
+    evidenceUrl: text("evidence_url").notNull(),
+    status: text("status").$type<ProposalStatus>().notNull().default("proposed"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("competitor_workspace_domain_uidx").on(table.workspaceId, table.domain),
+    check("competitor_status_check", sql`${table.status} in ('proposed', 'accepted', 'rejected')`),
+  ],
+);
+
+/** A keyword the agent recommends monitoring, with the reason and a link as evidence. Stored lower-case. */
+export const keywordRecommendation = pgTable(
+  "keyword_recommendation",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+    keyword: text("keyword").notNull(),
+    kind: text("kind").$type<"product" | "competitor" | "category">().notNull(),
+    rationale: text("rationale").notNull(),
+    evidenceUrl: text("evidence_url").notNull(),
+    status: text("status").$type<ProposalStatus>().notNull().default("proposed"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("keyword_recommendation_workspace_keyword_uidx").on(table.workspaceId, table.keyword),
+    check("keyword_recommendation_status_check", sql`${table.status} in ('proposed', 'accepted', 'rejected')`),
+  ],
+);
+
+/**
+ * A source the agent proposed adding ("add") or, after a scan, proposed removing ("remove"). Adds carry the quality
+ * gate's verdict and reasons; a rejected add is stored so the owner can see why and so it is not proposed again.
+ */
+export const sourceProposal = pgTable(
+  "source_proposal",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+    action: text("action").$type<"add" | "remove">().notNull().default("add"),
+    /** The existing source a "remove" proposal is about. */
+    sourceId: uuid("source_id").references(() => source.id, { onDelete: "cascade" }),
+    sourceType: text("source_type").notNull(),
+    name: text("name").notNull(),
+    queries: jsonb("queries").$type<string[]>().notNull().default([]),
+    rationale: text("rationale").notNull(),
+    modelScore: numeric("model_score", { precision: 4, scale: 2 }).notNull().default("0"),
+    relevanceScore: numeric("relevance_score", { precision: 4, scale: 2 }).notNull().default("0"),
+    accepted: boolean("accepted").notNull().default(false),
+    reviewReasons: jsonb("review_reasons").$type<string[]>().notNull().default([]),
+    matchedTerms: jsonb("matched_terms").$type<string[]>().notNull().default([]),
+    status: text("status").$type<SourceProposalStatus>().notNull().default("reviewed"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("source_proposal_workspace_name_action_uidx").on(table.workspaceId, table.name, table.action),
+    index("source_proposal_workspace_status_idx").on(table.workspaceId, table.status),
+    check("source_proposal_action_check", sql`${table.action} in ('add', 'remove')`),
+    check("source_proposal_status_check", sql`${table.status} in ('reviewed', 'rejected', 'ingested', 'removal_proposed', 'dismissed')`),
+  ],
+);
