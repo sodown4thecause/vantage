@@ -4,7 +4,12 @@ const rows = vi.hoisted(() => [{ id: "s1", type: "hn", workspaceId: "ws-1" }]);
 vi.mock("@/lib/db/client", () => ({
   getDb: () => ({
     select: () => ({
-      from: () => ({ where: () => ({ orderBy: () => ({ limit: async () => rows }) }) }),
+      // scanOrder() awaits the bare query to list source switches, while the
+      // source lookup chains where/orderBy/limit. One object serves both.
+      from: () =>
+        Object.assign(Promise.resolve([]), {
+          where: () => ({ orderBy: () => ({ limit: async () => rows }) }),
+        }),
     }),
   }),
 }));
