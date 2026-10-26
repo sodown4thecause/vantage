@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -8,6 +9,14 @@ const read = (relative) => readFileSync(fileURLToPath(new URL(relative, import.m
 
 const ddl = read("../docs/superpowers/specs/2026-10-23-neon-knowledge-base-schema.sql");
 const spec = read("../docs/superpowers/specs/2026-10-23-neon-knowledge-base-design.md");
+const schema = read("../lib/db/schema.ts");
+const drizzleDirectory = fileURLToPath(new URL("../drizzle", import.meta.url));
+const drizzleSql = readdirSync(drizzleDirectory, { withFileTypes: true })
+  .filter((entry) => entry.isFile() && entry.name.endsWith(".sql"))
+  .map((entry) => readFileSync(join(drizzleDirectory, entry.name), "utf8"))
+  .join("\n");
+const kbDefinition =
+  /\bCREATE\s+(?:TABLE|TYPE)\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:(?:"[^"]+"|[a-z_][\w$]*)\.)?(?:"kb_(?:documents|chunks|tier|hub|scope)"|kb_(?:documents|chunks|tier|hub|scope))(?![\w$])/i;
 
 const scopeCheck = ddl
   .split("\n")
@@ -80,10 +89,14 @@ describe("PostgreSQL design artifact", () => {
     );
   });
 
-  it("keeps the unnumbered KB design out of the executable Drizzle schema and migrations", () => {
-    expect(read("../lib/db/schema.ts")).not.toContain("kb_documents");
-    const journal = JSON.parse(read("../drizzle/meta/_journal.json"));
-    expect(journal.entries.map((entry) => entry.tag).filter((tag) => /kb/i.test(tag))).toEqual([]);
-    expect(readdirSync(fileURLToPath(new URL("../drizzle", import.meta.url))).filter((name) => /kb/i.test(name))).toEqual([]);
+  it("recognises KB definitions in SQL regardless of the migration filename", () => {
+    expect(kbDefinition.test('CREATE TABLE "public"."kb_documents" (...)')).toBe(true);
+    expect(kbDefinition.test("CREATE TYPE another_schema.kb_scope AS ENUM (...)")).toBe(true);
+    expect(kbDefinition.test("CREATE TABLE public.accounts (...)")).toBe(false);
+  });
+
+  it("keeps KB table and type definitions out of the executable schema and migration SQL", () => {
+    expect(schema).not.toMatch(/\bkb_(?:documents|chunks|tier|hub|scope)\b/i);
+    expect(drizzleSql).not.toMatch(kbDefinition);
   });
 });
