@@ -59,11 +59,12 @@ const profile = {
   createdAt: new Date("2026-10-01T00:00:00.000Z"),
   updatedAt: new Date("2026-10-01T00:00:00.000Z"),
 };
-const createAgent = () => createContentAgent({
+const createAgent = (draftUpdate?: { draftId: string; title: string; body: string }) => createContentAgent({
   workspaceId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a11",
   threadId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a12",
   models: { apiKey: "test-key", model: "anthropic/claude-sonnet-5.5" },
   brandVoiceProfile: profile,
+  ...(draftUpdate ? { draftUpdate } : {}),
 });
 
 beforeEach(() => {
@@ -126,7 +127,7 @@ describe("Content draft tool output", () => {
   it("saves exact edits to an existing workspace draft through the update tool", async () => {
     const edited = { id: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a13", title: "Edited title", body: "Exact owner-edited body." };
     mocks.updateDraft.mockResolvedValue(edited);
-    createAgent();
+    createAgent({ draftId: edited.id, title: edited.title, body: edited.body });
     const tool = (mocks.agentOptions as AgentOptions).tools.update_content_draft;
 
     await expect(tool.execute({ draftId: edited.id, title: edited.title, body: edited.body })).resolves.toEqual({
@@ -142,6 +143,19 @@ describe("Content draft tool output", () => {
       body: edited.body,
     });
     expect(mocks.createDraft).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { field: "draft ID", override: { draftId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a14" } },
+    { field: "title", override: { title: "Model changed the title." } },
+    { field: "body", override: { body: "Model changed the text." } },
+  ])("refuses a model-altered $field before any workspace write", async ({ override }) => {
+    const requested = { draftId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a13", title: "Owner title", body: "Exact owner-edited body." };
+    createAgent(requested);
+    const tool = (mocks.agentOptions as AgentOptions).tools.update_content_draft;
+
+    await expect(tool.execute({ ...requested, ...override })).rejects.toThrow("Draft edit did not match the owner's exact requested values.");
+    expect(mocks.updateDraft).not.toHaveBeenCalled();
   });
 
   it("allows ordinary drafts to keep user-provided links without a source lookup", async () => {

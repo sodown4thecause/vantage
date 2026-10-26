@@ -97,6 +97,7 @@ export function ContentWorkspaceClient({
           threadId: typeof body?.threadId === "string" ? body.threadId : undefined,
           message: latestUser ? textOf(latestUser) : "",
           preserveText: body?.preserveText === true,
+          draftUpdate: body?.draftUpdate,
           retry: body?.retry === true || trigger === "regenerate-message",
         },
       };
@@ -154,6 +155,7 @@ export function ContentWorkspaceClient({
       workspaceId,
       threadId: threadId ?? undefined,
       preserveText: preserve === "draft",
+      ...(preserve === "draft" && pendingDraftSave.current ? { draftUpdate: pendingDraftSave.current } : {}),
     } });
   };
   const regenerateSection = (draft: Parameters<typeof buildContentSectionRegenerationPrompt>[0], sectionIndex: number) => {
@@ -195,7 +197,13 @@ export function ContentWorkspaceClient({
     setSavingDraftId(pendingDraftSave.current?.draftId ?? null);
     clearError();
     void sendMessage({ text: latestPrompt, messageId: latestUser.id }, {
-      body: { workspaceId, threadId, retry: true, preserveText: pendingDraftSave.current !== null },
+      body: {
+        workspaceId,
+        threadId,
+        retry: true,
+        preserveText: pendingDraftSave.current !== null,
+        ...(pendingDraftSave.current ? { draftUpdate: pendingDraftSave.current } : {}),
+      },
     });
   };
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {

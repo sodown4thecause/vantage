@@ -2,7 +2,7 @@ import { stepCountIs, ToolLoopAgent, tool } from "ai";
 import { z } from "zod";
 
 import { createHumanisedContentDraft } from "./drafts";
-import { contentBrandVoiceProfileSchema, contentDraftInputSchema, contentDraftUpdateInputSchema, type ContentBrandVoiceProfile } from "./contracts";
+import { contentBrandVoiceProfileSchema, contentDraftInputSchema, contentDraftUpdateInputSchema, type ContentBrandVoiceProfile, type ContentDraftUpdateInput } from "./contracts";
 import { createContentGatewayModel, type ContentAgentModels } from "./models";
 import { appendContentSourceCitations, createContentSourceTools } from "./sources";
 import type { ContentBrandVoiceProfileRow } from "./repository";
@@ -34,6 +34,7 @@ export function createContentAgent(args: {
   threadId: string;
   models: ContentAgentModels;
   brandVoiceProfile: ContentBrandVoiceProfileRow | null;
+  draftUpdate?: ContentDraftUpdateInput;
 }) {
   let brandVoiceProfile: ContentBrandVoiceProfile | null = args.brandVoiceProfile
     ? {
@@ -76,7 +77,11 @@ export function createContentAgent(args: {
         description: "Save owner-edited title and body text to an existing private draft in this workspace. Preserve the exact text and do not publish or schedule it.",
         inputSchema: contentDraftUpdateInputSchema,
         execute: async (input) => {
-          const draft = await updateContentDraft({ workspaceId: args.workspaceId, ...input });
+          const requested = args.draftUpdate;
+          if (!requested || input.draftId !== requested.draftId || input.title !== requested.title || input.body !== requested.body) {
+            throw new Error("Draft edit did not match the owner's exact requested values.");
+          }
+          const draft = await updateContentDraft({ workspaceId: args.workspaceId, ...requested });
           if (!draft) throw new Error("Private Content draft not found in this workspace.");
           return { saved: true, draftId: draft.id, title: draft.title, body: draft.body };
         },

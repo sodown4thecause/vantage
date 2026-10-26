@@ -83,7 +83,13 @@ export async function POST(request: Request): Promise<Response> {
       ? priorMessages.slice(0, latestUserIndex + 1)
       : [...priorMessages, userMessage]);
     const uiMessages = messagesForAgent.map((row) => toUiMessage(row, threadId!));
-    const agent = createContentAgent({ workspaceId, threadId, models, brandVoiceProfile });
+    const agent = createContentAgent({
+      workspaceId,
+      threadId,
+      models,
+      brandVoiceProfile,
+      ...(parsed.data.draftUpdate ? { draftUpdate: parsed.data.draftUpdate } : {}),
+    });
     return await createContentAgentResponse({
       workspaceId,
       threadId,

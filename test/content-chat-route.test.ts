@@ -96,13 +96,27 @@ describe("POST /api/content/chat", () => {
     }));
   });
 
-  it("preserves exact text for metered draft-edit requests while ordinary turns remain trimmed", async () => {
+  it("preserves exact text and passes structured draft edits separately from the prompt", async () => {
     const message = "Save these edits.\n\nExact body:\n  Edited copy.  ";
-    const response = await POST(request({ workspaceId, message, preserveText: true }));
+    const draftUpdate = { draftId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a13", title: "Exact title", body: "  Edited copy.  " };
+    const response = await POST(request({ workspaceId, message, preserveText: true, draftUpdate }));
 
     expect(response.status).toBe(200);
     expect(mocks.createThread).toHaveBeenCalledWith(workspaceId, message);
     expect(mocks.appendMessage).toHaveBeenCalledWith(expect.objectContaining({ workspaceId, threadId, role: "user", content: message }));
+    expect(mocks.createAgent).toHaveBeenCalledWith(expect.objectContaining({ workspaceId, threadId, draftUpdate }));
+  });
+
+  it("rejects structured draft edits when the request does not preserve exact text", async () => {
+    const response = await POST(request({
+      workspaceId,
+      message: "Save these edits.",
+      draftUpdate: { draftId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a13", title: "Exact title", body: "Exact body." },
+    }));
+
+    expect(response.status).toBe(400);
+    expect(mocks.createAgent).not.toHaveBeenCalled();
+    expect(mocks.appendMessage).not.toHaveBeenCalled();
   });
 
   it("reuses the saved user turn when retrying and excludes the failed assistant response", async () => {
