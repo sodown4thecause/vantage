@@ -55,7 +55,7 @@ export async function POST(request: Request): Promise<Response> {
     requestedThreadId ? getContentThreadContext(workspaceId, requestedThreadId) : Promise.resolve(null),
     getContentBrandVoiceProfile(workspaceId),
   ]);
-  if (requestedThreadId && !existing) return json({ error: "not_found" }, 404);
+  if ((retry || requestedThreadId) && !existing) return json({ error: "not_found" }, 404);
 
   let threadId = existing?.thread.id;
   try {

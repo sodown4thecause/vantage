@@ -114,6 +114,15 @@ describe("POST /api/content/chat", () => {
     }));
   });
 
+  it("returns not found when retrying a thread that does not exist", async () => {
+    mocks.getThread.mockResolvedValue(null);
+    const response = await POST(request({ workspaceId, threadId, message: "Write a useful post", retry: true }));
+    expect(response.status).toBe(404);
+    expect(mocks.createThread).not.toHaveBeenCalled();
+    expect(mocks.appendMessage).not.toHaveBeenCalled();
+    expect(mocks.createResponse).not.toHaveBeenCalled();
+  });
+
   it("rejects retry requests without a thread id", async () => {
     const response = await POST(request({ workspaceId, message: "Write a useful post", retry: true }));
     expect(response.status).toBe(400);

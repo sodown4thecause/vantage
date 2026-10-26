@@ -1159,7 +1159,7 @@ export const savedArtifact = pgTable(
   ],
 );
 
-/** Workspace-owned Content threads, streamed messages and private generated drafts. */
+/** Workspace-owned Content brand voice profile used by the Content agent. */
 export const contentBrandVoiceProfile = pgTable(
   "content_brand_voice_profile",
   {
@@ -1177,6 +1177,7 @@ export const contentBrandVoiceProfile = pgTable(
 
 export type ContentBrandVoiceProfileRow = typeof contentBrandVoiceProfile.$inferSelect;
 
+/** Workspace-owned Content threads, streamed messages and private generated drafts. */
 export const contentThread = pgTable(
   "content_thread",
   {

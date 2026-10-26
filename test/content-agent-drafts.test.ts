@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({ createDraft: vi.fn(), humanise: vi.fn() }));
 vi.mock("@/lib/content-agent/repository", () => ({ createContentDraft: mocks.createDraft }));
 vi.mock("@/lib/content-agent/humaniser", () => ({ humaniseContentDraft: mocks.humanise }));
 
-import { createHumanisedContentDraft } from "@/lib/content-agent/drafts";
+import { ContentBrandVoiceRequiredError, createHumanisedContentDraft } from "@/lib/content-agent/drafts";
 
 const profile = {
   audience: "Founder-led teams",
@@ -26,8 +26,11 @@ beforeEach(() => {
 });
 
 describe("Content private draft saving", () => {
-  it("requires a saved workspace voice and humanises the body before persistence", async () => {
-    await expect(createHumanisedContentDraft({ ...args, profile: null })).rejects.toThrow("Save a brand voice profile");
+  it("requires a saved workspace voice and humanises the persisted body", async () => {
+    const error = await createHumanisedContentDraft({ ...args, profile: null }).catch((value: unknown) => value);
+    expect(error).toBeInstanceOf(ContentBrandVoiceRequiredError);
+    expect(error).toMatchObject({ code: "CONTENT_BRAND_VOICE_REQUIRED" });
+    expect(error).toHaveProperty("message", "Save a brand voice profile before creating a draft.");
     expect(mocks.humanise).not.toHaveBeenCalled();
     expect(mocks.createDraft).not.toHaveBeenCalled();
 
@@ -44,6 +47,5 @@ describe("Content private draft saving", () => {
       ...args.draft,
       body: "Revised text.",
     });
-    expect(mocks.humanise.mock.invocationCallOrder[0]).toBeLessThan(mocks.createDraft.mock.invocationCallOrder[0]);
   });
 });

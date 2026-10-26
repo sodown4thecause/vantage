@@ -36,6 +36,7 @@ beforeEach(() => {
   });
   mocks.generateText.mockReset().mockResolvedValue({
     text: "A clearer, more natural Australian English draft.",
+    finishReason: "stop",
     usage: { inputTokens: 100, outputTokens: 20, inputTokenDetails: { cacheReadTokens: 0 } },
   });
   mocks.paidCall.mockReset().mockImplementation(async (meta: unknown, work: () => Promise<unknown>) => {
@@ -47,6 +48,21 @@ beforeEach(() => {
 });
 
 describe("Content brand-voice humaniser", () => {
+  it("does not return a draft truncated by the output token limit", async () => {
+    mocks.generateText.mockResolvedValueOnce({
+      text: "An incomplete draft",
+      finishReason: "length",
+      usage: { inputTokens: 100, outputTokens: 5000, inputTokenDetails: { cacheReadTokens: 0 } },
+    });
+
+    await expect(humaniseContentDraft({
+      workspaceId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a11",
+      draft: { title: "A useful post", body: "Original wording.", format: "blog_post" },
+      profile,
+      models: { apiKey: "test-key", model: "anthropic/claude-sonnet-5.5" },
+    })).rejects.toThrow("The Content humaniser output was truncated.");
+  });
+
   it("rewrites every supplied draft under its saved voice and a separate Gateway reservation", async () => {
     await expect(humaniseContentDraft({
       workspaceId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a11",

@@ -35,6 +35,9 @@ export async function humaniseContentDraft(args: {
       maxOutputTokens: 5000,
       maxRetries: 0,
     });
+    if (result.finishReason === "length") {
+      throw new Error("The Content humaniser output was truncated.");
+    }
     const text = result.text.trim();
     if (!text) throw new Error("The Content humaniser returned an empty draft.");
     return { value: text, costUsd: contentUsageCost(args.models.model, result.usage) };
