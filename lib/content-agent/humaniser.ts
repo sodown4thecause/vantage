@@ -11,12 +11,14 @@ export async function humaniseContentDraft(args: {
   draft: ContentDraftInput;
   profile: ContentBrandVoiceProfile;
   models: ContentAgentModels;
+  signal?: AbortSignal;
 }): Promise<string> {
   return runPaidCall({
     context: { workspaceId: args.workspaceId, sourceKey: "content" },
     provider: "gateway",
     action: "content_humaniser",
     estimateUsd: HUMANISER_ESTIMATE_USD,
+    signal: args.signal,
   }, async () => {
     const result = await generateText({
       model: createContentGatewayModel(args.models),
@@ -34,6 +36,7 @@ export async function humaniseContentDraft(args: {
       }),
       maxOutputTokens: 5000,
       maxRetries: 0,
+      abortSignal: args.signal,
     });
     if (result.finishReason === "length") {
       throw new Error("The Content humaniser output was truncated.");

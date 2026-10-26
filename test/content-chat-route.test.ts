@@ -128,6 +128,14 @@ describe("POST /api/content/chat", () => {
     expect(response.status).toBe(400);
   });
 
+  it("returns a generic service error when the brand voice profile lookup fails", async () => {
+    mocks.getBrandProfile.mockRejectedValueOnce(new Error("database unavailable"));
+    const response = await POST(request({ workspaceId, message: "Write a useful post" }));
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({ error: "agent_unavailable" });
+    expect(mocks.createThread).not.toHaveBeenCalled();
+  });
+
   it("returns the created thread id if streaming fails so a retry can resume it", async () => {
     mocks.createResponse.mockRejectedValueOnce(new Error("stream unavailable"));
     const response = await POST(request({ workspaceId, message: "Write a useful post" }));

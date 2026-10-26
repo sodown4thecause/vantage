@@ -40,6 +40,7 @@ describe("Content private draft saving", () => {
       draft: args.draft,
       profile,
       models: args.models,
+      signal: undefined,
     });
     expect(mocks.createDraft).toHaveBeenCalledWith({
       workspaceId: args.workspaceId,
@@ -47,5 +48,18 @@ describe("Content private draft saving", () => {
       ...args.draft,
       body: "Revised text.",
     });
+  });
+
+  it("does not save when the chat is stopped during humanisation", async () => {
+    const controller = new AbortController();
+    mocks.humanise.mockImplementationOnce(async ({ signal }: { signal?: AbortSignal }) => {
+      expect(signal).toBe(controller.signal);
+      controller.abort();
+      return "Revised text.";
+    });
+
+    await expect(createHumanisedContentDraft({ ...args, profile, signal: controller.signal }))
+      .rejects.toMatchObject({ name: "AbortError" });
+    expect(mocks.createDraft).not.toHaveBeenCalled();
   });
 });

@@ -19,6 +19,7 @@ describe("Content agent brand voice instructions", () => {
       avoid: ["hype"],
     });
     expect(instructions).toContain("follow it for every draft");
+    expect(instructions).toContain("show the full humanised draft body in the conversation");
     expect(instructions).toContain("Founder-led teams");
     expect(instructions).toContain("conduct the short interview and save the updated profile");
   });

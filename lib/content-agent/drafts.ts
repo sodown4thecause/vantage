@@ -19,14 +19,18 @@ export async function createHumanisedContentDraft(args: {
   draft: ContentDraftInput;
   profile: ContentBrandVoiceProfile | null;
   models: ContentAgentModels;
+  signal?: AbortSignal;
 }): Promise<ContentDraftRow> {
   if (!args.profile) throw new ContentBrandVoiceRequiredError();
+  args.signal?.throwIfAborted();
   const body = await humaniseContentDraft({
     workspaceId: args.workspaceId,
     draft: args.draft,
     profile: args.profile,
     models: args.models,
+    signal: args.signal,
   });
+  args.signal?.throwIfAborted();
   return createContentDraft({
     workspaceId: args.workspaceId,
     threadId: args.threadId,

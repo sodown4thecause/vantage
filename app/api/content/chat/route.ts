@@ -51,14 +51,15 @@ export async function POST(request: Request): Promise<Response> {
   const models = contentAgentModels();
   if (!models) return json({ error: "not_configured" }, 503);
 
-  const [existing, brandVoiceProfile] = await Promise.all([
-    requestedThreadId ? getContentThreadContext(workspaceId, requestedThreadId) : Promise.resolve(null),
-    getContentBrandVoiceProfile(workspaceId),
-  ]);
-  if ((retry || requestedThreadId) && !existing) return json({ error: "not_found" }, 404);
-
-  let threadId = existing?.thread.id;
+  let threadId: string | undefined;
   try {
+    const [existing, brandVoiceProfile] = await Promise.all([
+      requestedThreadId ? getContentThreadContext(workspaceId, requestedThreadId) : Promise.resolve(null),
+      getContentBrandVoiceProfile(workspaceId),
+    ]);
+    if ((retry || requestedThreadId) && !existing) return json({ error: "not_found" }, 404);
+    threadId = existing?.thread.id;
+
     const priorMessages = existing?.messages ?? [];
     const latestUserIndex = priorMessages.findLastIndex((row) => row.role === "user");
     const latestUserMessage = latestUserIndex >= 0 ? priorMessages[latestUserIndex] : undefined;

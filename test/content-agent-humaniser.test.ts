@@ -64,23 +64,27 @@ describe("Content brand-voice humaniser", () => {
   });
 
   it("rewrites every supplied draft under its saved voice and a separate Gateway reservation", async () => {
+    const signal = new AbortController().signal;
     await expect(humaniseContentDraft({
       workspaceId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a11",
       draft: { title: "A useful post", body: "Original wording.", format: "blog_post" },
       profile,
       models: { apiKey: "test-key", model: "anthropic/claude-sonnet-5.5" },
+      signal,
     })).resolves.toBe("A clearer, more natural Australian English draft.");
 
     expect(mocks.paidMeta).toEqual(expect.objectContaining({
       context: { workspaceId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a11", sourceKey: "content" },
       provider: "gateway",
       action: "content_humaniser",
+      signal,
     }));
     expect(mocks.gatewayOptions).toEqual({ apiKey: "test-key" });
     expect(mocks.generateText).toHaveBeenCalledWith(expect.objectContaining({
       prompt: expect.stringContaining("Original wording."),
       system: expect.stringContaining("Australian English"),
       maxRetries: 0,
+      abortSignal: signal,
     }));
     expect(mocks.paidResult).toEqual({
       value: "A clearer, more natural Australian English draft.",
