@@ -2,7 +2,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { contentBrandVoiceProfile, contentDraft, contentMessage, contentThread } from "@/lib/db/schema";
-import type { ContentBrandVoiceProfile, ContentDraftInput, ContentMessageRole, ContentMessageStatus } from "./contracts";
+import type { ContentBrandVoiceProfile, ContentDraftInput, ContentMessageRole, ContentMessageStatus, ContentSourceCitation } from "./contracts";
 import { contentThreadTitle } from "./contracts";
 
 export type ContentThreadRow = typeof contentThread.$inferSelect;
@@ -131,10 +131,18 @@ export async function upsertContentAssistantMessage(args: {
 export async function createContentDraft(args: {
   workspaceId: string;
   threadId: string;
+  sourceCitations?: ContentSourceCitation[];
 } & ContentDraftInput): Promise<ContentDraftRow> {
-  const [draft] = await getDb().insert(contentDraft).values(args).returning();
+  const [draft] = await getDb().insert(contentDraft).values({ ...args, sourceCitations: args.sourceCitations ?? [] }).returning();
   if (!draft) throw new Error("Content draft could not be saved.");
   return draft;
+}
+
+export async function getContentDraft(workspaceId: string, draftId: string): Promise<ContentDraftRow | null> {
+  const [draft] = await getDb().select().from(contentDraft)
+    .where(and(eq(contentDraft.workspaceId, workspaceId), eq(contentDraft.id, draftId)))
+    .limit(1);
+  return draft ?? null;
 }
 
 export async function updateContentDraft(args: {

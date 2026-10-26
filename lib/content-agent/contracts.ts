@@ -10,6 +10,7 @@ export const contentFormatValues = [
   "newsletter_section",
 ] as const;
 export type ContentDraftFormat = (typeof contentFormatValues)[number];
+export type ContentSourceCitation = { title: string; url: string };
 
 export const contentDraftUpdateInputSchema = z.object({
   draftId: z.uuid(),
@@ -18,12 +19,19 @@ export const contentDraftUpdateInputSchema = z.object({
 }).strict();
 export type ContentDraftUpdateInput = z.infer<typeof contentDraftUpdateInputSchema>;
 
+export const contentDraftRepurposeInputSchema = z.object({
+  draftId: z.uuid(),
+  format: z.enum(contentFormatValues),
+}).strict();
+export type ContentDraftRepurposeInput = z.infer<typeof contentDraftRepurposeInputSchema>;
+
 export const contentChatRequestSchema = z.object({
   workspaceId: z.uuid(),
   threadId: z.uuid().optional(),
   message: z.string().min(1).max(32_000).refine((value) => value.trim().length > 0),
   preserveText: z.boolean().optional(),
   draftUpdate: contentDraftUpdateInputSchema.optional(),
+  repurposeDraft: contentDraftRepurposeInputSchema.optional(),
   retry: z.boolean().optional(),
 }).superRefine(({ draftUpdate, preserveText }, context) => {
   if (draftUpdate && preserveText !== true) {

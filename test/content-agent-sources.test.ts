@@ -18,7 +18,7 @@ vi.mock("@/lib/dataforseo/labs", () => ({
 }));
 vi.mock("@/lib/dataforseo/backlinks", () => ({ normalizeTarget: mocks.normalizeTarget }));
 
-import { appendContentSourceCitations, createContentSourceTools } from "@/lib/content-agent/sources";
+import { appendContentSourceCitations, contentDraftHasSourcesContent, contentDraftSourceCitations, createContentSourceTools } from "@/lib/content-agent/sources";
 
 type Runnable = {
   inputSchema: { safeParse: (input: unknown) => { success: boolean } };
@@ -142,6 +142,28 @@ describe("Content source tools", () => {
       evidence: [{ keyword: "brand voice tools", position: 3 }],
       citations: [{ title: "Competitor ranking page for brand voice tools", url: rankingUrl }],
     });
+  });
+
+  it("accepts only safe citation manifests and ignores editable draft bodies", () => {
+    expect(contentDraftSourceCitations([
+      { title: "Saved source", url: conversationUrl },
+      { title: "Unsafe", url: "javascript:alert(1)" },
+      { title: "Malformed", url: "https://" },
+      { title: 123, url: "https://example.com/ignored" },
+    ])).toEqual([{ title: "Saved source", url: conversationUrl }]);
+    expect(contentDraftSourceCitations(`Sources:\n- https://attacker.example/edited`)).toEqual([]);
+    expect(contentDraftSourceCitations(null)).toEqual([]);
+  });
+
+  it("treats non-empty source sections as source-backed without trusting their contents", () => {
+    expect(contentDraftHasSourcesContent(`Draft.\n\nSources:\n- ${conversationUrl}`)).toBe(true);
+    expect(contentDraftHasSourcesContent("Sources:\n- Reddit thread by u/foo")).toBe(true);
+    expect(contentDraftHasSourcesContent("Sources: Reddit thread by u/foo")).toBe(true);
+    expect(contentDraftHasSourcesContent("Sources:\n- example.com/post")).toBe(true);
+    expect(contentDraftHasSourcesContent(`Draft.\n\nSources:\n- ${conversationUrl}\n\nNote: see https://attacker.example/note`)).toBe(true);
+    expect(contentDraftHasSourcesContent(`Draft.\n\nSources:\n- ${conversationUrl}\n\nSources:\n`)).toBe(true);
+    expect(contentDraftHasSourcesContent("Draft.\n\nSources:\n")).toBe(false);
+    expect(contentDraftHasSourcesContent("Draft.\r\n\r\nSources:\r\n- Reddit thread")).toBe(true);
   });
 
   it("rejects drafts containing any citation URL not returned by source tools and appends unique canonical citations", () => {

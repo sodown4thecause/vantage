@@ -5,13 +5,18 @@ import { describe, expect, it, vi } from "vitest";
 import {
   ContentToolCard,
   contentDraftIsDirty,
+  contentDraftSections,
   contentDraftsNeedingRestore,
   contentDraftSaveReducer,
   buildContentDraftUpdatePrompt,
   buildContentRepurposePrompt,
   buildContentSectionRegenerationPrompt,
+  contentDraftRepurposeAfterFinish,
+  contentDraftUpdateResult,
+  contentDraftUpdateResults,
   contentDraftUpdateSucceeded,
   replaceContentDraftSection,
+  syncContentDraftEditor,
 } from "@/app/content/content-workspace-cards";
 import type { ContentDraftFormat } from "@/lib/content-agent/contracts";
 
@@ -179,6 +184,54 @@ describe("Content generative cards", () => {
     expect(prompt).not.toContain("y".repeat(4_001));
   });
 
+  it("syncs server-confirmed draft fields without overwriting local edits", () => {
+    expect(syncContentDraftEditor(
+      { title: "Local title", body: "Original body" },
+      { title: "Original title", body: "Original body" },
+      { title: "Server title", body: "Server body" },
+    )).toEqual({ title: "Local title", body: "Server body" });
+    expect(syncContentDraftEditor(
+      { title: "Original title", body: "Local body" },
+      { title: "Original title", body: "Original body" },
+      { title: "Server title", body: "Server body" },
+    )).toEqual({ title: "Server title", body: "Local body" });
+    expect(syncContentDraftEditor(
+      { title: "Local title", body: "Local body" },
+      { title: "Original title", body: "Original body" },
+      { title: "Server title", body: "Server body" },
+    )).toEqual({ title: "Local title", body: "Local body" });
+    expect(syncContentDraftEditor(
+      { title: "Original title", body: "Local body" },
+      { title: "Original title", body: "Original body" },
+      { title: "Server title", body: "Original body" },
+    )).toEqual({ title: "Server title", body: "Local body" });
+    expect(contentDraftUpdateResult({ saved: true, draftId: draft.draftId, title: "Fresh title", body: "Fresh body" })).toEqual({
+      draftId: draft.draftId,
+      title: "Fresh title",
+      body: "Fresh body",
+      ok: true,
+    });
+    expect(contentDraftUpdateResult({ saved: false })).toBeNull();
+  });
+
+  it("refreshes successful non-pending updates but ignores a mismatched pending save result", () => {
+    const result = { saved: true, draftId: draft.draftId, title: "Saved title", body: "Saved body" };
+    const part = { type: "tool-update_content_draft", state: "output-available", output: result };
+
+    const completed = { draftId: result.draftId, title: result.title, body: result.body, ok: true };
+    expect(contentDraftUpdateResults([part])).toEqual([completed]);
+    expect(contentDraftUpdateResults([part], { draftId: "other-draft", title: "Other", body: "Other" })).toEqual([completed]);
+    expect(contentDraftUpdateResults([part], { draftId: draft.draftId, title: "Pending title", body: "Pending body" })).toEqual([]);
+    expect(contentDraftUpdateResults([part], { draftId: draft.draftId, title: result.title, body: result.body })).toEqual([completed]);
+  });
+
+  it("retains a repurpose source only after errored or aborted finishes", () => {
+    const pending = { draftId: draft.draftId, format: "linkedin_post" as const };
+    expect(contentDraftRepurposeAfterFinish(pending, true, false)).toBe(pending);
+    expect(contentDraftRepurposeAfterFinish(pending, false, true)).toBe(pending);
+    expect(contentDraftRepurposeAfterFinish(pending, false, false)).toBeNull();
+  });
+
   it("keeps each last-confirmed save separate from later failures and other card saves", () => {
     const initial = { confirmed: {}, results: {} };
     const saved = contentDraftSaveReducer(initial, { type: "started", draftId: draft.draftId });
@@ -191,12 +244,62 @@ describe("Content generative cards", () => {
       type: "finished",
       result: { draftId: draft.draftId, title: "Original A", body: "Body A", ok: false },
     });
-    const otherCard = contentDraftSaveReducer(afterFailure, { type: "started", draftId: "other-draft" });
+    const synchronized = contentDraftSaveReducer(afterFailure, {
+      type: "synchronized",
+      draftId: draft.draftId,
+      title: "Server C",
+      body: "Body C",
+    });
+    const otherCard = contentDraftSaveReducer(synchronized, { type: "started", draftId: "other-draft" });
 
     expect(afterFailure.confirmed[draft.draftId]).toEqual({ title: "Saved B", body: "Body B" });
+    expect(synchronized.confirmed[draft.draftId]).toEqual({ title: "Server C", body: "Body C" });
     expect(contentDraftIsDirty({ title: "Original A", body: "Body A" }, afterFailure.confirmed[draft.draftId]!)).toBe(true);
     expect(afterFailure.results[draft.draftId]).toEqual({ draftId: draft.draftId, title: "Original A", body: "Body A", ok: false });
     expect(otherCard.results[draft.draftId]).toEqual(afterFailure.results[draft.draftId]);
+  });
+
+  it("replaces only the selected source range and preserves all other whitespace and Markdown", () => {
+    const formatted = [
+      "# Intro",
+      "",
+      "  Selected para  ",
+      " ",
+      "```md",
+      "  code line",
+      "",
+      "  code line 2",
+      "```",
+      "",
+      "# Tail",
+      "",
+    ].join(String.fromCharCode(10));
+    const expected = [
+      "# Intro",
+      "",
+      "  Replacement  ",
+      " ",
+      "```md",
+      "  code line",
+      "",
+      "  code line 2",
+      "```",
+      "",
+      "# Tail",
+      "",
+    ].join(String.fromCharCode(10));
+    expect(replaceContentDraftSection(formatted, 1, "Replacement", "Selected para")).toBe(expected);
+  });
+
+  it("recognizes Unicode-whitespace blank-line separators", () => {
+    expect(contentDraftSections("A\n\u00a0\nB")).toEqual(["A", "B"]);
+    expect(replaceContentDraftSection("A\n\u00a0\nB", 1, "X", "B")).toBe("A\n\u00a0\nX");
+  });
+
+  it("preserves CRLF, padding and a final newline when replacing a section", () => {
+    expect(replaceContentDraftSection("A\r\n\r\nB\r\n", 0, "X", "A")).toBe("X\r\n\r\nB\r\n");
+    expect(replaceContentDraftSection("  A  \n\nB\n", 0, "X", "A")).toBe("  X  \n\nB\n");
+    expect(replaceContentDraftSection("A\n\n  B  \n", 1, "X", "B")).toBe("A\n\n  X  \n");
   });
 
   it("keeps regeneration as an unapplied proposal and repurposes only through private drafting", () => {

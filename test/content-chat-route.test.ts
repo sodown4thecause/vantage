@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   createThread: vi.fn(),
   getThread: vi.fn(),
   getBrandProfile: vi.fn(),
+  getDraft: vi.fn(),
   appendMessage: vi.fn(),
   createAgent: vi.fn(),
   createResponse: vi.fn(),
@@ -16,6 +17,7 @@ vi.mock("@/lib/content-agent/repository", () => ({
   createContentThread: mocks.createThread,
   getContentThreadContext: mocks.getThread,
   getContentBrandVoiceProfile: mocks.getBrandProfile,
+  getContentDraft: mocks.getDraft,
   appendContentMessage: mocks.appendMessage,
 }));
 vi.mock("@/lib/content-agent/agent", () => ({ createContentAgent: mocks.createAgent }));
@@ -37,6 +39,7 @@ beforeEach(() => {
   mocks.createThread.mockReset().mockResolvedValue({ id: threadId, workspaceId, title: "Write a post" });
   mocks.getThread.mockReset().mockResolvedValue({ thread: { id: threadId }, messages: [] });
   mocks.getBrandProfile.mockReset().mockResolvedValue(null);
+  mocks.getDraft.mockReset().mockResolvedValue(null);
   mocks.appendMessage.mockReset().mockImplementation(async (args) => ({
     id: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a13",
     ...args,
@@ -117,6 +120,66 @@ describe("POST /api/content/chat", () => {
     expect(response.status).toBe(400);
     expect(mocks.createAgent).not.toHaveBeenCalled();
     expect(mocks.appendMessage).not.toHaveBeenCalled();
+  });
+
+  it("loads the repurpose source from the authorized workspace before creating the agent", async () => {
+    const draftId = "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a14";
+    const savedDraft = { id: draftId, workspaceId, threadId, title: "Original", body: ["Original copy.", "", "Sources:", "- https://community.example/source"].join(String.fromCharCode(10)), sourceCitations: [{ title: "Source", url: "https://community.example/source" }], format: "blog_post" };
+    mocks.getDraft.mockResolvedValue(savedDraft);
+
+    const response = await POST(request({
+      workspaceId,
+      message: "Repurpose this as a LinkedIn post.",
+      repurposeDraft: { draftId, format: "linkedin_post" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.getDraft).toHaveBeenCalledWith(workspaceId, draftId);
+    expect(mocks.createAgent).toHaveBeenCalledWith(expect.objectContaining({ workspaceId, repurposeDraft: savedDraft }));
+  });
+
+  it("rejects repurposing into the source draft's current format", async () => {
+    const draftId = "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a14";
+    mocks.getDraft.mockResolvedValue({ id: draftId, format: "blog_post" });
+
+    const response = await POST(request({
+      workspaceId,
+      message: "Repurpose this as another blog post.",
+      repurposeDraft: { draftId, format: "blog_post" },
+    }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "invalid_repurpose_format" });
+    expect(mocks.createThread).not.toHaveBeenCalled();
+    expect(mocks.createAgent).not.toHaveBeenCalled();
+  });
+
+  it("reloads the repurpose source and its citation manifest on retry", async () => {
+    const draftId = "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a14";
+    const message = "Repurpose this as a LinkedIn post.";
+    const savedDraft = { id: draftId, format: "blog_post", sourceCitations: [{ title: "Source", url: "https://community.example/source" }] };
+    mocks.getDraft.mockResolvedValue(savedDraft);
+    mocks.getThread.mockResolvedValue({ thread: { id: threadId }, messages: [{ id: "user-turn", role: "user", content: message, status: "complete" }] });
+
+    const response = await POST(request({ workspaceId, threadId, message, retry: true, repurposeDraft: { draftId, format: "linkedin_post" } }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.getDraft).toHaveBeenCalledWith(workspaceId, draftId);
+    expect(mocks.appendMessage).not.toHaveBeenCalled();
+    expect(mocks.createAgent).toHaveBeenCalledWith(expect.objectContaining({ workspaceId, repurposeDraft: savedDraft }));
+  });
+
+  it("does not expose or use a repurpose source outside the authorized workspace", async () => {
+    const response = await POST(request({
+      workspaceId,
+      message: "Repurpose this as a LinkedIn post.",
+      repurposeDraft: { draftId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a14", format: "linkedin_post" },
+    }));
+
+    expect(response.status).toBe(404);
+    expect(mocks.createThread).not.toHaveBeenCalled();
+    expect(mocks.appendMessage).not.toHaveBeenCalled();
+    expect(mocks.createAgent).not.toHaveBeenCalled();
   });
 
   it("reuses the saved user turn when retrying and excludes the failed assistant response", async () => {

@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import type { SeoMessageParts, SeoMessageRole, SeoMessageStatus } from "@/lib/seo-agent/conversations";
 import type { Block } from "@/lib/workspace/blocks";
 import type { SavedArtifactLane } from "@/lib/workspace/saved-artifact-types";
-import type { ContentBrandVoiceProfile, ContentDraftFormat, ContentMessageRole, ContentMessageStatus } from "@/lib/content-agent/contracts";
+import type { ContentBrandVoiceProfile, ContentDraftFormat, ContentMessageRole, ContentMessageStatus, ContentSourceCitation } from "@/lib/content-agent/contracts";
 import {
   boolean,
   check,
@@ -1217,6 +1217,7 @@ export const contentDraft = pgTable(
     threadId: uuid("thread_id").references(() => contentThread.id, { onDelete: "set null" }),
     title: text("title").notNull(),
     body: text("body").notNull(),
+    sourceCitations: jsonb("source_citations").$type<ContentSourceCitation[]>().notNull().default([]),
     format: text("format").$type<ContentDraftFormat>().notNull().default("blog_post"),
     status: text("status").$type<"idea" | "draft" | "ready">().notNull().default("draft"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

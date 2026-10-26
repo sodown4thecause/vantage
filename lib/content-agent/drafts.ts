@@ -1,5 +1,5 @@
 import { createContentDraft, type ContentDraftRow } from "./repository";
-import type { ContentBrandVoiceProfile, ContentDraftInput } from "./contracts";
+import type { ContentBrandVoiceProfile, ContentDraftInput, ContentSourceCitation } from "./contracts";
 import { contentDraftInputSchema } from "./contracts";
 import { humaniseContentDraft } from "./humaniser";
 import type { ContentAgentModels } from "./models";
@@ -21,6 +21,7 @@ export async function createHumanisedContentDraft(args: {
   models: ContentAgentModels;
   signal?: AbortSignal;
   finalizeBody?: (body: string) => string;
+  sourceCitations?: ContentSourceCitation[];
 }): Promise<ContentDraftRow> {
   if (!args.profile) throw new ContentBrandVoiceRequiredError();
   const draft = contentDraftInputSchema.parse(args.draft);
@@ -38,5 +39,6 @@ export async function createHumanisedContentDraft(args: {
     workspaceId: args.workspaceId,
     threadId: args.threadId,
     ...contentDraftInputSchema.parse({ ...draft, body }),
+    sourceCitations: args.sourceCitations ?? [],
   });
 }

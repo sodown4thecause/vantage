@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 
-import { contentFormatValues, type ContentDraftFormat } from "@/lib/content-agent/contracts";
+import { contentFormatValues, type ContentDraftFormat, type ContentDraftRepurposeInput } from "@/lib/content-agent/contracts";
 
 import s from "./content-workspace-cards.module.css";
 
@@ -30,6 +30,7 @@ export type ContentDraftSaveState = {
 };
 type ContentDraftSaveAction =
   | { type: "started"; draftId: string }
+  | { type: "synchronized"; draftId: string; title: string; body: string }
   | { type: "finished"; result: ContentDraftSaveResult };
 
 export function contentDraftIsDirty(
@@ -39,9 +40,23 @@ export function contentDraftIsDirty(
   return current.title !== confirmed.title || current.body !== confirmed.body;
 }
 
+export function syncContentDraftEditor(
+  current: Pick<ContentCardDraft, "title" | "body">,
+  previous: Pick<ContentCardDraft, "title" | "body">,
+  next: Pick<ContentCardDraft, "title" | "body">,
+): Pick<ContentCardDraft, "title" | "body"> {
+  return {
+    title: current.title === previous.title ? next.title : current.title,
+    body: current.body === previous.body ? next.body : current.body,
+  };
+}
+
 export function contentDraftSaveReducer(state: ContentDraftSaveState, action: ContentDraftSaveAction): ContentDraftSaveState {
   if (action.type === "started") {
     return { ...state, results: { ...state.results, [action.draftId]: null } };
+  }
+  if (action.type === "synchronized") {
+    return { ...state, confirmed: { ...state.confirmed, [action.draftId]: { title: action.title, body: action.body } } };
   }
   return {
     confirmed: action.result.ok
@@ -129,22 +144,40 @@ const formatLabels: Record<ContentDraftFormat, string> = {
   newsletter_section: "Newsletter section",
 };
 
+function contentDraftSectionRanges(body: string): Array<{ start: number; end: number; text: string }> {
+  const ranges: Array<{ start: number; end: number; text: string }> = [];
+  const addSection = (start: number, end: number) => {
+    while (start < end && /\s/.test(body[start]!)) start++;
+    while (end > start && /\s/.test(body[end - 1]!)) end--;
+    if (start < end) ranges.push({ start, end, text: body.slice(start, end) });
+  };
+  const separator = /(?:\r?\n)\s*(?:\r?\n)+/g;
+  let start = 0;
+  let match: RegExpExecArray | null;
+  while ((match = separator.exec(body)) !== null) {
+    addSection(start, match.index);
+    start = separator.lastIndex;
+  }
+  addSection(start, body.length);
+  return ranges;
+}
+
 export function contentDraftSections(body: string): string[] {
-  return body.trim().split(/\n\s*\n/).map((section) => section.trim()).filter(Boolean);
+  return contentDraftSectionRanges(body).map((section) => section.text);
 }
 
 export function replaceContentDraftSection(body: string, sectionIndex: number, replacement: string, expectedOriginal?: string): string {
-  const sections = contentDraftSections(body);
+  const sections = contentDraftSectionRanges(body);
   if (!Number.isInteger(sectionIndex) || sectionIndex < 0 || sectionIndex >= sections.length) {
     throw new Error("The requested section does not exist in this draft.");
   }
-  if (expectedOriginal !== undefined && sections[sectionIndex] !== expectedOriginal) {
+  const section = sections[sectionIndex]!;
+  if (expectedOriginal !== undefined && section.text !== expectedOriginal) {
     throw new Error("The draft section changed after regeneration began.");
   }
   const next = replacement.trim();
   if (!next) throw new Error("A regenerated section cannot be empty.");
-  sections[sectionIndex] = next;
-  return sections.join("\n\n");
+  return `${body.slice(0, section.start)}${next}${body.slice(section.end)}`;
 }
 
 export function buildContentSectionRegenerationPrompt(draft: ContentCardDraft, sectionIndex: number): string {
@@ -173,12 +206,39 @@ export function buildContentDraftUpdatePrompt(draft: ContentCardDraft): string {
   ].join("\n\n");
 }
 
-export function contentDraftUpdateSucceeded(output: unknown, expected: Pick<ContentCardDraft, "draftId" | "title" | "body">): boolean {
+export function contentDraftUpdateResult(output: unknown): ContentDraftSaveResult | null {
   const parsed = draftUpdateOutputSchema.safeParse(output);
   return parsed.success
-    && parsed.data.draftId === expected.draftId
-    && parsed.data.title === expected.title
-    && parsed.data.body === expected.body;
+    ? { draftId: parsed.data.draftId, title: parsed.data.title, body: parsed.data.body, ok: true }
+    : null;
+}
+
+export function contentDraftUpdateSucceeded(output: unknown, expected: Pick<ContentCardDraft, "draftId" | "title" | "body">): boolean {
+  const result = contentDraftUpdateResult(output);
+  return result !== null
+    && result.draftId === expected.draftId
+    && result.title === expected.title
+    && result.body === expected.body;
+}
+
+export function contentDraftUpdateResults(
+  parts: ContentToolPart[],
+  pendingSave?: Pick<ContentCardDraft, "draftId" | "title" | "body">,
+): ContentDraftSaveResult[] {
+  return parts.flatMap((part) => {
+    if (part.type !== "tool-update_content_draft" || part.state !== "output-available") return [];
+    const result = contentDraftUpdateResult(part.output);
+    if (!result || (pendingSave?.draftId === result.draftId && !contentDraftUpdateSucceeded(part.output, pendingSave))) return [];
+    return [result];
+  });
+}
+
+export function contentDraftRepurposeAfterFinish(
+  pending: ContentDraftRepurposeInput | null,
+  isError: boolean,
+  isAbort: boolean,
+): ContentDraftRepurposeInput | null {
+  return isError || isAbort ? pending : null;
 }
 
 export function buildContentRepurposePrompt(draft: ContentCardDraft, format: ContentDraftFormat): string {
@@ -310,15 +370,30 @@ function ContentDraftCard({
   onProposalApplied: () => void;
   busy: boolean;
 }) {
-  const [title, setTitle] = useState(draft.title);
-  const [body, setBody] = useState(draft.body);
+  const confirmedTitle = confirmedDraft?.title;
+  const confirmedBody = confirmedDraft?.body;
+  const initialConfirmed = confirmedDraft ?? draft;
+  const [title, setTitle] = useState(initialConfirmed.title);
+  const [body, setBody] = useState(initialConfirmed.body);
   const [targetFormat, setTargetFormat] = useState<ContentDraftFormat>(contentFormatValues.find((format) => format !== draft.format) ?? "blog_post");
   const [saveState, setSaveState] = useState("");
-  const savedTitle = confirmedDraft?.title ?? draft.title;
-  const savedBody = confirmedDraft?.body ?? draft.body;
+  const previousConfirmed = useRef<Pick<ContentCardDraft, "title" | "body">>(initialConfirmed);
+  const savedTitle = confirmedTitle ?? draft.title;
+  const savedBody = confirmedBody ?? draft.body;
   const saveResultApplies = saveResult?.title === title && saveResult.body === body;
   const sections = contentDraftSections(body);
   const dirty = contentDraftIsDirty({ title, body }, { title: savedTitle, body: savedBody });
+
+  useEffect(() => {
+    const nextConfirmed = { title: confirmedTitle ?? draft.title, body: confirmedBody ?? draft.body };
+    const nextEditor = syncContentDraftEditor({ title, body }, previousConfirmed.current, nextConfirmed);
+    if (nextEditor.title !== title || nextEditor.body !== body) {
+      setTitle(nextEditor.title);
+      setBody(nextEditor.body);
+      setSaveState("");
+    }
+    previousConfirmed.current = nextConfirmed;
+  }, [confirmedTitle, confirmedBody, draft.title, draft.body, title, body]);
 
   const copyDraft = async () => {
     try {

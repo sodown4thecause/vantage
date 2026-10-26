@@ -253,6 +253,13 @@
       "when": 1792989993126,
       "tag": "0035_daily_impossible_man",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1793011134497,
+      "tag": "0036_dapper_paper_doll",
+      "breakpoints": true
     }
   ]
 }

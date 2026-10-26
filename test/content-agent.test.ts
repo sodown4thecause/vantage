@@ -31,6 +31,20 @@ describe("Content agent contracts", () => {
     expect(contentChatRequestSchema.safeParse({ workspaceId, message: `Repurpose this draft: ${"x".repeat(24_000)}` }).success).toBe(true);
   });
 
+  it("accepts only structured IDs and supported formats for repurposing saved drafts", () => {
+    const draftId = "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a13";
+    expect(contentChatRequestSchema.safeParse({
+      workspaceId,
+      message: "Create a LinkedIn version.",
+      repurposeDraft: { draftId, format: "linkedin_post" },
+    }).success).toBe(true);
+    expect(contentChatRequestSchema.safeParse({
+      workspaceId,
+      message: "Create a LinkedIn version.",
+      repurposeDraft: { draftId, format: "published" },
+    }).success).toBe(false);
+  });
+
   it("preserves exact edited draft text while rejecting blank content", () => {
     expect(contentDraftUpdateInputSchema.parse({ draftId: threadId, title: "  Edited title  ", body: "\nEdited body.\n" })).toEqual({
       draftId: threadId,

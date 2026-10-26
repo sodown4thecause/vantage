@@ -5,9 +5,8 @@ import { normalizeTarget } from "@/lib/dataforseo/backlinks";
 import { fetchKeywordGap, fetchRankedKeywords } from "@/lib/dataforseo/labs";
 import { getOpportunityDetail } from "@/lib/opportunities/run";
 
-import { contentFormatValues } from "./contracts";
+import { contentFormatValues, type ContentSourceCitation } from "./contracts";
 
-export type ContentSourceCitation = { title: string; url: string };
 type SourceLookupNotice = { citations: ContentSourceCitation[]; unsafeCitation: boolean };
 const formatSchema = z.enum(contentFormatValues);
 const domainSchema = z.string().trim().min(1).max(253);
@@ -64,6 +63,31 @@ export function appendContentSourceCitations(body: string, citations: ContentSou
   }
   const missing = sources.filter((item) => !body.includes(item.url));
   return missing.length ? `${body.trimEnd()}\n\nSources:\n${missing.map((item) => `- ${item.url}`).join("\n")}` : body.trim();
+}
+
+export function contentDraftHasSourcesContent(body: string): boolean {
+  const headers = [...body.matchAll(/(?:^|\r?\n)Sources:[\t ]*([^\r\n]*)/gi)];
+  return headers.some((header, index) => {
+    if (header[1]?.trim()) return true;
+    if (header.index === undefined) return false;
+    const start = header.index + header[0].length;
+    const end = headers[index + 1]?.index ?? body.length;
+    return body.slice(start, end).trim().length > 0;
+  });
+}
+
+/** Accepts only the server-written citation manifest, never URLs recovered from editable draft text. */
+export function contentDraftSourceCitations(value: unknown): ContentSourceCitation[] {
+  if (!Array.isArray(value)) return [];
+  const citations: ContentSourceCitation[] = [];
+  for (const item of value) {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) continue;
+    const candidate = item as { title?: unknown; url?: unknown };
+    if (typeof candidate.title !== "string") continue;
+    const citation = safeCitation(candidate.title, candidate.url);
+    if (citation) citations.push(citation);
+  }
+  return unique(citations);
 }
 
 function notify(callback: ((notice: SourceLookupNotice) => void) | undefined, citations: ContentSourceCitation[] = [], unsafeCitation = false) {

@@ -57,7 +57,15 @@ describe("Content private draft saving", () => {
       threadId: args.threadId,
       ...args.draft,
       body: "Revised text.",
+      sourceCitations: [],
     });
+  });
+
+  it("persists verified source citations separately from editable draft text", async () => {
+    const sourceCitations = [{ title: "Verified source", url: "https://community.example/thread/1" }];
+    await createHumanisedContentDraft({ ...args, profile, sourceCitations });
+
+    expect(mocks.createDraft).toHaveBeenCalledWith(expect.objectContaining({ sourceCitations }));
   });
 
   it("finalises the humanised body before the workspace draft is persisted", async () => {

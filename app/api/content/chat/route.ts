@@ -9,6 +9,7 @@ import {
   appendContentMessage,
   createContentThread,
   getContentBrandVoiceProfile,
+  getContentDraft,
   getContentThreadContext,
   type ContentMessageRow,
 } from "@/lib/content-agent/repository";
@@ -54,6 +55,13 @@ export async function POST(request: Request): Promise<Response> {
 
   let threadId: string | undefined;
   try {
+    const repurposeDraft = parsed.data.repurposeDraft
+      ? await getContentDraft(workspaceId, parsed.data.repurposeDraft.draftId)
+      : null;
+    if (parsed.data.repurposeDraft && !repurposeDraft) return json({ error: "not_found" }, 404);
+    if (repurposeDraft && parsed.data.repurposeDraft?.format === repurposeDraft.format) {
+      return json({ error: "invalid_repurpose_format" }, 400);
+    }
     const [existing, brandVoiceProfile] = await Promise.all([
       requestedThreadId ? getContentThreadContext(workspaceId, requestedThreadId) : Promise.resolve(null),
       getContentBrandVoiceProfile(workspaceId),
@@ -89,6 +97,7 @@ export async function POST(request: Request): Promise<Response> {
       models,
       brandVoiceProfile,
       ...(parsed.data.draftUpdate ? { draftUpdate: parsed.data.draftUpdate } : {}),
+      ...(repurposeDraft ? { repurposeDraft } : {}),
     });
     return await createContentAgentResponse({
       workspaceId,
