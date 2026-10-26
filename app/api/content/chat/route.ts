@@ -8,6 +8,7 @@ import { contentAgentModels } from "@/lib/content-agent/models";
 import {
   appendContentMessage,
   createContentThread,
+  getContentBrandVoiceProfile,
   getContentThreadContext,
   type ContentMessageRow,
 } from "@/lib/content-agent/repository";
@@ -50,12 +51,14 @@ export async function POST(request: Request): Promise<Response> {
   const models = contentAgentModels();
   if (!models) return json({ error: "not_configured" }, 503);
 
-  const existing = requestedThreadId ? await getContentThreadContext(workspaceId, requestedThreadId) : null;
+  const [existing, brandVoiceProfile] = await Promise.all([
+    requestedThreadId ? getContentThreadContext(workspaceId, requestedThreadId) : Promise.resolve(null),
+    getContentBrandVoiceProfile(workspaceId),
+  ]);
   if (requestedThreadId && !existing) return json({ error: "not_found" }, 404);
 
   let threadId = existing?.thread.id;
   try {
-    if (retry && !existing) return json({ error: "not_found" }, 404);
     const priorMessages = existing?.messages ?? [];
     const latestUserIndex = priorMessages.findLastIndex((row) => row.role === "user");
     const latestUserMessage = latestUserIndex >= 0 ? priorMessages[latestUserIndex] : undefined;
@@ -78,7 +81,7 @@ export async function POST(request: Request): Promise<Response> {
       ? priorMessages.slice(0, latestUserIndex + 1)
       : [...priorMessages, userMessage]);
     const uiMessages = messagesForAgent.map((row) => toUiMessage(row, threadId!));
-    const agent = createContentAgent({ workspaceId, threadId, models });
+    const agent = createContentAgent({ workspaceId, threadId, models, brandVoiceProfile });
     return await createContentAgentResponse({
       workspaceId,
       threadId,

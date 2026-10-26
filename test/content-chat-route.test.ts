@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   models: vi.fn(),
   createThread: vi.fn(),
   getThread: vi.fn(),
+  getBrandProfile: vi.fn(),
   appendMessage: vi.fn(),
   createAgent: vi.fn(),
   createResponse: vi.fn(),
@@ -14,6 +15,7 @@ vi.mock("@/lib/content-agent/models", () => ({ contentAgentModels: mocks.models 
 vi.mock("@/lib/content-agent/repository", () => ({
   createContentThread: mocks.createThread,
   getContentThreadContext: mocks.getThread,
+  getContentBrandVoiceProfile: mocks.getBrandProfile,
   appendContentMessage: mocks.appendMessage,
 }));
 vi.mock("@/lib/content-agent/agent", () => ({ createContentAgent: mocks.createAgent }));
@@ -34,6 +36,7 @@ beforeEach(() => {
   mocks.models.mockReset().mockReturnValue({ model: "anthropic/claude-sonnet-5.5" });
   mocks.createThread.mockReset().mockResolvedValue({ id: threadId, workspaceId, title: "Write a post" });
   mocks.getThread.mockReset().mockResolvedValue({ thread: { id: threadId }, messages: [] });
+  mocks.getBrandProfile.mockReset().mockResolvedValue(null);
   mocks.appendMessage.mockReset().mockImplementation(async (args) => ({
     id: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a13",
     ...args,
@@ -63,6 +66,18 @@ describe("POST /api/content/chat", () => {
   });
 
   it("stores a workspace-scoped user turn and streams it through the Content agent", async () => {
+    const brandVoiceProfile = {
+      workspaceId,
+      audience: "Founder-led teams",
+      purpose: "Help readers make practical decisions.",
+      voice: "Warm and direct.",
+      structure: "Short sections.",
+      avoid: ["hype"],
+      sampleText: null,
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+      updatedAt: new Date("2026-01-01T00:00:00Z"),
+    };
+    mocks.getBrandProfile.mockResolvedValue(brandVoiceProfile);
     const response = await POST(request({ workspaceId, message: "  Write a useful post  " }));
     expect(response.status).toBe(200);
     expect(mocks.createThread).toHaveBeenCalledWith(workspaceId, "Write a useful post");
@@ -72,7 +87,8 @@ describe("POST /api/content/chat", () => {
       role: "user",
       content: "Write a useful post",
     }));
-    expect(mocks.createAgent).toHaveBeenCalledWith({ workspaceId, threadId, models: { model: "anthropic/claude-sonnet-5.5" } });
+    expect(mocks.getBrandProfile).toHaveBeenCalledWith(workspaceId);
+    expect(mocks.createAgent).toHaveBeenCalledWith({ workspaceId, threadId, models: { model: "anthropic/claude-sonnet-5.5" }, brandVoiceProfile });
     expect(mocks.createResponse).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId,
       threadId,

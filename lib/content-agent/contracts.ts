@@ -26,6 +26,16 @@ export const contentDraftInputSchema = z.object({
 });
 export type ContentDraftInput = z.infer<typeof contentDraftInputSchema>;
 
+export const contentBrandVoiceProfileSchema = z.object({
+  audience: z.string().trim().min(1).max(600),
+  purpose: z.string().trim().min(1).max(800),
+  voice: z.string().trim().min(1).max(1600),
+  structure: z.string().trim().min(1).max(1200),
+  avoid: z.array(z.string().trim().min(1).max(160)).max(24),
+  sampleText: z.string().trim().max(12000).optional(),
+});
+export type ContentBrandVoiceProfile = z.infer<typeof contentBrandVoiceProfileSchema>;
+
 export type ContentMessageRole = "user" | "assistant";
 export type ContentMessageStatus = "streaming" | "complete" | "incomplete" | "failed";
 
