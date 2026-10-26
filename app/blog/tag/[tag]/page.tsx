@@ -6,13 +6,9 @@ import { PostList, TagLinks } from "@/components/post-list";
 import { PageHead, Shell } from "@/components/shell";
 import { getAllTags, getPostsByTag, tagLabel } from "@/lib/blog";
 
-export const dynamicParams = false;
+export const dynamic = "force-dynamic";
 
 type Props = { params: Promise<{ tag: string }> };
-
-export function generateStaticParams() {
-  return getAllTags().map(({ tag }) => ({ tag }));
-}
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { tag } = await params;

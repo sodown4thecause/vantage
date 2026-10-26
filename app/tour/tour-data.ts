@@ -29,7 +29,7 @@ export type QueueItem = {
   features: GlyphFeatures;
 };
 
-export const QUEUE: QueueItem[] = [
+export const QUEUE: readonly [QueueItem, ...QueueItem[]] = [
   {
     source: "Reddit",
     where: "r/LocalLLaMA",

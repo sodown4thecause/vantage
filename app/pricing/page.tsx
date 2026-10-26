@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { PageHead, Shell } from "@/components/shell";
 import { billingServer } from "@/lib/billing/polar";
+import { pricingErrorMessage } from "@/lib/billing/pricing-errors";
 import { BILLING_PLANS } from "@/lib/billing/products";
 import { DEFAULT_LIMITS } from "@/lib/plans/types";
 
@@ -13,14 +14,6 @@ export const metadata: Metadata = {
 };
 
 export const dynamic = "force-dynamic";
-
-const ERRORS: Record<string, string> = {
-  "not-configured": "Checkout is not set up yet. Please try again soon.",
-  "unknown-product": "That plan is not available.",
-  "checkout-failed": "Checkout could not be started. Please try again.",
-  "no-subscription": "You have no subscription to manage yet. Pick a plan below.",
-  "portal-failed": "The billing portal could not be opened. Please try again.",
-};
 
 function features(plan: "free" | "pro"): string[] {
   const l = DEFAULT_LIMITS[plan];
@@ -39,7 +32,7 @@ function features(plan: "free" | "pro"): string[] {
 
 export default async function PricingPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
-  const message = error ? ERRORS[error] : undefined;
+  const message = pricingErrorMessage(error);
   const server = billingServer();
 
   return (

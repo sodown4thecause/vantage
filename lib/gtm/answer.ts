@@ -2,6 +2,7 @@ import { generateText, Output, stepCountIs } from "ai";
 import { z } from "zod";
 
 import { gtmAnswerSchema } from "@/lib/gtm/schema";
+import { flushPostHogAiTelemetry, posthogAiContext, posthogAiTelemetry } from "@/lib/analytics/ai-telemetry";
 import type { OpportunityDetailView } from "@/lib/opportunities/types";
 import type { MonitoringProfileView } from "@/lib/profile/types";
 import { runPaidCall } from "@/lib/providers/paid-call";
@@ -13,6 +14,7 @@ export { gtmAnswerSchema } from "@/lib/gtm/schema";
 
 export async function answerGtmQuestion(input: {
   workspaceId: string;
+  userId?: string;
   message: string;
   history: SeoMessageRow[];
   profile: MonitoringProfileView | null;
@@ -89,7 +91,15 @@ export async function answerGtmQuestion(input: {
       maxOutputTokens: 4000,
       maxRetries: 0,
       abortSignal: input.signal,
-    }).finally(() => takoMeter.settlePending());
+      experimental_telemetry: posthogAiTelemetry("gtm.answer"),
+      runtimeContext: posthogAiContext(input.userId, input.workspaceId),
+    }).finally(async () => {
+      try {
+        await takoMeter.settlePending();
+      } finally {
+        await flushPostHogAiTelemetry();
+      }
+    });
     const costUsd = costOfUsage(models.executor, {
       inputTokens: result.usage.inputTokens,
       outputTokens: result.usage.outputTokens,

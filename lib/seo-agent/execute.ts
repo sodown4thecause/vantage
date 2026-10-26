@@ -12,6 +12,7 @@ import {
 import { z } from "zod";
 
 import { dataForSeoAvailable } from "@/lib/dataforseo/config";
+import { flushPostHogAiTelemetry, posthogAiContext, posthogAiTelemetry } from "@/lib/analytics/ai-telemetry";
 import { runPaidCall } from "@/lib/providers/paid-call";
 import { isTakoFilterRequest, normalizeTakoSearchOutput, takoSearchTool, takoWebResultCount, TakoSearchMeter } from "@/lib/research/tako";
 import { EndpointAttemptBudget, QuestionBudget, autoCreditsFromEnv } from "@/lib/seo-agent/budget";
@@ -32,6 +33,7 @@ export type AgentProfile = PromptProfile;
 
 export type AgentRunInput = {
   workspaceId: string;
+  userId?: string;
   conversationId: string;
   /** The owner's new question. Ignored when `approved` is set: the approved calls are the request. */
   question: string;
@@ -168,6 +170,9 @@ type ObservedToolResult = { toolName?: unknown; toolCallId?: unknown; output?: u
 
 type AttemptArgs = {
   streamer: typeof streamText;
+  workspaceId: string;
+  userId?: string;
+  functionId: string;
   modelId: string;
   model: ReturnType<ReturnType<typeof gatewayProvider>>;
   providerOptions: ProviderOptions;
@@ -212,6 +217,8 @@ async function runAttempt(a: AttemptArgs): Promise<Attempt> {
       onStepFinish: a.onStepFinish,
       prepareStep: a.prepareStep,
       toolApproval: a.toolApproval,
+      experimental_telemetry: posthogAiTelemetry(a.functionId),
+      runtimeContext: posthogAiContext(a.userId, a.workspaceId),
       onFinish: ({ usage }) => {
         a.meter.finished += 1;
         const cost = costOfUsage(a.modelId, {
@@ -248,6 +255,8 @@ async function runAttempt(a: AttemptArgs): Promise<Attempt> {
     return { kind: "complete", flushed, text };
   } catch {
     return fail();
+  } finally {
+    await flushPostHogAiTelemetry();
   }
 }
 
@@ -403,7 +412,9 @@ export async function runAgent(
             maxOutputTokens: FOLLOW_UP_MAX_OUTPUT_TOKENS,
             maxRetries: 0,
             abortSignal: signal,
-          });
+            experimental_telemetry: posthogAiTelemetry("seo.concept_follow_ups"),
+            runtimeContext: posthogAiContext(input.userId, input.workspaceId),
+          }).finally(() => flushPostHogAiTelemetry());
           const parsed = FOLLOW_UP_SCHEMA.safeParse(result.output);
           if (!parsed.success) throw new Error("Follow-ups failed the schema.");
           const usage = result.usage;
@@ -433,7 +444,10 @@ export async function runAgent(
         ...input.history,
         { role: "user", content: questionTurn(input) },
       ];
-      const attemptArgs = { streamer, system, messages, tools, signal, meter, writer };
+      const attemptArgs = {
+        streamer, workspaceId: input.workspaceId, userId: input.userId, functionId: "seo.concept_answer",
+        system, messages, tools, signal, meter, writer,
+      };
       let attempt = await runAttempt({
         ...attemptArgs,
         modelId: primary.id,
@@ -444,6 +458,7 @@ export async function runAgent(
       if (attempt.kind === "refused" && !attempt.flushed && fallback) {
         attempt = await runAttempt({
           ...attemptArgs,
+          functionId: "seo.research_fallback",
           modelId: fallback.id,
           model: fallback.model,
           providerOptions: {},

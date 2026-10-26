@@ -1,4 +1,5 @@
 import { getAi } from "@/lib/cf/env";
+import { withObservedSpan } from "@/lib/analytics/spans.mjs";
 import { recordCost } from "@/lib/costs/ledger";
 import { getUnitCost } from "@/lib/costs/prices";
 
@@ -50,14 +51,22 @@ export async function embedTexts(texts: string[], ctx: EmbedContext): Promise<nu
       try {
         let response: unknown;
         try {
-          response = await ai.run(EMBEDDING_MODEL, { text: inputs }, { gateway: { id: "vantage" } });
+          response = await withObservedSpan(
+            "ai.embedding",
+            { workspaceId: ctx.workspaceId, source: ctx.sourceKey, provider: "workers_ai" },
+            () => ai.run(EMBEDDING_MODEL, { text: inputs }, { gateway: { id: "vantage" } }),
+          );
         } catch (gatewayErr) {
           if (ctx.signal?.aborted) return null;
           // The AI Gateway may be missing or unavailable in an environment; the model itself still works without it.
           console.error("[embed] gateway call failed, retrying without gateway", {
             error: gatewayErr instanceof Error ? gatewayErr.name : "unknown",
           });
-          response = await ai.run(EMBEDDING_MODEL, { text: inputs });
+          response = await withObservedSpan(
+            "ai.embedding",
+            { workspaceId: ctx.workspaceId, source: ctx.sourceKey, provider: "workers_ai" },
+            () => ai.run(EMBEDDING_MODEL, { text: inputs }),
+          );
         }
         if (!isEmbeddingResponse(response) || response.data.length !== inputs.length) {
           await recordEmbedCost(ctx, tokens, false);

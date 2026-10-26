@@ -6,6 +6,7 @@
 	"previews": {},
 	"compatibility_date": "2026-10-05",
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	"keep_names": false,
 	"assets": {
 		"directory": ".open-next/assets",
 		"binding": "ASSETS"
@@ -20,7 +21,7 @@
 	"ai": { "binding": "AI" },
 	"vectorize": [{ "binding": "VECTORIZE", "index_name": "vantage-docs" }],
 	"r2_buckets": [{ "binding": "ARTIFACTS", "bucket_name": "vantage-artifacts" }],
-	"vars": { "VANTAGE_SEMANTIC_MODE": "off" },
+	"vars": { "VANTAGE_SEMANTIC_MODE": "off", "VANTAGE_DEPLOY_ENV": "production", "POSTHOG_LLM_CAPTURE_CONTENT": "0" },
 	"ratelimits": [
 		{ "name": "RADAR_LIMITER", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } }
 	],
@@ -35,7 +36,13 @@
 	"env": {
 		"staging": {
 			"name": "vantage-staging",
-			"observability": { "enabled": true, "issues": { "enabled": true } },
+			"observability": {
+				"enabled": true,
+				"issues": { "enabled": true },
+				"traces": { "enabled": true, "head_sampling_rate": 1 },
+				"logs": { "enabled": true, "invocation_logs": true, "head_sampling_rate": 1 }
+			},
+			"vars": { "VANTAGE_SEMANTIC_MODE": "shadow", "VANTAGE_DEPLOY_ENV": "staging", "POSTHOG_LLM_CAPTURE_CONTENT": "0" },
 			"workers_dev": true,
 			"build": { "command": "" },
 			"routes": [],
@@ -44,7 +51,6 @@
 			"ai": { "binding": "AI" },
 			"vectorize": [{ "binding": "VECTORIZE", "index_name": "vantage-docs-staging" }],
 			"r2_buckets": [{ "binding": "ARTIFACTS", "bucket_name": "vantage-artifacts-staging" }],
-			"vars": { "VANTAGE_SEMANTIC_MODE": "shadow" },
 			"ratelimits": [
 				{ "name": "RADAR_LIMITER", "namespace_id": "1002", "simple": { "limit": 30, "period": 60 } }
 			],
@@ -57,14 +63,19 @@
 		},
 		"production": {
 			"name": "dontkillmyvibe",
-			"observability": { "enabled": true, "issues": { "enabled": true } },
+			"observability": {
+				"enabled": true,
+				"issues": { "enabled": true },
+				"traces": { "enabled": true, "head_sampling_rate": 0.2 },
+				"logs": { "enabled": true, "invocation_logs": true, "head_sampling_rate": 1 }
+			},
 			"build": { "command": "" },
 			"services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "dontkillmyvibe" }],
 			"browser": { "binding": "BROWSER" },
 			"ai": { "binding": "AI" },
 			"vectorize": [{ "binding": "VECTORIZE", "index_name": "vantage-docs" }],
 			"r2_buckets": [{ "binding": "ARTIFACTS", "bucket_name": "vantage-artifacts" }],
-			"vars": { "VANTAGE_SEMANTIC_MODE": "shadow" },
+			"vars": { "VANTAGE_SEMANTIC_MODE": "shadow", "VANTAGE_DEPLOY_ENV": "production", "POSTHOG_LLM_CAPTURE_CONTENT": "0" },
 			"ratelimits": [
 				{ "name": "RADAR_LIMITER", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } }
 			],
@@ -86,6 +97,8 @@
 	},
 	"observability": {
 		"enabled": true,
-		"issues": { "enabled": true }
+		"issues": { "enabled": true },
+		"traces": { "enabled": true, "head_sampling_rate": 0.2 },
+		"logs": { "enabled": true, "invocation_logs": true, "head_sampling_rate": 1 }
 	}
 }
