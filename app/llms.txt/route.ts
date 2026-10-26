@@ -30,6 +30,7 @@ export function GET(): Response {
     "## Resources",
     "",
     `- [Where to launch a developer tool](${absoluteUrl("/launch")}): a hand-verified catalog of launch and listing destinations, with cost, link type and last-verified dates`,
+    `- [Reddit RSS ends 13 November 2026](${absoluteUrl("/reddit-rss-shutdown")}): what stops working, and how to keep monitoring Reddit without RSS or the Reddit API`,
     `- [Blog RSS feed](${absoluteUrl("/blog/rss.xml")})`,
     "",
   ];
