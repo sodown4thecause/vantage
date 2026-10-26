@@ -14,7 +14,8 @@ export type ContentDraftFormat = (typeof contentFormatValues)[number];
 export const contentChatRequestSchema = z.object({
   workspaceId: z.uuid(),
   threadId: z.uuid().optional(),
-  message: z.string().trim().min(1).max(4000),
+  message: z.string().min(1).max(32_000).refine((value) => value.trim().length > 0),
+  preserveText: z.boolean().optional(),
   retry: z.boolean().optional(),
 });
 export type ContentChatRequest = z.infer<typeof contentChatRequestSchema>;
@@ -25,6 +26,13 @@ export const contentDraftInputSchema = z.object({
   format: z.enum(contentFormatValues),
 });
 export type ContentDraftInput = z.infer<typeof contentDraftInputSchema>;
+
+export const contentDraftUpdateInputSchema = z.object({
+  draftId: z.uuid(),
+  title: z.string().min(1).max(120).refine((value) => value.trim().length > 0),
+  body: z.string().min(1).max(24_000).refine((value) => value.trim().length > 0),
+}).strict();
+export type ContentDraftUpdateInput = z.infer<typeof contentDraftUpdateInputSchema>;
 
 export const contentBrandVoiceProfileSchema = z.object({
   audience: z.string().trim().min(1).max(600),

@@ -4,10 +4,11 @@ import { DefaultChatTransport, type UIMessage } from "ai";
 import { useChat } from "@ai-sdk/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useMemo, useReducer, useRef, useState, type FormEvent } from "react";
 
 import type { ContentBrandVoiceProfileRow, ContentDraftRow, ContentMessageRow, ContentThreadRow } from "@/lib/content-agent/repository";
 
+import { buildContentDraftUpdatePrompt, buildContentRepurposePrompt, buildContentSectionRegenerationPrompt, contentDraftSaveReducer, contentDraftSections, contentDraftUpdateSucceeded, contentDraftsNeedingRestore, ContentToolCard, type ContentCardDraft, type ContentDraftSaveResult, type ContentSectionProposal, type ContentToolPart } from "./content-workspace-cards";
 import s from "./content-workspace.module.css";
 
 type ContentMetadata = { threadId?: string };
@@ -42,12 +43,19 @@ function dateLabel(date: Date): string {
   return new Intl.DateTimeFormat("en-AU", { timeZone: "UTC", day: "numeric", month: "short" }).format(date);
 }
 
+function toolDraftId(part: ContentToolPart): string | null {
+  if (part.type !== "tool-save_content_draft" || typeof part.output !== "object" || part.output === null
+    || !("draftId" in part.output) || typeof part.output.draftId !== "string") return null;
+  return part.output.draftId;
+}
+
 export function ContentWorkspaceClient({
   workspaceId,
   selectedThreadId,
   initialMessages,
   threads,
   drafts,
+  threadDrafts,
   brandVoiceProfile,
 }: {
   workspaceId: string;
@@ -55,6 +63,7 @@ export function ContentWorkspaceClient({
   initialMessages: ContentMessageRow[];
   threads: ContentThreadRow[];
   drafts: ContentDraftRow[];
+  threadDrafts: ContentDraftRow[];
   brandVoiceProfile: ContentBrandVoiceProfileRow | null;
 }) {
   const router = useRouter();
@@ -87,36 +96,106 @@ export function ContentWorkspaceClient({
           workspaceId: typeof body?.workspaceId === "string" ? body.workspaceId : workspaceId,
           threadId: typeof body?.threadId === "string" ? body.threadId : undefined,
           message: latestUser ? textOf(latestUser) : "",
+          preserveText: body?.preserveText === true,
           retry: body?.retry === true || trigger === "regenerate-message",
         },
       };
     },
   }), [selectThread, workspaceId]);
+  const pendingSectionProposal = useRef<Omit<ContentSectionProposal, "text"> | null>(null);
+  const pendingDraftSave = useRef<Pick<ContentDraftSaveResult, "draftId" | "title" | "body"> | null>(null);
+  const [sectionProposal, setSectionProposal] = useState<ContentSectionProposal | null>(null);
+  const [draftSaveState, dispatchDraftSave] = useReducer(contentDraftSaveReducer, { confirmed: {}, results: {} });
+  const [savingDraftId, setSavingDraftId] = useState<string | null>(null);
   const { messages: turns, sendMessage, setMessages, clearError, status, error, stop } = useChat<ContentChatMessage>({
     transport,
     messages,
     onFinish: ({ message }) => {
       const completedThreadId = message.metadata?.threadId ?? threadId;
       if (completedThreadId) selectThread(completedThreadId);
+      const pendingSection = pendingSectionProposal.current;
+      if (pendingSection) {
+        pendingSectionProposal.current = null;
+        const proposal = textOf(message).trim();
+        if (proposal) setSectionProposal({ ...pendingSection, text: proposal });
+      }
+      const pendingSave = pendingDraftSave.current;
+      if (pendingSave) {
+        pendingDraftSave.current = null;
+        setSavingDraftId(null);
+        const saved = message.parts.some((part) => part.type === "tool-update_content_draft"
+          && contentDraftUpdateSucceeded((part as ContentToolPart).output, pendingSave));
+        dispatchDraftSave({ type: "finished", result: { ...pendingSave, ok: saved } });
+      }
       router.refresh();
+    },
+    onError: () => {
+      const pendingSave = pendingDraftSave.current;
+      if (pendingSave) {
+        setSavingDraftId(null);
+        dispatchDraftSave({ type: "finished", result: { ...pendingSave, ok: false } });
+      }
     },
   });
 
   const busy = status === "submitted" || status === "streaming";
   const latestUser = turns.findLast((message) => message.role === "user");
   const latestPrompt = latestUser ? textOf(latestUser) : "";
-  const send = (text: string) => {
-    const prompt = text.trim();
-    if (!prompt || busy) return;
-    void sendMessage({ text: prompt }, { body: { workspaceId, threadId: threadId ?? undefined } });
+  const restoredDrafts = contentDraftsNeedingRestore(
+    threadDrafts.map((draft): ContentCardDraft => ({ draftId: draft.id, title: draft.title, body: draft.body, format: draft.format })),
+    turns.map((turn) => ({ parts: turn.parts as ContentToolPart[] })),
+  );
+  const send = (text: string, preserve?: "section" | "draft") => {
+    const prompt = preserve === "draft" ? text : text.trim();
+    if (!prompt.trim() || busy) return;
+    if (preserve !== "section") pendingSectionProposal.current = null;
+    if (preserve !== "draft") pendingDraftSave.current = null;
+    void sendMessage({ text: prompt }, { body: {
+      workspaceId,
+      threadId: threadId ?? undefined,
+      preserveText: preserve === "draft",
+    } });
+  };
+  const regenerateSection = (draft: Parameters<typeof buildContentSectionRegenerationPrompt>[0], sectionIndex: number) => {
+    if (busy) return;
+    const originalText = contentDraftSections(draft.body)[sectionIndex];
+    if (!originalText) return;
+    pendingSectionProposal.current = { draftId: draft.draftId, sectionIndex, originalText };
+    try {
+      send(buildContentSectionRegenerationPrompt(draft, sectionIndex), "section");
+    } catch {
+      pendingSectionProposal.current = null;
+    }
+  };
+  const repurposeDraft = (draft: Parameters<typeof buildContentRepurposePrompt>[0], format: Parameters<typeof buildContentRepurposePrompt>[1]) => {
+    if (busy) return;
+    send(buildContentRepurposePrompt(draft, format));
+  };
+  const saveDraft = (draft: Parameters<typeof buildContentDraftUpdatePrompt>[0]) => {
+    if (busy) return;
+    pendingDraftSave.current = { draftId: draft.draftId, title: draft.title, body: draft.body };
+    setSavingDraftId(draft.draftId);
+    dispatchDraftSave({ type: "started", draftId: draft.draftId });
+    send(buildContentDraftUpdatePrompt(draft), "draft");
+  };
+  const stopWriting = () => {
+    pendingSectionProposal.current = null;
+    const pendingSave = pendingDraftSave.current;
+    if (pendingSave) {
+      pendingDraftSave.current = null;
+      setSavingDraftId(null);
+      dispatchDraftSave({ type: "finished", result: { ...pendingSave, ok: false } });
+    }
+    void stop();
   };
   const retry = () => {
     if (!latestUser || !threadId || busy) return;
     const latestUserIndex = turns.findLastIndex((message) => message.role === "user");
     setMessages(turns.slice(0, latestUserIndex + 1));
+    setSavingDraftId(pendingDraftSave.current?.draftId ?? null);
     clearError();
     void sendMessage({ text: latestPrompt, messageId: latestUser.id }, {
-      body: { workspaceId, threadId, retry: true },
+      body: { workspaceId, threadId, retry: true, preserveText: pendingDraftSave.current !== null },
     });
   };
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -155,7 +234,7 @@ export function ContentWorkspaceClient({
 
     <section className={s.canvas} aria-label="Content writing assistant">
       <div className={s.conversation}>
-        {turns.length === 0 ? <div className={s.intro}>
+        {turns.length === 0 && restoredDrafts.length === 0 ? <div className={s.intro}>
           <span className={s.mark} aria-hidden="true">✳</span>
           <h2>{selectedThreadId ? "Pick up where you left off." : "What are you trying to explain?"}</h2>
           <p>Start with a rough idea, a question from your audience or a point you want to make. Vantage can shape it into a draft you can edit.</p>
@@ -166,9 +245,45 @@ export function ContentWorkspaceClient({
               ? <p className={s.userMessage}>{textOf(turn)}</p>
               : <div className={s.assistantMessage}>
                 <div className={s.assistantLabel}><span className={s.mark} aria-hidden="true">✳</span>Vantage Content</div>
-                <p>{textOf(turn) || (busy ? "Thinking through the draft…" : "The response was interrupted. Try again when you’re ready.")}</p>
+                {turn.parts.map((part, index) => {
+                  if (part.type === "text") return <p key={`text-${index}`}>{part.text}</p>;
+                  const contentPart = part as ContentToolPart;
+                  const draftId = toolDraftId(contentPart);
+                  return <ContentToolCard
+                    key={contentPart.toolCallId ?? `${part.type}-${index}`}
+                    part={contentPart}
+                    proposal={sectionProposal}
+                    saveResult={draftId ? draftSaveState.results[draftId] : undefined}
+                    confirmedDraft={draftId ? draftSaveState.confirmed[draftId] : undefined}
+                    savingDraftId={savingDraftId}
+                    onSaveDraft={saveDraft}
+                    onRegenerateSection={regenerateSection}
+                    onRepurpose={repurposeDraft}
+                    onProposalApplied={() => setSectionProposal(null)}
+                    busy={busy}
+                  />;
+                })}
+                {turn.parts.length === 0 && <p>{busy ? "Thinking through the draft…" : "The response was interrupted. Try again when you’re ready."}</p>}
               </div>}
           </li>)}
+          {restoredDrafts.length > 0 && <li className={s.turn}>
+            <div className={s.assistantMessage}>
+              <div className={s.assistantLabel}><span className={s.mark} aria-hidden="true">✳</span>Saved drafts from this conversation</div>
+              {restoredDrafts.map((draft) => <ContentToolCard
+                key={draft.draftId}
+                part={{ type: "tool-save_content_draft", state: "output-available", output: { saved: true, ...draft } }}
+                proposal={sectionProposal}
+                saveResult={draftSaveState.results[draft.draftId]}
+                confirmedDraft={draftSaveState.confirmed[draft.draftId]}
+                savingDraftId={savingDraftId}
+                onSaveDraft={saveDraft}
+                onRegenerateSection={regenerateSection}
+                onRepurpose={repurposeDraft}
+                onProposalApplied={() => setSectionProposal(null)}
+                busy={busy}
+              />)}
+            </div>
+          </li>}
         </ol>}
       </div>
 
@@ -177,7 +292,7 @@ export function ContentWorkspaceClient({
         {latestPrompt && threadId && <button type="button" className={s.retry} onClick={retry}>Retry this request</button>}
       </div>}
       {busy && <div className={s.liveStatus} role="status">
-        <span>Writing in progress</span><button type="button" className={s.stop} onClick={() => void stop()}>Stop</button>
+        <span>Writing in progress</span><button type="button" className={s.stop} onClick={stopWriting}>Stop</button>
       </div>}
       <form className={s.composer} onSubmit={onSubmit}>
         <label className={s.visuallyHidden} htmlFor="content-prompt">What would you like to write?</label>

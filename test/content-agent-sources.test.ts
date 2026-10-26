@@ -73,6 +73,24 @@ describe("Content source tools", () => {
     expect(onLookup).toHaveBeenCalledWith({ citations: [{ title: "Content workflow question", url: conversationUrl }], unsafeCitation: false });
   });
 
+  it("bounds conversation evidence titles without discarding long-title source evidence", async () => {
+    const title = "Long title ".repeat(25);
+    mocks.getOpportunityDetail.mockResolvedValue({
+      id: opportunityId,
+      title: "Conversation",
+      summary: "Summary",
+      evidence: [{ title, platform: "reddit", contentMd: "Relevant content", urlCanonical: conversationUrl }],
+    });
+
+    const result = await toolSet().ranked_conversation_source.execute({ opportunityId, format: "blog_post" }) as {
+      evidence: Array<{ title: string }>;
+      citations: Array<{ title: string; url: string }>;
+    };
+
+    expect(result.evidence[0]?.title).toHaveLength(200);
+    expect(result.citations[0]).toEqual({ title: title.trim().slice(0, 200), url: conversationUrl });
+  });
+
   it("fails closed without exposing evidence when a canonical conversation URL is unsafe", async () => {
     mocks.getOpportunityDetail.mockResolvedValue({
       id: opportunityId,

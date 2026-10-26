@@ -40,7 +40,7 @@ Complete each slice in order, one task at a time. Before implementation, add or 
 - [ ] 1. Content agent core
 - [ ] 2. Brand voice
 - [x] 3. Draft from sources — typed source tools use the existing workspace-scoped readers, cite only safe canonical URLs, and fail closed before saving if source citations are unsafe or unavailable; no migration or publication path.
-- [ ] 4. Generative UI cards
+- [x] 4. Generative UI cards — renders only validated Content tool outputs as editable draft/outline and evidence cards; edits use a workspace-scoped update tool, while edits, regeneration proposals, and repurposing use the metered chat route; no publishing or migration.
 - [ ] 5. Suggested prompts
 - [ ] 6. Content library
 - [ ] 7. Polish
