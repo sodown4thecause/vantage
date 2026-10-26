@@ -8,6 +8,7 @@ import { useCallback, useMemo, useState, type FormEvent } from "react";
 
 import type { ContentBrandVoiceProfileRow, ContentDraftRow, ContentMessageRow, ContentThreadRow } from "@/lib/content-agent/repository";
 
+import { SuggestedPrompts } from "./suggested-prompts";
 import s from "./content-workspace.module.css";
 
 type ContentMetadata = { threadId?: string };
@@ -49,6 +50,7 @@ export function ContentWorkspaceClient({
   threads,
   drafts,
   brandVoiceProfile,
+  suggestedPrompts,
 }: {
   workspaceId: string;
   selectedThreadId: string | null;
@@ -56,6 +58,7 @@ export function ContentWorkspaceClient({
   threads: ContentThreadRow[];
   drafts: ContentDraftRow[];
   brandVoiceProfile: ContentBrandVoiceProfileRow | null;
+  suggestedPrompts: string[];
 }) {
   const router = useRouter();
   const [threadId, setThreadId] = useState<string | null>(selectedThreadId);
@@ -179,6 +182,7 @@ export function ContentWorkspaceClient({
       {busy && <div className={s.liveStatus} role="status">
         <span>Writing in progress</span><button type="button" className={s.stop} onClick={() => void stop()}>Stop</button>
       </div>}
+      <SuggestedPrompts prompts={suggestedPrompts} onSelect={setInput} />
       <form className={s.composer} onSubmit={onSubmit}>
         <label className={s.visuallyHidden} htmlFor="content-prompt">What would you like to write?</label>
         <textarea
