@@ -22,7 +22,7 @@ type DraftTool = {
   execute: (input: { title: string; body: string; format: "blog_post" }, options: { abortSignal?: AbortSignal }) => Promise<unknown>;
 };
 
-type AgentOptions = { tools: { save_content_draft: DraftTool } };
+type AgentOptions = { tools: { save_brand_voice_profile: unknown; save_content_draft: DraftTool } };
 
 beforeEach(() => {
   mocks.agentOptions = undefined;
@@ -40,7 +40,7 @@ describe("Content draft tool output", () => {
       format: "blog_post" as const,
     };
     mocks.createDraft.mockResolvedValue(savedDraft);
-    const agent = createContentAgent({
+    createContentAgent({
       workspaceId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a11",
       threadId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a12",
       models: { apiKey: "test-key", model: "anthropic/claude-sonnet-5.5" },
@@ -61,6 +61,9 @@ describe("Content draft tool output", () => {
       threadId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a12",
       signal,
     }));
-    expect(agent).toBeDefined();
+    expect(Object.keys((mocks.agentOptions as AgentOptions).tools).sort()).toEqual([
+      "save_brand_voice_profile",
+      "save_content_draft",
+    ]);
   });
 });

@@ -49,6 +49,25 @@ beforeEach(() => {
 });
 
 describe("Content brand-voice humaniser", () => {
+  it("records actual usage when the model returns an empty draft", async () => {
+    mocks.generateText.mockResolvedValueOnce({
+      text: "  ",
+      finishReason: "stop",
+      usage: { inputTokens: 100, outputTokens: 500, inputTokenDetails: { cacheReadTokens: 0 } },
+    });
+
+    await expect(humaniseContentDraft({
+      workspaceId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a11",
+      draft: { title: "A useful post", body: "Original wording.", format: "blog_post" },
+      profile,
+      models: { apiKey: "test-key", model: "anthropic/claude-sonnet-5.5" },
+    })).rejects.toThrow("The Content humaniser returned an empty draft.");
+    expect(mocks.paidResult).toEqual({
+      error: expect.objectContaining({ message: "The Content humaniser returned an empty draft." }),
+      costUsd: 0.0052,
+    });
+  });
+
   it("does not return a draft truncated by the output token limit", async () => {
     mocks.generateText.mockResolvedValueOnce({
       text: "An incomplete draft",

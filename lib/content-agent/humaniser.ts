@@ -45,7 +45,12 @@ export async function humaniseContentDraft(args: {
       };
     }
     const text = result.text.trim();
-    if (!text) throw new Error("The Content humaniser returned an empty draft.");
+    if (!text) {
+      return {
+        error: new Error("The Content humaniser returned an empty draft."),
+        costUsd: contentUsageCost(args.models.model, result.usage),
+      };
+    }
     return { value: text, costUsd: contentUsageCost(args.models.model, result.usage) };
   });
 }
