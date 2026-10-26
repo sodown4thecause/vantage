@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import { BlockList, type SavedArtifactSummary } from "@/components/workspace-blocks";
 import { gtmDataSchemas, type GtmUIMessage } from "@/lib/gtm/chat/types";
 import type { GtmJob } from "@/lib/gtm/chat/jobs";
-import type { StrategyProposal, StrategyState } from "@/lib/gtm/proposals/types";
+import type { StrategyState } from "@/lib/gtm/proposals/types";
+import type { GtmProposalView } from "@/lib/gtm/chat/types";
+import { SafeLink } from "@/components/safe-link";
 import { parseBlocks } from "@/lib/workspace/blocks";
 
-function Proposal({ initial, onConfirmed }: { initial: StrategyProposal; onConfirmed?: (state: StrategyState) => void }) {
+function Proposal({ initial, onConfirmed }: { initial: GtmProposalView; onConfirmed?: (state: StrategyState) => void }) {
   const [proposal, setProposal] = useState(initial), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [confirmed, setConfirmed] = useState<Record<string, unknown> | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -19,10 +21,10 @@ function Proposal({ initial, onConfirmed }: { initial: StrategyProposal; onConfi
       if (!response.ok) throw new Error();
       const body = await response.json(), result = gtmDataSchemas.proposal.parse(body.proposal);
       if (!body.state || typeof body.state !== "object") throw new Error();
-      if (active) { setProposal(result); setConfirmed(body.state); }
+      if (active) { setProposal({ ...result, discovery: result.discovery ?? initial.discovery }); setConfirmed(body.state); }
     }).catch(() => { if (active) { setConfirmed(null); setError("Confirmed state unavailable. Reload it before confirming."); } });
     return () => { active = false; };
-  }, [url, initial.workspaceId, initial.conversationId, refreshKey]);
+  }, [url, initial.workspaceId, initial.conversationId, initial.discovery, refreshKey]);
   async function respond(approved: boolean) {
     if (busy || (approved && !confirmed)) return;
     setBusy(true); setError("");
@@ -48,9 +50,32 @@ function Proposal({ initial, onConfirmed }: { initial: StrategyProposal; onConfi
     }).map(row => <tr key={row.field}><th scope="row">{row.field}</th><td><pre className="whitespace-pre-wrap break-words text-sm">{confirmed ? JSON.stringify(row.before ?? "Not recorded", null, 2) : error ? "Confirmed state unavailable" : "Loading confirmed state…"}</pre></td><td><pre className="whitespace-pre-wrap break-words text-sm">{JSON.stringify(row.after, null, 2)}</pre></td></tr>)}</tbody></table></div>
     <p>Nothing changes until you confirm this exact proposal.</p>
     {proposal.status === "pending" && <div className="flex gap-3"><button type="button" disabled={busy || !confirmed || decision?.approved === false} onClick={() => void respond(true)}>Confirm changes</button><button type="button" disabled={busy || decision?.approved === true} onClick={() => void respond(false)}>Deny changes</button></div>}
+    {proposal.discovery && <section aria-label="Discovery evidence" className="mt-4 rounded-lg border border-line p-3">
+      <h4>Evidence and research gaps</h4>
+      <p><strong>Product:</strong> {proposal.discovery.plan.profile.productDescription} <EvidenceRefs ids={proposal.discovery.plan.profile.evidenceIds} evidence={proposal.discovery.evidence} /> <span>Audience: {proposal.discovery.plan.profile.targetCustomer} <EvidenceRefs ids={proposal.discovery.plan.profile.evidenceIds} evidence={proposal.discovery.evidence} /></span></p>
+      <p><SafeLink href={proposal.discovery.plan.profile.productUrl}>Read researched product page</SafeLink></p>
+      {proposal.discovery.plan.competitors.length > 0 && <><h5>Evidence-backed competitor candidates</h5><ul>{proposal.discovery.plan.competitors.map(item => <li key={item.domain}><strong>{item.domain}</strong> — {item.positioning} <EvidenceRefs ids={item.evidenceIds} evidence={proposal.discovery!.evidence} /></li>)}</ul></>}
+      {proposal.discovery.plan.keywords.length > 0 && <><h5>Keyword candidates</h5><ul>{proposal.discovery.plan.keywords.map(item => <li key={item.term}><strong>{item.term}</strong> — {item.reason} <EvidenceRefs ids={item.evidenceIds} evidence={proposal.discovery!.evidence} /></li>)}</ul></>}
+      {proposal.discovery.plan.sources.length > 0 && <><h5>Paused source candidates</h5><ul>{proposal.discovery.plan.sources.map((item, index) => <li key={`${item.type}-${item.config.query}-${index}`}><strong>{item.type}</strong>: {item.config.query} — {item.reason} <EvidenceRefs ids={item.evidenceIds} evidence={proposal.discovery!.evidence} />{item.sampleUrls.map(sample => <span key={sample}> · Sample: <SafeLink href={sample}>read</SafeLink></span>)}</li>)}</ul></>}
+      <ul>{proposal.discovery.evidence.map(item => <li key={item.id}>
+        <SafeLink href={item.url}>Read source</SafeLink> · {item.provider} · Retrieved <time dateTime={item.retrievedAt}>{new Intl.DateTimeFormat("en-AU", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(item.retrievedAt))} UTC</time>
+        <blockquote className="my-2 border-l-2 border-line pl-3">{item.excerpt}</blockquote>
+      </li>)}</ul>
+      {proposal.discovery.unknowns.length > 0 && <><h5>Unknowns</h5><ul>{proposal.discovery.unknowns.map((item, index) => <li key={index}>{item}</li>)}</ul></>}
+      <p><strong>Cadence:</strong> {proposal.discovery.cadence.note}</p>
+      <p><strong>Cost:</strong> {proposal.discovery.cost.note}</p>
+    </section>}
     {error && !confirmed && <button type="button" onClick={() => { setError(""); setRefreshKey(value => value + 1); }}>Retry loading confirmed state</button>}
     {error && <p role="alert">{error}</p>}
   </section>;
+}
+
+function EvidenceRefs({ ids, evidence }: { ids: string[]; evidence: Array<{ id: string; url: string }> }) {
+  const byId = new Map(evidence.map(item => [item.id, item.url]));
+  return <span> Evidence: {ids.map((id, index) => {
+    const url = byId.get(id);
+    return url ? <span key={id}>{index ? ", " : ""}<SafeLink href={url}>source {index + 1}</SafeLink></span> : null;
+  })}</span>;
 }
 
 function Job({ initial }: { initial: GtmJob }) {

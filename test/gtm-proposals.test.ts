@@ -8,6 +8,11 @@ describe("exact strategy changes", () => {
     expect(() => resolveProfileChange({ competitors: ["A"] }, profile)).toThrow();
     expect(() => resolveProfileChange({ profile: { productUrl: "http://127.0.0.1" } }, profile)).toThrow();
   });
+  it("allows a URL-first pending profile proposal without inventing competitors", () => {
+    expect(resolveProfileChange({ profile: { productUrl: "https://product.example", productDescription: "Incident response tools", targetCustomer: "Incident response teams", topics: ["incident response"] } }, null)).toMatchObject({
+      productUrl: "https://product.example", competitors: [], topics: ["incident response"],
+    });
+  });
   it("honors force-manual material including an explicitly empty replacement", () => {
     const current = { ...profile, productMaterialStatus: "ok" as const, productMaterialText: "Previously fetched" };
     expect(resolveProfileChange({ profile: { forceManualMaterial: true } }, current)).toMatchObject({ materialStatus: "manual", materialText: "" });

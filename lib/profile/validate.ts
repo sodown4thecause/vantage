@@ -39,8 +39,10 @@ function isHttpUrl(value: string): boolean {
  */
 export function validateMonitoringProfileInput(
   raw: unknown,
+  options: { minCompetitors?: number } = {},
 ): ValidationResult {
   const body = (raw ?? {}) as Record<string, unknown>;
+  const minCompetitors = options.minCompetitors ?? MIN_COMPETITORS;
   const errors: FieldErrors = {};
 
   const productUrl = asString(body.productUrl);
@@ -73,8 +75,8 @@ export function validateMonitoringProfileInput(
   }
 
   const competitors = asStringList(body.competitors, MAX_COMPETITORS);
-  if (competitors.length < MIN_COMPETITORS) {
-    errors.competitors = `Provide ${MIN_COMPETITORS}–${MAX_COMPETITORS} competitors.`;
+  if (competitors.length < minCompetitors) {
+    errors.competitors = `Provide ${minCompetitors}–${MAX_COMPETITORS} competitors.`;
   } else if (competitors.length > MAX_COMPETITORS) {
     errors.competitors = `Provide at most ${MAX_COMPETITORS} competitors.`;
   }
