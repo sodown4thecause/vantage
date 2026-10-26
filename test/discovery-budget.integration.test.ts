@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { gtmPostgresFixture, hasGtmTestDatabase } from "./gtm-postgres-fixture";
 
 const state = vi.hoisted(() => ({ db: null as unknown }));
 vi.mock("@/lib/db/client", () => ({ getDb: () => state.db }));
-import { reserveDiscoverySpend, settleDiscoverySpend } from "@/lib/agents/discovery/budget";
+import { reserveDiscoveryAttempt, reserveDiscoverySpend, settleDiscoverySpend, withDiscoveryBudget } from "@/lib/agents/discovery/budget";
+import { runPaidCall } from "@/lib/providers/paid-call";
 
 describe.skipIf(!hasGtmTestDatabase)("Postgres discovery allowance", () => {
   let fixture: Awaited<ReturnType<typeof gtmPostgresFixture>>;
@@ -45,6 +47,76 @@ describe.skipIf(!hasGtmTestDatabase)("Postgres discovery allowance", () => {
     await expect(settleDiscoverySpend({ workspaceId: crypto.randomUUID(), reservationId: one.reservationId, outcome: "success", actualUsd: 0.4 })).rejects.toThrow(/not found/);
   });
 
+  it("retains known failed actual above estimate", async () => {
+    const { workspaceId } = await fixture.seed();
+    const one = await reserve(workspaceId, "failed-model", 0.1);
+    await settleDiscoverySpend({ workspaceId, reservationId: one.reservationId, outcome: "failed", actualUsd: 0.4 });
+    expect(await spent(workspaceId)).toBe(0.4);
+    await expect(reserve(workspaceId, "next-tool", 0.11)).rejects.toThrow();
+  });
+
+  it("allows nested attempts from one server context but fences another while receipts are pending", async () => {
+    const { workspaceId } = await fixture.seed();
+    const [model, tool] = await withDiscoveryBudget({ workspaceId, scope: "initial", requestId: "same-run" }, async () => [
+      await reserveDiscoveryAttempt(workspaceId, 0.1), await reserveDiscoveryAttempt(workspaceId, 0.1),
+    ]);
+    expect(model?.reservationId).toBeDefined();
+    expect(tool?.reservationId).toBeDefined();
+    const fresh = (requestId: string) => withDiscoveryBudget({ workspaceId, scope: "initial", requestId },
+      () => reserveDiscoveryAttempt(workspaceId, 0.1));
+    await expect(fresh("other-run")).rejects.toThrow("Discovery spend needs reconciliation");
+    await expect(fresh("same-run:spoof")).rejects.toThrow("Discovery spend needs reconciliation");
+    await model?.settle(0.1, "success");
+    await tool?.settle(0.1, "success");
+    expect(await fresh("other-run")).toHaveProperty("reservationId");
+  });
+
+  it("blocks a later paid run after an above-estimate settlement write fails until reconciliation", async () => {
+    const { workspaceId } = await fixture.seed();
+    vi.stubEnv("VANTAGE_PAID_PROVIDERS_ENABLED", "true");
+    vi.stubEnv("VANTAGE_PAID_DAILY_BUDGET_USD", "2");
+    const original = fixture.db as { execute: (query: unknown) => Promise<unknown> };
+    const dialect = new PgDialect();
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      state.db = new Proxy(original, { get(target, key) {
+        if (key === "execute") return (query: unknown) => {
+          if (dialect.sqlToQuery(query as never).sql.includes("settle_discovery_spend")) throw new Error("simulated settlement failure");
+          return target.execute(query);
+        };
+        return Reflect.get(target, key);
+      } });
+      await withDiscoveryBudget({ workspaceId, scope: "initial", requestId: "failed-sql-run" }, async () => {
+        await expect(runPaidCall({ context: { workspaceId, sourceKey: "discovery" }, provider: "gateway",
+          action: "research_model", estimateUsd: 0.1 }, async () => ({ value: "billed", costUsd: 0.4 })))
+          .rejects.toThrow("Discovery spend needs reconciliation");
+      });
+      state.db = fixture.db;
+      const second = vi.fn(async () => ({ value: "second", costUsd: 0.01 }));
+      await withDiscoveryBudget({ workspaceId, scope: "initial", requestId: "later-run" }, async () => {
+        await expect(runPaidCall({ context: { workspaceId, sourceKey: "discovery" }, provider: "gateway",
+          action: "research_model", estimateUsd: 0.1 }, second)).rejects.toThrow("Discovery spend needs reconciliation");
+      });
+      expect(second).not.toHaveBeenCalled();
+      const [receipt] = await fixture.client`select id, settled_at from discovery_reservation where workspace_id = ${workspaceId} and request_id = 'failed-sql-run:1'`;
+      expect(receipt?.settled_at).toBeNull();
+      await settleDiscoverySpend({ workspaceId, reservationId: String(receipt?.id), actualUsd: 0.4, outcome: "success" });
+      await settleDiscoverySpend({ workspaceId, reservationId: String(receipt?.id), actualUsd: 0.4, outcome: "success" });
+      expect(await spent(workspaceId)).toBe(0.4);
+      const later = vi.fn(async () => ({ value: "allowed", costUsd: 0.1 }));
+      await withDiscoveryBudget({ workspaceId, scope: "initial", requestId: "after-reconciliation" }, async () => {
+        await expect(runPaidCall({ context: { workspaceId, sourceKey: "discovery" }, provider: "gateway",
+          action: "research_model", estimateUsd: 0.1 }, later)).resolves.toBe("allowed");
+      });
+      expect(later).toHaveBeenCalledOnce();
+      expect(await spent(workspaceId)).toBe(0.5);
+    } finally {
+      state.db = fixture.db;
+      vi.unstubAllEnvs();
+      log.mockRestore();
+    }
+  });
+
   it("settles against the reservation's stored UTC period", async () => {
     const { workspaceId } = await fixture.seed();
     const one = await reserve(workspaceId, "daily-before-midnight", 0.02, "daily_review");
@@ -67,6 +139,22 @@ describe.skipIf(!hasGtmTestDatabase)("Postgres discovery allowance", () => {
     } finally {
       await fixture.client`update plan_limit set value = 50 where plan = 'free' and key = 'discovery_initial_cents'`;
       await fixture.client`update plan_limit set value = 1 where plan = 'free' and key = 'discovery_reports'`;
+    }
+  });
+
+  it("uses an active subscription's lower Pro cents cap", async () => {
+    const { workspaceId } = await fixture.seed();
+    const subscriptionId = `discovery-test-${crypto.randomUUID()}`;
+    await fixture.client`insert into billing_subscription (id, user_id, polar_customer_id, product_id, plan, status)
+      values (${subscriptionId}, 'gtm-test-owner', 'disposable', 'disposable', 'pro', 'active')`;
+    await fixture.client`update plan_limit set value = 10 where plan = 'pro' and key = 'discovery_initial_cents'`;
+    try {
+      await expect(reserve(workspaceId, "pro-too-large", 0.11)).rejects.toThrow();
+      await reserve(workspaceId, "pro-fits", 0.1);
+      expect(await spent(workspaceId)).toBe(0.1);
+    } finally {
+      await fixture.client`update plan_limit set value = 50 where plan = 'pro' and key = 'discovery_initial_cents'`;
+      await fixture.client`delete from billing_subscription where id = ${subscriptionId}`;
     }
   });
 });

@@ -4,7 +4,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 const mock = vi.hoisted(() => ({ execute: vi.fn(), record: vi.fn() }));
 vi.mock("@/lib/db/client", () => ({ getDb: () => ({ execute: mock.execute }) }));
 vi.mock("@/lib/costs/ledger", async original => ({ ...await original<typeof import("@/lib/costs/ledger")>(), recordCost: mock.record }));
-import { reserveDiscoverySpend, settleDiscoverySpend, withDiscoveryBudget } from "@/lib/agents/discovery/budget";
+import { DiscoveryBudgetError, reserveDiscoverySpend, settleDiscoverySpend, withDiscoveryBudget } from "@/lib/agents/discovery/budget";
 import { runPaidCall } from "@/lib/providers/paid-call";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -42,6 +42,23 @@ describe("discovery budget boundary", () => {
     await expect(reserveDiscoverySpend({ workspaceId, scope: "initial", requestId: "x", estimateUsd: -1 })).rejects.toThrow();
     await expect(settleDiscoverySpend({ workspaceId, reservationId: crypto.randomUUID(), actualUsd: NaN, outcome: "success" })).rejects.toThrow();
     expect(statements).toHaveLength(0);
+  });
+
+  it("maps only known PostgreSQL domain errors and never exposes query parameters", async () => {
+    const dbFailure = (message: string, code = "P0001") => Object.assign(new Error("Failed query: params: secret"), {
+      cause: Object.assign(new Error(message), { code }),
+    });
+    mock.execute.mockRejectedValueOnce(dbFailure("Conflicting discovery request ID"));
+    const conflict = await reserveDiscoverySpend({ workspaceId, scope: "initial", requestId: "same", estimateUsd: 0.1 }).catch(error => error);
+    expect(conflict).toBeInstanceOf(DiscoveryBudgetError);
+    expect(conflict.message).toBe("Conflicting discovery request ID");
+    expect(String(conflict)).not.toContain("secret");
+    mock.execute.mockRejectedValueOnce(dbFailure("Discovery reservation not found"));
+    await expect(settleDiscoverySpend({ workspaceId, reservationId: crypto.randomUUID(), outcome: "ambiguous" }))
+      .rejects.toThrow("Discovery reservation not found");
+    mock.execute.mockRejectedValueOnce(dbFailure("attacker controlled text", "XX000"));
+    await expect(reserveDiscoverySpend({ workspaceId, scope: "initial", requestId: "other", estimateUsd: 0.1 }))
+      .rejects.toThrow("Discovery workspace budget unavailable.");
   });
 
   it("puts actual model and tool calls in the same workspace scope, once per paid attempt", async () => {
@@ -83,7 +100,44 @@ describe("discovery budget boundary", () => {
     });
     const settlements = statements.filter(s => s.sql.includes("settle_discovery_spend"));
     expect(settlements).toHaveLength(2);
-    expect(settlements.every(s => s.params[2] === null && s.params[3] === "ambiguous")).toBe(true);
+    expect(settlements.map(s => s.params.slice(2))).toEqual([[null, "ambiguous"], ["0.010000", "ambiguous"]]);
+  });
+
+  it("passes a known over-estimate bill through failed and ledger-failed attempts", async () => {
+    await withDiscoveryBudget({ workspaceId, scope: "initial", requestId: "known-bill" }, async () => {
+      await expect(runPaidCall<string>({ context: { workspaceId, sourceKey: "discovery" }, provider: "gateway",
+        action: "research_model", estimateUsd: 0.1 }, async () => ({ error: new Error("billed failure"), costUsd: 0.4 })))
+        .rejects.toThrow("billed failure");
+      mock.record.mockResolvedValueOnce(false);
+      await expect(runPaidCall({ context: { workspaceId, sourceKey: "discovery" }, provider: "gateway",
+        action: "research_model", estimateUsd: 0.1 }, async () => ({ value: "billed", costUsd: 0.4 })))
+        .rejects.toThrow(/recording is pending/);
+    });
+    expect(statements.filter(s => s.sql.includes("settle_discovery_spend")).map(s => s.params.slice(2)))
+      .toEqual([["0.400000", "failed"], ["0.400000", "ambiguous"]]);
+    expect(statements.filter(s => s.sql.includes("update provider_budget_reservation") && s.params[0] === "0.300000")).toHaveLength(2);
+  });
+
+  it("marks the current context unsafe and refuses further work after settlement fails", async () => {
+    const original = mock.execute.getMockImplementation()!;
+    mock.execute.mockImplementation(async query => {
+      if (dialect.sqlToQuery(query).sql.includes("settle_discovery_spend")) throw new Error("settlement database failure");
+      return original(query);
+    });
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const first = vi.fn(async () => ({ value: "billed", costUsd: 0.4 }));
+    const next = vi.fn(async () => ({ value: "more", costUsd: 0.01 }));
+    try {
+      await withDiscoveryBudget({ workspaceId, scope: "initial", requestId: "failed-settlement" }, async () => {
+        await expect(runPaidCall({ context: { workspaceId, sourceKey: "discovery" }, provider: "gateway",
+          action: "research_model", estimateUsd: 0.1 }, first)).rejects.toThrow(/needs reconciliation/);
+        await expect(runPaidCall({ context: { workspaceId, sourceKey: "discovery" }, provider: "linkup",
+          action: "fetch_page", estimateUsd: 0.001 }, next)).rejects.toThrow(/needs reconciliation/);
+      });
+    } finally { log.mockRestore(); }
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(next).not.toHaveBeenCalled();
+    expect(reserved).toBe(1);
   });
 
   it("releases a proven pre-dispatch abort without calling the provider", async () => {

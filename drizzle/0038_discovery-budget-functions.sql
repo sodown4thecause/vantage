@@ -6,7 +6,7 @@ INSERT INTO "plan_limit" ("plan", "key", "value") VALUES
   ('pro', 'discovery_daily_review_cents', 5)
 ON CONFLICT DO NOTHING;
 --> statement-breakpoint
-CREATE FUNCTION reserve_discovery_spend(p_id uuid, p_workspace uuid, p_scope text, p_request text, p_estimate numeric)
+CREATE FUNCTION reserve_discovery_spend(p_id uuid, p_workspace uuid, p_scope text, p_request text, p_estimate numeric, p_token uuid)
 RETURNS TABLE (reservation_id uuid, created boolean) LANGUAGE plpgsql AS $$
 DECLARE
   v_period date;
@@ -18,7 +18,7 @@ DECLARE
   v_saved uuid;
 BEGIN
   IF p_scope IS NULL OR p_scope NOT IN ('initial', 'daily_review') OR p_estimate IS NULL OR p_estimate <= 0 OR p_estimate::text = 'NaN'
-     OR length(p_request) < 1 OR length(p_request) > 200 THEN
+     OR length(p_request) < 1 OR length(p_request) > 200 OR p_token IS NULL THEN
     RAISE EXCEPTION 'Invalid discovery reservation';
   END IF;
   v_period := CASE WHEN p_scope = 'initial' THEN '0001-01-01'::date ELSE (now() AT TIME ZONE 'UTC')::date END;
@@ -31,6 +31,12 @@ BEGIN
     END IF;
     RETURN QUERY SELECT v_existing.id, false;
     RETURN;
+  END IF;
+  -- A prior run with an unsettled receipt may owe more than its estimate. Only
+  -- nested model/tools from its server-owned context token may proceed.
+  IF EXISTS (SELECT 1 FROM discovery_reservation r WHERE r.workspace_id = p_workspace
+      AND r.settled_at IS NULL AND r.run_token <> p_token) THEN
+    RAISE EXCEPTION 'Discovery spend needs reconciliation';
   END IF;
   SELECT CASE WHEN w.plan = 'pro' OR EXISTS (
       SELECT 1 FROM billing_subscription b WHERE b.user_id = w.owner_user_id AND b.plan = 'pro'
@@ -53,8 +59,8 @@ BEGIN
       WHERE discovery_budget.spent_usd + EXCLUDED.spent_usd <= v_cap
     RETURNING p_workspace INTO v_saved;
   IF v_saved IS NULL THEN RETURN; END IF;
-  INSERT INTO discovery_reservation (id, workspace_id, scope, period, request_id, estimate_usd, retained_usd)
-    VALUES (p_id, p_workspace, p_scope, v_period, p_request, p_estimate, p_estimate);
+  INSERT INTO discovery_reservation (id, workspace_id, scope, period, request_id, run_token, estimate_usd, retained_usd)
+    VALUES (p_id, p_workspace, p_scope, v_period, p_request, p_token, p_estimate, p_estimate);
   RETURN QUERY SELECT p_id, true;
   RETURN;
 END $$;
@@ -71,7 +77,9 @@ BEGIN
   PERFORM pg_advisory_xact_lock(hashtextextended(p_workspace::text, 0));
   SELECT * INTO v_row FROM discovery_reservation WHERE workspace_id = p_workspace AND id = p_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Discovery reservation not found'; END IF;
-  v_retained := CASE WHEN p_outcome = 'success' AND p_actual IS NOT NULL THEN p_actual ELSE v_row.estimate_usd END;
+  v_retained := CASE WHEN p_outcome = 'success' AND p_actual IS NOT NULL THEN p_actual
+                     WHEN p_actual IS NOT NULL THEN greatest(v_row.estimate_usd, p_actual)
+                     ELSE v_row.estimate_usd END;
   IF v_row.settled_at IS NOT NULL THEN
     IF v_row.outcome <> p_outcome OR v_row.retained_usd <> v_retained THEN
       RAISE EXCEPTION 'Conflicting discovery settlement';

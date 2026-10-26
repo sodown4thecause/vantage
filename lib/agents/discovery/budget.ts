@@ -6,7 +6,7 @@ import { roundUsd } from "@/lib/costs/ledger";
 import type { DiscoveryScope } from "./types";
 
 type BudgetContext = { workspaceId: string; scope: DiscoveryScope; requestId: string };
-type ActiveBudgetContext = BudgetContext & { nextAttempt: number };
+type ActiveBudgetContext = BudgetContext & { nextAttempt: number; blocked: boolean; runToken: string };
 const context = new AsyncLocalStorage<ActiveBudgetContext>();
 
 export class DiscoveryBudgetError extends Error {
@@ -14,6 +14,14 @@ export class DiscoveryBudgetError extends Error {
     super(message);
     this.name = "DiscoveryBudgetError";
   }
+}
+
+function databaseError(error: unknown, known: readonly string[]): DiscoveryBudgetError {
+  const cause = error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined;
+  const pg = cause && typeof cause === "object" ? cause as { code?: unknown; message?: unknown } : null;
+  const message = pg?.code === "P0001" && typeof pg.message === "string" && known.includes(pg.message)
+    ? pg.message : "Discovery workspace budget unavailable.";
+  return new DiscoveryBudgetError(message);
 }
 
 function dollars(value: number, positive: boolean): string {
@@ -30,18 +38,27 @@ export function withDiscoveryBudget<T>(input: BudgetContext, work: () => Promise
   if (!input.workspaceId || !input.requestId || input.requestId.length > 160 || !["initial", "daily_review"].includes(input.scope)) {
     throw new TypeError("Invalid discovery context.");
   }
-  return context.run({ ...input, nextAttempt: 0 }, work);
+  return context.run({ ...input, nextAttempt: 0, blocked: false, runToken: crypto.randomUUID() }, work);
 }
 
 export function discoveryBudgetContext(): BudgetContext | undefined { return context.getStore(); }
+export function markDiscoveryBudgetUnreconciled(): void {
+  const run = context.getStore();
+  if (run) run.blocked = true;
+}
 
-async function reserve(input: BudgetContext & { estimateUsd: number }): Promise<{ reservationId: string; created: boolean }> {
+async function reserve(input: BudgetContext & { estimateUsd: number; runToken?: string }): Promise<{ reservationId: string; created: boolean }> {
   const estimate = dollars(input.estimateUsd, true);
   const id = crypto.randomUUID();
-  const row = rowsOf(await getDb().execute(sql`
-    select reservation_id as id, created from reserve_discovery_spend(${id}::uuid, ${input.workspaceId}::uuid, ${input.scope}::text,
-      ${input.requestId}::text, ${estimate}::numeric)
-  `))[0] as { id?: unknown; created?: unknown } | undefined;
+  let row: { id?: unknown; created?: unknown } | undefined;
+  try {
+    row = rowsOf(await getDb().execute(sql`
+      select reservation_id as id, created from reserve_discovery_spend(${id}::uuid, ${input.workspaceId}::uuid, ${input.scope}::text,
+        ${input.requestId}::text, ${estimate}::numeric, ${input.runToken ?? crypto.randomUUID()}::uuid)
+    `))[0] as { id?: unknown; created?: unknown } | undefined;
+  } catch (error) {
+    throw databaseError(error, ["Conflicting discovery request ID", "Discovery spend needs reconciliation"]);
+  }
   if (typeof row?.id !== "string" || typeof row.created !== "boolean") throw new DiscoveryBudgetError();
   return { reservationId: row.id, created: row.created };
 }
@@ -53,14 +70,19 @@ export async function reserveDiscoverySpend(input: BudgetContext & { estimateUsd
 
 export async function settleDiscoverySpend(input: { workspaceId: string; reservationId: string; actualUsd?: number; outcome: "success" | "failed" | "ambiguous" }): Promise<void> {
   const actual = input.actualUsd === undefined ? null : dollars(input.actualUsd, false);
-  await getDb().execute(sql`select settle_discovery_spend(${input.workspaceId}::uuid, ${input.reservationId}::uuid,
-    ${actual}::numeric, ${input.outcome}::text)`);
+  try {
+    await getDb().execute(sql`select settle_discovery_spend(${input.workspaceId}::uuid, ${input.reservationId}::uuid,
+      ${actual}::numeric, ${input.outcome}::text)`);
+  } catch (error) {
+    throw databaseError(error, ["Conflicting discovery settlement", "Discovery reservation not found"]);
+  }
 }
 
 /** Each runPaidCall obtains a distinct durable receipt. The global provider ledger still meters once. */
 export async function reserveDiscoveryAttempt(workspaceId: string, estimateUsd: number): Promise<null | { reservationId: string; settle: (actualUsd: number | undefined, outcome: "success" | "failed" | "ambiguous") => Promise<void> }> {
   const run = context.getStore();
   if (!run) return null;
+  if (run.blocked) throw new DiscoveryBudgetError("Discovery spend needs reconciliation before another attempt.");
   if (workspaceId !== run.workspaceId) throw new DiscoveryBudgetError("Paid attempt crossed discovery workspace.");
   const attempt = ++run.nextAttempt;
   const { reservationId, created } = await reserve({ ...run, requestId: `${run.requestId}:${attempt}`, estimateUsd });

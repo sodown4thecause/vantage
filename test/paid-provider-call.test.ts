@@ -131,13 +131,16 @@ describe("paid provider reservations", () => {
     expect(settlement.params).toEqual(expect.arrayContaining([(costUsd - meta.estimateUsd).toFixed(6), "gateway"]));
   });
 
-  it("retains the reservation if known failed retrieval usage cannot be recorded", async () => {
+  it("retains known provider debt if failed retrieval usage cannot be recorded", async () => {
     mocks.record.mockResolvedValue(false);
     await expect(runPaidCall<string>(meta, async () => ({
       error: new Error("Unusable provider response"), costUsd: 0.25,
     }))).rejects.toBeInstanceOf(PaidCallDeniedError);
     expect(mocks.record).toHaveBeenCalledWith(expect.objectContaining({ unitCostUsd: 0.25, ok: false }));
-    expect(mocks.execute).toHaveBeenCalledOnce();
+    expect(mocks.execute).toHaveBeenCalledTimes(2);
+    const settlement = dialect.sqlToQuery(mocks.execute.mock.calls[1][0]);
+    expect(settlement.sql).toContain("update provider_budget_reservation");
+    expect(settlement.params[0]).toBe("0.150000");
   });
 
   it("keeps the reservation and records an estimate on an ambiguous provider failure", async () => {

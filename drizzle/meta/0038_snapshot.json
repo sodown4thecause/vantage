@@ -1,6 +1,6 @@
 {
-  "id": "0c623ae4-0970-46cb-b141-540072644168",
-  "prevId": "bc5cddf5-9a78-449c-900d-15d72de4c3f9",
+  "id": "18784638-10f1-4231-ba27-2168d2c1e4eb",
+  "prevId": "acb7e908-ecad-450f-b2f3-3f8bc251ed83",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1103,6 +1103,92 @@
       },
       "isRLSEnabled": false
     },
+    "public.discovery_research_result": {
+      "name": "discovery_research_result",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "url": {
+          "name": "url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unknowns": {
+          "name": "unknowns",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "discovery_research_result_request_idx": {
+          "name": "discovery_research_result_request_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "request_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "discovery_research_result_workspace_id_workspace_id_fk": {
+          "name": "discovery_research_result_workspace_id_workspace_id_fk",
+          "tableFrom": "discovery_research_result",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "tableTo": "workspace",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.discovery_reservation": {
       "name": "discovery_reservation",
       "schema": "",
@@ -1134,6 +1220,12 @@
         "request_id": {
           "name": "request_id",
           "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_token": {
+          "name": "run_token",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },

@@ -1,2 +1,0 @@
-DROP INDEX "discovery_research_result_request_uidx";--> statement-breakpoint
-CREATE INDEX "discovery_research_result_request_idx" ON "discovery_research_result" USING btree ("workspace_id","request_id");

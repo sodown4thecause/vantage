@@ -1247,6 +1247,7 @@ export const discoveryReservation = pgTable("discovery_reservation", {
   scope: text("scope").$type<"initial" | "daily_review">().notNull(),
   period: date("period").notNull(),
   requestId: text("request_id").notNull(),
+  runToken: uuid("run_token").notNull(),
   estimateUsd: numeric("estimate_usd", { precision: 12, scale: 6 }).notNull(),
   retainedUsd: numeric("retained_usd", { precision: 12, scale: 6 }).notNull(),
   settledAt: timestamp("settled_at", { withTimezone: true }),
