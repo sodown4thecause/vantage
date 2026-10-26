@@ -20,11 +20,12 @@ export async function createHumanisedContentDraft(args: {
   profile: ContentBrandVoiceProfile | null;
   models: ContentAgentModels;
   signal?: AbortSignal;
+  finalizeBody?: (body: string) => string;
 }): Promise<ContentDraftRow> {
   if (!args.profile) throw new ContentBrandVoiceRequiredError();
   const draft = contentDraftInputSchema.parse(args.draft);
   args.signal?.throwIfAborted();
-  const body = await humaniseContentDraft({
+  const humanisedBody = await humaniseContentDraft({
     workspaceId: args.workspaceId,
     draft,
     profile: args.profile,
@@ -32,6 +33,7 @@ export async function createHumanisedContentDraft(args: {
     signal: args.signal,
   });
   args.signal?.throwIfAborted();
+  const body = args.finalizeBody ? args.finalizeBody(humanisedBody) : humanisedBody;
   return createContentDraft({
     workspaceId: args.workspaceId,
     threadId: args.threadId,
