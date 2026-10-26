@@ -92,7 +92,7 @@ export async function firstScanStep(workspaceId: string, body: Record<string, un
     await releaseScanLease(workspaceId, run.leaseToken);
     if (finished) {
       await captureActivation(status === "failed" ? "first_scan_failed" : "first_scan_completed", workspaceId, {
-        read: finished.read, relevant: finished.relevant, picked: finished.picked, status, cost_usd: Number(finished.costUsd),
+        read: finished.read, relevant: finished.relevant, picked: finished.picked, capped: finished.capped, status, cost_usd: Number(finished.costUsd),
       });
       console.info("[activation] first scan finished", { workspaceId, status, costUsd: finished.costUsd });
       return finishResponse(finished);

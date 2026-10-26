@@ -26,7 +26,14 @@ describe("browser replay privacy", () => {
 
   it("keeps replay off by default but still honours DNT and captures exceptions", async () => {
     const options = await load({ NEXT_PUBLIC_POSTHOG_KEY: "phc_test" });
-    expect(options).toMatchObject({ disable_session_recording: true, respect_dnt: true, capture_exceptions: true });
+    expect(options).toMatchObject({
+      api_host: "/ingest",
+      disable_session_recording: true,
+      respect_dnt: true,
+      capture_exceptions: true,
+      capture_performance: true,
+      advanced_disable_feature_flags: false,
+    });
   });
 
   it.each(["true", "0", "yes", ""])("keeps replay off when NEXT_PUBLIC_POSTHOG_REPLAY is %j", async (value) => {
