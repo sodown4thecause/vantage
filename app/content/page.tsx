@@ -6,6 +6,7 @@ import { PageHead, Shell } from "@/components/shell";
 import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
 import { getContentBrandVoiceProfile, getContentThread, listContentDrafts, listContentThreads } from "@/lib/content-agent/repository";
 
+import { ContentLibrary } from "./content-library";
 import { ContentWorkspaceClient } from "./content-workspace-client";
 
 export const metadata: Metadata = { title: "Content", robots: { index: false } };
@@ -22,9 +23,10 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
   const selected = requestedThreadId.success ? await getContentThread(workspaceId, requestedThreadId.data) : null;
   const [threads, drafts, brandVoiceProfile] = await Promise.all([
     listContentThreads(workspaceId),
-    listContentDrafts(workspaceId, 6),
+    listContentDrafts(workspaceId),
     getContentBrandVoiceProfile(workspaceId),
   ]);
+  const libraryKey = `${workspaceId}:${drafts.map((draft) => `${draft.id}:${draft.updatedAt.getTime()}`).join("|")}`;
 
   return <Shell workspaceId={workspaceId} active="content" wide>
     <PageHead
@@ -37,8 +39,9 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
       selectedThreadId={selected?.thread.id ?? null}
       initialMessages={selected?.messages ?? []}
       threads={threads}
-      drafts={drafts}
+      drafts={drafts.slice(0, 6)}
       brandVoiceProfile={brandVoiceProfile}
     />
+    <ContentLibrary key={libraryKey} workspaceId={workspaceId} initialDrafts={drafts} />
   </Shell>;
 }

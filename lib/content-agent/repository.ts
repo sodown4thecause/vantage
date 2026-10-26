@@ -137,9 +137,20 @@ export async function createContentDraft(args: {
   return draft;
 }
 
-export async function listContentDrafts(workspaceId: string, limit = 10): Promise<ContentDraftRow[]> {
-  return getDb().select().from(contentDraft)
+export async function listContentDrafts(workspaceId: string, limit?: number): Promise<ContentDraftRow[]> {
+  const query = getDb().select().from(contentDraft)
     .where(eq(contentDraft.workspaceId, workspaceId))
-    .orderBy(desc(contentDraft.updatedAt))
-    .limit(limit);
+    .orderBy(desc(contentDraft.updatedAt));
+  return limit === undefined ? query : query.limit(limit);
+}
+
+export async function updateContentDraftStatus(
+  workspaceId: string,
+  draftId: string,
+  status: ContentDraftRow["status"],
+): Promise<ContentDraftRow | null> {
+  const [draft] = await getDb().update(contentDraft).set({ status, updatedAt: new Date() })
+    .where(and(eq(contentDraft.workspaceId, workspaceId), eq(contentDraft.id, draftId)))
+    .returning();
+  return draft ?? null;
 }
