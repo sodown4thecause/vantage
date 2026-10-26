@@ -114,8 +114,10 @@ describe("Reddit provider routing", () => {
       topComments: Array.from({ length: 8 }, (_, i) => ({ text: `Literal reply ${i}`, url: redditUrl + `reply${i}/` })) }] } });
     const result = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1",
       config: { subreddit: "LocalLLaMA", limit: 1 } });
-    expect(result.documents[0]?.metadata).toMatchObject({ provider: "tinyfish_agent", mocked: false });
-    expect(result).toMatchObject({ partial: false,
+    expect(result.documents[0]?.metadata).toMatchObject({ provider: "tinyfish_agent", mocked: false, contentKind: "thread", discoveryOnly: false });
+    expect(result).toMatchObject({ partial: true,
+      scanHealth: { state: "partial", discovered: 1, verified: 1,
+        issues: [{ stage: "discovery", kind: "upstream_failed", provider: "tinyfish_search_fetch", retryable: true }] },
       documents: [{ postedAt: new Date(timestamp), metadata: { publicationDateMissing: false, partial: false } }] });
     expect((result.documents[0]?.metadata as { topComments: unknown[] }).topComments).toHaveLength(5);
     expect(agentRun).toHaveBeenCalledWith(expect.objectContaining({ url: "https://www.reddit.com/r/LocalLLaMA/new/",
