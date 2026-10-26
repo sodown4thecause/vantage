@@ -111,10 +111,29 @@ test("rethrows other create failures after attempting every workspace", async ()
   await assert.rejects(worker.scheduled(scanController, env), /1 of 2 scan instances failed/);
   assert.equal(creates.length, 2);
 });
-test("fails the Workflow scheduled invocation when the due lookup fails", async () => {
+test("retries a 5xx due lookup once, then starts scans from the second response", async () => {
+  let dueCalls = 0;
+  const { env, creates } = scanEnv();
+  const inner = env.WORKER_SELF_REFERENCE.fetch;
+  env.WORKER_SELF_REFERENCE.fetch = async (request) => {
+    if (new URL(request.url).pathname === "/api/internal/scan/due" && dueCalls++ === 0) {
+      return new Response("scan step failed", { status: 500 });
+    }
+    return inner(request);
+  };
+  await worker.scheduled(scanController, env);
+  assert.equal(dueCalls, 2);
+  assert.equal(creates.length, 2);
+});
+test("fails the Workflow scheduled invocation when the due lookup fails twice", async () => {
+  let dueCalls = 0;
   const { env } = scanEnv();
-  env.WORKER_SELF_REFERENCE = { fetch: async () => new Response("nope", { status: 500 }) };
+  env.WORKER_SELF_REFERENCE = { fetch: async (request) => {
+    if (new URL(request.url).pathname === "/api/internal/scan/due") dueCalls += 1;
+    return new Response("nope", { status: 500 });
+  } };
   await assert.rejects(worker.scheduled(scanController, env), /500/);
+  assert.equal(dueCalls, 2);
 });
 test("triggers the daily cost rollup through the self-reference binding after starting scans", async () => {
   const { env, creates, rollups } = scanEnv();
@@ -174,4 +193,57 @@ test("still runs rollup and digest dispatch when starting scans fails, and repor
 });
 test("exposes the embed queue consumer", () => {
   assert.equal(typeof worker.queue, "function");
+});
+
+// Regression: Bug 1 — __name esbuild helper leaking into browser inline script.
+// Wrangler defaults keep_names to true, which injects __name(func, "name") calls.
+// When the next-themes inline-script function is toString()'d for SSR, those calls
+// land in the browser <script> tag where __name is not defined.
+test("wrangler config sets keep_names to false", () => {
+  const raw = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
+  const stripped = raw.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  const config = JSON.parse(stripped);
+  assert.equal(config.keep_names, false, "keep_names must be false to prevent esbuild __name helper leaking into browser code");
+});
+
+// Regression: Bug 2 — cron self-fetches cancelled.
+// The scheduled handler must await both rollup and digest self-fetches to completion
+// in the main handler body, not inside a finally block where the Workers runtime may
+// consider them orphaned and cancel them.
+test("awaits rollup before digest, and consumes both responses when scans succeed", async () => {
+  const order = [];
+  const { env } = scanEnv({
+    rollup: () => {
+      order.push("rollup-start");
+      return Promise.resolve().then(() => {
+        order.push("rollup-end");
+        return Response.json({ ok: true });
+      });
+    },
+    digest: () => {
+      order.push("digest-start");
+      return Promise.resolve().then(() => {
+        order.push("digest-end");
+        return Response.json({ ok: true });
+      });
+    },
+  });
+  await worker.scheduled(scanController, env);
+  assert.deepEqual(order, ["rollup-start", "rollup-end", "digest-start", "digest-end"],
+    "rollup must complete before digest starts");
+});
+
+test("still runs rollup and digest in order when scans fail, then rethrows the scan error", async () => {
+  const order = [];
+  const { env, rollups, digests } = scanEnv({
+    dueBody: { workspaceIds: ["ws-1"] },
+    create: () => { throw new Error("quota exceeded"); },
+    rollup: () => { order.push("rollup"); return Response.json({ ok: true }); },
+    digest: () => { order.push("digest"); return Response.json({ ok: true }); },
+  });
+  await assert.rejects(worker.scheduled(scanController, env), /1 of 1 scan instances failed/);
+  assert.deepEqual(order, ["rollup", "digest"],
+    "rollup and digest must both run before the scan error propagates");
+  assert.equal(rollups.length, 1);
+  assert.equal(digests.length, 1);
 });

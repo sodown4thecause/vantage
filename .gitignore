@@ -49,3 +49,8 @@ worker-entry.d.ts
 
 # Claude Code agent worktrees (local only)
 /.claude/worktrees/
+
+# agent verification (see AGENTS.md "Definition of done")
+/.evidence/
+/scripts/scratch/
+/.playwright-cli/

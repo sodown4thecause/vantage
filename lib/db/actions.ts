@@ -6,6 +6,8 @@ import { getDb } from "@/lib/db/client";
 import { document, lead, workspace } from "@/lib/db/schema";
 import { assertCanCreateProject } from "@/lib/plans/limits";
 import type { SourcePlatform } from "@/lib/db/schema";
+import { captureActivation } from "@/lib/analytics/activation";
+import { sendWelcomeEmail } from "@/lib/email/activation";
 
 /**
  * Creates a workspace row for the signed-in Neon Auth user.
@@ -28,10 +30,15 @@ export async function createWorkspaceForCurrentUser(name: string) {
     .values({
       name,
       ownerUserId: session.user.id as string,
+      activationEmail: session.user.email ?? null,
       plan: "free",
     })
     .returning();
 
+  if (row) {
+    await captureActivation("signup", row.id);
+    if (session.user.email) await sendWelcomeEmail(row.id, session.user.email);
+  }
   return row;
 }
 

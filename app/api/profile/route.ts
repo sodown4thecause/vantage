@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { startFirstScan } from "@/lib/activation/dispatch";
 
 import { authorizeWorkspace } from "@/lib/auth/workspace";
 import {
@@ -93,7 +94,8 @@ export async function POST(req: Request) {
       input: validated.value,
     });
     await indexSavedProfile(workspaceId, profile.id);
-    return NextResponse.json({ profile }, { status: 201 });
+    const scan = await startFirstScan(workspaceId);
+    return NextResponse.json({ profile, scan }, { status: 201 });
   } catch (err) {
     if (err instanceof PlanLimitError) {
       const fieldErrors = err.key === "keywords" ? { topics: err.message } : undefined;
