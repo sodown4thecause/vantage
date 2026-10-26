@@ -1,6 +1,11 @@
 import { posthogHost, posthogKey } from "@/lib/analytics/config";
 
 const DELIVERY_TIMEOUT_MS = 3_000;
+const SAFE_ANALYTICS_ID = /^[A-Za-z0-9._:-]{1,128}$/;
+
+function safeAnalyticsId(value: string | undefined): string | undefined {
+  return value && SAFE_ANALYTICS_ID.test(value) ? value : undefined;
+}
 
 export type ServerExceptionContext = {
   workspaceId: string;
@@ -31,6 +36,62 @@ const defaultDeps: ServerAnalyticsDeps = {
     }
   },
 };
+
+export type ProductEventInput =
+  | { event: "signed_up" | "profile_confirmed"; userId?: string; workspaceId: string }
+  | { event: "scan_started"; userId?: string; workspaceId: string }
+  | { event: "scan_finished"; userId?: string; workspaceId: string; read: number; relevant: number; picked: number; capped: boolean }
+  | { event: "digest_sent" | "reply_copied" | "thread_opened" | "unsubscribed"; userId?: string; workspaceId: string }
+  | { event: "outcome_marked"; userId: string; workspaceId: string; outcome: "sent" | "replied" }
+  | { event: "checkout_started" | "subscribed"; userId: string; workspaceId?: string };
+
+/** Sends a deliberately small, typed product event through the same privacy-safe server fetch path as exceptions. */
+export async function captureProductEvent(
+  input: ProductEventInput,
+  deps: ServerAnalyticsDeps = defaultDeps,
+): Promise<void> {
+  try {
+    const key = deps.key();
+    if (!key) return;
+    const { event } = input;
+    const workspaceId = safeAnalyticsId(input.workspaceId);
+    const userId = safeAnalyticsId(input.userId);
+    if (!workspaceId && !userId) return;
+    const properties: Record<string, string | number | boolean> = {
+      $process_person_profile: false,
+      $lib: "vantage-server",
+      ...(workspaceId ? { workspaceId } : {}),
+      ...(input.event === "scan_finished" ? {
+        read: input.read,
+        relevant: input.relevant,
+        picked: input.picked,
+        capped: input.capped,
+      } : {}),
+      ...(input.event === "outcome_marked" ? { outcome: input.outcome } : {}),
+    };
+    const delivery = deps.fetch(`${deps.host()}/i/v0/e/`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        api_key: key,
+        event,
+        distinct_id: workspaceId ? `workspace:${workspaceId}` : userId!,
+        properties,
+        timestamp: new Date().toISOString(),
+      }),
+      signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
+    }).then((response) => {
+      if (!response.ok) console.error("[analytics] event delivery rejected", { status: response.status });
+    }).catch(() => {
+      console.error("[analytics] event delivery failed");
+    });
+    const waitUntil = await deps.waitUntil();
+    if (waitUntil) waitUntil(delivery);
+    else await delivery;
+  } catch {
+    console.error("[analytics] event capture failed");
+  }
+}
 
 /**
  * Reports a handled server failure to PostHog error tracking as an `$exception`. Never throws.

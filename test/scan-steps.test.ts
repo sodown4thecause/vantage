@@ -215,7 +215,7 @@ describe("plan", () => {
     expect(response.status).toBe(200);
     expect(body.leaseToken).toMatch(UUID_RE);
     expect(body.sourceIds).toHaveLength(40);
-    expect(state.limits).toContain(40);
+    expect(state.limits).toContain(41);
     const claim = state.writes.find((write) => write.table === "workspace" && "scanLeaseToken" in write.set);
     expect(claim?.set).toMatchObject({ scanLeaseToken: body.leaseToken });
     expect(toSql(claim?.set.scanLeaseUntil).params).toContain(30);

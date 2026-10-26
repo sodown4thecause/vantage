@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { captureProductEvent } from "@/lib/analytics/server";
+
 import { authorizeWorkspace } from "@/lib/auth/workspace";
 import {
   appendOutcome,
@@ -77,6 +79,14 @@ export async function POST(req: Request) {
       idempotencyKey:
         typeof body.idempotencyKey === "string" ? body.idempotencyKey : null,
     });
+    if (body.event === "copy") {
+      await captureProductEvent({ event: "reply_copied", userId: authorization.userId, workspaceId });
+    } else if (body.event === "open") {
+      await captureProductEvent({ event: "thread_opened", userId: authorization.userId, workspaceId });
+    }
+    if (body.event === "sent" || body.event === "replied") {
+      await captureProductEvent({ event: "outcome_marked", userId: authorization.userId, workspaceId, outcome: body.event });
+    }
     return NextResponse.json({ outcome }, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

@@ -91,7 +91,7 @@ test("posts the documented bodies to each internal route", async () => {
     { path: "/api/internal/scan/collect", body: { workspaceId: "ws-1", sourceId: "src-b" } },
     { path: "/api/internal/scan/embed", body: { workspaceId: "ws-1" } },
     { path: "/api/internal/scan/build", body: { workspaceId: "ws-1" } },
-    { path: "/api/internal/scan/finish", body: { workspaceId: "ws-1", leaseToken: LEASE } },
+    { path: "/api/internal/scan/finish", body: { workspaceId: "ws-1", leaseToken: LEASE, read: 2, relevant: 0, picked: 0, capped: false } },
   ]);
 });
 
@@ -142,8 +142,25 @@ test("finish runs even when build throws, and the build error propagates", async
   assert.equal(names(step).at(-1), "finish");
   assert.deepEqual(fake.calls.at(-1), {
     path: "/api/internal/scan/finish",
-    body: { workspaceId: "ws-1", leaseToken: LEASE },
+    body: { workspaceId: "ws-1", leaseToken: LEASE, read: 2, relevant: 0, picked: 0, capped: false },
   });
+});
+
+test("forwards bounded scan counts to finish and wraps each workflow callback", async () => {
+  const spans = [];
+  const fake = fakeCall({
+    "/api/internal/scan/build": () => json({ relevant: 4, picked: 2, coverage: "budget_limited" }),
+  });
+  await runScan(PARAMS, fakeStep(), fake.call, async (name, workspaceId, operation) => {
+    const result = await operation();
+    spans.push({ name, workspaceId, result });
+    return result;
+  });
+  assert.deepEqual(fake.calls.at(-1).body, {
+    workspaceId: "ws-1", leaseToken: LEASE, read: 2, relevant: 4, picked: 2, capped: true,
+  });
+  assert.deepEqual(spans.map(({ name }) => name), ["plan", "collect", "collect", "embed", "build", "finish"]);
+  assert.ok(spans.every(({ workspaceId }) => workspaceId === "ws-1"));
 });
 
 test("a plan failure propagates without finishing, because no lease was handed back", async () => {

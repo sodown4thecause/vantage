@@ -53,7 +53,7 @@ export async function POST(req: Request): Promise<Response> {
     const evidence = details.filter((detail) => detail !== null);
     step = "answer";
     const result = await answerGtmQuestion({
-      workspaceId, message, profile, evidence, history: existing?.messages ?? [], signal: req.signal,
+      workspaceId, userId: authorization.userId, message, profile, evidence, history: existing?.messages ?? [], signal: req.signal,
     });
     // Evidence cards come from stored documents, never from model output.
     const blocks = [...redditThreadBlocks(evidence), ...(result.takoResults ?? []).flatMap(takoResearchBlocks)].slice(0, 12);

@@ -5,7 +5,7 @@ import { mapWithConcurrency } from "@/lib/async/map-with-concurrency";
 import { collectorsByType } from "@/lib/collectors/registry";
 import { runCollector } from "@/lib/collectors/run";
 import { getSemanticMode } from "@/lib/cf/env";
-import { captureServerException } from "@/lib/analytics/server";
+import { captureProductEvent, captureServerException } from "@/lib/analytics/server";
 import { isCronAuthorized } from "@/lib/cron/authorize";
 import { claimScanLease, releaseScanLease } from "@/lib/cron/lease";
 import { eligibleSourceCondition, scanNotDueReason, scanOrder } from "@/lib/cron/scan";
@@ -27,7 +27,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export type PlanOutcome =
   | { kind: "skipped"; reason: string }
   | { kind: "busy" }
-  | { kind: "planned"; leaseToken: string; sourceIds: string[] };
+  | { kind: "planned"; leaseToken: string; sourceIds: string[]; capped: boolean };
 
 /**
  * Workspaces whose scheduled cadence has elapsed, that have no live lease, and that have a monitoring
@@ -72,8 +72,11 @@ export async function planScan(workspaceId: string, now = new Date()): Promise<P
       .from(source)
       .where(eligibleSourceCondition(workspaceId))
       .orderBy(...(await scanOrder()))
-      .limit(MAX_SOURCES_PER_SCAN);
-    return { kind: "planned", leaseToken, sourceIds: rows.map((row) => row.id) };
+      .limit(MAX_SOURCES_PER_SCAN + 1);
+    const capped = rows.length > MAX_SOURCES_PER_SCAN;
+    const sourceIds = rows.slice(0, MAX_SOURCES_PER_SCAN).map((row) => row.id);
+    await captureProductEvent({ event: "scan_started", workspaceId });
+    return { kind: "planned", leaseToken, sourceIds, capped };
   } catch (err) {
     await releaseScanLease(workspaceId, leaseToken);
     throw err;
@@ -125,8 +128,21 @@ export async function buildWorkspace(workspaceId: string, signal: AbortSignal) {
 }
 
 /** Releases only the lease that carries this token (the UPDATE is conditional on it). */
-export async function finishScan(workspaceId: string, leaseToken: string): Promise<void> {
+export async function finishScan(
+  workspaceId: string,
+  leaseToken: string,
+  summary: Partial<{ read: number; relevant: number; picked: number; capped: boolean }> = {},
+): Promise<void> {
   await releaseScanLease(workspaceId, leaseToken);
+  const count = (value: number | undefined) => Number.isFinite(value) && (value ?? -1) >= 0 ? Math.floor(value!) : 0;
+  await captureProductEvent({
+    event: "scan_finished",
+    workspaceId,
+    read: count(summary.read),
+    relevant: count(summary.relevant),
+    picked: count(summary.picked),
+    capped: summary.capped === true,
+  });
 }
 
 /**

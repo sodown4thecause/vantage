@@ -6,9 +6,10 @@
  * `RadarScan` (S21) will join this file as a second export.
  */
 
-import { WorkflowEntrypoint } from "cloudflare:workers";
+import { tracing, WorkflowEntrypoint } from "cloudflare:workers";
 import { NonRetryableError } from "cloudflare:workflows";
 
+import { withObservedSpan } from "../lib/analytics/spans.mjs";
 import { runScan } from "./scan-run.mjs";
 
 /**
@@ -34,6 +35,13 @@ async function callInternal(env, path, body) {
 export class ScanWorkspace extends WorkflowEntrypoint {
   async run(event, step) {
     const env = this.env;
-    return runScan(event.payload, step, (path, body) => callInternal(env, path, body));
+    const observeStep = (name, workspaceId, operation) => withObservedSpan(
+      `ScanWorkspace.${name}`,
+      { workspaceId, source: name, provider: "cloudflare_workflow" },
+      operation,
+      tracing,
+      (result) => result?.skipped ? "skipped" : result?.status ?? "ok",
+    );
+    return runScan(event.payload, step, (path, body) => callInternal(env, path, body), observeStep);
   }
 }

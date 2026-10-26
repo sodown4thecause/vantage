@@ -80,9 +80,9 @@ export async function POST(req: Request): Promise<Response> {
     return json({ error: "invalid_request" }, 400);
   }
   if (body.message !== undefined) {
-    return askQuestion(req, body.workspaceId, body.conversationId, body.message);
+    return askQuestion(req, body.workspaceId, body.conversationId, body.message, authorization.userId);
   }
-  return approvePlan(req, body.workspaceId, body.conversationId, body.approvePlan!);
+  return approvePlan(req, body.workspaceId, body.conversationId, body.approvePlan!, authorization.userId);
 }
 
 async function askQuestion(
@@ -90,6 +90,7 @@ async function askQuestion(
   workspaceId: string,
   conversationId: string | undefined,
   rawMessage: string,
+  userId: string,
 ): Promise<Response> {
   const message = rawMessage.trim();
   if (message.length === 0 || message.length > MESSAGE_MAX_CHARS) return json({ error: "invalid_request" }, 400);
@@ -111,9 +112,10 @@ async function askQuestion(
     userSaved = true;
 
     const profile = toAgentProfile(await getLatestMonitoringProfile(workspaceId));
-    const classification = await classifyQuestion(workspaceId, message, profileSummary(profile), { signal: req.signal });
+    const classification = await classifyQuestion(workspaceId, message, profileSummary(profile), { signal: req.signal, userId });
     const run = await runAgent({
       workspaceId,
+      userId,
       conversationId: id,
       question: message,
       history: historyOf(existing?.messages),
@@ -136,6 +138,7 @@ async function approvePlan(
   workspaceId: string,
   conversationId: string | undefined,
   messageId: string,
+  userId: string,
 ): Promise<Response> {
   if (!conversationId) return json({ error: "invalid_request" }, 400);
   const conversation = await getConversation(workspaceId, conversationId);
@@ -150,6 +153,7 @@ async function approvePlan(
     const profile = toAgentProfile(await getLatestMonitoringProfile(workspaceId));
     const run = await runAgent({
       workspaceId,
+      userId,
       conversationId,
       question: "",
       history: historyOf(conversation.messages),

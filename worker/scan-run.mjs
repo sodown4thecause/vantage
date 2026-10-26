@@ -35,9 +35,11 @@ async function readJson(response, path) {
  * @param {{ workspaceId: string }} params
  * @param {{ do: Function }} step Workflow step API (`step.do(name, [options], callback)`).
  * @param {(path: string, body: object) => Promise<Response>} call Internal route caller.
+ * @param {(name: string, workspaceId: string, callback: Function) => Promise<unknown>} [observeStep] Custom span wrapper.
  * @returns {Promise<{ status: "skipped" | "done" | "partial", failures: number }>}
  */
-export async function runScan(params, step, call) {
+export async function runScan(params, step, call, observeStep) {
+  if (observeStep) step = observedSteps(step, params.workspaceId, observeStep);
   if (params.kind === "first") return runFirstScan(params, step, call);
   const { workspaceId } = params;
 
@@ -50,12 +52,15 @@ export async function runScan(params, step, call) {
   if (plan.skipped) return { status: "skipped", failures: 0 };
 
   let failures = 0;
+  let read = 0;
+  let summary = { relevant: 0, picked: 0, capped: plan.capped === true };
   try {
     // A source whose collect step exhausts its retries is counted, never fatal to the run.
     const collected = await Promise.all(plan.sourceIds.map(async (sourceId) => {
       try {
-        await step.do(`collect:${sourceId}`, COLLECT_STEP, async () =>
+        const result = await step.do(`collect:${sourceId}`, COLLECT_STEP, async () =>
           readJson(await call(COLLECT_PATH, { workspaceId, sourceId }), COLLECT_PATH));
+        read += (Number(result.inserted) || 0) + (Number(result.skipped) || 0);
         return true;
       } catch {
         return false;
@@ -64,14 +69,38 @@ export async function runScan(params, step, call) {
     failures = collected.filter((ok) => !ok).length;
 
     await step.do("embed", async () => readJson(await call(EMBED_PATH, { workspaceId }), EMBED_PATH));
-    await step.do("build", BUILD_STEP, async () => readJson(await call(BUILD_PATH, { workspaceId }), BUILD_PATH));
+    const built = await step.do("build", BUILD_STEP, async () => readJson(await call(BUILD_PATH, { workspaceId }), BUILD_PATH));
+    summary = {
+      relevant: Number(built.relevant) || 0,
+      picked: Array.isArray(built.top) ? built.top.length : Number(built.picked) || 0,
+      capped: summary.capped || built.coverage === "budget_limited",
+    };
   } finally {
     // Always release the lease this run claimed, even when build throws.
     await step.do("finish", async () =>
-      readJson(await call(FINISH_PATH, { workspaceId, leaseToken: plan.leaseToken }), FINISH_PATH));
+      readJson(await call(FINISH_PATH, { workspaceId, leaseToken: plan.leaseToken, read, ...summary }), FINISH_PATH));
   }
 
   return { status: failures > 0 ? "partial" : "done", failures };
+}
+
+function observedSteps(step, workspaceId, observeStep) {
+  return {
+    do(name, ...args) {
+      const callbackIndex = args.length - 1;
+      const callback = args[callbackIndex];
+      if (typeof callback === "function") {
+        args[callbackIndex] = (...callbackArgs) => observeStep(normalizeStepName(name), workspaceId,
+          () => callback(...callbackArgs));
+      }
+      return step.do(name, ...args);
+    },
+  };
+}
+
+function normalizeStepName(name) {
+  const normalized = String(name).replace(/^first:/, "");
+  return normalized.startsWith("collect:") ? "collect" : normalized;
 }
 
 async function runFirstScan({ workspaceId }, step, call) {
