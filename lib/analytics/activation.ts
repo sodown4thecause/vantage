@@ -22,6 +22,9 @@ export async function captureActivation(
       relevant: numberProperty(properties, "relevant"),
       picked: numberProperty(properties, "picked"),
       capped: properties.capped === true,
+      status: event === "first_scan_failed" || properties.status === "failed"
+        ? "failed"
+        : properties.status === "partial" ? "partial" : "success",
     });
   } else if (event === "digest_sent") {
     await captureProductEvent({ event: "digest_sent", workspaceId });

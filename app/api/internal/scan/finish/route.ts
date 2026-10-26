@@ -14,6 +14,7 @@ export async function POST(req: Request) {
       relevant: typeof summary.relevant === "number" ? summary.relevant : undefined,
       picked: typeof summary.picked === "number" ? summary.picked : undefined,
       capped: summary.capped === true,
+      status: summary.status === "partial" || summary.status === "failed" ? summary.status : "success",
     });
     return NextResponse.json({ released: true });
   });

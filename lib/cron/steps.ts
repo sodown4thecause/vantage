@@ -131,9 +131,10 @@ export async function buildWorkspace(workspaceId: string, signal: AbortSignal) {
 export async function finishScan(
   workspaceId: string,
   leaseToken: string,
-  summary: Partial<{ read: number; relevant: number; picked: number; capped: boolean }> = {},
+  summary: Partial<{ read: number; relevant: number; picked: number; capped: boolean; status: "success" | "partial" | "failed" }> = {},
 ): Promise<void> {
-  await releaseScanLease(workspaceId, leaseToken);
+  const released = await releaseScanLease(workspaceId, leaseToken);
+  if (!released) return;
   const count = (value: number | undefined) => Number.isFinite(value) && (value ?? -1) >= 0 ? Math.floor(value!) : 0;
   await captureProductEvent({
     event: "scan_finished",
@@ -142,6 +143,7 @@ export async function finishScan(
     relevant: count(summary.relevant),
     picked: count(summary.picked),
     capped: summary.capped === true,
+    status: summary.status ?? "success",
   });
 }
 

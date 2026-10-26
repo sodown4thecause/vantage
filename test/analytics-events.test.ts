@@ -30,6 +30,7 @@ describe("privacy-limited product analytics events", () => {
       relevant: 9,
       picked: 3,
       capped: true,
+      status: "partial",
     }, deps);
     const payload = await eventPayload(requests[0]!);
     expect(requests[0]?.url).toBe("https://us.i.posthog.com/i/v0/e/");
@@ -42,11 +43,12 @@ describe("privacy-limited product analytics events", () => {
         relevant: 9,
         picked: 3,
         capped: true,
+        status: "partial",
         $process_person_profile: false,
       },
     });
     expect(Object.keys(payload.properties as object).sort()).toEqual([
-      "$lib", "$process_person_profile", "capped", "picked", "read", "relevant", "workspaceId",
+      "$lib", "$process_person_profile", "capped", "picked", "read", "relevant", "status", "workspaceId",
     ]);
   });
 

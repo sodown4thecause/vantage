@@ -36,7 +36,7 @@ const defaultDeps: ServerAnalyticsDeps = {
 export type ProductEventInput =
   | { event: "signed_up" | "profile_confirmed"; userId?: string; workspaceId: string }
   | { event: "scan_started"; userId?: string; workspaceId: string }
-  | { event: "scan_finished"; userId?: string; workspaceId: string; read: number; relevant: number; picked: number; capped: boolean }
+  | { event: "scan_finished"; userId?: string; workspaceId: string; read: number; relevant: number; picked: number; capped: boolean; status: "success" | "partial" | "failed" }
   | { event: "digest_sent" | "reply_copied" | "thread_opened" | "unsubscribed"; userId?: string; workspaceId: string }
   | { event: "outcome_marked"; userId: string; workspaceId: string; outcome: "sent" | "replied" }
   | { event: "checkout_started" | "subscribed"; userId: string; workspaceId?: string };
@@ -62,6 +62,7 @@ export async function captureProductEvent(
         relevant: input.relevant,
         picked: input.picked,
         capped: input.capped,
+        status: input.status,
       } : {}),
       ...(input.event === "outcome_marked" ? { outcome: input.outcome } : {}),
     };

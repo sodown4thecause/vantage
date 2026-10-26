@@ -14,4 +14,22 @@ describe("activation funnel events", () => {
     await captureActivation(activation, "workspace-123");
     expect(captureProductEvent).toHaveBeenCalledWith({ event, workspaceId: "workspace-123" });
   });
+
+  it.each([
+    ["first_scan_completed", { status: "done" }, "success"],
+    ["first_scan_completed", { status: "partial" }, "partial"],
+    ["first_scan_failed", {}, "failed"],
+  ] as const)("keeps %s status in scan_finished", async (activation, properties, status) => {
+    captureProductEvent.mockClear();
+    await captureActivation(activation, "workspace-123", properties);
+    expect(captureProductEvent).toHaveBeenCalledWith({
+      event: "scan_finished",
+      workspaceId: "workspace-123",
+      read: 0,
+      relevant: 0,
+      picked: 0,
+      capped: false,
+      status,
+    });
+  });
 });

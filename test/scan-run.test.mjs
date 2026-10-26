@@ -91,7 +91,7 @@ test("posts the documented bodies to each internal route", async () => {
     { path: "/api/internal/scan/collect", body: { workspaceId: "ws-1", sourceId: "src-b" } },
     { path: "/api/internal/scan/embed", body: { workspaceId: "ws-1" } },
     { path: "/api/internal/scan/build", body: { workspaceId: "ws-1" } },
-    { path: "/api/internal/scan/finish", body: { workspaceId: "ws-1", leaseToken: LEASE, read: 2, relevant: 0, picked: 0, capped: false } },
+    { path: "/api/internal/scan/finish", body: { workspaceId: "ws-1", leaseToken: LEASE, read: 2, relevant: 0, picked: 0, capped: false, status: "success" } },
   ]);
 });
 
@@ -127,6 +127,7 @@ test("one collect step that exhausts its retries yields partial and the run stil
   assert.equal(record(step, "collect:src-b").attempts, 4, "limit 3 means four attempts");
   assert.equal(record(step, "collect:src-a").attempts, 1);
   assert.deepEqual(result, { status: "partial", failures: 1 });
+  assert.equal(fake.calls.at(-1).body.status, "partial");
   assert.ok(names(step).includes("build"));
   assert.equal(names(step).at(-1), "finish");
 });
@@ -142,7 +143,7 @@ test("finish runs even when build throws, and the build error propagates", async
   assert.equal(names(step).at(-1), "finish");
   assert.deepEqual(fake.calls.at(-1), {
     path: "/api/internal/scan/finish",
-    body: { workspaceId: "ws-1", leaseToken: LEASE, read: 2, relevant: 0, picked: 0, capped: false },
+    body: { workspaceId: "ws-1", leaseToken: LEASE, read: 2, relevant: 0, picked: 0, capped: false, status: "failed" },
   });
 });
 
@@ -157,7 +158,7 @@ test("forwards bounded scan counts to finish and wraps each workflow callback", 
     return result;
   });
   assert.deepEqual(fake.calls.at(-1).body, {
-    workspaceId: "ws-1", leaseToken: LEASE, read: 2, relevant: 4, picked: 2, capped: true,
+    workspaceId: "ws-1", leaseToken: LEASE, read: 2, relevant: 4, picked: 2, capped: true, status: "success",
   });
   assert.deepEqual(spans.map(({ name }) => name), ["plan", "collect", "collect", "embed", "build", "finish"]);
   assert.ok(spans.every(({ workspaceId }) => workspaceId === "ws-1"));

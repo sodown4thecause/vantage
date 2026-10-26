@@ -53,6 +53,7 @@ export async function runScan(params, step, call, observeStep) {
 
   let failures = 0;
   let read = 0;
+  let status = "success";
   let summary = { relevant: 0, picked: 0, capped: plan.capped === true };
   try {
     // A source whose collect step exhausts its retries is counted, never fatal to the run.
@@ -67,6 +68,7 @@ export async function runScan(params, step, call, observeStep) {
       }
     }));
     failures = collected.filter((ok) => !ok).length;
+    if (failures > 0) status = "partial";
 
     await step.do("embed", async () => readJson(await call(EMBED_PATH, { workspaceId }), EMBED_PATH));
     const built = await step.do("build", BUILD_STEP, async () => readJson(await call(BUILD_PATH, { workspaceId }), BUILD_PATH));
@@ -75,13 +77,16 @@ export async function runScan(params, step, call, observeStep) {
       picked: Array.isArray(built.top) ? built.top.length : Number(built.picked) || 0,
       capped: summary.capped || built.coverage === "budget_limited",
     };
+  } catch (error) {
+    status = "failed";
+    throw error;
   } finally {
     // Always release the lease this run claimed, even when build throws.
     await step.do("finish", async () =>
-      readJson(await call(FINISH_PATH, { workspaceId, leaseToken: plan.leaseToken, read, ...summary }), FINISH_PATH));
+      readJson(await call(FINISH_PATH, { workspaceId, leaseToken: plan.leaseToken, read, ...summary, status }), FINISH_PATH));
   }
 
-  return { status: failures > 0 ? "partial" : "done", failures };
+  return { status: status === "success" ? "done" : status, failures };
 }
 
 function observedSteps(step, workspaceId, observeStep) {

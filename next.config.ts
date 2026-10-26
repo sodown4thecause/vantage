@@ -1,8 +1,10 @@
 import type { NextConfig } from "next";
 
+import { posthogHost } from "./lib/analytics/config";
+
 const nextConfig: NextConfig = {
   async rewrites() {
-    return [{ source: "/ingest/:path*", destination: "https://us.i.posthog.com/:path*" }];
+    return [{ source: "/ingest/:path*", destination: `${posthogHost()}/:path*` }];
   },
 };
 
