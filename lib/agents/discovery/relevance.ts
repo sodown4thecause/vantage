@@ -34,7 +34,7 @@ const GENERIC_TERMS = new Set([
 ]);
 
 /** Lower-case words of three or more characters with a trailing plural "s" removed, so "tool" and "tools" agree. */
-function tokens(value: string): string[] {
+export function termsIn(value: string): string[] {
   return (value.toLowerCase().match(/[a-z0-9][a-z0-9.-]*[a-z0-9]|[a-z0-9]/g) ?? [])
     .flatMap((word) => word.includes(".") ? [word, ...word.split(".")] : [word])
     .map((word) => word.replace(/(?<=[a-z]{3,})s$/, ""))
@@ -46,7 +46,7 @@ const isGeneric = (term: string) => GENERIC_TERMS.has(term) || GENERIC_TERMS.has
 /** Terms that point at this product: its name, category, audience, differentiators, competitors and keywords. */
 export function specificTerms(profile: ReviewProfile): Set<string> {
   const all = [profile.productName, profile.category, profile.audience, profile.description, ...profile.differentiators, ...profile.competitors, ...profile.keywords];
-  return new Set(all.flatMap(tokens).filter((term) => !isGeneric(term) && !["com", "dev", "www", "org", "net"].includes(term)));
+  return new Set(all.flatMap(termsIn).filter((term) => !isGeneric(term) && !["com", "dev", "www", "org", "net"].includes(term)));
 }
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
@@ -58,7 +58,7 @@ export function reviewSourceProposal(profile: ReviewProfile, source: SourcePropo
   let specific = 0;
   let generic = 0;
   for (const query of source.queries) {
-    const words = tokens(query);
+    const words = termsIn(query);
     const hits = words.filter((word) => vocabulary.has(word));
     hits.forEach((hit) => matched.add(hit));
     if (hits.length > 0) specific += 1;
