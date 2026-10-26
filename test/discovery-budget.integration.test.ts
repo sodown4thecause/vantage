@@ -157,4 +157,79 @@ describe.skipIf(!hasGtmTestDatabase)("Postgres discovery allowance", () => {
       await fixture.client`delete from billing_subscription where id = ${subscriptionId}`;
     }
   });
+
+  const CAP_DENIED = "Discovery workspace budget unavailable.";
+  type Attempt = Awaited<ReturnType<typeof reserveDiscoveryAttempt>>;
+  const attemptOf = (value: Attempt): NonNullable<Attempt> => {
+    if (!value) throw new Error("Expected an active discovery budget context.");
+    return value;
+  };
+
+  it("denies the losing concurrent initial attempt at the SQL cap", async () => {
+    const { workspaceId } = await fixture.seed();
+    await withDiscoveryBudget({ workspaceId, scope: "initial", requestId: "cap-initial" }, async () => {
+      const attempts = await Promise.allSettled([reserveDiscoveryAttempt(workspaceId, 0.3), reserveDiscoveryAttempt(workspaceId, 0.3)]);
+      const won = attempts.filter((x): x is PromiseFulfilledResult<Attempt> => x.status === "fulfilled");
+      const lost = attempts.filter((x): x is PromiseRejectedResult => x.status === "rejected");
+      expect(won).toHaveLength(1);
+      expect(lost).toHaveLength(1);
+      expect(lost[0]?.reason).toHaveProperty("message", CAP_DENIED);
+      await attemptOf(won[0]!.value).settle(0.3, "success");
+    });
+    expect(await spent(workspaceId)).toBe(0.3);
+  });
+
+  it("denies the losing concurrent daily review attempt at the SQL cap", async () => {
+    const { workspaceId } = await fixture.seed();
+    await withDiscoveryBudget({ workspaceId, scope: "daily_review", requestId: "cap-daily" }, async () => {
+      const attempts = await Promise.allSettled([reserveDiscoveryAttempt(workspaceId, 0.03), reserveDiscoveryAttempt(workspaceId, 0.03)]);
+      const won = attempts.filter((x): x is PromiseFulfilledResult<Attempt> => x.status === "fulfilled");
+      const lost = attempts.filter((x): x is PromiseRejectedResult => x.status === "rejected");
+      expect(won).toHaveLength(1);
+      expect(lost).toHaveLength(1);
+      expect(lost[0]?.reason).toHaveProperty("message", CAP_DENIED);
+      await attemptOf(won[0]!.value).settle(0.03, "success");
+    });
+    expect(await spent(workspaceId, "daily_review")).toBe(0.03);
+  });
+
+  it("accepts concurrent initial attempts up to the cap, then denies over-cap work", async () => {
+    const { workspaceId } = await fixture.seed();
+    await withDiscoveryBudget({ workspaceId, scope: "initial", requestId: "cap-initial-sequence" }, async () => {
+      const [a, b] = await Promise.all([reserveDiscoveryAttempt(workspaceId, 0.2), reserveDiscoveryAttempt(workspaceId, 0.2)]);
+      await attemptOf(a).settle(0.2, "success");
+      await attemptOf(b).settle(0.2, "success");
+      expect(await spent(workspaceId)).toBe(0.4);
+      await expect(reserveDiscoveryAttempt(workspaceId, 0.11)).rejects.toThrow(CAP_DENIED);
+      await attemptOf(await reserveDiscoveryAttempt(workspaceId, 0.1)).settle(0.1, "success");
+    });
+    expect(await spent(workspaceId)).toBe(0.5);
+  });
+
+  it("accepts concurrent daily review attempts up to the cap, then denies the next", async () => {
+    const { workspaceId } = await fixture.seed();
+    await withDiscoveryBudget({ workspaceId, scope: "daily_review", requestId: "cap-daily-sequence" }, async () => {
+      const [a, b] = await Promise.all([reserveDiscoveryAttempt(workspaceId, 0.02), reserveDiscoveryAttempt(workspaceId, 0.02)]);
+      await attemptOf(a).settle(0.02, "success");
+      await attemptOf(b).settle(0.02, "success");
+      expect(await spent(workspaceId, "daily_review")).toBe(0.04);
+      await expect(reserveDiscoveryAttempt(workspaceId, 0.02)).rejects.toThrow(CAP_DENIED);
+    });
+    expect(await spent(workspaceId, "daily_review")).toBe(0.04);
+  });
+
+  it("denies every reservation while the feature is off, then accepts once enabled", async () => {
+    const { workspaceId } = await fixture.seed();
+    await fixture.client`update plan_limit set value = 0 where plan = 'free' and key = 'discovery_reports'`;
+    try {
+      await expect(reserve(workspaceId, "feature-disabled", 0.01)).rejects.toThrow(CAP_DENIED);
+      expect(await spent(workspaceId)).toBe(0);
+    } finally {
+      await fixture.client`update plan_limit set value = 1 where plan = 'free' and key = 'discovery_reports'`;
+    }
+    const enabled = await fixture.seed();
+    const accepted = await reserve(enabled.workspaceId, "feature-enabled", 0.01);
+    await settleDiscoverySpend({ workspaceId: enabled.workspaceId, reservationId: accepted.reservationId, outcome: "success", actualUsd: 0.01 });
+    expect(await spent(enabled.workspaceId)).toBe(0.01);
+  });
 });
