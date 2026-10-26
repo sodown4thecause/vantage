@@ -32,16 +32,35 @@ const unique = (items: ContentSourceCitation[]) => {
   return items.filter((item) => !seen.has(item.url) && !!seen.add(item.url));
 };
 
+function stripUnmatchedClosingParentheses(value: string): string {
+  let result = value;
+  while (result.endsWith(")")) {
+    let balance = 0;
+    for (const char of result) {
+      if (char === "(") balance++;
+      else if (char === ")") balance--;
+    }
+    if (balance >= 0) break;
+    result = result.slice(0, -1);
+  }
+  return result;
+}
+
+function isReturnedUrl(raw: string, allowed: Set<string>): boolean {
+  if (allowed.has(raw)) return true;
+  const withoutMarkdownDelimiter = stripUnmatchedClosingParentheses(raw);
+  if (allowed.has(withoutMarkdownDelimiter)) return true;
+  return allowed.has(withoutMarkdownDelimiter.replace(/[.,;:!?]+$/, ""));
+}
+
 export function appendContentSourceCitations(body: string, citations: ContentSourceCitation[]): string {
   const checked = citations.map((item) => safeCitation(item.title, item.url));
   if (checked.some((item) => item === null)) throw new Error("Unsafe source citation.");
   const sources = unique(checked as ContentSourceCitation[]);
   const allowed = new Set(sources.map((item) => item.url));
-  const markdownTargets = [...body.matchAll(/\]\(([^)\s]+)\)/g)].map((match) => match[1].replace(/^<|>$/g, ""));
-  const plainTargets = body.match(/\b(?:[a-z][a-z0-9+.-]{1,20}:\/\/|javascript:|data:|mailto:|file:|ftp:|\/\/|www\.)[^\s<>"'`()\[\]{}]+/gi) ?? [];
-  const draftUrls = new Set([...markdownTargets, ...plainTargets]);
-  for (const raw of draftUrls) {
-    if (!allowed.has(raw.replace(/[.,;:!?]+$/, ""))) throw new Error("Draft contains a citation URL that was not returned by a source tool.");
+  const draftUrls = body.match(/\b(?:[a-z][a-z0-9+.-]{1,20}:\/\/|javascript:|data:|mailto:|file:|ftp:|\/\/|www\.)[^\s<>"'`]+/gi) ?? [];
+  for (const raw of new Set(draftUrls)) {
+    if (!isReturnedUrl(raw, allowed)) throw new Error("Draft contains a citation URL that was not returned by a source tool.");
   }
   const missing = sources.filter((item) => !body.includes(item.url));
   return missing.length ? `${body.trimEnd()}\n\nSources:\n${missing.map((item) => `- ${item.url}`).join("\n")}` : body.trim();
@@ -49,6 +68,27 @@ export function appendContentSourceCitations(body: string, citations: ContentSou
 
 function notify(callback: ((notice: SourceLookupNotice) => void) | undefined, citations: ContentSourceCitation[] = [], unsafeCitation = false) {
   callback?.({ citations: unique(citations), unsafeCitation });
+}
+
+type SourceToolName = "ranked_conversation_source" | "ranked_keyword_source" | "competitor_gap_source";
+type SourceLookupErrorCategory = "database" | "provider" | "provider_not_configured" | "provider_credits" | "provider_limit" | "provider_denied" | "unknown";
+
+function lookupErrorCategory(error: unknown): SourceLookupErrorCategory {
+  if (!(error instanceof Error)) return "unknown";
+  if (error.name === "DataForSeoDeniedError") {
+    const code = (error as Error & { code?: unknown }).code;
+    if (code === "not_configured") return "provider_not_configured";
+    if (code === "credits_exhausted") return "provider_credits";
+    if (code === "reserve_floor" || code === "balance_unknown" || code === "daily_cap") return "provider_limit";
+    return "provider_denied";
+  }
+  if (error.name === "DataForSeoApiError") return "provider";
+  if (error.name === "NeonDbError" || error.name === "PostgresError" || error.name === "DrizzleQueryError") return "database";
+  return "unknown";
+}
+
+function logLookupFailure(toolName: SourceToolName, error: unknown) {
+  console.error("[content-agent] source lookup failed", { tool: toolName, category: lookupErrorCategory(error) });
 }
 
 function checkRows<T extends { url: string | null }>(rows: T[], title: (row: T) => string) {
@@ -87,7 +127,7 @@ export function createContentSourceTools(args: {
             sourceType: "ranked_conversation" as const, requestedFormat: format,
             evidence: checked.rows.map(({ title, platform, content }) => ({ title, platform, content })), citations: checked.citations,
           };
-        } catch { notify(args.onLookup); return { error: "source_lookup_failed", requestedFormat: format }; }
+        } catch (error) { logLookupFailure("ranked_conversation_source", error); notify(args.onLookup); return { error: "source_lookup_failed", requestedFormat: format }; }
       },
     }),
     ranked_keyword_source: tool({
@@ -107,7 +147,7 @@ export function createContentSourceTools(args: {
             sourceType: "ranked_keyword" as const, requestedFormat: format, domain: target,
             evidence: checked.rows.map(({ keyword, position }) => ({ keyword, position })), citations: checked.citations,
           };
-        } catch { notify(args.onLookup); return { error: "source_lookup_failed", requestedFormat: format }; }
+        } catch (error) { logLookupFailure("ranked_keyword_source", error); notify(args.onLookup); return { error: "source_lookup_failed", requestedFormat: format }; }
       },
     }),
     competitor_gap_source: tool({
@@ -128,7 +168,7 @@ export function createContentSourceTools(args: {
             sourceType: "competitor_gap" as const, requestedFormat: format, domain: target, competitor: rival,
             evidence: checked.rows.map(({ keyword, position }) => ({ keyword, position })), citations: checked.citations,
           };
-        } catch { notify(args.onLookup); return { error: "source_lookup_failed", requestedFormat: format }; }
+        } catch (error) { logLookupFailure("competitor_gap_source", error); notify(args.onLookup); return { error: "source_lookup_failed", requestedFormat: format }; }
       },
     }),
   };

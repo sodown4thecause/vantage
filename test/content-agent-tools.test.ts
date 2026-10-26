@@ -64,8 +64,16 @@ beforeEach(() => {
     mocks.sourceOptions = options;
     return sourceTools;
   });
-  mocks.appendSourceCitations.mockReset().mockImplementation((body: string, citations: Array<{ title: string; url: string }>) =>
-    `${body}\n\nSources:\n${citations.map((citation) => `- ${citation.url}`).join("\n")}`);
+  mocks.appendSourceCitations.mockReset().mockImplementation((body: string, citations: Array<{ title: string; url: string }>) => {
+    const urls = body.match(/https?:\/\/[^\s<>"']+/g) ?? [];
+    for (const raw of urls) {
+      if (!citations.some((citation) => citation.url === raw.replace(/[.,;:!?]+$/, ""))) {
+        throw new Error("Draft contains a citation URL that was not returned by a source tool.");
+      }
+    }
+    const missing = citations.filter((citation) => !body.includes(citation.url));
+    return missing.length ? `${body.trimEnd()}\n\nSources:\n${missing.map((citation) => `- ${citation.url}`).join("\n")}` : body.trim();
+  });
   mocks.saveProfile.mockReset();
 });
 
@@ -129,5 +137,45 @@ describe("Content draft tool output", () => {
     const tool = (mocks.agentOptions as AgentOptions).tools.save_content_draft;
     await expect(tool.execute({ title: "A useful post", body: "Uncited claims.", format: "blog_post" }, {})).rejects.toThrow();
     expect(mocks.createDraft).not.toHaveBeenCalled();
+  });
+
+  it("binds a save to the latest lookup instead of retaining citations from an earlier lookup", async () => {
+    createAgent();
+    const sourceOptions = mocks.sourceOptions as SourceOptions;
+    sourceOptions.onLookup({ citations: [{ title: "Source A", url: "https://a.example/source" }], unsafeCitation: false });
+    sourceOptions.onLookup({ citations: [], unsafeCitation: false });
+
+    const tool = (mocks.agentOptions as AgentOptions).tools.save_content_draft;
+    await expect(tool.execute({ title: "A useful post", body: "Claims about source B.", format: "blog_post" }, {})).rejects.toThrow();
+    expect(mocks.createDraft).not.toHaveBeenCalled();
+  });
+
+  it("rejects a source-backed revision with citations when this agent has no matching verified lookup", async () => {
+    createAgent();
+    const tool = (mocks.agentOptions as AgentOptions).tools.save_content_draft;
+    await expect(tool.execute({
+      title: "A revised post",
+      body: "Updated draft.\n\nSources:\n- https://community.example/thread/1",
+      format: "blog_post",
+    }, {})).rejects.toThrow("Draft contains a citation URL that was not returned by a source tool.");
+    expect(mocks.createDraft).not.toHaveBeenCalled();
+  });
+
+  it("consumes verified source citations for one save instead of reusing them for another", async () => {
+    mocks.createDraft.mockResolvedValue({ id: "draft-3", title: "A useful post", body: "Draft with its source.", format: "blog_post" });
+    createAgent();
+    (mocks.sourceOptions as SourceOptions).onLookup({
+      citations: [{ title: "Source thread", url: "https://community.example/thread/1" }],
+      unsafeCitation: false,
+    });
+    const tool = (mocks.agentOptions as AgentOptions).tools.save_content_draft;
+
+    await tool.execute({ title: "A useful post", body: "Grounded draft.", format: "blog_post" }, {});
+    await expect(tool.execute({
+      title: "Another post",
+      body: "Revision cites https://community.example/thread/1",
+      format: "blog_post",
+    }, {})).rejects.toThrow("Draft contains a citation URL that was not returned by a source tool.");
+    expect(mocks.createDraft).toHaveBeenCalledTimes(1);
   });
 });

@@ -41,15 +41,15 @@ export function createContentAgent(args: {
       ...(args.brandVoiceProfile.sampleText ? { sampleText: args.brandVoiceProfile.sampleText } : {}),
     }
     : null;
-  const sourceCitations = new Map<string, { title: string; url: string }>();
-  let unsafeSourceCitation = false;
-  let sourceLookupPerformed = false;
+  let sourceLookup = {
+    performed: false,
+    citations: [] as Array<{ title: string; url: string }>,
+    unsafeCitation: false,
+  };
   const sourceTools = createContentSourceTools({
     workspaceId: args.workspaceId,
     onLookup: ({ citations, unsafeCitation }) => {
-      sourceLookupPerformed = true;
-      unsafeSourceCitation ||= unsafeCitation;
-      for (const citation of citations) sourceCitations.set(citation.url, citation);
+      sourceLookup = { performed: true, citations, unsafeCitation };
     },
   });
   return new ToolLoopAgent({
@@ -71,13 +71,14 @@ export function createContentAgent(args: {
         description: "Humanise and save a private draft to this workspace. This does not publish or schedule it.",
         inputSchema: contentDraftInputSchema,
         execute: async (input, { abortSignal }) => {
-          if (unsafeSourceCitation) throw new Error("Cannot save a source-based draft after an unsafe citation was returned.");
-          const draftInput = sourceLookupPerformed
-            ? { ...input, body: appendContentSourceCitations(input.body, [...sourceCitations.values()]) }
-            : input;
-          if (sourceLookupPerformed && sourceCitations.size === 0) {
+          const lookup = sourceLookup;
+          sourceLookup = { performed: false, citations: [], unsafeCitation: false };
+          if (lookup.unsafeCitation) throw new Error("Cannot save a source-based draft after an unsafe citation was returned.");
+          if (lookup.performed && lookup.citations.length === 0) {
             throw new Error("Cannot save a source-based draft without a safe source citation.");
           }
+          const citations = lookup.citations;
+          const draftInput = { ...input, body: appendContentSourceCitations(input.body, citations) };
           const draft = await createHumanisedContentDraft({
             workspaceId: args.workspaceId,
             threadId: args.threadId,
@@ -85,9 +86,7 @@ export function createContentAgent(args: {
             profile: brandVoiceProfile,
             models: args.models,
             signal: abortSignal,
-            finalizeBody: sourceLookupPerformed
-              ? (body) => appendContentSourceCitations(body, [...sourceCitations.values()])
-              : undefined,
+            finalizeBody: (body) => appendContentSourceCitations(body, citations),
           });
           return { saved: true, draftId: draft.id, title: draft.title, format: draft.format, body: draft.body };
         },

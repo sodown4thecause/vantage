@@ -134,4 +134,36 @@ describe("Content source tools", () => {
     expect(() => appendContentSourceCitations("A markdown link [local file](file:///etc/passwd)", citations)).toThrow("Draft contains a citation URL that was not returned by a source tool.");
     expect(() => appendContentSourceCitations("A draft.", [{ title: "Unsafe", url: "javascript:alert(1)" }])).toThrow("Unsafe source citation.");
   });
+
+  it("preserves balanced parentheses and URLs whose paths end in punctuation", () => {
+    const parenthesizedUrl = "https://example.com/wiki/Foo_(bar)";
+    const punctuationUrl = "https://example.com/wiki/Foo.";
+    const citations = [
+      { title: "Parenthesized source", url: parenthesizedUrl },
+      { title: "Punctuation source", url: punctuationUrl },
+    ];
+
+    expect(appendContentSourceCitations(`See [the page](${parenthesizedUrl}) and ${punctuationUrl}`, citations)).toContain(parenthesizedUrl);
+    expect(appendContentSourceCitations(`See ${parenthesizedUrl}.`, [{ title: "Parenthesized source", url: parenthesizedUrl }])).toBe(`See ${parenthesizedUrl}.`);
+    expect(appendContentSourceCitations("See https://example.com/wiki/Foo.", [{ title: "Source", url: "https://example.com/wiki/Foo" }])).toBe("See https://example.com/wiki/Foo.");
+  });
+
+  it.each([
+    { name: "DataForSeoDeniedError", code: "credits_exhausted", category: "provider_credits" },
+    { name: "DataForSeoDeniedError", code: "not_configured", category: "provider_not_configured" },
+    { name: "NeonDbError", code: undefined, category: "database" },
+  ])("logs only a safe category and tool name for $name while keeping lookup results generic", async ({ name, code, category }) => {
+    const error = Object.assign(new Error("private upstream data at https://user:password@example.com"), { name, code });
+    mocks.fetchRankedKeywords.mockRejectedValue(error);
+    const logger = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const result = await toolSet().ranked_keyword_source.execute({ domain: "vantage.example", format: "blog_post" });
+      expect(result).toEqual({ error: "source_lookup_failed", requestedFormat: "blog_post" });
+      expect(logger).toHaveBeenCalledWith("[content-agent] source lookup failed", { tool: "ranked_keyword_source", category });
+      expect(JSON.stringify(logger.mock.calls)).not.toContain("private upstream data");
+      expect(JSON.stringify(logger.mock.calls)).not.toContain("password");
+    } finally {
+      logger.mockRestore();
+    }
+  });
 });
