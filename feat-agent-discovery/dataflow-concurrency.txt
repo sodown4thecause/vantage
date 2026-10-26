@@ -1,0 +1,82 @@
+##### RUN 1  (2026-10-26T06:12:37Z)  cmd: pnpm exec tsx scripts/scratch/feat-agent-discovery-concurrency.mts
+scratch workspace a09ab0da…  cap DISCOVERY_BUDGET_USD=0.03
+
+--- discovery_budget BEFORE
+[]
+run 2: DENIED after 84 ms, PaidCallDeniedError code=budget_exhausted
+
+--- discovery_budget MID-FLIGHT at ~1.5 s (the winner's reservation, before it settles)
+[
+ {
+  "period": "initial",
+  "committed_usd": "0.030000"
+ }
+]
+run 1: PASSED after 4289 ms, status=complete, modelCostUsd=0.004000
+
+runs passed: 1 of 2; model calls per run: [1,0]
+
+--- discovery_budget AFTER (reservation settled to the real cost)
+[
+ {
+  "period": "initial",
+  "committed_usd": "0.004000"
+ }
+]
+
+--- cost_event rows for this workspace (settled costs)
+[
+ {
+  "source_key": "discovery",
+  "provider": "gateway",
+  "action": "discovery_initial",
+  "cost_usd": "0.004000",
+  "ok": true
+ }
+]
+PASS  exactly one run got through
+PASS  exactly one run reached the model
+PASS  the other run was denied with budget_exhausted
+PASS  committed never exceeded the cap and settled to the real cost
+exit=0
+##### RUN 2  (2026-10-26T06:12:44Z)  cmd: pnpm exec tsx scripts/scratch/feat-agent-discovery-concurrency.mts
+scratch workspace dd3fd48f…  cap DISCOVERY_BUDGET_USD=0.03
+
+--- discovery_budget BEFORE
+[]
+run 2: DENIED after 112 ms, PaidCallDeniedError code=budget_exhausted
+
+--- discovery_budget MID-FLIGHT at ~1.5 s (the winner's reservation, before it settles)
+[
+ {
+  "period": "initial",
+  "committed_usd": "0.030000"
+ }
+]
+run 1: PASSED after 4254 ms, status=complete, modelCostUsd=0.004000
+
+runs passed: 1 of 2; model calls per run: [1,0]
+
+--- discovery_budget AFTER (reservation settled to the real cost)
+[
+ {
+  "period": "initial",
+  "committed_usd": "0.004000"
+ }
+]
+
+--- cost_event rows for this workspace (settled costs)
+[
+ {
+  "source_key": "discovery",
+  "provider": "gateway",
+  "action": "discovery_initial",
+  "cost_usd": "0.004000",
+  "ok": true
+ }
+]
+PASS  exactly one run got through
+PASS  exactly one run reached the model
+PASS  the other run was denied with budget_exhausted
+PASS  committed never exceeded the cap and settled to the real cost
+exit=0
