@@ -1,0 +1,57 @@
+.resultCard, .evidenceCard {
+  display: grid;
+  gap: 17px;
+  max-width: 760px;
+  margin: 22px 0;
+  padding: 20px;
+  border: 1px solid var(--contour);
+  border-radius: 10px;
+  background: var(--sheet);
+}
+.resultCard { box-shadow: inset 2px 0 var(--signal); }
+.outlineCard { box-shadow: inset 2px 0 var(--chart-2, var(--signal)); }
+.evidenceCard { background: var(--sheet-2); }
+.cardHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.cardHeader h3 { margin-top: 5px; font-family: var(--font-newsreader), Georgia, serif; font-size: 21px; font-weight: 400; line-height: 1.25; }
+.cardEyebrow { color: var(--ridge); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
+.formatBadge { flex: none; padding: 5px 8px; border: 1px solid var(--contour-strong); border-radius: 999px; color: var(--ridge); font-size: 10px; }
+.editorLabel { display: grid; gap: 6px; color: var(--ridge); font-size: 11px; }
+.editorLabel input, .editorLabel textarea, .repurpose select { width: 100%; padding: 10px 11px; border: 1px solid var(--contour); border-radius: 7px; background: var(--paper); color: var(--ink); font: inherit; font-size: 13px; }
+.editorLabel textarea { min-height: 120px; resize: vertical; white-space: pre-wrap; line-height: 1.7; }
+.cardActions { display: flex; flex-wrap: wrap; gap: 8px; }
+.cardActions button, .sectionAction button, .proposalHeading button, .repurpose button { padding: 7px 10px; border: 1px solid var(--contour-strong); border-radius: 6px; color: var(--ink); font-size: 11px; }
+.cardActions button:hover, .sectionAction button:hover, .proposalHeading button:hover, .repurpose button:hover { border-color: var(--signal); }
+.cardActions button:disabled { opacity: .45; cursor: not-allowed; }
+.regenerate { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--contour); }
+.regenerate h4 { color: var(--ridge); font-size: 11px; font-weight: 500; }
+.sectionAction { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.sectionAction span { overflow: hidden; color: var(--ridge); text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.sectionAction button { flex: none; }
+.repurpose { display: flex; align-items: flex-end; gap: 10px; padding: 13px; border: 1px solid var(--contour); border-radius: 8px; background: var(--sheet-2); }
+.repurposeIntro { flex: 1; min-width: 130px; }
+.repurposeIntro h4 { color: var(--ink); font-size: 12px; font-weight: 500; }
+.repurposeIntro p { margin-top: 4px; color: var(--ridge); font-size: 10px; line-height: 1.5; }
+.repurpose label { display: grid; flex: 1; gap: 6px; color: var(--ridge); font-size: 11px; }
+.repurpose select { padding: 8px; }
+.repurpose button { min-height: 37px; background: var(--signal); color: var(--signal-ink); }
+.cardStatus, .cardNotice { color: var(--ridge); font-size: 11px; line-height: 1.6; }
+.cardNotice { max-width: 760px; margin: 16px 0; padding: 10px 12px; border-left: 2px solid var(--signal); background: var(--sheet); }
+.proposal { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--contour-strong); border-radius: 7px; background: var(--paper); }
+.proposalHeading { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--ridge); font-size: 11px; }
+.proposal p, .evidenceCard p { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.65; }
+.evidenceList { display: grid; gap: 10px; padding-left: 17px; color: var(--ridge); font-size: 12px; }
+.evidenceList li { display: grid; gap: 4px; }
+.evidenceList strong { color: var(--ink); font-weight: 500; }
+.evidenceList span { color: var(--ridge); font-size: 10px; }
+.evidenceList p { line-height: 1.6; }
+.outlinePreview { display: grid; gap: 7px; padding-left: 22px; color: var(--ridge); font-size: 13px; line-height: 1.6; }
+.citationList { display: grid; gap: 7px; padding-left: 17px; color: var(--ridge); font-size: 12px; }
+.citationList a { color: var(--signal); overflow-wrap: anywhere; text-underline-offset: 3px; }
+
+@media (max-width: 540px) {
+  .resultCard, .evidenceCard { padding: 15px; }
+  .cardHeader { display: grid; }
+  .formatBadge { justify-self: start; }
+  .sectionAction, .repurpose { align-items: stretch; flex-direction: column; }
+  .sectionAction span { white-space: normal; }
+}

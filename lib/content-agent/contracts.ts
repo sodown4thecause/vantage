@@ -11,11 +11,24 @@ export const contentFormatValues = [
 ] as const;
 export type ContentDraftFormat = (typeof contentFormatValues)[number];
 
+export const contentDraftUpdateInputSchema = z.object({
+  draftId: z.uuid(),
+  title: z.string().min(1).max(120).refine((value) => value.trim().length > 0),
+  body: z.string().min(1).max(24_000).refine((value) => value.trim().length > 0),
+}).strict();
+export type ContentDraftUpdateInput = z.infer<typeof contentDraftUpdateInputSchema>;
+
 export const contentChatRequestSchema = z.object({
   workspaceId: z.uuid(),
   threadId: z.uuid().optional(),
-  message: z.string().trim().min(1).max(4000),
+  message: z.string().min(1).max(32_000).refine((value) => value.trim().length > 0),
+  preserveText: z.boolean().optional(),
+  draftUpdate: contentDraftUpdateInputSchema.optional(),
   retry: z.boolean().optional(),
+}).superRefine(({ draftUpdate, preserveText }, context) => {
+  if (draftUpdate && preserveText !== true) {
+    context.addIssue({ code: "custom", path: ["draftUpdate"], message: "Exact draft edits must preserve text." });
+  }
 });
 export type ContentChatRequest = z.infer<typeof contentChatRequestSchema>;
 

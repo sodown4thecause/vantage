@@ -18,6 +18,15 @@ vi.mock("react", async (importOriginal) => {
     },
     useCallback: (callback: unknown) => callback,
     useMemo: (factory: () => unknown) => factory(),
+    useRef: (initial: unknown) => {
+      const index = hookState.cursor++;
+      return (hookState.values[index] ??= { value: { current: initial } }).value;
+    },
+    useReducer: (reducer: (state: unknown, action: unknown) => unknown, initial: unknown) => {
+      const index = hookState.cursor++;
+      const slot = hookState.values[index] ?? (hookState.values[index] = { value: initial });
+      return [slot.value, (action: unknown) => { slot.value = reducer(slot.value, action); }];
+    },
   };
 });
 vi.mock("ai", () => ({ DefaultChatTransport: class { constructor() {} } }));
@@ -60,6 +69,7 @@ it("fills the composer input with the selected suggested prompt", () => {
     initialMessages: [],
     threads: [],
     drafts: [],
+    threadDrafts: [],
     brandVoiceProfile: null as ContentBrandVoiceProfileRow | null,
     suggestedPrompts: [prompt],
   };
