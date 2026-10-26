@@ -20,6 +20,9 @@ describe("Content agent brand voice instructions", () => {
     });
     expect(instructions).toContain("follow it for every draft");
     expect(instructions).toContain("show the full humanised draft body in the conversation");
+    expect(instructions).toContain("call the matching ranked conversation, ranked keyword, or competitor gap source tool first");
+    expect(instructions).toContain("Supported draft formats: blog outline, full blog post, X thread, LinkedIn post, Reddit reply, Hacker News reply, and newsletter section.");
+    expect(instructions).toContain("Do not invent evidence, sources, metrics, or claims.");
     expect(instructions).toContain("Founder-led teams");
     expect(instructions).toContain("conduct the short interview and save the updated profile");
   });

@@ -39,7 +39,7 @@ Complete each slice in order, one task at a time. Before implementation, add or 
 
 - [ ] 1. Content agent core
 - [ ] 2. Brand voice
-- [ ] 3. Draft from sources
+- [x] 3. Draft from sources — typed source tools use the existing workspace-scoped readers, cite only safe canonical URLs, and fail closed before saving if source citations are unsafe or unavailable; no migration or publication path.
 - [ ] 4. Generative UI cards
 - [ ] 5. Suggested prompts
 - [ ] 6. Content library

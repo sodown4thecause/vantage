@@ -60,6 +60,25 @@ describe("Content private draft saving", () => {
     });
   });
 
+  it("finalises the humanised body before the workspace draft is persisted", async () => {
+    const finalizeBody = vi.fn((body: string) => `${body}\n\nSources:\n- https://community.example/thread/1`);
+    await createHumanisedContentDraft({ ...args, profile, finalizeBody });
+
+    expect(finalizeBody).toHaveBeenCalledWith("Revised text.");
+    expect(mocks.createDraft).toHaveBeenCalledWith(expect.objectContaining({
+      body: "Revised text.\n\nSources:\n- https://community.example/thread/1",
+    }));
+  });
+
+  it("does not persist when final-body source validation fails", async () => {
+    await expect(createHumanisedContentDraft({
+      ...args,
+      profile,
+      finalizeBody: () => { throw new Error("Unsafe generated citation."); },
+    })).rejects.toThrow("Unsafe generated citation.");
+    expect(mocks.createDraft).not.toHaveBeenCalled();
+  });
+
   it("does not save when the chat is stopped during humanisation", async () => {
     const controller = new AbortController();
     mocks.humanise.mockImplementationOnce(async ({ signal }: { signal?: AbortSignal }) => {
