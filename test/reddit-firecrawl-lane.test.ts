@@ -291,6 +291,56 @@ describe("Scavio hydration", () => {
     expect(posts[0]).toMatchObject({ contentKind: "thread", body: "Full text h1", topComments: undefined });
   });
 
+  it.each([
+    { name: "explicit failure", response: { success: false, error: "private provider detail", data: { comments: [] } }, kind: "upstream_failed", retryable: true },
+    { name: "error envelope", response: { error: "private provider detail" }, kind: "upstream_failed", retryable: true },
+    { name: "malformed envelope", response: { data: { unexpected: "private provider detail" } }, kind: "invalid_payload", retryable: false },
+    { name: "non-array comments", response: { data: { comments: "private provider detail" } }, kind: "invalid_payload", retryable: false },
+    { name: "non-record comments", response: { data: { comments: ["private provider detail"] } }, kind: "invalid_payload", retryable: false },
+    { name: "mixed malformed comments", response: { comments: [{ body: "Valid reply" }, null] }, kind: "invalid_payload", retryable: false },
+  ])("keeps full post and safe partial health for comments $name", async ({ response, kind, retryable }) => {
+    firecrawl.mockResolvedValue([hit("h1")]);
+    redditComments.mockResolvedValue(response);
+    const collected = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: { query: "synthetic" } });
+    expect(collected.documents[0].contentMd).toContain("Full text h1");
+    expect(collected.documents[0].metadata).toMatchObject({ contentKind: "thread", topComments: undefined });
+    expect(collected.scanHealth).toEqual({ state: "partial", discovered: 1, verified: 1,
+      issues: [{ stage: "hydration", kind, provider: "scavio", retryable }] });
+    expect(JSON.stringify(collected)).not.toContain("private provider detail");
+    expect(paidCall).toHaveBeenCalledWith(expect.objectContaining({ provider: "scavio", action: "reddit_hydrate",
+      estimateUsd: 0.008, context }), expect.any(Function));
+    expect(redditPost).toHaveBeenCalledOnce();
+    expect(redditComments).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    [], { comments: [] }, { results: [] }, { items: [] }, { data: [] },
+    { data: { comments: [] } }, { data: { results: [] } }, { data: { items: [] } }, { data: { data: [] } },
+  ].map(response => ({ response })))("accepts a recognized empty comments envelope $response", async ({ response }) => {
+    firecrawl.mockResolvedValue([hit("h1")]);
+    redditComments.mockResolvedValue(response);
+    const collected = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: { query: "synthetic" } });
+    expect(collected.documents[0].contentMd).toContain("Full text h1");
+    expect(collected.scanHealth).toEqual({ state: "complete", discovered: 1, verified: 1, issues: [] });
+  });
+
+  it("preserves literal deleted replies while omitting empty comment records", async () => {
+    firecrawl.mockResolvedValue([hit("h1")]);
+    redditComments.mockResolvedValue({ data: { comments: [{}, { body: "" }, { body: "[deleted]" }] } });
+    const collected = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: { query: "synthetic" } });
+    expect(collected.documents[0].metadata?.topComments).toEqual([{ text: "[deleted]" }]);
+    expect(collected.scanHealth).toEqual({ state: "complete", discovered: 1, verified: 1, issues: [] });
+  });
+
+  it("preserves cancellation identity during the comments request and stops further hydration", async () => {
+    const controller = new AbortController();
+    const failure = new DOMException("Cancelled", "AbortError");
+    redditComments.mockImplementation(async () => { controller.abort(failure); throw failure; });
+    await expect(fetchRedditPostsWithMeta({ ctx: context, signal: controller.signal })).rejects.toBe(failure);
+    expect(redditPost).toHaveBeenCalledOnce();
+    expect(redditComments).toHaveBeenCalledOnce();
+  });
+
   it("rejects a Scavio post that is not the requested thread", async () => {
     redditPost.mockResolvedValue(scavioPost("someoneelse"));
     expect((await fetchRedditPostsWithMeta({ ctx: context })).posts.every(post => post.contentKind === "preview")).toBe(true);

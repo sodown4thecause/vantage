@@ -117,7 +117,7 @@ export async function runCollector(
       throw new Error("Access pending: synthetic provider output rejected; configure live access.");
     }
     scanHealth = result.scanHealth ?? summariseScanHealth({ discovered: result.documents.length,
-      verified: result.documents.filter(doc => doc.metadata?.partial !== true && doc.metadata?.discoveryOnly !== true && doc.metadata?.contentKind !== "preview" &&
+      verified: result.documents.filter(doc => doc.metadata?.partial !== true && doc.metadata?.discoveryOnly !== true && doc.metadata?.contentKind !== "preview" && doc.metadata?.contentKind !== "page_excerpt" &&
         doc.metadata?.mocked !== true && doc.metadata?.provider !== "fixture" && Boolean(doc.contentMd?.trim())).length,
       completed: !result.partial && !result.documents.some(doc => doc.metadata?.partial === true), cancelled: false, issues: [] });
     stage = "persist";

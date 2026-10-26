@@ -166,9 +166,14 @@ async function hydratePost(post: RedditPost, ctx: CostContext, issues: ScanIssue
     let topComments = post.topComments;
     try {
       const comments = await client.reddit.postComments({ post_id: `t3_${post.id}`, sort: "TOP" });
+      if (comments.error || comments.success === false) throw new Error("Scavio comments unavailable");
       const commentData = comments.data && typeof comments.data === "object" && !Array.isArray(comments.data)
         ? comments.data as Record<string, unknown> : comments;
-      const rows = asRecordArray(commentData, ["comments", "results", "items", "data"]);
+      const rows = Array.isArray(commentData) ? commentData
+        : ["comments", "results", "items", "data"].map(key => commentData[key]).find(Array.isArray);
+      if (!rows || rows.some(row => !row || typeof row !== "object" || Array.isArray(row))) {
+        throw new ScanFailure([{ stage: "hydration", kind: "invalid_payload", provider: "scavio", retryable: false }]);
+      }
       if (rows.length) topComments = literalComments(rows, post.id);
     } catch (error) {
       signal?.throwIfAborted(); // The post text is still worth keeping without its replies.

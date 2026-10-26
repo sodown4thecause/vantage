@@ -103,6 +103,22 @@ afterEach(() => {
 });
 
 describe("runCollector", () => {
+  it.each([
+    { kind: "dated web page excerpt", contentKind: "page_excerpt", empty: false, verified: 0, health: "partial" },
+    { kind: "normalized full document", contentKind: "thread", empty: false, verified: 1, health: "complete" },
+    { kind: "valid empty search", contentKind: "thread", empty: true, verified: 0, health: "complete" },
+  ])("reports truthful generic health for $kind", async ({ contentKind, empty, verified, health }) => {
+    state.row = { ...sourceRow, type: "web_search", lane: "byok" };
+    const documents = empty ? [] : [{ ...document, platform: "forum" as const, postedAt: new Date("2026-10-25T00:00:00Z"),
+      metadata: { provider: "tinyfish_search_fetch", mocked: false, venueKind: "forum", site: "example.com", query: "synthetic",
+        reader: "tinyfish_fetch", contentKind, discoveryOnly: false, publicationDateMissing: false, partial: false } }];
+    const result = await runCollector({ collector: { name: "web_search", run: async () => ({ documents,
+      nextState: { cursor: "2026-10-25T12:00:00Z" } }) }, workspaceId: "workspace-1", sourceId: "source-1" });
+    expect(result.scanHealth).toEqual({ state: health, discovered: documents.length, verified, issues: [] });
+    expect(result.nextState).toEqual({ cursor: "2026-10-25T12:00:00Z" });
+    if (!empty) expect(state.insertValues[0]).toEqual(documents);
+  });
+
   it("carries document-level partial coverage into scan health", async () => {
     state.insertOutcomes = [[{ id: "doc-1" }]];
     const result = await runCollector({ collector: { name: "hn", run: async () => ({ documents: [{ ...document, metadata: { partial: true } }] }) },

@@ -42,8 +42,8 @@ describe("labelled thread relevance fixtures", () => {
     ]) expect(new Set(values).size).toBe(values.length);
     const development = cases.filter((row) => row.split === "development");
     const acceptance = cases.filter((row) => row.split === "acceptance");
-    const developmentReplies = new Set(development.flatMap((row) => row.thread.replies));
-    expect(acceptance.flatMap((row) => row.thread.replies).some((reply) => developmentReplies.has(reply))).toBe(false);
+    const developmentReplies = new Set(development.flatMap((row) => row.thread.replies.map((reply) => reply.toLowerCase().replace(/\W+/g, " ").trim())));
+    expect(acceptance.flatMap((row) => row.thread.replies).some((reply) => developmentReplies.has(reply.toLowerCase().replace(/\W+/g, " ").trim()))).toBe(false);
   });
 
   for (const split of ["development", "acceptance"] as const) {
