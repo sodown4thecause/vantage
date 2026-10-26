@@ -18,13 +18,13 @@ export function buildContentAgentInstructions(brandVoiceProfile: ContentBrandVoi
     "For source-based requests, call the matching ranked conversation, ranked keyword, or competitor gap source tool first. Set sourceBacked=true when saving any draft based on source evidence or revising a source-backed draft; set it to false for ordinary drafts. Cite only safe canonical URLs returned by those tools. If lookup fails or no safe citation is available, do not save a source-based draft.",
     "Supported draft formats: blog outline, full blog post, X thread, LinkedIn post, Reddit reply, Hacker News reply, and newsletter section.",
     "When you save a draft, confirm its title and format; the Content interface displays the full humanised body in an editable private-draft card. Never show tool data as JSON.",
-    "When the owner asks to save edits to an existing draft, call update_content_draft with the exact title and body they provided. Do not create a replacement draft or publish it.",
+    "Only call update_content_draft when the incoming request includes a structured draftUpdate payload from the Content card's Save changes action. For ordinary chat requests, direct the owner to edit the private draft card and use Save changes; never claim that chat alone saved an edit. Do not create a replacement draft or publish it.",
   ];
   if (brandVoiceProfile) {
     instructions.push(`Saved brand voice profile (follow it for every draft): ${JSON.stringify(brandVoiceProfile)}`);
     instructions.push("If asked to change this voice, conduct the short interview and save the updated profile before drafting.");
   } else {
-    instructions.push("No brand voice profile is saved. Before creating a new draft, conduct this five-question interview one question at a time: audience and what they know; what readers should take away; desired voice qualities; preferred length and structure; and phrases, claims or styles to avoid. Invite an optional pasted writing sample with any answer. Once you have enough answers, save the profile with save_brand_voice_profile. Do not create a new draft before a profile has been saved. If the owner only asks to save edits to an existing draft, preserve the exact text and use update_content_draft without requiring an interview.");
+    instructions.push("No brand voice profile is saved. Before creating a new draft, conduct this five-question interview one question at a time: audience and what they know; what readers should take away; desired voice qualities; preferred length and structure; and phrases, claims or styles to avoid. Invite an optional pasted writing sample with any answer. Once you have enough answers, save the profile with save_brand_voice_profile. Do not create a new draft before a profile has been saved. If the owner only asks to save edits to an existing draft, preserve the exact text and direct them to the private draft card's Save changes action without requiring an interview.");
   }
   return instructions.join("\n");
 }
@@ -73,19 +73,21 @@ export function createContentAgent(args: {
           return { saved: true, audience: input.audience, voice: input.voice, structure: input.structure };
         },
       }),
-      update_content_draft: tool({
-        description: "Save owner-edited title and body text to an existing private draft in this workspace. Preserve the exact text and do not publish or schedule it.",
-        inputSchema: contentDraftUpdateInputSchema,
-        execute: async (input) => {
-          const requested = args.draftUpdate;
-          if (!requested || input.draftId !== requested.draftId || input.title !== requested.title || input.body !== requested.body) {
-            throw new Error("Draft edit did not match the owner's exact requested values.");
-          }
-          const draft = await updateContentDraft({ workspaceId: args.workspaceId, ...requested });
-          if (!draft) throw new Error("Private Content draft not found in this workspace.");
-          return { saved: true, draftId: draft.id, title: draft.title, body: draft.body };
-        },
-      }),
+      ...(args.draftUpdate ? {
+        update_content_draft: tool({
+          description: "Save owner-edited title and body text to an existing private draft in this workspace. Preserve the exact text and do not publish or schedule it.",
+          inputSchema: contentDraftUpdateInputSchema,
+          execute: async (input) => {
+            const requested = args.draftUpdate!;
+            if (input.draftId !== requested.draftId || input.title !== requested.title || input.body !== requested.body) {
+              throw new Error("Draft edit did not match the owner's exact requested values.");
+            }
+            const draft = await updateContentDraft({ workspaceId: args.workspaceId, ...requested });
+            if (!draft) throw new Error("Private Content draft not found in this workspace.");
+            return { saved: true, draftId: draft.id, title: draft.title, body: draft.body };
+          },
+        }),
+      } : {}),
       save_content_draft: tool({
         description: "Humanise and save a private draft to this workspace. This does not publish or schedule it.",
         inputSchema: contentDraftSaveInputSchema,

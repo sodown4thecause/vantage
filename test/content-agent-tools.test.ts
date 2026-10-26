@@ -38,7 +38,7 @@ type DraftUpdateTool = {
 
 type AgentOptions = { tools: Record<string, unknown> & {
   save_content_draft: DraftTool;
-  update_content_draft: DraftUpdateTool;
+  update_content_draft?: DraftUpdateTool;
 } };
 type SourceNotice = { citations: Array<{ title: string; url: string }>; unsafeCitation: boolean };
 type SourceOptions = { workspaceId: string; onLookup: (notice: SourceNotice) => void };
@@ -120,7 +120,6 @@ describe("Content draft tool output", () => {
       "ranked_keyword_source",
       "save_brand_voice_profile",
       "save_content_draft",
-      "update_content_draft",
     ]);
   });
 
@@ -129,8 +128,9 @@ describe("Content draft tool output", () => {
     mocks.updateDraft.mockResolvedValue(edited);
     createAgent({ draftId: edited.id, title: edited.title, body: edited.body });
     const tool = (mocks.agentOptions as AgentOptions).tools.update_content_draft;
+    expect(tool).toBeDefined();
 
-    await expect(tool.execute({ draftId: edited.id, title: edited.title, body: edited.body })).resolves.toEqual({
+    await expect(tool!.execute({ draftId: edited.id, title: edited.title, body: edited.body })).resolves.toEqual({
       saved: true,
       draftId: edited.id,
       title: edited.title,
@@ -153,8 +153,9 @@ describe("Content draft tool output", () => {
     const requested = { draftId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a13", title: "Owner title", body: "Exact owner-edited body." };
     createAgent(requested);
     const tool = (mocks.agentOptions as AgentOptions).tools.update_content_draft;
+    expect(tool).toBeDefined();
 
-    await expect(tool.execute({ ...requested, ...override })).rejects.toThrow("Draft edit did not match the owner's exact requested values.");
+    await expect(tool!.execute({ ...requested, ...override })).rejects.toThrow("Draft edit did not match the owner's exact requested values.");
     expect(mocks.updateDraft).not.toHaveBeenCalled();
   });
 
