@@ -38,6 +38,12 @@ vi.mock("@/lib/collectors/run", () => ({
 }));
 vi.mock("@/lib/opportunities/run", () => ({ buildOpportunities: async () => ({}) }));
 vi.mock("@/lib/profile/repository", () => ({ PROFILE_SOURCE_NAME: "Profile: Hacker News", getLatestMonitoringProfile: async () => ({ id: "profile" }) }));
+vi.mock("@/lib/sources/persist", () => ({ persistSourceWithinLimit: async (workspaceId: string, value: Record<string, unknown>) => {
+  if (state.rows.some(row => row.name === value.name)) return false;
+  state.writes.push({ workspaceId, ...value });
+  state.rows.push({ id: "src-1", name: String(value.name), type: String(value.type), health: state.sourceHealth });
+  return true;
+} }));
 vi.mock("@/lib/db/client", () => ({
   getDb: () => {
     state.dbCalls++;

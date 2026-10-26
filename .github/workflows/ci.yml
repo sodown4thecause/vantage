@@ -18,6 +18,37 @@ env:
   NEXT_TELEMETRY_DISABLED: "1"
 
 jobs:
+  gtm-postgres:
+    name: GTM atomic approval and chat SQL (Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: vantage_test
+          POSTGRES_PASSWORD: disposable-test-only
+          POSTGRES_DB: vantage_gtm_test
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U vantage_test -d vantage_gtm_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      GTM_TEST_DATABASE_URL: postgresql://vantage_test:disposable-test-only@127.0.0.1:55432/vantage_gtm_test
+      GTM_REQUIRE_INTEGRATION: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.5.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Execute actual migrations and concurrent SQL contracts
+        run: pnpm test test/gtm-proposals.integration.test.ts test/gtm-chat-store.integration.test.ts test/gtm-generation.integration.test.ts test/gtm-jobs.integration.test.ts --no-file-parallelism
+
   verify:
     name: Lint, typecheck, test, build
     runs-on: ubuntu-latest

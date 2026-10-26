@@ -22,15 +22,7 @@ vi.mock("@/lib/db/client", () => ({ getDb: () => ({
     state.predicates.push(predicate);
     return { limit: async () => state.reads.shift() ?? [], orderBy: () => ({ limit: async () => state.latestReads.shift() ?? [] }) };
   } }) }),
-  insert: (table: unknown) => ({ values: (values: Record<string, unknown>) => {
-    if (table !== monitoringProfile) return { onConflictDoUpdate: async () => {
-      state.sourceWrites++;
-      state.sourceValues.push(values);
-      if (state.sourceFailures > 0) {
-        state.sourceFailures--;
-        throw new Error("source setup failed");
-      }
-    } };
+  insert: () => ({ values: (values: Record<string, unknown>) => {
     state.inserts.push(values);
     const returning = async () => state.insertResults.shift() ?? state.inserted;
     return { returning, onConflictDoNothing: ({ target }: { target: unknown }) => {
@@ -40,6 +32,12 @@ vi.mock("@/lib/db/client", () => ({ getDb: () => ({
   } }),
 }) }));
 vi.mock("@/lib/plans/limits", () => ({ assertWithinCount: vi.fn() }));
+vi.mock("@/lib/sources/persist", () => ({ PROFILE_SOURCE_NAME: "Profile: Hacker News", persistSourceWithinLimit: async (workspaceId: string, value: Record<string, unknown>) => {
+  state.sourceWrites++;
+  state.sourceValues.push({ workspaceId, ...value });
+  if (state.sourceFailures > 0) { state.sourceFailures--; throw new Error("source setup failed"); }
+  return true;
+} }));
 vi.mock("@/lib/profile/retrieve", () => ({ retrieveProductMaterial: vi.fn(async () => ({ status: "ok", text: "Site", notes: "" })) }));
 
 import { saveMonitoringProfile } from "@/lib/profile/repository";

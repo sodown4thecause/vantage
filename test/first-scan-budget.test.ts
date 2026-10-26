@@ -52,3 +52,12 @@ it("blocks other paid fallbacks and foreign workspace attribution; untracked sca
   expect(state.reserved).toBe(0);
   expect(await reserveScanSpend(WS, "firecrawl", "search", 0.01)).toBeNull();
 });
+
+it("keeps manual Firecrawl fallback within the same scan allowance and denies unsupported paid calls", async () => {
+  const runId = `chat-${"a".repeat(48)}`;
+  await expect(withFirstScanBudget(WS, runId, () => reserveScanSpend(WS, "tinyfish", "agent_step", 0.01), false)).rejects.toThrow();
+  const attempts = await withFirstScanBudget(WS, runId, () => Promise.allSettled(Array.from({ length: 4 }, () => reserveScanSpend(WS, "firecrawl", "search", 0.03))), false);
+  expect(attempts.filter(attempt => attempt.status === "fulfilled")).toHaveLength(3);
+  expect(state.reserved).toBeLessThanOrEqual(FIRST_SCAN_BUDGET_USD);
+  expect(state.capped).toBe(true);
+});

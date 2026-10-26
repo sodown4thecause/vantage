@@ -217,7 +217,7 @@ describe("POST /seo/chat: asking a question", () => {
     const { res, data } = await postAndRead({ workspaceId: WS, conversationId: CONV, message: "Which keywords?" });
     expect(res.status).toBe(404);
     expect(data).toEqual({ error: "not_found" });
-    expect(mocks.getConversation).toHaveBeenCalledWith(WS, CONV);
+    expect(mocks.getConversation).toHaveBeenCalledWith(WS, CONV, "research");
     expect(mocks.consume).not.toHaveBeenCalled();
     expect(mocks.classifyQuestion).not.toHaveBeenCalled();
     expect(mocks.runAgent).not.toHaveBeenCalled();

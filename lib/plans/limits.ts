@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq, inArray, sql, type SQL } from "drizzle-orm";
 
 import { effectivePlanSql, userHasPaidPlan, userIsPaidSql } from "@/lib/billing/entitlement";
 import { getDb } from "@/lib/db/client";
@@ -123,6 +123,14 @@ export async function checkLimit(workspaceId: string, key: MeteredKey, now: Date
 /** Pure count check for static limits (projects, keywords, sources). */
 export function checkCountLimit(limit: number, current: number, adding = 1): LimitCheck {
   return evaluateLimit(limit, current, adding);
+}
+
+/** Same effective plan and fallback semantics as getLimits, read inside the guarded write. */
+export function countLimitSql(workspaceId: string, key: "keywords" | "sources"): SQL {
+  const plan = effectivePlanSql(workspaceId);
+  return sql`coalesce((select value from plan_limit where plan = ${plan} and key = ${key}),
+    (select value from plan_limit where plan = 'free' and key = ${key}),
+    case when ${plan} = 'pro' then ${DEFAULT_LIMITS.pro[key]}::int else ${DEFAULT_LIMITS.free[key]}::int end)`;
 }
 
 /**

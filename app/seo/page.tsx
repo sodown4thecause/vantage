@@ -61,7 +61,7 @@ export default async function SeoPage({
   const selectedId = requested?.success ? requested.data : null;
   const [conversations, candidate, profile] = await Promise.all([
     listConversations(workspaceId, 30, "research"),
-    selectedId ? getConversation(workspaceId, selectedId) : null,
+    selectedId ? getConversation(workspaceId, selectedId, "research") : null,
     getLatestMonitoringProfile(workspaceId),
   ]);
   const selected = candidate && isResearchConversation(candidate) ? candidate : null;

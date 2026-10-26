@@ -146,8 +146,8 @@ export const workspace = pgTable("workspace", {
 export const scanRun = pgTable("scan_run", {
   id: text("id").primaryKey(),
   workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
-  kind: text("kind").$type<"first" | "scheduled">().notNull(),
-  status: text("status").$type<"queued" | "running" | "done" | "partial" | "failed">().notNull().default("queued"),
+  kind: text("kind").$type<"first" | "scheduled" | "manual">().notNull(),
+  status: text("status").$type<"queued" | "running" | "done" | "partial" | "failed" | "cancel_requested" | "cancelled">().notNull().default("queued"),
   read: integer("read").notNull().default(0),
   relevant: integer("relevant").notNull().default(0),
   picked: integer("picked").notNull().default(0),
@@ -161,7 +161,7 @@ export const scanRun = pgTable("scan_run", {
   finishedAt: timestamp("finished_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
-  uniqueIndex("scan_run_active_workspace_uidx").on(table.workspaceId).where(sql`${table.status} in ('queued', 'running')`),
+  uniqueIndex("scan_run_active_workspace_uidx").on(table.workspaceId).where(sql`${table.status} in ('queued', 'running', 'cancel_requested')`),
   index("scan_run_workspace_idx").on(table.workspaceId),
 ]);
 
@@ -1116,6 +1116,34 @@ export const seoConversation = pgTable(
   (table) => [index("seo_conversation_workspace_updated_idx").on(table.workspaceId, table.updatedAt)],
 );
 
+export const gtmChat = pgTable("gtm_chat", {
+  conversationId: uuid("conversation_id").primaryKey().references(() => seoConversation.id, { onDelete: "cascade" }),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+  messages: jsonb("messages").$type<import("@/lib/gtm/chat/types").GtmUIMessage[]>().notNull().default([]),
+  revision: integer("revision").notNull().default(0),
+  receipts: jsonb("receipts").$type<Record<string, { hash: string; revision: number; token: string }>>().notNull().default({}),
+}, table => [
+  check("gtm_chat_revision_check", sql`${table.revision} >= 0 and ${table.revision} <= 200`),
+  check("gtm_chat_messages_check", sql`jsonb_typeof(${table.messages}) = 'array' and jsonb_array_length(${table.messages}) <= 200 and octet_length(${table.messages}::text) <= 524288`),
+  check("gtm_chat_receipts_check", sql`jsonb_typeof(${table.receipts}) = 'object'`),
+]);
+
+export const gtmChatTurn = pgTable("gtm_chat_turn", {
+  conversationId: uuid("conversation_id").notNull().references(() => seoConversation.id, { onDelete: "cascade" }),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+  requestId: text("request_id").notNull(),
+  token: uuid("token").notNull(),
+  payloadHash: text("payload_hash").notNull(),
+  scanRequested: boolean("scan_requested").notNull().default(false),
+  jobId: text("job_id").references(() => scanRun.id, { onDelete: "set null" }),
+  state: text("state").$type<"running" | "complete" | "interrupted">().notNull().default("running"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+}, table => [
+  primaryKey({ columns: [table.conversationId, table.requestId] }),
+  uniqueIndex("gtm_chat_turn_active_uidx").on(table.conversationId).where(sql`${table.state} = 'running'`),
+  check("gtm_chat_turn_state_check", sql`${table.state} in ('running', 'complete', 'interrupted')`),
+]);
+
 export const seoMessage = pgTable(
   "seo_message",
   {
@@ -1157,3 +1185,47 @@ export const savedArtifact = pgTable(
     check("saved_artifact_lane_check", sql`${table.lane} in ('gtm', 'seo', 'geo', 'content')`),
   ],
 );
+
+export const gtmStrategy = pgTable("gtm_strategy", {
+  workspaceId: uuid("workspace_id").primaryKey().references(() => workspace.id, { onDelete: "cascade" }),
+  version: integer("version").notNull().default(0),
+  data: jsonb("data").$type<Record<string, unknown>>().notNull().default({}),
+}, table => [check("gtm_strategy_version_check", sql`${table.version} >= 0`)]);
+
+export const gtmProposal = pgTable("gtm_proposal", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+  conversationId: uuid("conversation_id").notNull().references(() => seoConversation.id, { onDelete: "cascade" }),
+  strategyVersion: integer("strategy_version").notNull(), profileVersion: integer("profile_version").notNull(),
+  payload: jsonb("payload").$type<import("@/lib/gtm/proposals/types").StrategyChange>().notNull(),
+  payloadHash: text("payload_hash").notNull(), prepared: jsonb("prepared").$type<Record<string, unknown>>().notNull(),
+  sourceSnapshot: jsonb("source_snapshot").notNull().default([]),
+  status: text("status").notNull().default("pending"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [index("gtm_proposal_scope_idx").on(table.workspaceId, table.conversationId), check("gtm_proposal_status_check", sql`${table.status} in ('pending', 'applied', 'denied', 'superseded', 'expired')`)]);
+
+export const gtmProposalDecision = pgTable("gtm_proposal_decision", {
+  workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }), requestId: text("request_id").notNull(),
+  proposalId: uuid("proposal_id").notNull().references(() => gtmProposal.id, { onDelete: "cascade" }),
+  conversationId: uuid("conversation_id").notNull().references(() => seoConversation.id, { onDelete: "cascade" }),
+  strategyVersion: integer("strategy_version").notNull(), payloadHash: text("payload_hash").notNull(),
+  actorId: text("actor_id").notNull(), approved: boolean("approved").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [primaryKey({ columns: [table.workspaceId, table.requestId] })]);
+
+export const gtmProposalReceipt = pgTable("gtm_proposal_receipt", {
+  proposalId: uuid("proposal_id").primaryKey().references(() => gtmProposal.id, { onDelete: "cascade" }),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+  conversationId: uuid("conversation_id").notNull().references(() => seoConversation.id, { onDelete: "cascade" }),
+  requestId: text("request_id").notNull(), actorId: text("actor_id").notNull(), strategyVersion: integer("strategy_version").notNull(),
+  expertiseNotes: jsonb("expertise_notes").notNull().default([]), mutationsComplete: boolean("mutations_complete").notNull(),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }).notNull(), appliedAt: timestamp("applied_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [uniqueIndex("gtm_proposal_receipt_request_uidx").on(table.workspaceId, table.requestId), check("gtm_proposal_receipt_complete_check", sql`${table.mutationsComplete}`)]);
+
+export const gtmStrategyOutbox = pgTable("gtm_strategy_outbox", {
+  proposalId: uuid("proposal_id").primaryKey().references(() => gtmProposalReceipt.proposalId, { onDelete: "cascade" }),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }), strategyVersion: integer("strategy_version").notNull(),
+  kind: text("kind").notNull().default("strategy_changed"), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  processedAt: timestamp("processed_at", { withTimezone: true }),
+});

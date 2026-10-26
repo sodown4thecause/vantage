@@ -1,9 +1,8 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import {
   monitoringProfile,
-  source,
   type MonitoringProfile,
   type NewSource,
 } from "@/lib/db/schema";
@@ -12,6 +11,7 @@ import { pickForumDomains } from "@/lib/communities/forum-packs";
 import { assertWithinCount } from "@/lib/plans/limits";
 import { PlanLimitError } from "@/lib/plans/types";
 import { retrieveProductMaterial } from "@/lib/profile/retrieve";
+import { persistSourceWithinLimit, PROFILE_SOURCE_NAME } from "@/lib/sources/persist";
 import type {
   MonitoringProfileInput,
   MonitoringProfileView,
@@ -136,7 +136,7 @@ export async function saveMonitoringProfile(args: {
   return toProfileView(row);
 }
 
-export const PROFILE_SOURCE_NAME = "Profile: Hacker News";
+export { PROFILE_SOURCE_NAME } from "@/lib/sources/persist";
 export const PROFILE_REDDIT_SOURCE_NAME = "Profile: Reddit";
 export const PROFILE_WEB_SOURCE_NAME = "Profile: Dev forums & blogs";
 
@@ -167,30 +167,11 @@ export function keyedProfileSources(topics: string[], productUrl: string | undef
 }
 
 export async function provisionProfileSources(workspaceId: string, topics: string[], productUrl?: string, profileText?: string): Promise<void> {
-  const db = getDb();
   const config = { queries: topics.slice(0, 5), maxPages: 1, enrich: false };
-  await db.insert(source).values({
-    workspaceId, name: PROFILE_SOURCE_NAME, type: "hn", lane: "free", config,
-  }).onConflictDoUpdate({
-    target: [source.workspaceId, source.name],
-    set: { config: sql`${source.config} || ${JSON.stringify(config)}::jsonb`, updatedAt: new Date() },
-  });
-
-  const keyed = keyedProfileSources(topics, productUrl, undefined, profileText);
-  if (!keyed.length) return;
-  const existing = await db.select({ name: source.name }).from(source).where(eq(source.workspaceId, workspaceId)).limit(100);
-  let count = existing.length;
-  for (const row of keyed) {
-    const present = existing.some(e => e.name === row.name);
-    if (!present) {
-      // Defaults never push a workspace past its plan; the owner can add these from the Sources page instead.
-      try { await assertWithinCount(workspaceId, "sources", count); }
-      catch (error) { if (error instanceof PlanLimitError) continue; throw error; }
-      count++;
-    }
-    await db.insert(source).values({ workspaceId, ...row }).onConflictDoUpdate({
-      target: [source.workspaceId, source.name],
-      set: { config: sql`${source.config} || ${JSON.stringify(row.config)}::jsonb`, updatedAt: new Date() },
-    });
+  const rows: ProfileSource[] = [{ name: PROFILE_SOURCE_NAME, type: "hn", lane: "free", config }, ...keyedProfileSources(topics, productUrl, undefined, profileText)];
+  for (const row of rows) {
+    // Defaults can refresh existing sources, but never grow a workspace beyond its current plan.
+    try { await persistSourceWithinLimit(workspaceId, row, true); }
+    catch (error) { if (!(error instanceof PlanLimitError)) throw error; }
   }
 }

@@ -1,21 +1,23 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { ScanButton } from "@/app/source-controls";
 import { Shell } from "@/components/shell";
 import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
-import { nextStep, promptFor } from "@/lib/onboarding/interview";
-import { findResumableInterview } from "@/lib/onboarding/interview-store";
 import { getOpportunityDetail, listOpportunityQueue } from "@/lib/opportunities/run";
 import type { OpportunityDetailView } from "@/lib/opportunities/types";
 import { getLatestMonitoringProfile } from "@/lib/profile/repository";
 import { getConversation, listConversations } from "@/lib/seo-agent/conversations";
 import { seoModels } from "@/lib/seo-agent/model-config";
-import { parseBlocks } from "@/lib/workspace/blocks";
+import { getGtmTurnStatus, loadGtmChat } from "@/lib/gtm/chat/store";
+import { GtmChatLimitError } from "@/lib/gtm/chat/types";
+import { getGtmConversationJobs } from "@/lib/gtm/chat/jobs";
+import { getPendingStrategyProposal } from "@/lib/gtm/proposals/repository";
 import { listSavedArtifacts, type SavedArtifactView } from "@/lib/workspace/saved-artifacts";
 
-import { WorkspaceClient, type InterviewStart, type NextAction, type Turn } from "./workspace-client";
+import { WorkspaceClient } from "./workspace-client";
 
 export const metadata: Metadata = { title: "GTM workspace", robots: { index: false } };
 export const dynamic = "force-dynamic";
@@ -38,35 +40,41 @@ export default async function WorkspacePage({ searchParams }: { searchParams: Pr
   if (!authorization.ok) return <Shell><p role="alert" className="text-stop">Unable to load this workspace.</p></Shell>;
 
   const requested = z.uuid().safeParse(params.c);
-  const [profile, queue, conversation, resumable, saved, conversations] = await Promise.all([
+  const [profile, queue, conversation, saved, conversations] = await Promise.all([
     getLatestMonitoringProfile(workspaceId),
     listOpportunityQueue({ workspaceId, limit: 5 }),
     requested.success ? getConversation(workspaceId, requested.data, "gtm") : null,
-    findResumableInterview(workspaceId),
     savedOrEmpty(workspaceId),
     listConversations(workspaceId, 30, "gtm"),
   ]);
   const details = await Promise.all(queue.map((item) => getOpportunityDetail({ workspaceId, opportunityId: item.id })));
   const evidence = details.filter((item): item is OpportunityDetailView => item !== null);
-  const gtmConversation = conversation?.messages.some((message) => message.parts.cards?.some((card) => card.tool === "gtm_journey")) ? conversation : null;
-  const turns: Turn[] = (gtmConversation?.messages ?? []).map((message) => {
-    const journey = message.parts.cards?.find((card) => card.tool === "gtm_journey")?.data as { actions?: NextAction[]; evidence?: OpportunityDetailView[]; blocks?: unknown } | undefined;
-    return { role: message.role, content: message.content, actions: journey?.actions, evidence: journey?.evidence, blocks: parseBlocks(journey?.blocks) };
-  });
-  // Resume an unfinished interview at its next unanswered question; otherwise start fresh, offering the current answers.
-  const answers = resumable?.state.answers ?? {};
-  const step = resumable ? nextStep(answers) : "productUrl";
-  const interview: InterviewStart = {
-    conversationId: resumable?.id ?? null,
-    prompt: step ? promptFor(step, answers, profile) : undefined,
-    turns: resumable?.turns ?? [],
-    draft: resumable?.state.draft,
-    answers,
-  };
+  let chat = { messages: [] as Awaited<ReturnType<typeof loadGtmChat>>["messages"], revision: 0 };
+  if (conversation) {
+    try { chat = await loadGtmChat({ workspaceId, conversationId: conversation.id }); }
+    catch (error) {
+      if (!(error instanceof GtmChatLimitError)) throw error;
+      return <Shell workspaceId={workspaceId} active="workspace">
+        <section role="alert"><h1>Conversation history is too large to open</h1>
+          <p>Your earlier conversation remains saved. Start a new conversation to continue.</p>
+          <Link href={`/workspace?workspaceId=${encodeURIComponent(workspaceId)}`}>New conversation</Link>
+        </section>
+        <section aria-label="Confirmed strategy"><h2>Confirmed strategy</h2>
+          {profile ? <><p>{profile.productDescription}</p><p>Audience: {profile.targetCustomer}</p><p>Topics: {profile.topics?.join(", ")}</p></> : <p>No confirmed product profile yet.</p>}
+        </section>
+        <nav aria-label="Saved conversations"><h2>Saved conversations</h2>
+          {conversations.map(item => <Link key={item.id} href={`/workspace?workspaceId=${encodeURIComponent(workspaceId)}&c=${encodeURIComponent(item.id)}`}>{item.title}</Link>)}
+        </nav>
+      </Shell>;
+    }
+  }
+  const turn = conversation ? await getGtmTurnStatus({ workspaceId, conversationId: conversation.id }) : null;
+  const jobs = conversation ? await getGtmConversationJobs({ workspaceId, conversationId: conversation.id }) : [];
+  const proposal = conversation ? await getPendingStrategyProposal({ workspaceId, conversationId: conversation.id }) : null;
   let productName = "Your product";
   if (profile?.productUrl) {
     try { productName = new URL(profile.productUrl).hostname.replace(/^www\./, ""); } catch { productName = "Your product"; }
   }
-  return <WorkspaceClient key={gtmConversation?.id ?? "new"} workspaceId={workspaceId} productName={productName} hasProfile={Boolean(profile)} initialEvidence={evidence} initialTurns={turns} initialConversationId={gtmConversation?.id ?? null} configured={seoModels() !== null} scanControl={<ScanButton workspaceId={workspaceId} />}
-    interview={interview} interviewOpen={(params.setup === "1" || Boolean(resumable)) && !gtmConversation} savedArtifacts={saved} conversations={conversations} />;
+  return <WorkspaceClient key={conversation?.id ?? "new"} workspaceId={workspaceId} productName={productName} hasProfile={Boolean(profile)} profile={profile} initialEvidence={evidence} initialMessages={chat.messages} initialRevision={chat.revision} initialConversationId={conversation?.id ?? null} configured={seoModels() !== null} scanControl={<ScanButton workspaceId={workspaceId} />}
+    initialTurn={turn} initialJobs={jobs} initialProposal={proposal} setupOpen={params.setup === "1"} savedArtifacts={saved} conversations={conversations} />;
 }

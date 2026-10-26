@@ -95,7 +95,7 @@ async function askQuestion(
   if (message.length === 0 || message.length > MESSAGE_MAX_CHARS) return json({ error: "invalid_request" }, 400);
 
   // The conversation is checked before the question is charged, so an unknown id costs nothing.
-  const existing = conversationId ? await getConversation(workspaceId, conversationId) : null;
+  const existing = conversationId ? await getConversation(workspaceId, conversationId, "research") : null;
   if (conversationId && (!existing || !isResearchConversation(existing))) return json({ error: "not_found" }, 404);
 
   const allowance = await consume(workspaceId, QUESTION_LIMIT);
@@ -138,7 +138,7 @@ async function approvePlan(
   messageId: string,
 ): Promise<Response> {
   if (!conversationId) return json({ error: "invalid_request" }, 400);
-  const conversation = await getConversation(workspaceId, conversationId);
+  const conversation = await getConversation(workspaceId, conversationId, "research");
   if (!conversation || !isResearchConversation(conversation)) return json({ error: "not_found" }, 404);
   if (!conversation.messages.some((message) => message.id === messageId)) return json({ error: "not_found" }, 404);
 

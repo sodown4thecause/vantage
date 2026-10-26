@@ -1,12 +1,12 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { scanRun } from "@/lib/db/schema";
 
 export const FIRST_SCAN_BUDGET_USD = 0.10;
 export const FIRST_SCAN_HYDRATION_MAX = 5;
-const context = new AsyncLocalStorage<{ workspaceId: string; runId: string }>();
+const context = new AsyncLocalStorage<{ workspaceId: string; runId: string; first: boolean }>();
 
 export class FirstScanAllowanceError extends Error {
   readonly code = "FIRST_SCAN_ALLOWANCE_EXHAUSTED";
@@ -17,9 +17,11 @@ export class FirstScanAllowanceError extends Error {
   }
 }
 
-export function withFirstScanBudget<T>(workspaceId: string, runId: string, work: () => Promise<T>): Promise<T> {
-  return context.run({ workspaceId, runId }, work);
+export function withFirstScanBudget<T>(workspaceId: string, runId: string, work: () => Promise<T>, first = true): Promise<T> {
+  return context.run({ workspaceId, runId, first }, work);
 }
+
+export function isManualScanBudget(): boolean { return context.getStore()?.first === false; }
 
 export async function reserveScanSpend(workspaceId: string, provider: string, action: string, estimate: number): Promise<null | { settle: (cost: number) => Promise<void> }> {
   const run = context.getStore();
@@ -42,7 +44,8 @@ export async function reserveScanSpend(workspaceId: string, provider: string, ac
   }
   return {
     settle: async (cost) => {
-      await db.update(scanRun).set({ costUsd: sql`greatest(0, ${scanRun.costUsd} + ${(cost - estimate).toFixed(6)}::numeric)` }).where(scope);
+      await db.update(scanRun).set({ costUsd: sql`greatest(0, ${scanRun.costUsd} + ${(cost - estimate).toFixed(6)}::numeric)` })
+        .where(and(eq(scanRun.workspaceId, run.workspaceId), eq(scanRun.id, run.runId), inArray(scanRun.status, ["running", "cancel_requested", "cancelled"])));
     },
   };
 }
