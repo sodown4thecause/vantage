@@ -25,7 +25,7 @@ export const BILLING_PLANS: readonly BillingPlan[] = [
   {
     key: "pro_monthly",
     name: "Pro monthly",
-    priceLabel: "$5",
+    priceLabel: "$19",
     interval: "month",
     grants: "pro",
     productIds: {

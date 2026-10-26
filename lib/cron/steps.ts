@@ -5,6 +5,7 @@ import { mapWithConcurrency } from "@/lib/async/map-with-concurrency";
 import { collectorsByType } from "@/lib/collectors/registry";
 import { runCollector } from "@/lib/collectors/run";
 import { getSemanticMode } from "@/lib/cf/env";
+import { captureProductEvent, captureServerException } from "@/lib/analytics/server";
 import { isCronAuthorized } from "@/lib/cron/authorize";
 import { claimScanLease, releaseScanLease } from "@/lib/cron/lease";
 import { eligibleSourceCondition, scanNotDueReason, scanOrder } from "@/lib/cron/scan";
@@ -27,7 +28,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export type PlanOutcome =
   | { kind: "skipped"; reason: string }
   | { kind: "busy" }
-  | { kind: "planned"; leaseToken: string; sourceIds: string[] };
+  | { kind: "planned"; leaseToken: string; sourceIds: string[]; capped: boolean };
 
 /**
  * Workspaces whose scheduled cadence has elapsed, that have no live lease, and that have a monitoring
@@ -72,8 +73,11 @@ export async function planScan(workspaceId: string, now = new Date()): Promise<P
       .from(source)
       .where(eligibleSourceCondition(workspaceId))
       .orderBy(...(await scanOrder()))
-      .limit(MAX_SOURCES_PER_SCAN);
-    return { kind: "planned", leaseToken, sourceIds: rows.map((row) => row.id) };
+      .limit(MAX_SOURCES_PER_SCAN + 1);
+    const capped = rows.length > MAX_SOURCES_PER_SCAN;
+    const sourceIds = rows.slice(0, MAX_SOURCES_PER_SCAN).map((row) => row.id);
+    await captureProductEvent({ event: "scan_started", workspaceId });
+    return { kind: "planned", leaseToken, sourceIds, capped };
   } catch (err) {
     await releaseScanLease(workspaceId, leaseToken);
     throw err;
@@ -98,7 +102,10 @@ export async function collectSource(input: { workspaceId: string; sourceId: stri
   const result = await runCollector({ collector, workspaceId: input.workspaceId, sourceId: input.sourceId, signal: input.signal });
   if (result.switchedOff) return { kind: "ok", body: { inserted: 0, skipped: 0, switchedOff: result.switchedOff } };
   // Collector errors are retryable by the Workflow step; the message is not returned or logged.
-  if (result.error) return { kind: "failed" };
+  if (result.error) {
+    await captureServerException(new Error("collector failed"), { workspaceId: input.workspaceId, sourceId: input.sourceId, area: "collect" });
+    return { kind: "failed" };
+  }
   return { kind: "ok", body: { inserted: result.inserted, skipped: result.skipped, ...(result.receipt?.health === "degraded" ? { partial: true } : {}) } };
 }
 
@@ -109,7 +116,8 @@ export async function embedWorkspace(workspaceId: string, signal: AbortSignal): 
   try {
     const result = await embedPendingDocuments(workspaceId, { limit: EMBED_DOC_LIMIT, signal });
     return { embedded: result.embedded };
-  } catch {
+  } catch (error) {
+    await captureServerException(error, { workspaceId, area: "embed" });
     console.error("[scan-steps] embed step degraded to keyword-only; scan continues");
     return { embedded: 0 };
   }
@@ -128,8 +136,23 @@ export async function buildWorkspace(workspaceId: string, signal: AbortSignal) {
 }
 
 /** Releases only the lease that carries this token (the UPDATE is conditional on it). */
-export async function finishScan(workspaceId: string, leaseToken: string): Promise<void> {
-  await releaseScanLease(workspaceId, leaseToken);
+export async function finishScan(
+  workspaceId: string,
+  leaseToken: string,
+  summary: Partial<{ read: number; relevant: number; picked: number; capped: boolean; status: "success" | "partial" | "failed" }> = {},
+): Promise<void> {
+  const released = await releaseScanLease(workspaceId, leaseToken);
+  if (!released) return;
+  const count = (value: number | undefined) => Number.isFinite(value) && (value ?? -1) >= 0 ? Math.floor(value!) : 0;
+  await captureProductEvent({
+    event: "scan_finished",
+    workspaceId,
+    read: count(summary.read),
+    relevant: count(summary.relevant),
+    picked: count(summary.picked),
+    capped: summary.capped === true,
+    status: summary.status ?? "success",
+  });
 }
 
 /**
@@ -164,7 +187,8 @@ export async function internalStep(
   }
   try {
     return await run(input, AbortSignal.any([req.signal, AbortSignal.timeout(STEP_DEADLINE_MS)]), body);
-  } catch {
+  } catch (error) {
+    await captureServerException(error, { workspaceId: input.workspaceId ?? "unknown", area: name });
     console.error(`[scan-steps] ${name} step failed`);
     return NextResponse.json({ error: "scan step failed" }, { status: 500 });
   }

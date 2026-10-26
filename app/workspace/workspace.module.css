@@ -3,8 +3,8 @@
 .nav a:hover, .nav button:hover { color: var(--ink); background: var(--sheet-2); }
 .nav [aria-current="page"] { color: var(--ink); background: var(--sheet-2); box-shadow: inset 2px 0 var(--signal); }
 .nav small { margin-left: auto; font-size: 11px; }
-.setup { margin-top: auto; border: 1px solid var(--contour); border-radius: 12px; padding: 16px; font-size: 12px; }
-.setup h2 { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+.setup { margin-top: auto; border: 1px solid var(--contour); border-radius: 10px; padding: 16px; font-size: 12px; }
+.setup h2 { font-size: 14px; font-weight: 500; margin-bottom: 12px; }
 .setup progress { width: 100%; height: 4px; accent-color: var(--signal); margin-bottom: 12px; }
 .setup a, .setup p { display: block; padding: 7px 0; color: var(--ridge); }
 .setup a:hover { color: var(--ink); }
@@ -15,7 +15,7 @@
 .intro { max-width: 650px; padding-top: clamp(10px, 7vh, 90px); }
 .eyebrow { display: flex; align-items: center; gap: 10px; color: var(--signal); font-size: 13px; margin-bottom: 18px; }
 .spark { width: 30px; height: 30px; border: 1px solid var(--contour-strong); border-radius: 9px; display: inline-grid; place-items: center; color: var(--signal); }
-.intro h1 { font-size: clamp(30px, 3.1vw, 44px); line-height: 1.13; letter-spacing: -.045em; font-weight: 500; max-width: 18ch; }
+.intro h1 { font-size: clamp(30px, 3.1vw, 44px); line-height: 1.08; letter-spacing: -.05em; font-weight: 400; max-width: 18ch; }
 .intro p { margin-top: 18px; color: var(--ridge); font-size: 15px; line-height: 1.7; max-width: 52ch; }
 .context { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; font-size: 12px; color: var(--ridge); }
 .context span { padding: 6px 10px; border: 1px solid var(--contour); border-radius: 5px; }
@@ -23,7 +23,7 @@
 .turn { animation: arrive .3s ease-out both; }
 .turnLabel { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 12px; font-weight: 600; color: var(--ridge); }
 .answer { white-space: pre-wrap; font-size: 15px; line-height: 1.8; overflow-wrap: anywhere; }
-.user { margin-left: 12%; padding: 14px 18px; background: var(--sheet-2); border: 1px solid var(--contour); border-radius: 12px; white-space: pre-wrap; font-size: 14px; }
+.user { margin-left: 12%; padding: 14px 18px; background: var(--sheet-2); border: 1px solid var(--contour); border-radius: 10px; white-space: pre-wrap; font-size: 14px; }
 .dock { flex-shrink: 0; padding: 16px max(24px, calc((100% - 760px) / 2)) 18px; border-top: 1px solid var(--contour); background: var(--paper); }
 .nextLabel { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 11px; color: var(--ridge); }
 .actions { display: grid; gap: 5px; margin-bottom: 14px; }
@@ -35,7 +35,7 @@
 .action small { display: block; font-size: 11px; color: var(--ridge); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .action > span:nth-child(2) { min-width: 0; }
 .recommended { color: var(--signal); font-size: 10px; margin-left: 8px; }
-.composer { border: 1px solid var(--contour-strong); border-radius: 14px; background: var(--sheet); padding: 14px; box-shadow: 0 8px 28px #0002; }
+.composer { border: 1px solid var(--contour); border-radius: 10px; background: var(--sheet); padding: 14px; }
 .composer:focus-within { border-color: var(--signal); }
 .composer textarea { width: 100%; resize: none; background: transparent; outline: none; font-size: 14px; min-height: 48px; max-height: 140px; }
 .composerFooter { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--ridge); }
@@ -64,9 +64,9 @@
 .answerTools { display: flex; gap: 10px; margin-top: 12px; }
 .saved { margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--contour); }
 .savedHead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 13px; }
-.savedHead h2 { font-size: 15px; font-weight: 600; }
+.savedHead h2 { font-size: 15px; font-weight: 500; }
 .savedList { display: grid; gap: 10px; }
-.savedItem { border: 1px solid var(--contour); border-radius: 12px; padding: 12px 14px; }
+.savedItem { border: 1px solid var(--contour); border-radius: 10px; padding: 12px 14px; }
 .savedRow { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .savedMeta { display: grid; gap: 4px; min-width: 0; }
 .savedMeta strong { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

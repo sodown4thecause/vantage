@@ -15,6 +15,7 @@ const COLLECT_PATH = "/api/internal/scan/collect";
 const EMBED_PATH = "/api/internal/scan/embed";
 const BUILD_PATH = "/api/internal/scan/build";
 const FINISH_PATH = "/api/internal/scan/finish";
+const OBSERVER_START_TIMEOUT_MS = 100;
 
 const COLLECT_STEP = {
   retries: { limit: 3, delay: "10 seconds", backoff: "exponential" },
@@ -35,9 +36,11 @@ async function readJson(response, path) {
  * @param {{ workspaceId: string }} params
  * @param {{ do: Function }} step Workflow step API (`step.do(name, [options], callback)`).
  * @param {(path: string, body: object) => Promise<Response>} call Internal route caller.
+ * @param {(name: string, workspaceId: string, callback: Function) => Promise<unknown>} [observeStep] Custom span wrapper.
  * @returns {Promise<{ status: "skipped" | "done" | "partial", failures: number }>}
  */
-export async function runScan(params, step, call) {
+export async function runScan(params, step, call, observeStep) {
+  if (observeStep) step = observedSteps(step, params.workspaceId, observeStep);
   if (params.kind === "first") return runFirstScan(params, step, call);
   const { workspaceId } = params;
 
@@ -50,28 +53,84 @@ export async function runScan(params, step, call) {
   if (plan.skipped) return { status: "skipped", failures: 0 };
 
   let failures = 0;
+  let read = 0;
+  let status = "success";
+  let summary = { relevant: 0, picked: 0, capped: plan.capped === true };
   try {
     // A source whose collect step exhausts its retries is counted, never fatal to the run.
     const collected = await Promise.all(plan.sourceIds.map(async (sourceId) => {
       try {
-        await step.do(`collect:${sourceId}`, COLLECT_STEP, async () =>
+        const result = await step.do(`collect:${sourceId}`, COLLECT_STEP, async () =>
           readJson(await call(COLLECT_PATH, { workspaceId, sourceId }), COLLECT_PATH));
+        read += (Number(result.inserted) || 0) + (Number(result.skipped) || 0);
+        if (result.partial === true) status = "partial";
         return true;
       } catch {
         return false;
       }
     }));
     failures = collected.filter((ok) => !ok).length;
+    if (failures > 0) status = "partial";
 
     await step.do("embed", async () => readJson(await call(EMBED_PATH, { workspaceId }), EMBED_PATH));
-    await step.do("build", BUILD_STEP, async () => readJson(await call(BUILD_PATH, { workspaceId }), BUILD_PATH));
+    const built = await step.do("build", BUILD_STEP, async () => readJson(await call(BUILD_PATH, { workspaceId }), BUILD_PATH));
+    summary = {
+      relevant: Number(built.relevant) || 0,
+      picked: Array.isArray(built.top) ? built.top.length : Number(built.picked) || 0,
+      capped: summary.capped || built.coverage === "budget_limited",
+    };
+  } catch (error) {
+    status = "failed";
+    throw error;
   } finally {
     // Always release the lease this run claimed, even when build throws.
     await step.do("finish", async () =>
-      readJson(await call(FINISH_PATH, { workspaceId, leaseToken: plan.leaseToken }), FINISH_PATH));
+      readJson(await call(FINISH_PATH, { workspaceId, leaseToken: plan.leaseToken, read, ...summary, status }), FINISH_PATH));
   }
 
-  return { status: failures > 0 ? "partial" : "done", failures };
+  return { status: status === "success" ? "done" : status, failures };
+}
+
+function observedSteps(step, workspaceId, observeStep) {
+  return {
+    do(name, ...args) {
+      const callbackIndex = args.length - 1;
+      const callback = args[callbackIndex];
+      if (typeof callback === "function") {
+        args[callbackIndex] = (...callbackArgs) => {
+          let operationPromise;
+          let signalOperationStarted;
+          const operationStarted = new Promise((resolve) => { signalOperationStarted = resolve; });
+          const runOnce = (...innerArgs) => {
+            if (!operationPromise) {
+              operationPromise = Promise.resolve().then(() => callback(...innerArgs));
+              signalOperationStarted();
+            }
+            return operationPromise;
+          };
+          const observerPromise = Promise.resolve()
+            .then(() => observeStep(normalizeStepName(name), workspaceId, runOnce))
+            .catch(() => undefined);
+          let timer;
+          const timeout = new Promise((resolve) => {
+            timer = setTimeout(resolve, OBSERVER_START_TIMEOUT_MS);
+          });
+          return (async () => {
+            await Promise.race([operationStarted, observerPromise, timeout]);
+            clearTimeout(timer);
+            // If observation stalls before invoking the callback, start it without waiting longer.
+            return await runOnce(...callbackArgs);
+          })();
+        };
+      }
+      return step.do(name, ...args);
+    },
+  };
+}
+
+function normalizeStepName(name) {
+  const normalized = String(name).replace(/^first:/, "");
+  return normalized.startsWith("collect:") ? "collect" : normalized;
 }
 
 async function runFirstScan({ workspaceId }, step, call) {
@@ -102,7 +161,9 @@ async function runFirstScan({ workspaceId }, step, call) {
     failed = collected.length > 0 && failures === collected.length && !built.picked;
   } finally {
     if (!plan?.skipped) {
-      const finished = await step.do("first:finish", () => request("finish", { failed, partial }));
+      const finished = await step.do("first:finish", {
+        retries: { limit: 3, delay: "10 seconds", backoff: "exponential" }, timeout: "1 minute",
+      }, () => request("finish", { failed, partial }));
       finalStatus = finished.status;
     }
   }

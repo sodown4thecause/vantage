@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   authorize: vi.fn(), consume: vi.fn(), release: vi.fn(), profile: vi.fn(),
   queue: vi.fn(), detail: vi.fn(), get: vi.fn(), create: vi.fn(), append: vi.fn(),
-  generate: vi.fn(), paid: vi.fn(), cost: vi.fn(), recordCost: vi.fn(),
+  generate: vi.fn(), paid: vi.fn(), cost: vi.fn(), recordCost: vi.fn(), flushTelemetry: vi.fn(),
 }));
 vi.mock("@/lib/auth/workspace", () => ({ authorizeWorkspace: mocks.authorize }));
 vi.mock("@/lib/plans/limits", () => ({ consume: mocks.consume, release: mocks.release }));
@@ -20,9 +20,15 @@ vi.mock("@/lib/providers/paid-call", () => ({
   runPaidCall: mocks.paid, PaidCallDeniedError: class extends Error {},
 }));
 vi.mock("@/lib/costs/ledger", () => ({ recordCost: mocks.recordCost }));
+vi.mock("@/lib/analytics/ai-telemetry", () => ({
+  flushPostHogAiTelemetry: mocks.flushTelemetry,
+  posthogAiContext: (_userId: string | undefined, workspaceId: string) => ({ workspaceId }),
+  posthogAiTelemetry: (functionId: string) => ({ isEnabled: true, functionId }),
+}));
 vi.mock("ai", async (original) => ({ ...await original<typeof import("ai")>(), generateText: mocks.generate }));
 
 import { POST } from "@/app/api/gtm/chat/route";
+import { TakoSearchMeter } from "@/lib/research/tako";
 
 const WS = "11111111-1111-4111-8111-111111111111";
 const CONV = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -54,6 +60,7 @@ beforeEach(() => {
   mocks.generate.mockResolvedValue({ output: { answer: "Review the supplied conversation.", actions }, usage: { inputTokens: 10, outputTokens: 20 } });
   mocks.cost.mockReturnValue(0.001);
   mocks.recordCost.mockResolvedValue(true);
+  mocks.flushTelemetry.mockResolvedValue(undefined);
   mocks.paid.mockImplementation(async (_meta, work) => {
     const result = await work();
     if (result.error) throw result.error;
@@ -169,6 +176,18 @@ describe("GTM chat boundary", () => {
     expect((await POST(request())).status).toBe(500);
     expect(mocks.release).toHaveBeenCalledWith(WS, "seo_questions_per_month", 1, expect.any(Date));
     expect(mocks.append).not.toHaveBeenCalled();
+  });
+
+  it("flushes AI telemetry even when research settlement fails", async () => {
+    const settlePending = vi.spyOn(TakoSearchMeter.prototype, "settlePending")
+      .mockRejectedValue(new Error("private settlement failure"));
+    try {
+      const response = await POST(request());
+      expect(response.status).toBe(500);
+      expect(mocks.flushTelemetry).toHaveBeenCalledOnce();
+    } finally {
+      settlePending.mockRestore();
+    }
   });
 
   it("does not persist a response if cost settlement fails after generation", async () => {

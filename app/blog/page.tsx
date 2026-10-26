@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { JsonLd } from "@/components/json-ld";
-import { PostList, TagLinks } from "@/components/post-list";
-import { PageHead, Shell } from "@/components/shell";
-import { getAllPosts, getAllTags } from "@/lib/blog";
+import { TagLinks } from "@/components/post-list";
+import { Shell } from "@/components/shell";
+import { formatDate, getAllPosts, getAllTags } from "@/lib/blog";
+import styles from "./blog.module.css";
 import { SITE_NAME, absoluteUrl } from "@/lib/site";
 
 export const dynamic = "force-static";
@@ -42,19 +44,40 @@ export default function BlogIndex() {
           })),
         }}
       />
-      <PageHead
-        title="Finding customers in public conversations"
-        lede="Guides for founders on where buyers ask for help, how to read buying intent, and how to reply without spamming."
-      />
+      <header className={styles.indexHeader}>
+        <div>
+          <p className={styles.eyebrow}>Notes from the field</p>
+          <h1 className={styles.indexTitle}>Finding customers in public conversations</h1>
+        </div>
+        <p className={styles.indexLede}>Guides for founders on where buyers ask for help, how to read buying intent, and how to reply without spamming.</p>
+      </header>
       {tags.length > 0 && (
-        <div className="mb-8">
+        <div className={styles.tags}>
           <TagLinks tags={tags.map((t) => t.tag)} />
         </div>
       )}
       {posts.length === 0 ? (
         <p className="text-ridge">The first post is on its way. Subscribe to the <a className="link" href="/blog/rss.xml">RSS feed</a> to get it.</p>
       ) : (
-        <PostList posts={posts} />
+        <ol className={styles.postList}>
+          {posts.map((post) => (
+            <li key={post.slug} className={styles.post}>
+              <div className={styles.postMeta}>
+                <time dateTime={post.date}>{formatDate(post.date)}</time>
+                <span>{post.readingMinutes} min read</span>
+              </div>
+              <article>
+                <h2 className={styles.postTitle}>
+                  <Link href={`/blog/${post.slug}`}>
+                    {post.title}<span aria-hidden="true">↗</span>
+                  </Link>
+                </h2>
+                <p className={styles.postDescription}>{post.description}</p>
+                {post.tags.length > 0 && <TagLinks tags={post.tags} />}
+              </article>
+            </li>
+          ))}
+        </ol>
       )}
     </Shell>
   );

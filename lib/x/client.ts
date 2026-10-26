@@ -84,7 +84,8 @@ export async function fetchXPostsWithMeta(opts: XOptions = {}): Promise<{
   try {
     acquired = await runPaidCall({ context: opts.ctx ?? { sourceKey: "x" }, provider: "scavio",
       action: "x_search", estimateUsd: 0.004, signal: opts.signal }, async () => {
-      const value = await createScavioClient().x.search({ search: opts.query?.trim() || "AI developer tools",
+      const scavioClient = await createScavioClient();
+      const value = await scavioClient.x.search({ search: opts.query?.trim() || "AI developer tools",
         search_type: opts.searchType ?? "Latest", cursor: opts.cursor });
       opts.signal?.throwIfAborted();
       if (value.error || value.success === false) throw new Error("Scavio provider unavailable");

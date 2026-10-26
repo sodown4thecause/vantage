@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { AnalyticsIdentity } from "@/app/analytics-identity";
 import { authClient } from "@/lib/auth/client";
 
 export function Providers({ children }: { children: ReactNode }) {
@@ -30,6 +31,7 @@ export function Providers({ children }: { children: ReactNode }) {
       Link={Link}
       redirectTo="/"
     >
+      <AnalyticsIdentity />
       {children}
     </NeonAuthUIProvider>
   );
