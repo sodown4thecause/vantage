@@ -9,3 +9,4 @@ export * from "@/lib/agents/discovery/apply";
 export * from "@/lib/agents/discovery/relevance-ai";
 export * from "@/lib/agents/discovery/store";
 export * from "@/lib/agents/discovery/reservation";
+export * from "@/lib/agents/discovery/form-gate";

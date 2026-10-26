@@ -141,7 +141,7 @@ function combine(term: SourceReview, judgements: QueryJudgement[]): SourceReview
 export async function gateSource(
   profile: ReviewProfile,
   source: SourceProposal,
-  opts: { judge?: RelevanceJudge; canAfford?: () => boolean; onCost?: (usd: number) => void; signal?: AbortSignal } = {},
+  opts: { judge?: RelevanceJudge; canAfford?: () => boolean | Promise<boolean>; onCost?: (usd: number) => void; signal?: AbortSignal } = {},
 ): Promise<SourceReview> {
   // The pre-filter looks at the queries only. The proposing model's own score is ignored when a review can run.
   const pre = reviewSourceProposal(profile, { ...source, relevanceScore: 1 });
@@ -149,7 +149,7 @@ export async function gateSource(
   // Without a review the term match decides alone, and then the proposer's own score still has to clear the threshold.
   const term = reviewSourceProposal(profile, source);
   if (!opts.judge) return withTermsOnly(term, "The AI relevance review is not available, so only the term match was applied.");
-  if (opts.canAfford && !opts.canAfford()) return withTermsOnly(term, "The discovery budget is spent, so only the term match was applied.");
+  if (opts.canAfford && !(await opts.canAfford())) return withTermsOnly(term, "The discovery budget is spent, so only the term match was applied.");
   try {
     const result = await opts.judge(profile, source, opts.signal);
     opts.onCost?.(result.costUsd);

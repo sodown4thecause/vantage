@@ -18,6 +18,8 @@ vi.mock("@/lib/plans/limits", async () => {
   } };
 });
 import { keyedProfileSources, provisionProfileSources } from "@/lib/profile/repository";
+import type { RelevanceJudge } from "@/lib/agents/discovery";
+import { memoryBudgetStore } from "./helpers/budget-store";
 
 beforeEach(() => {
   state.values = []; state.conflicts = []; state.existing = []; state.limit = 8;
@@ -74,5 +76,52 @@ describe("keyed profile sources", () => {
       ...Array.from({ length: 6 }, (_, i) => ({ name: `Other ${i}` }))];
     await provisionProfileSources("ws-1", topics, "https://contextfor.dev");
     expect(state.values.map(v => v.name)).toEqual(["Profile: Hacker News", "Profile: Reddit"]);
+  });
+});
+
+describe("the form flow goes through the same relevance gate (25 Oct regression)", () => {
+  const profile = { productDescription: "Finds buying-intent conversations for AI developer tools.", targetCustomer: "Founders of AI dev tools", competitors: ["syften.com"] };
+  const judgeSaying = (fit: number) => vi.fn<RelevanceJudge>(async (_profile, source) => ({
+    judgements: source.queries.map((query) => ({ query, fit, rung: 3, situation: "other", why: "mock verdict" })), costUsd: 0.004,
+  }));
+  const gate = (judge?: RelevanceJudge, committed = 0) => ({ judge, store: memoryBudgetStore(committed ? { "ws-1|initial": committed } : {}).store, env: {} });
+
+  it("REGRESSION: broad topics create no sources at all, and never reach the reviewer", async () => {
+    vi.stubEnv("TINYFISH_API_KEY", "tf-key");
+    const judge = judgeSaying(0.99);
+    await provisionProfileSources("ws-1", ["ai", "startup", "tools"], "https://contextfor.dev", "", { profile, gate: gate(judge) });
+    expect(state.values).toEqual([]);
+    expect(judge).not.toHaveBeenCalled();
+  });
+
+  it("creates no sources when the review finds the topics do not fit the product", async () => {
+    vi.stubEnv("TINYFISH_API_KEY", "tf-key");
+    const judge = judgeSaying(0.05);
+    await provisionProfileSources("ws-1", ["vantage tours", "vantage photography"], "https://contextfor.dev", "", { profile, gate: gate(judge) });
+    expect(judge).toHaveBeenCalledTimes(1);
+    expect(state.values).toEqual([]);
+  });
+
+  it("creates the sources when the review approves the topics", async () => {
+    vi.stubEnv("TINYFISH_API_KEY", "tf-key");
+    await provisionProfileSources("ws-1", ["syften alternative", "buying intent"], "https://contextfor.dev", "", { profile, gate: gate(judgeSaying(0.9)) });
+    expect(state.values.map((v) => v.name)).toEqual(["Profile: Hacker News", "Profile: Reddit", "Profile: Dev forums & blogs"]);
+  });
+
+  it("falls back to the term match when the discovery budget is spent, still refusing broad topics", async () => {
+    const judge = judgeSaying(0.9);
+    await provisionProfileSources("ws-1", ["syften alternative"], undefined, "", { profile, gate: gate(judge, 0.49) });
+    expect(judge).not.toHaveBeenCalled();
+    expect(state.values.map((v) => v.name)).toEqual(["Profile: Hacker News"]);
+
+    state.values = [];
+    await provisionProfileSources("ws-1", ["ai", "tools"], undefined, "", { profile, gate: gate(judge, 0.49) });
+    expect(state.values).toEqual([]);
+  });
+
+  it("settles the review's cost against the workspace budget", async () => {
+    const budget = memoryBudgetStore();
+    await provisionProfileSources("ws-1", ["syften alternative"], undefined, "", { profile, gate: { judge: judgeSaying(0.9), store: budget.store, env: {} } });
+    expect(budget.get("ws-1", "initial")).toBeCloseTo(0.004, 6);
   });
 });
