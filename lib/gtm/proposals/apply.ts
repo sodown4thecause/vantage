@@ -11,7 +11,7 @@ export async function applyStrategyProposal(input: { workspaceId: string; conver
   const { workspaceId, conversationId, proposalId, strategyVersion, requestId } = value;
   const actor = await proposalActor(workspaceId);
   const plan = effectivePlanSql(workspaceId);
-  const cap = (key: "keywords" | "sources") => sql`coalesce((select value from plan_limit where plan = ${plan} and key = ${key}), (select value from plan_limit where plan = 'free' and key = ${key}), case when ${plan} = 'pro' then ${DEFAULT_LIMITS.pro[key]} else ${DEFAULT_LIMITS.free[key]} end)`;
+  const cap = (key: "keywords" | "sources") => sql`coalesce((select value from plan_limit where plan = ${plan} and key = ${key}), (select value from plan_limit where plan = 'free' and key = ${key}), case when ${plan} = 'pro' then ${DEFAULT_LIMITS.pro[key]}::int else ${DEFAULT_LIMITS.free[key]}::int end)`;
   const results = await proposalBatch(workspaceId, [sql`
     with eligible as materialized (
       select p.*, d.actor_id, d.created_at as confirmed_at from gtm_proposal p

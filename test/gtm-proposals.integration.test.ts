@@ -20,7 +20,7 @@ describe.skipIf(!hasGtmTestDatabase)("Postgres proposal atomicity", () => {
 
   it("requires real exact user confirmation and profile-only approval adds no sources/jobs", async () => {
     const p = await make();
-    await expect(applyStrategyProposal(args(p, "model"))).rejects.toThrow();
+    await expect(applyStrategyProposal(args(p, "model"))).rejects.toThrow("unconfirmed");
     expect((await decide(p, "bad-hash", true, { payloadHash: "0".repeat(64) })).status).toBe(409);
     expect((await decide(p)).status).toBe(200);
     expect(await counts(p)).toEqual({ profiles: 1, sources: 0, jobs: 0, receipts: 1, outbox: 1, version: 1 });
@@ -66,6 +66,7 @@ describe.skipIf(!hasGtmTestDatabase)("Postgres proposal atomicity", () => {
   it("a domain constraint failure rolls back every mutation, version, receipt and outbox", async () => {
     const p = await make({ ...profile, sources: [{ type: "hn", config: { query: "CRM" }, enabled: false }, { type: "hn", config: { query: "CRM" }, enabled: true }] });
     expect((await decide(p)).status).toBe(500);
+    await expect(applyStrategyProposal(args(p))).rejects.toMatchObject({ code: "23505", constraint_name: "source_workspace_name_uidx" });
     expect(await counts(p)).toEqual({ profiles: 0, sources: 0, jobs: 0, receipts: 0, outbox: 0, version: 0 });
     expect((await fixture.client`select status from gtm_proposal where id = ${p.id}`)[0]!.status).toBe("pending");
   });

@@ -17,7 +17,15 @@ export async function gtmPostgresFixture() {
   const adapter = new Proxy(db, { get(target, key) {
     if (key === "batch") return (queries: Array<{ getQuery(): { sql: string; params: unknown[] } }>) => client.begin(async tx => {
       const rows = [];
-      for (const query of queries) { const built = query.getQuery(); rows.push(await tx.unsafe(built.sql, built.params as never[])); }
+      for (const [statement, query] of queries.entries()) {
+        const built = query.getQuery();
+        try { rows.push(await tx.unsafe(built.sql, built.params as never[])); }
+        catch (error) {
+          const failure = error as { code?: string; message?: string };
+          console.error("[GTM disposable test SQL]", { statement, code: failure.code, message: failure.message?.slice(0, 500) });
+          throw error;
+        }
+      }
       return rows;
     });
     const value = Reflect.get(target, key);
