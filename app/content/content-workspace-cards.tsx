@@ -24,6 +24,32 @@ export type ContentToolPart = {
 
 export type ContentSectionProposal = { draftId: string; sectionIndex: number; originalText: string; text: string };
 export type ContentDraftSaveResult = { draftId: string; title: string; body: string; ok: boolean };
+export type ContentDraftSaveState = {
+  confirmed: Record<string, Pick<ContentCardDraft, "title" | "body">>;
+  results: Record<string, ContentDraftSaveResult | null>;
+};
+type ContentDraftSaveAction =
+  | { type: "started"; draftId: string }
+  | { type: "finished"; result: ContentDraftSaveResult };
+
+export function contentDraftIsDirty(
+  current: Pick<ContentCardDraft, "title" | "body">,
+  confirmed: Pick<ContentCardDraft, "title" | "body">,
+): boolean {
+  return current.title !== confirmed.title || current.body !== confirmed.body;
+}
+
+export function contentDraftSaveReducer(state: ContentDraftSaveState, action: ContentDraftSaveAction): ContentDraftSaveState {
+  if (action.type === "started") {
+    return { ...state, results: { ...state.results, [action.draftId]: null } };
+  }
+  return {
+    confirmed: action.result.ok
+      ? { ...state.confirmed, [action.result.draftId]: { title: action.result.title, body: action.result.body } }
+      : state.confirmed,
+    results: { ...state.results, [action.result.draftId]: action.result },
+  };
+}
 
 const ipHost = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 const httpUrl = z.string().max(2_048).url().refine((value) => {
@@ -54,6 +80,21 @@ const draftUpdateOutputSchema = z.object({
 }).strict();
 const evidenceItemSchema = z.object({ title: z.string().min(1).max(200), platform: z.string().min(1).max(80), content: z.string().max(6_000) });
 const keywordEvidenceSchema = z.object({ keyword: z.string().min(1).max(200), position: z.number().nullable().optional() });
+export function contentDraftsNeedingRestore(
+  drafts: ContentCardDraft[],
+  messages: Array<{ parts: ContentToolPart[] }>,
+): ContentCardDraft[] {
+  const renderedDraftIds = new Set<string>();
+  for (const message of messages) {
+    for (const part of message.parts) {
+      if (part.type !== "tool-save_content_draft" || part.state !== "output-available") continue;
+      const parsed = draftOutputSchema.safeParse(part.output);
+      if (parsed.success) renderedDraftIds.add(parsed.data.draftId);
+    }
+  }
+  return drafts.filter((draft) => !renderedDraftIds.has(draft.draftId));
+}
+
 const sourceOutputSchema = z.discriminatedUnion("sourceType", [
   z.object({
     sourceType: z.literal("ranked_conversation"),
@@ -111,13 +152,15 @@ export function buildContentSectionRegenerationPrompt(draft: ContentCardDraft, s
   if (!Number.isInteger(sectionIndex) || sectionIndex < 0 || sectionIndex >= sections.length) {
     throw new Error("The requested section does not exist in this draft.");
   }
+  const selectedSection = sections[sectionIndex]!;
+  const surroundingContext = sections.filter((_, index) => index !== sectionIndex).join("\n\n").slice(0, 4_000);
   return [
     `Regenerate section ${sectionIndex + 1} of this private ${formatLabels[draft.format]}.`,
-    "Use the saved brand voice and the surrounding draft for context. Preserve any source links and factual claims; do not invent evidence.",
-    "Return only the replacement text for this section. Do not save or publish the draft; I will review the proposal before applying it.",
+    "Use the saved brand voice and surrounding draft context. Preserve source links and factual claims; do not invent evidence.",
+    "Return only the replacement text for the selected section. Do not save or publish the draft; I will review the proposal before applying it.",
     `Title: ${draft.title}`,
-    `Current section: ${sections[sectionIndex]}`,
-    `Full draft for context:\n${draft.body}`,
+    `Selected section (included once):\n${selectedSection}`,
+    `Other section context (selected section omitted; capped at 4,000 characters):\n${surroundingContext}`,
   ].join("\n\n");
 }
 
@@ -169,6 +212,7 @@ export function ContentToolCard({
   onProposalApplied,
   onSaveDraft,
   saveResult,
+  confirmedDraft,
   savingDraftId,
   busy = false,
 }: {
@@ -179,6 +223,7 @@ export function ContentToolCard({
   onRepurpose: (draft: ContentCardDraft, format: ContentDraftFormat) => void;
   onProposalApplied?: (draftId: string) => void;
   saveResult?: ContentDraftSaveResult | null;
+  confirmedDraft?: Pick<ContentCardDraft, "title" | "body">;
   savingDraftId?: string | null;
   busy?: boolean;
 }) {
@@ -206,6 +251,7 @@ export function ContentToolCard({
         draft={{ draftId, title, body, format }}
         proposal={proposal?.draftId === draftId ? proposal : null}
         saveResult={saveResult?.draftId === draftId ? saveResult : null}
+        confirmedDraft={confirmedDraft}
         saving={savingDraftId === draftId}
         onSave={onSaveDraft}
         onRegenerateSection={onRegenerateSection}
@@ -245,6 +291,7 @@ function ContentDraftCard({
   draft,
   proposal,
   saveResult,
+  confirmedDraft,
   saving,
   onSave,
   onRegenerateSection,
@@ -255,6 +302,7 @@ function ContentDraftCard({
   draft: ContentCardDraft;
   proposal?: ContentSectionProposal | null;
   saveResult?: ContentDraftSaveResult | null;
+  confirmedDraft?: Pick<ContentCardDraft, "title" | "body">;
   saving: boolean;
   onSave: (draft: ContentCardDraft) => void;
   onRegenerateSection: (draft: ContentCardDraft, sectionIndex: number) => void;
@@ -266,11 +314,11 @@ function ContentDraftCard({
   const [body, setBody] = useState(draft.body);
   const [targetFormat, setTargetFormat] = useState<ContentDraftFormat>(contentFormatValues.find((format) => format !== draft.format) ?? "blog_post");
   const [saveState, setSaveState] = useState("");
-  const savedTitle = saveResult?.ok ? saveResult.title : draft.title;
-  const savedBody = saveResult?.ok ? saveResult.body : draft.body;
+  const savedTitle = confirmedDraft?.title ?? draft.title;
+  const savedBody = confirmedDraft?.body ?? draft.body;
   const saveResultApplies = saveResult?.title === title && saveResult.body === body;
   const sections = contentDraftSections(body);
-  const dirty = title !== savedTitle || body !== savedBody;
+  const dirty = contentDraftIsDirty({ title, body }, { title: savedTitle, body: savedBody });
 
   const copyDraft = async () => {
     try {

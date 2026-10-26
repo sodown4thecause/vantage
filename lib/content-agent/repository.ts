@@ -157,3 +157,9 @@ export async function listContentDrafts(workspaceId: string, limit = 10): Promis
     .orderBy(desc(contentDraft.updatedAt))
     .limit(limit);
 }
+
+export async function listContentDraftsForThread(workspaceId: string, threadId: string): Promise<ContentDraftRow[]> {
+  return getDb().select().from(contentDraft)
+    .where(and(eq(contentDraft.workspaceId, workspaceId), eq(contentDraft.threadId, threadId)))
+    .orderBy(desc(contentDraft.updatedAt));
+}

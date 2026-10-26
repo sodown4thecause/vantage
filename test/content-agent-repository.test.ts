@@ -4,7 +4,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 const mocks = vi.hoisted(() => ({ condition: undefined as unknown, query: undefined as unknown, select: vi.fn(), update: vi.fn() }));
 vi.mock("@/lib/db/client", () => ({ getDb: () => ({ select: mocks.select, update: mocks.update }) }));
 
-import { getContentBrandVoiceProfile, getContentThread, getContentThreadContext, updateContentDraft } from "@/lib/content-agent/repository";
+import { getContentBrandVoiceProfile, getContentThread, getContentThreadContext, listContentDraftsForThread, updateContentDraft } from "@/lib/content-agent/repository";
 
 const workspaceId = "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a11";
 const threadId = "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a12";
@@ -54,6 +54,18 @@ describe("Content repository", () => {
     expect(filter.params).toEqual([workspaceId, threadId]);
     const order = new PgDialect().sqlToQuery(query.orderBy.mock.calls.at(-1)?.[0] as never);
     expect(order.sql).toContain('"content_message"."created_at" desc');
+  });
+
+  it("loads every saved card only from the selected workspace thread", async () => {
+    const drafts = [{ id: "draft-1", threadId }];
+    const query = mocks.query as { orderBy: ReturnType<typeof vi.fn> };
+    query.orderBy.mockResolvedValueOnce(drafts);
+
+    await expect(listContentDraftsForThread(workspaceId, threadId)).resolves.toEqual(drafts);
+    const filter = new PgDialect().sqlToQuery(mocks.condition as never);
+    expect(filter.sql).toContain('"content_draft"."workspace_id" = $1');
+    expect(filter.sql).toContain('"content_draft"."thread_id" = $2');
+    expect(filter.params).toEqual([workspaceId, threadId]);
   });
 
   it("updates a Content draft only when both its ID and workspace match", async () => {

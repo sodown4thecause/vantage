@@ -117,7 +117,7 @@ export function createContentSourceTools(args: {
           const detail = await getOpportunityDetail({ workspaceId: args.workspaceId, opportunityId });
           if (!detail) { notify(args.onLookup); return { error: "ranked_conversation_not_found", requestedFormat: format }; }
           const evidence = detail.evidence.slice(0, 5).map((row) => ({
-            title: row.title?.trim() || row.platform, platform: row.platform, content: row.contentMd.slice(0, 6_000), url: row.urlCanonical,
+            title: (row.title?.trim() || row.platform).slice(0, 200), platform: row.platform, content: row.contentMd.slice(0, 6_000), url: row.urlCanonical,
           }));
           const checked = checkRows(evidence, (row) => row.title);
           if (checked.unsafe) { notify(args.onLookup, [], true); return { error: "unsafe_source_citation", requestedFormat: format }; }

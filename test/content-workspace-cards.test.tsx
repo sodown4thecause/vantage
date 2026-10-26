@@ -4,6 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   ContentToolCard,
+  contentDraftIsDirty,
+  contentDraftsNeedingRestore,
+  contentDraftSaveReducer,
   buildContentDraftUpdatePrompt,
   buildContentRepurposePrompt,
   buildContentSectionRegenerationPrompt,
@@ -46,6 +49,18 @@ describe("Content generative cards", () => {
     expect(html).toContain("Regenerate section 1");
     expect(html).toContain("Repurpose as");
     expect(html).toContain("Create new private version");
+  });
+
+  it("restores saved-draft cards when stored conversation history contains only text", () => {
+    const history = [{ parts: [{ type: "text", text: "I saved a draft for you." }] }];
+    expect(contentDraftsNeedingRestore([draft], history)).toEqual([draft]);
+
+    const liveCard = [{ parts: [{
+      type: "tool-save_content_draft",
+      state: "output-available",
+      output: { saved: true, ...draft },
+    }] }];
+    expect(contentDraftsNeedingRestore([draft], liveCard)).toEqual([]);
   });
 
   it("renders a successful edit-tool result without exposing its raw output", () => {
@@ -152,6 +167,36 @@ describe("Content generative cards", () => {
     });
     expect(failed).toContain("retrieve source evidence.");
     expect(failed).not.toContain("database password");
+  });
+
+  it("bounds regeneration prompts and includes a long selected section only once", () => {
+    const longDraft = { ...draft, body: `${"x".repeat(20_000)}\n\n${"y".repeat(10_000)}` };
+    const prompt = buildContentSectionRegenerationPrompt(longDraft, 0);
+
+    expect(prompt.length).toBeLessThanOrEqual(32_000);
+    expect(prompt.split("x".repeat(20_000))).toHaveLength(2);
+    expect(prompt.split("y".repeat(4_000))).toHaveLength(2);
+    expect(prompt).not.toContain("y".repeat(4_001));
+  });
+
+  it("keeps each last-confirmed save separate from later failures and other card saves", () => {
+    const initial = { confirmed: {}, results: {} };
+    const saved = contentDraftSaveReducer(initial, { type: "started", draftId: draft.draftId });
+    const confirmed = contentDraftSaveReducer(saved, {
+      type: "finished",
+      result: { draftId: draft.draftId, title: "Saved B", body: "Body B", ok: true },
+    });
+    const failed = contentDraftSaveReducer(confirmed, { type: "started", draftId: draft.draftId });
+    const afterFailure = contentDraftSaveReducer(failed, {
+      type: "finished",
+      result: { draftId: draft.draftId, title: "Original A", body: "Body A", ok: false },
+    });
+    const otherCard = contentDraftSaveReducer(afterFailure, { type: "started", draftId: "other-draft" });
+
+    expect(afterFailure.confirmed[draft.draftId]).toEqual({ title: "Saved B", body: "Body B" });
+    expect(contentDraftIsDirty({ title: "Original A", body: "Body A" }, afterFailure.confirmed[draft.draftId]!)).toBe(true);
+    expect(afterFailure.results[draft.draftId]).toEqual({ draftId: draft.draftId, title: "Original A", body: "Body A", ok: false });
+    expect(otherCard.results[draft.draftId]).toEqual(afterFailure.results[draft.draftId]);
   });
 
   it("keeps regeneration as an unapplied proposal and repurposes only through private drafting", () => {
