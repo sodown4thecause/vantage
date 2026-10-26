@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
-import { effectivePlanSql } from "@/lib/billing/entitlement";
 import { rowsOf } from "@/lib/db/rows";
-import { DEFAULT_LIMITS } from "@/lib/plans/types";
+import { countLimitSql } from "@/lib/plans/limits";
+import { reservedProfileSourceSlot } from "@/lib/sources/persist";
 import { proposalActor, proposalBatch, sourceSnapshotSql } from "./repository";
 import { applyProposalSchema, ProposalConflictError } from "./types";
 
@@ -10,8 +10,6 @@ export async function applyStrategyProposal(input: { workspaceId: string; conver
   const value = applyProposalSchema.parse(input);
   const { workspaceId, conversationId, proposalId, strategyVersion, requestId } = value;
   const actor = await proposalActor(workspaceId);
-  const plan = effectivePlanSql(workspaceId);
-  const cap = (key: "keywords" | "sources") => sql`coalesce((select value from plan_limit where plan = ${plan} and key = ${key}), (select value from plan_limit where plan = 'free' and key = ${key}), case when ${plan} = 'pro' then ${DEFAULT_LIMITS.pro[key]}::int else ${DEFAULT_LIMITS.free[key]}::int end)`;
   const results = await proposalBatch(workspaceId, [sql`
     with eligible as materialized (
       select p.*, d.actor_id, d.created_at as confirmed_at from gtm_proposal p
@@ -23,11 +21,12 @@ export async function applyStrategyProposal(input: { workspaceId: string; conver
         and d.request_id = ${requestId} and d.approved and d.actor_id = ${actor}
         and p.profile_version = coalesce((select max(version) from monitoring_profile where workspace_id = p.workspace_id), 0)
         and p.source_snapshot = ${sourceSnapshotSql(workspaceId)}
-        and (p.prepared->'profile' = 'null'::jsonb or jsonb_array_length(p.prepared->'profile'->'topics') <= greatest(${cap("keywords")}, coalesce((select jsonb_array_length(topics) from monitoring_profile where workspace_id = p.workspace_id order by version desc limit 1), 0)))
+        and (p.prepared->'profile' = 'null'::jsonb or jsonb_array_length(p.prepared->'profile'->'topics') <= greatest(${countLimitSql(workspaceId, "keywords")}, coalesce((select jsonb_array_length(topics) from monitoring_profile where workspace_id = p.workspace_id order by version desc limit 1), 0)))
         and ((select count(*) from jsonb_array_elements(p.prepared->'sources') x where not (x->>'existing')::boolean) = 0 or
-          (select count(*) from source where workspace_id = p.workspace_id) + (select count(*) from jsonb_array_elements(p.prepared->'sources') x where not (x->>'existing')::boolean) <= ${cap("sources")})
+          (select count(*) from source where workspace_id = p.workspace_id) + (select count(*) from jsonb_array_elements(p.prepared->'sources') x where not (x->>'existing')::boolean) + ${reservedProfileSourceSlot(workspaceId)} <= ${countLimitSql(workspaceId, "sources")})
     ), advanced as (
-      update gtm_strategy s set version = s.version + 1, data = s.data || p.payload
+      update gtm_strategy s set version = s.version + 1,
+        data = (s.data - 'profile' - 'competitors' - 'keywords' - 'sources') || (p.payload - 'profile' - 'competitors' - 'keywords' - 'sources')
       from eligible p where s.workspace_id = p.workspace_id and s.version = p.strategy_version returning s.version
     ), profile_written as (
       insert into monitoring_profile (workspace_id, version, product_url, docs_urls, product_description, target_customer, competitors, topics, product_material_status, product_material_text, retrieval_notes)

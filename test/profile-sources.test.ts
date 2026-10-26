@@ -11,10 +11,14 @@ vi.mock("@/lib/db/client", () => ({ getDb: () => ({
   }),
   select: () => ({ from: () => ({ where: () => ({ limit: async () => state.existing }) }) }),
 }) }));
-vi.mock("@/lib/plans/limits", async () => {
+vi.mock("@/lib/sources/persist", async () => {
   const { PlanLimitError } = await import("@/lib/plans/types");
-  return { assertWithinCount: async (_ws: string, key: "sources", current: number) => {
-    if (current + 1 > state.limit) throw new PlanLimitError(key, state.limit, "limit");
+  return { PROFILE_SOURCE_NAME: "Profile: Hacker News", persistSourceWithinLimit: async (workspaceId: string, value: Record<string, unknown>, mergeConfig: boolean) => {
+    const present = state.existing.some(row => row.name === value.name);
+    if (!present && state.existing.length + 1 > state.limit) throw new PlanLimitError("sources", state.limit, "limit");
+    if (!present) state.existing.push({ name: String(value.name) });
+    state.values.push({ workspaceId, ...value }); state.conflicts.push(mergeConfig);
+    return true;
   } };
 });
 import { keyedProfileSources, provisionProfileSources } from "@/lib/profile/repository";
@@ -26,13 +30,13 @@ beforeEach(() => {
   vi.stubEnv("FIRECRAWL_API_KEY", "");
 });
 
-it("provisions a bounded free HN source using the existing duplicate constraint", async () => {
+it("provisions a bounded free HN source through the config-merge persistence seam", async () => {
   await provisionProfileSources("ws-1", ["agent evaluation", "benchmarks"]);
   expect(state.values[0]).toMatchObject({ workspaceId: "ws-1", type: "hn", lane: "free", config: {
     queries: ["agent evaluation", "benchmarks"], maxPages: 1, enrich: false,
   } });
   expect(state.conflicts).toHaveLength(1);
-  expect(state.conflicts[0]).toHaveProperty("target");
+  expect(state.conflicts[0]).toBe(true);
 });
 
 describe("keyed profile sources", () => {

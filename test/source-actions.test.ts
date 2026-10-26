@@ -10,7 +10,13 @@ vi.mock("@/lib/cron/lease", () => ({ withWorkspaceScanLease: async (_workspaceId
   await previous;
   try { return await work(new AbortController().signal); } finally { release(); }
 } }));
-vi.mock("@/lib/plans/limits", async original => ({ ...await original<typeof import("@/lib/plans/limits")>(), assertWithinCount: async (_workspace: string, _key: string, count: number) => { if (count >= state.sourceLimit) throw new Error("Source limit reached"); } }));
+vi.mock("@/lib/sources/persist", () => ({ PROFILE_SOURCE_NAME: "Profile: Hacker News", persistSourceWithinLimit: async (workspaceId: string, value: Record<string, unknown>) => {
+  state.dbCalls++;
+  if (state.names.some(row => row.name === value.name)) return false;
+  if (state.names.length + (state.names.some(row => row.name === "Profile: Hacker News") ? 0 : 1) >= state.sourceLimit) throw new Error("Source limit reached");
+  state.writes.push({ workspaceId, ...value }); state.names.push({ name: String(value.name) });
+  return true;
+} }));
 vi.mock("@/lib/db/client", () => ({ getDb: () => {
   state.dbCalls++;
   return { select: () => ({ from: () => ({ where: () => ({ limit: async () => state.names }) }) }),

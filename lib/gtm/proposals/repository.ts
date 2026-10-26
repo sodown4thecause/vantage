@@ -4,7 +4,7 @@ import { authorizeWorkspace } from "@/lib/auth/workspace";
 import { getDb } from "@/lib/db/client";
 import { rowsOf } from "@/lib/db/rows";
 import { getLatestMonitoringProfile } from "@/lib/profile/repository";
-import { ProposalAuthorizationError, ProposalBusyError, ProposalConflictError, proposalHash, proposalScopeSchema, resolveProfileChange, resolveSourceChange, strategyChangeSchema, type StrategyChange, type StrategyProposal } from "./types";
+import { ProposalAuthorizationError, ProposalBusyError, ProposalConflictError, proposalHash, proposalScopeSchema, resolveProfileChange, resolveSourceChange, strategyChangeSchema, strategyPreferencesSchema, type StrategyChange, type StrategyProposal, type StrategyState } from "./types";
 
 export async function proposalActor(workspaceId: string): Promise<string> {
   const authorization = await authorizeWorkspace(workspaceId);
@@ -42,11 +42,7 @@ export async function createStrategyProposal(input: { workspaceId: string; conve
   const current = await getLatestMonitoringProfile(parsed.workspaceId);
   const profile = resolveProfileChange(parsed.payload, current);
   const sources = parsed.payload.sources?.map(change => ({ ...resolveSourceChange(change), id: change.sourceId ?? crypto.randomUUID(), existing: Boolean(change.sourceId) })) ?? [];
-  const materialChanged = profile && (profile.productUrl !== current?.productUrl || JSON.stringify(profile.docsUrls) !== JSON.stringify(current?.docsUrls));
-  const prepared = { profile: profile ? { ...profile,
-    materialStatus: profile.productMaterialManual !== undefined ? "manual" : materialChanged ? "inaccessible" : current?.productMaterialStatus ?? "manual",
-    materialText: profile.productMaterialManual ?? (materialChanged ? "" : current?.productMaterialText ?? ""),
-  } : null, sources };
+  const prepared = { profile, sources };
   const id = crypto.randomUUID();
   const results = await proposalBatch(parsed.workspaceId, [
     sql`insert into gtm_strategy (workspace_id) select workspace_id from seo_conversation where id = ${parsed.conversationId}::uuid and workspace_id = ${parsed.workspaceId}::uuid on conflict do nothing`,
@@ -76,4 +72,21 @@ export async function getStrategyProposal(input: { workspaceId: string; conversa
     and exists (select 1 from seo_conversation where id = ${parsed.conversationId}::uuid and workspace_id = ${parsed.workspaceId}::uuid)`)) as StrategyProposal[];
   if (!row) throw new ProposalConflictError();
   return { ...row, status: row.status === "pending" && Date.parse(row.expiresAt) <= Date.now() ? "expired" : row.status };
+}
+
+/** Domain tables remain authoritative; proposal patches are never treated as complete strategy snapshots. */
+export async function getStrategyState(input: { workspaceId: string; conversationId: string }): Promise<StrategyState> {
+  const { workspaceId, conversationId } = proposalScopeSchema.parse(input);
+  await proposalActor(workspaceId);
+  const [row] = rowsOf(await getDb().execute(sql`
+    select coalesce(s.version, 0) as "strategyVersion", coalesce(s.data, '{}'::jsonb) - 'profile' - 'competitors' - 'keywords' - 'sources' as preferences,
+      (select jsonb_build_object('id', p.id, 'workspaceId', p.workspace_id, 'version', p.version, 'productUrl', p.product_url, 'docsUrls', p.docs_urls, 'productDescription', p.product_description, 'targetCustomer', p.target_customer, 'competitors', p.competitors, 'topics', p.topics, 'productMaterialStatus', p.product_material_status, 'productMaterialText', p.product_material_text, 'retrievalNotes', p.retrieval_notes, 'createdAt', p.created_at)
+        from monitoring_profile p where p.workspace_id = c.workspace_id order by p.version desc limit 1) as profile,
+      (select coalesce(jsonb_agg(jsonb_build_object('sourceId', x.id, 'name', x.name, 'type', x.type, 'config', x.config - 'lastRun', 'enabled', x.health <> 'paused') order by x.id), '[]'::jsonb) from source x where x.workspace_id = c.workspace_id) as sources
+    from seo_conversation c left join gtm_strategy s on s.workspace_id = c.workspace_id
+    where c.id = ${conversationId}::uuid and c.workspace_id = ${workspaceId}::uuid
+  `)) as (Pick<StrategyState, "strategyVersion" | "profile" | "sources"> & { preferences: unknown })[];
+  if (!row) throw new ProposalConflictError();
+  return { ...strategyPreferencesSchema.parse(row.preferences), strategyVersion: row.strategyVersion, profile: row.profile, sources: row.sources,
+    competitors: row.profile?.competitors ?? [], keywords: row.profile?.topics ?? [] };
 }

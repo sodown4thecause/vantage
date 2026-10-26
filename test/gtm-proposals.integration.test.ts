@@ -3,7 +3,10 @@ import { gtmPostgresFixture, hasGtmTestDatabase } from "./gtm-postgres-fixture";
 const context = vi.hoisted(() => ({ db: null as unknown, userId: "gtm-test-owner" }));
 vi.mock("@/lib/db/client", () => ({ getDb: () => context.db }));
 vi.mock("@/lib/auth/workspace", () => ({ authorizeWorkspace: async () => ({ ok: true, userId: context.userId }) }));
-import { createStrategyProposal } from "@/lib/gtm/proposals/repository";
+import { createStrategyProposal, getStrategyState } from "@/lib/gtm/proposals/repository";
+import { persistSourceWithinLimit, PROFILE_SOURCE_NAME } from "@/lib/sources/persist";
+import { provisionProfileSources } from "@/lib/profile/repository";
+import { assertWithinCount } from "@/lib/plans/limits";
 import { applyStrategyProposal } from "@/lib/gtm/proposals/apply";
 import { POST } from "@/app/api/gtm/proposals/[id]/route";
 import type { StrategyChange, StrategyProposal } from "@/lib/gtm/proposals/types";
@@ -141,4 +144,54 @@ describe.skipIf(!hasGtmTestDatabase)("Postgres proposal atomicity", () => {
     expect(await counts(racing)).toMatchObject({ profiles: 1, receipts: 0, outbox: 0, version: 0 });
     expect((await fixture.client`select product_description from monitoring_profile where workspace_id = ${racing.workspaceId}`)[0]!.product_description).toBe("Concurrent legacy edit");
   }, 15_000);
+  it("composes canonical domain state across profile patches, aliases and consecutive source additions", async () => {
+    const initial = await make();
+    expect((await decide(initial)).status).toBe(200);
+    const scope = { workspaceId: initial.workspaceId, conversationId: initial.conversationId };
+    const changes: StrategyChange[] = [{ profile: { productDescription: "Revised" } }, { keywords: ["sales"], competitors: ["D", "E", "F"] }, { sources: [{ type: "hn", config: { query: "sales" }, enabled: true }] }, { sources: [{ type: "rss", config: { feedUrl: "https://example.com/feed" }, enabled: false }] }];
+    for (const [index, payload] of changes.entries()) {
+      const p = await createStrategyProposal({ ...scope, strategyVersion: index + 1, payload });
+      expect((await decide(p, `revision-${index}`)).status).toBe(200);
+    }
+    const state = await getStrategyState(scope);
+    expect(state).toMatchObject({ strategyVersion: 5, keywords: ["sales"], competitors: ["D", "E", "F"], profile: { productUrl: "https://example.com", productDescription: "Revised", targetCustomer: "Founders", topics: ["sales"], competitors: ["D", "E", "F"] } });
+    expect(state.sources).toHaveLength(2);
+    expect(state.sources.map(s => s.enabled).sort()).toEqual([false, true]);
+    const [stored] = await fixture.client`select data from gtm_strategy where workspace_id = ${scope.workspaceId}`;
+    expect(stored!.data).toEqual({});
+    const foreign = await fixture.seed();
+    await expect(getStrategyState({ ...scope, conversationId: foreign.conversationId })).rejects.toThrow();
+    await expect(getStrategyState({ ...scope, workspaceId: foreign.workspaceId })).rejects.toThrow();
+  });
+  it("persists forced manual material over retrieved content with empty and nonempty replacements", async () => {
+    const initial = await make();
+    expect((await decide(initial)).status).toBe(200);
+    await fixture.client`update monitoring_profile set product_material_status = 'ok', product_material_text = 'Retrieved' where workspace_id = ${initial.workspaceId}`;
+    for (const [index, manual] of ["", "Owner supplied"].entries()) {
+      const p = await createStrategyProposal({ workspaceId: initial.workspaceId, conversationId: initial.conversationId, strategyVersion: index + 1, payload: { profile: { forceManualMaterial: true, productMaterialManual: manual } } });
+      expect((await decide(p, `manual-${index}`)).status).toBe(200);
+      const [stored] = await fixture.client`select product_material_status status, product_material_text text from monitoring_profile where workspace_id = ${p.workspaceId} order by version desc limit 1`;
+      expect(stored).toEqual({ status: "manual", text: manual });
+    }
+  });
+  it("rechecks a paused legacy source add after proposal commit and reserves the default profile slot", async () => {
+    const scope = await fixture.seed();
+    await persistSourceWithinLimit(scope.workspaceId, { name: PROFILE_SOURCE_NAME, type: "hn", lane: "free", config: {} });
+    for (let i = 0; i < 6; i++) await persistSourceWithinLimit(scope.workspaceId, { name: `existing-${i}`, type: "rss", lane: "free", config: { feedUrl: `https://example.com/${i}` } });
+    // The old caller checked here, then could pause before INSERT. Its resumed write must check again atomically.
+    await assertWithinCount(scope.workspaceId, "sources", 7);
+    const p = await createStrategyProposal({ ...scope, strategyVersion: 0, payload: { sources: [{ type: "hn", config: { query: "last slot" }, enabled: true }] } });
+    expect((await decide(p)).status).toBe(200);
+    await expect(persistSourceWithinLimit(scope.workspaceId, { name: "late legacy add", type: "rss", lane: "free", config: {} })).rejects.toMatchObject({ key: "sources" });
+    expect(await counts(p)).toMatchObject({ sources: 8 });
+
+    const reserved = await make({ sources: Array.from({ length: 7 }, (_, i) => ({ type: "hn" as const, config: { query: `reserved-${i}` }, enabled: false })) });
+    expect((await decide(reserved)).status).toBe(200);
+    const eighth = await createStrategyProposal({ workspaceId: reserved.workspaceId, conversationId: reserved.conversationId, strategyVersion: 1, payload: { sources: [{ type: "hn", config: { query: "no room" }, enabled: true }] } });
+    expect((await decide(eighth, "eighth")).status).toBe(409);
+    await provisionProfileSources(reserved.workspaceId, ["CRM"]);
+    expect(await counts(reserved)).toMatchObject({ sources: 8 });
+    await provisionProfileSources(reserved.workspaceId, ["sales"]);
+    expect((await fixture.client`select config from source where workspace_id = ${reserved.workspaceId} and name = ${PROFILE_SOURCE_NAME}`)[0]!.config).toMatchObject({ queries: ["sales"] });
+  });
 });

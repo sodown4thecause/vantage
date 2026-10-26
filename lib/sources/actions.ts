@@ -8,7 +8,6 @@ import { sha256Hex } from "@/lib/collectors/hash";
 import { getDb } from "@/lib/db/client";
 import { source, type NewSource } from "@/lib/db/schema";
 import { isPublicHttpUrl } from "@/lib/http/public-fetch";
-import { assertWithinCount } from "@/lib/plans/limits";
 import { PlanLimitError } from "@/lib/plans/types";
 import { scanWorkspace } from "@/lib/cron/scan";
 import { COMMUNITY_SOURCE_CATALOG } from "@/lib/communities/catalog";
@@ -17,24 +16,19 @@ import { runCollector } from "@/lib/collectors/run";
 import { withWorkspaceScanLease } from "@/lib/cron/lease";
 import { ScanLeaseBusyError } from "@/lib/cron/lease-error";
 import { buildOpportunities } from "@/lib/opportunities/run";
-import { PROFILE_SOURCE_NAME, getLatestMonitoringProfile } from "@/lib/profile/repository";
+import { getLatestMonitoringProfile } from "@/lib/profile/repository";
 import { enqueueEmbedJob } from "@/lib/cf/queue";
 import { getSemanticMode } from "@/lib/cf/env";
 import { buildSearchSource } from "@/lib/sources/search";
+import { persistSourceWithinLimit } from "@/lib/sources/persist";
 
 export type SourceActionState = { error?: string; message?: string };
 export type CommunitySourceActionState = SourceActionState & { catalogId: string };
 
 async function installSource(workspaceId: string, value: Pick<NewSource, "name" | "type" | "lane" | "config">, message: string): Promise<SourceActionState> {
   return withWorkspaceScanLease(workspaceId, async signal => {
-    const db = getDb();
-    const rows = await db.select({ name: source.name }).from(source).where(eq(source.workspaceId, workspaceId)).limit(100);
-    if (rows.some(row => row.name === value.name)) return { message: "This source is already configured." };
-    // Leave room for onboarding's one idempotent default source, even if it runs concurrently.
-    await assertWithinCount(workspaceId, "sources", rows.length + (rows.some(row => row.name === PROFILE_SOURCE_NAME) ? 0 : 1));
     signal.throwIfAborted();
-    await db.insert(source).values({ workspaceId, ...value })
-      .onConflictDoNothing({ target: [source.workspaceId, source.name] });
+    if (!await persistSourceWithinLimit(workspaceId, value)) return { message: "This source is already configured." };
     // Best effort: a missed enqueue only defers embedding to the next scan's embed step. Mode "off" enqueues nothing.
     if (getSemanticMode() !== "off") await enqueueEmbedJob({ type: "backfill-documents", workspaceId });
     revalidatePath("/settings/sources");

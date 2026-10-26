@@ -8,6 +8,12 @@ describe("exact strategy changes", () => {
     expect(() => resolveProfileChange({ competitors: ["A"] }, profile)).toThrow();
     expect(() => resolveProfileChange({ profile: { productUrl: "http://127.0.0.1" } }, profile)).toThrow();
   });
+  it("honors force-manual material including an explicitly empty replacement", () => {
+    const current = { ...profile, productMaterialStatus: "ok" as const, productMaterialText: "Previously fetched" };
+    expect(resolveProfileChange({ profile: { forceManualMaterial: true } }, current)).toMatchObject({ materialStatus: "manual", materialText: "" });
+    expect(resolveProfileChange({ profile: { forceManualMaterial: true, productMaterialManual: "  Owner text  " } }, current)).toMatchObject({ materialStatus: "manual", materialText: "Owner text" });
+    expect(resolveProfileChange({ keywords: ["sales"] }, current)).toMatchObject({ materialStatus: "ok", materialText: "Previously fetched" });
+  });
   it.each([{}, { profile: { version: 42 } }, { expertiseNotes: [{ text: "Expert", evidenceIds: [], confirmed: true }] }, { keywords: ["ok"], actorId: "model" }, { keywords: Array(13).fill("x") }])("rejects unknown fields and model-granted authority: %j", value => {
     expect(strategyChangeSchema.safeParse(value).success).toBe(false);
   });
