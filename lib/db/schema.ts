@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import type { SeoMessageParts, SeoMessageRole, SeoMessageStatus } from "@/lib/seo-agent/conversations";
 import type { Block } from "@/lib/workspace/blocks";
 import type { SavedArtifactLane } from "@/lib/workspace/saved-artifact-types";
-import type { ContentDraftFormat, ContentMessageRole, ContentMessageStatus } from "@/lib/content-agent/contracts";
+import type { ContentBrandVoiceProfile, ContentDraftFormat, ContentMessageRole, ContentMessageStatus } from "@/lib/content-agent/contracts";
 import {
   boolean,
   check,
@@ -1158,6 +1158,24 @@ export const savedArtifact = pgTable(
     check("saved_artifact_lane_check", sql`${table.lane} in ('gtm', 'seo', 'geo', 'content')`),
   ],
 );
+
+/** Workspace-owned Content brand voice profile used by the Content agent. */
+export const contentBrandVoiceProfile = pgTable(
+  "content_brand_voice_profile",
+  {
+    workspaceId: uuid("workspace_id").primaryKey().references(() => workspace.id, { onDelete: "cascade" }),
+    audience: text("audience").notNull(),
+    purpose: text("purpose").notNull(),
+    voice: text("voice").notNull(),
+    structure: text("structure").notNull(),
+    avoid: jsonb("avoid").$type<ContentBrandVoiceProfile["avoid"]>().notNull().default([]),
+    sampleText: text("sample_text"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+);
+
+export type ContentBrandVoiceProfileRow = typeof contentBrandVoiceProfile.$inferSelect;
 
 /** Workspace-owned Content threads, streamed messages and private generated drafts. */
 export const contentThread = pgTable(

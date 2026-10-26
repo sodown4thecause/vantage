@@ -1,13 +1,37 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
-import { contentDraft, contentMessage, contentThread } from "@/lib/db/schema";
-import type { ContentDraftInput, ContentMessageRole, ContentMessageStatus } from "./contracts";
+import { contentBrandVoiceProfile, contentDraft, contentMessage, contentThread } from "@/lib/db/schema";
+import type { ContentBrandVoiceProfile, ContentDraftInput, ContentMessageRole, ContentMessageStatus } from "./contracts";
 import { contentThreadTitle } from "./contracts";
 
 export type ContentThreadRow = typeof contentThread.$inferSelect;
 export type ContentMessageRow = typeof contentMessage.$inferSelect;
 export type ContentDraftRow = typeof contentDraft.$inferSelect;
+export type ContentBrandVoiceProfileRow = typeof contentBrandVoiceProfile.$inferSelect;
+
+export async function getContentBrandVoiceProfile(workspaceId: string): Promise<ContentBrandVoiceProfileRow | null> {
+  const [profile] = await getDb().select().from(contentBrandVoiceProfile)
+    .where(eq(contentBrandVoiceProfile.workspaceId, workspaceId))
+    .limit(1);
+  return profile ?? null;
+}
+
+export async function saveContentBrandVoiceProfile(
+  workspaceId: string,
+  profile: ContentBrandVoiceProfile,
+): Promise<ContentBrandVoiceProfileRow> {
+  const [saved] = await getDb().insert(contentBrandVoiceProfile).values({
+    workspaceId,
+    ...profile,
+    sampleText: profile.sampleText ?? null,
+  }).onConflictDoUpdate({
+    target: contentBrandVoiceProfile.workspaceId,
+    set: { ...profile, sampleText: profile.sampleText ?? null, updatedAt: new Date() },
+  }).returning();
+  if (!saved) throw new Error("Content brand voice profile could not be saved.");
+  return saved;
+}
 
 export async function createContentThread(workspaceId: string, prompt: string): Promise<ContentThreadRow> {
   const [thread] = await getDb().insert(contentThread).values({

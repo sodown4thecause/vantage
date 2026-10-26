@@ -4,7 +4,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 const mocks = vi.hoisted(() => ({ condition: undefined as unknown, query: undefined as unknown, select: vi.fn() }));
 vi.mock("@/lib/db/client", () => ({ getDb: () => ({ select: mocks.select }) }));
 
-import { getContentThread, getContentThreadContext } from "@/lib/content-agent/repository";
+import { getContentBrandVoiceProfile, getContentThread, getContentThreadContext } from "@/lib/content-agent/repository";
 
 const workspaceId = "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a11";
 const threadId = "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a12";
@@ -21,7 +21,7 @@ beforeEach(() => {
   mocks.select.mockReset().mockReturnValue(query);
 });
 
-describe("Content thread repository", () => {
+describe("Content repository", () => {
   it("requires both the workspace and thread IDs when loading a thread", async () => {
     await expect(getContentThread(workspaceId, threadId)).resolves.toBeNull();
     expect(mocks.select).toHaveBeenCalledOnce();
@@ -48,5 +48,13 @@ describe("Content thread repository", () => {
     expect(filter.params).toEqual([workspaceId, threadId]);
     const order = new PgDialect().sqlToQuery(query.orderBy.mock.calls.at(-1)?.[0] as never);
     expect(order.sql).toContain('"content_message"."created_at" desc');
+  });
+
+  it("loads the brand voice only from the requested workspace", async () => {
+    await expect(getContentBrandVoiceProfile(workspaceId)).resolves.toBeNull();
+    expect(mocks.select).toHaveBeenCalledOnce();
+    const query = new PgDialect().sqlToQuery(mocks.condition as never);
+    expect(query.sql).toContain('"content_brand_voice_profile"."workspace_id" = $1');
+    expect(query.params).toEqual([workspaceId]);
   });
 });

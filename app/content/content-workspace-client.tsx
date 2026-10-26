@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState, type FormEvent } from "react";
 
-import type { ContentDraftRow, ContentMessageRow, ContentThreadRow } from "@/lib/content-agent/repository";
+import type { ContentBrandVoiceProfileRow, ContentDraftRow, ContentMessageRow, ContentThreadRow } from "@/lib/content-agent/repository";
 
 import s from "./content-workspace.module.css";
 
@@ -48,12 +48,14 @@ export function ContentWorkspaceClient({
   initialMessages,
   threads,
   drafts,
+  brandVoiceProfile,
 }: {
   workspaceId: string;
   selectedThreadId: string | null;
   initialMessages: ContentMessageRow[];
   threads: ContentThreadRow[];
   drafts: ContentDraftRow[];
+  brandVoiceProfile: ContentBrandVoiceProfileRow | null;
 }) {
   const router = useRouter();
   const [threadId, setThreadId] = useState<string | null>(selectedThreadId);
@@ -190,7 +192,7 @@ export function ContentWorkspaceClient({
           disabled={busy}
         />
         <div className={s.composerFooter}>
-          <span>Australian English · Nothing is published for you</span>
+          <span>{brandVoiceProfile ? "Brand voice saved" : "Ask Vantage to set your brand voice"} · Australian English · Nothing is published for you</span>
           <button className={s.send} type="submit" disabled={busy || input.trim().length === 0}>Write</button>
         </div>
       </form>
