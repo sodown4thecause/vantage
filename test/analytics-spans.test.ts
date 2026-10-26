@@ -1,16 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { withObservedSpan, type CloudflareTracing } from "@/lib/analytics/spans.mjs";
+const { getRequestContext } = vi.hoisted(() => ({ getRequestContext: vi.fn() }));
+vi.mock("@/lib/cf/env", () => ({ getCloudflareRequestContext: getRequestContext }));
+
+import { withObservedSpan } from "@/lib/analytics/spans.mjs";
 import { withObservedSpan as withWorkerObservedSpan } from "@/worker/observability.mjs";
 
-function fakeTracing(attributes: Record<string, unknown>) {
+type FakeTracing = NonNullable<Parameters<typeof withObservedSpan>[3]>;
+
+function fakeTracing(attributes: Record<string, unknown>): FakeTracing {
   return {
     enterSpan: async <T>(_name: string, callback: (span: { setAttribute: (key: string, value: unknown) => void; setAttributes: (values: Record<string, unknown>) => void }) => T) =>
       callback({
         setAttributes: (values) => Object.assign(attributes, values),
         setAttribute: (key, value) => { attributes[key] = value; },
       }),
-  } as CloudflareTracing;
+  } as FakeTracing;
 }
 
 describe("allowlisted Cloudflare spans", () => {
@@ -31,6 +36,17 @@ describe("allowlisted Cloudflare spans", () => {
     });
     expect(typeof attributes.durationMs).toBe("number");
     expect(Object.keys(attributes).sort()).toEqual(["durationMs", "provider", "source", "status", "workspaceId"]);
+  });
+
+  it("resolves the runtime tracer afresh for each request", async () => {
+    const secondAttributes: Record<string, unknown> = {};
+    getRequestContext
+      .mockResolvedValueOnce({ tracing: null })
+      .mockResolvedValueOnce({ tracing: fakeTracing(secondAttributes) });
+    await withObservedSpan("request.first", {}, async () => "first");
+    await withObservedSpan("request.second", { workspaceId: "workspace-2" }, async () => "second");
+    expect(getRequestContext).toHaveBeenCalledTimes(2);
+    expect(secondAttributes).toMatchObject({ workspaceId: "workspace-2", status: "ok" });
   });
 
   it("emits ScanWorkspace steps through a Worker-owned span module", async () => {
