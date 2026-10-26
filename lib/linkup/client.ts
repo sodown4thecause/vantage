@@ -36,9 +36,9 @@ export const linkupFetchInputSchema = z.object({
 export type LinkupSearchInput = z.input<typeof linkupSearchInputSchema>;
 export type LinkupSearchResult = { title: string; url: string; snippet: string };
 export type LinkupSearchResponse = { results: LinkupSearchResult[] };
-export type LinkupPageResponse = { url: string; markdown: string };
+export type LinkupPageResponse = { url: string; markdown: string; fetchedAt?: string };
 
-type CallOptions = { workspaceId: string; signal?: AbortSignal; fetchImpl?: typeof fetch };
+type CallOptions = { workspaceId: string; sourceKey?: string; signal?: AbortSignal; fetchImpl?: typeof fetch };
 
 export class LinkupNotConfiguredError extends Error {
   constructor() {
@@ -120,7 +120,7 @@ export async function searchLinkup(input: LinkupSearchInput, opts: CallOptions):
   if (!optionalEnv("LINKUP_API_KEY")) throw new LinkupNotConfiguredError();
 
   const value = await runPaidCall<LinkupSearchResponse>({
-    context: { workspaceId: opts.workspaceId, sourceKey: "seo" },
+    context: { workspaceId: opts.workspaceId, sourceKey: opts.sourceKey ?? "seo" },
     provider: "linkup",
     action: "web_research",
     estimateUsd: SEARCH_COST_USD,
@@ -154,7 +154,7 @@ export async function fetchLinkupPage(url: string, opts: CallOptions): Promise<{
   if (!optionalEnv("LINKUP_API_KEY")) throw new LinkupNotConfiguredError();
 
   const value = await runPaidCall<LinkupPageResponse>({
-    context: { workspaceId: opts.workspaceId, sourceKey: "seo" },
+    context: { workspaceId: opts.workspaceId, sourceKey: opts.sourceKey ?? "seo" },
     provider: "linkup",
     action: "fetch_page",
     estimateUsd: FETCH_COST_USD,
@@ -175,7 +175,7 @@ export async function fetchLinkupPage(url: string, opts: CallOptions): Promise<{
     }
     const markdown = (payload as Record<string, unknown>).markdown;
     if (typeof markdown !== "string") return { error: new LinkupResponseError(), costUsd: FETCH_COST_USD };
-    return { value: { url: pageUrl, markdown: markdown.slice(0, 12_000) }, costUsd: FETCH_COST_USD };
+    return { value: { url: pageUrl, markdown: markdown.slice(0, 12_000), fetchedAt: new Date().toISOString() }, costUsd: FETCH_COST_USD };
   });
 
   await writeDataForSeoCache(key, "linkup:fetch", value);

@@ -4,6 +4,7 @@ import { rowsOf } from "@/lib/db/rows";
 import { recordCost, roundUsd } from "@/lib/costs/ledger";
 import type { CostContext } from "@/lib/costs/meter";
 import { reserveScanSpend } from "@/lib/activation/budget";
+import { DiscoveryBudgetError, reserveDiscoveryAttempt } from "@/lib/agents/discovery/budget";
 
 export class PaidCallDeniedError extends Error {
   constructor(public readonly code: "provider_disabled" | "budget_exhausted" | "access_pending", message: string) {
@@ -81,10 +82,19 @@ export async function runPaidCall<T>(meta: {
       where day = ${day}::date and provider = ${meta.provider}::text`);
     throw new PaidCallDeniedError("budget_exhausted", "First scan allowance unavailable.");
   }
+  let discoverySpend: Awaited<ReturnType<typeof reserveDiscoveryAttempt>>;
+  try {
+    discoverySpend = await reserveDiscoveryAttempt(meta.context.workspaceId, estimate);
+  } catch (error) {
+    await scanSpend?.settle(0);
+    await db.execute(sql`update provider_budget_reservation set spent_usd = greatest(0, spent_usd - ${estimate.toFixed(6)}::numeric)
+      where day = ${day}::date and provider = ${meta.provider}::text`);
+    throw new PaidCallDeniedError("budget_exhausted", error instanceof DiscoveryBudgetError ? error.message : "Discovery workspace budget unavailable.");
+  }
   const record = (cost: number, ok: boolean) => recordCost({
     ...meta.context, provider: meta.provider, action: meta.action,
     units: 1, unitCostUsd: cost, ok, chargedOnFailure: !ok,
-    requestRef: reservationRef,
+    requestRef: discoverySpend?.reservationId ?? reservationRef,
   });
   const settle = async (cost: number) => {
     await scanSpend?.settle(cost);
@@ -97,6 +107,10 @@ export async function runPaidCall<T>(meta: {
       console.error("[paid] settle failed", { provider: meta.provider, error: err instanceof Error ? err.name : "unknown" });
     }
   };
+  const settleDiscovery = async (cost: number | undefined, outcome: "success" | "failed" | "ambiguous") => {
+    try { await discoverySpend?.settle(cost, outcome); }
+    catch (err) { console.error("[paid] discovery settle failed", { provider: meta.provider, error: err instanceof Error ? err.name : "unknown" }); }
+  };
   let result: PaidResult<T>;
   let started = false;
   try {
@@ -104,17 +118,29 @@ export async function runPaidCall<T>(meta: {
     started = true;
     result = await work();
   } catch (error) {
-    if (started && !(await record(estimate, false))) throw new PaidCallDeniedError("access_pending", "Provider cost recording is pending; further paid calls are blocked.");
+    if (started && !(await record(estimate, false))) {
+      await settleDiscovery(undefined, "ambiguous");
+      throw new PaidCallDeniedError("access_pending", "Provider cost recording is pending; further paid calls are blocked.");
+    }
+    await settleDiscovery(started ? undefined : 0, started ? "ambiguous" : "success");
     await settle(started ? estimate : 0);
     throw error;
   }
   const cost = result.costUsd ?? estimate;
   if (!Number.isFinite(cost) || cost < 0) {
-    if (!(await record(estimate, false))) throw new PaidCallDeniedError("access_pending", "Provider cost recording is pending; further paid calls are blocked.");
+    if (!(await record(estimate, false))) {
+      await settleDiscovery(undefined, "ambiguous");
+      throw new PaidCallDeniedError("access_pending", "Provider cost recording is pending; further paid calls are blocked.");
+    }
+    await settleDiscovery(undefined, "ambiguous");
     await settle(estimate);
     throw new Error("Provider returned invalid cost.");
   }
-  if (!(await record(cost, result.error === undefined))) throw new PaidCallDeniedError("access_pending", "Provider cost recording is pending; further paid calls are blocked.");
+  if (!(await record(cost, result.error === undefined))) {
+    await settleDiscovery(undefined, "ambiguous");
+    throw new PaidCallDeniedError("access_pending", "Provider cost recording is pending; further paid calls are blocked.");
+  }
+  await settleDiscovery(result.error === undefined ? cost : undefined, result.error === undefined ? "success" : "failed");
   await settle(cost);
   if (result.error !== undefined) throw result.error;
   return result.value;

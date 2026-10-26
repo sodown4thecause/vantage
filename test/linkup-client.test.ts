@@ -79,7 +79,7 @@ describe("Linkup client", () => {
       return new Response(JSON.stringify({ markdown: "Readable page text", contentType: "html" }), { status: 200 });
     });
     await expect(fetchLinkupPage("https://example.com/article", { workspaceId: WORKSPACE, fetchImpl: fetchImpl as typeof fetch }))
-      .resolves.toEqual({ value: { url: "https://example.com/article", markdown: "Readable page text" }, cached: false });
+      .resolves.toMatchObject({ value: { url: "https://example.com/article", markdown: "Readable page text", fetchedAt: expect.any(String) }, cached: false });
     expect(JSON.parse(String(fetchImpl.mock.calls[0]![1]?.body))).toMatchObject({
       url: "https://example.com/article",
       mode: "standard",

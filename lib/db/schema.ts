@@ -1229,3 +1229,59 @@ export const gtmStrategyOutbox = pgTable("gtm_strategy_outbox", {
   kind: text("kind").notNull().default("strategy_changed"), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   processedAt: timestamp("processed_at", { withTimezone: true }),
 });
+
+export const discoveryBudget = pgTable("discovery_budget", {
+  workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+  scope: text("scope").$type<"initial" | "daily_review">().notNull(),
+  period: date("period").notNull(),
+  spentUsd: numeric("spent_usd", { precision: 12, scale: 6 }).notNull().default("0"),
+}, table => [
+  primaryKey({ columns: [table.workspaceId, table.scope, table.period] }),
+  check("discovery_budget_scope_check", sql`${table.scope} in ('initial', 'daily_review')`),
+  check("discovery_budget_spent_check", sql`${table.spentUsd} >= 0`),
+]);
+
+export const discoveryReservation = pgTable("discovery_reservation", {
+  id: uuid("id").primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+  scope: text("scope").$type<"initial" | "daily_review">().notNull(),
+  period: date("period").notNull(),
+  requestId: text("request_id").notNull(),
+  estimateUsd: numeric("estimate_usd", { precision: 12, scale: 6 }).notNull(),
+  retainedUsd: numeric("retained_usd", { precision: 12, scale: 6 }).notNull(),
+  settledAt: timestamp("settled_at", { withTimezone: true }),
+  outcome: text("outcome"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [
+  uniqueIndex("discovery_reservation_request_uidx").on(table.workspaceId, table.requestId),
+  index("discovery_reservation_period_idx").on(table.workspaceId, table.scope, table.period),
+  check("discovery_reservation_amount_check", sql`${table.estimateUsd} > 0 and ${table.retainedUsd} >= 0`),
+]);
+
+export const discoveryEvidence = pgTable("discovery_evidence", {
+  id: uuid("id").primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+  requestId: text("request_id").notNull(),
+  url: text("url").notNull(),
+  originalUrl: text("original_url").notNull(),
+  retrievedAt: timestamp("retrieved_at", { withTimezone: true }).notNull(),
+  excerpt: text("excerpt").notNull(),
+  provider: text("provider").notNull(),
+  contentKind: text("content_kind").$type<"full" | "preview">().notNull(),
+  status: text("status").$type<"verified" | "partial">().notNull(),
+  snapshotKey: text("snapshot_key"),
+  unknowns: jsonb("unknowns").$type<string[]>().notNull().default([]),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [
+  index("discovery_evidence_request_idx").on(table.workspaceId, table.requestId),
+  check("discovery_evidence_kind_check", sql`${table.contentKind} in ('full', 'preview') and ${table.status} in ('verified', 'partial')`),
+]);
+
+export const discoveryResearchResult = pgTable("discovery_research_result", {
+  id: uuid("id").primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+  requestId: text("request_id").notNull(),
+  url: text("url").notNull(),
+  unknowns: jsonb("unknowns").$type<string[]>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [index("discovery_research_result_request_idx").on(table.workspaceId, table.requestId)]);

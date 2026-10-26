@@ -214,6 +214,8 @@ const LIMIT_LABELS: Record<LimitKey, string> = {
   scored_leads_per_day: "scored leads per day",
   deep_searches_per_month: "deep searches per month",
   discovery_reports: "discovery reports",
+  discovery_initial_cents: "cents of lifetime discovery research",
+  discovery_daily_review_cents: "cents of daily discovery review",
   reply_briefs: "Reply Briefs",
   alerts_3h: "3-hourly alerts",
   scan_interval_hours: "scan interval",

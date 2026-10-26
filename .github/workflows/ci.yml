@@ -47,7 +47,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Execute actual migrations and concurrent SQL contracts
-        run: pnpm test test/gtm-proposals.integration.test.ts test/gtm-chat-store.integration.test.ts test/gtm-generation.integration.test.ts test/gtm-jobs.integration.test.ts --no-file-parallelism
+        run: pnpm test test/gtm-proposals.integration.test.ts test/gtm-chat-store.integration.test.ts test/gtm-generation.integration.test.ts test/gtm-jobs.integration.test.ts test/discovery-budget.integration.test.ts --no-file-parallelism
 
   verify:
     name: Lint, typecheck, test, build
