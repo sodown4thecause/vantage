@@ -27,11 +27,16 @@
     "cf:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
   },
   "dependencies": {
+    "@ai-sdk/otel": "1.0.143",
     "@ai-sdk/react": "4.0.147",
     "@neondatabase/auth": "0.7.0-beta",
     "@neondatabase/auth-ui": "0.4.0-beta",
     "@neondatabase/serverless": "^1.1.0",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.200.0",
+    "@opentelemetry/sdk-trace-base": "^2.12.0",
     "@polar-sh/sdk": "1.0.2",
+    "@posthog/ai": "^8.16.3",
     "@tiny-fish/sdk": "^0.7.0",
     "ai": "7.0.143",
     "drizzle-orm": "^0.45.2",

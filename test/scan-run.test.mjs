@@ -91,7 +91,7 @@ test("posts the documented bodies to each internal route", async () => {
     { path: "/api/internal/scan/collect", body: { workspaceId: "ws-1", sourceId: "src-b" } },
     { path: "/api/internal/scan/embed", body: { workspaceId: "ws-1" } },
     { path: "/api/internal/scan/build", body: { workspaceId: "ws-1" } },
-    { path: "/api/internal/scan/finish", body: { workspaceId: "ws-1", leaseToken: LEASE } },
+    { path: "/api/internal/scan/finish", body: { workspaceId: "ws-1", leaseToken: LEASE, read: 2, relevant: 0, picked: 0, capped: false, status: "success" } },
   ]);
 });
 
@@ -115,6 +115,16 @@ test("a 409 from plan ends the run as skipped without throwing", async () => {
   assert.deepEqual(result, { status: "skipped", failures: 0 });
 });
 
+test("a successful collector with partial results marks the scheduled scan partial", async () => {
+  const fake = fakeCall({
+    "/api/internal/scan/collect": (body) => json({ inserted: 1, skipped: 0, partial: body.sourceId === "src-a" }),
+  });
+  const step = fakeStep();
+  const result = await runScan(PARAMS, step, fake.call);
+  assert.deepEqual(result, { status: "partial", failures: 0 });
+  assert.equal(fake.calls.at(-1).body.status, "partial");
+});
+
 test("one collect step that exhausts its retries yields partial and the run still builds and finishes", async () => {
   const step = fakeStep();
   const fake = fakeCall({
@@ -127,6 +137,7 @@ test("one collect step that exhausts its retries yields partial and the run stil
   assert.equal(record(step, "collect:src-b").attempts, 4, "limit 3 means four attempts");
   assert.equal(record(step, "collect:src-a").attempts, 1);
   assert.deepEqual(result, { status: "partial", failures: 1 });
+  assert.equal(fake.calls.at(-1).body.status, "partial");
   assert.ok(names(step).includes("build"));
   assert.equal(names(step).at(-1), "finish");
 });
@@ -142,8 +153,57 @@ test("finish runs even when build throws, and the build error propagates", async
   assert.equal(names(step).at(-1), "finish");
   assert.deepEqual(fake.calls.at(-1), {
     path: "/api/internal/scan/finish",
-    body: { workspaceId: "ws-1", leaseToken: LEASE },
+    body: { workspaceId: "ws-1", leaseToken: LEASE, read: 2, relevant: 0, picked: 0, capped: false, status: "failed" },
   });
+});
+
+test("forwards bounded scan counts to finish and wraps each workflow callback", async () => {
+  const spans = [];
+  const fake = fakeCall({
+    "/api/internal/scan/build": () => json({ relevant: 4, picked: 2, coverage: "budget_limited" }),
+  });
+  await runScan(PARAMS, fakeStep(), fake.call, async (name, workspaceId, operation) => {
+    const result = await operation();
+    spans.push({ name, workspaceId, result });
+    return result;
+  });
+  assert.deepEqual(fake.calls.at(-1).body, {
+    workspaceId: "ws-1", leaseToken: LEASE, read: 2, relevant: 4, picked: 2, capped: true, status: "success",
+  });
+  assert.deepEqual(spans.map(({ name }) => name), ["plan", "collect", "collect", "embed", "build", "finish"]);
+  assert.ok(spans.every(({ workspaceId }) => workspaceId === "ws-1"));
+});
+
+test("observer failures do not fail or repeat workflow callbacks", async () => {
+  for (const failAfterOperation of [false, true]) {
+    const step = fakeStep();
+    const fake = fakeCall();
+    const result = await runScan(PARAMS, step, fake.call, async (_name, _workspaceId, operation) => {
+      if (failAfterOperation) await operation();
+      throw new Error("telemetry unavailable");
+    });
+    assert.deepEqual(result, { status: "done", failures: 0 });
+    assert.equal(fake.calls.length, 6);
+  }
+
+  const fake = fakeCall({
+    "/api/internal/scan/build": () => { throw new Error("build exploded"); },
+  });
+  await assert.rejects(runScan(PARAMS, fakeStep(), fake.call, async (_name, _workspaceId, operation) => {
+    await operation();
+    throw new Error("telemetry unavailable");
+  }), /build exploded/);
+  assert.equal(fake.calls.at(-1).path, "/api/internal/scan/finish");
+});
+
+test("a stuck observer cannot stall the workflow operation", async () => {
+  const step = fakeStep();
+  const fake = fakeCall({
+    "/api/internal/scan/plan": () => json({ skipped: true, reason: "already complete" }),
+  });
+  const result = await runScan(PARAMS, step, fake.call, () => new Promise(() => {}));
+  assert.deepEqual(result, { status: "skipped", failures: 0 });
+  assert.equal(fake.calls.length, 1);
 });
 
 test("a plan failure propagates without finishing, because no lease was handed back", async () => {

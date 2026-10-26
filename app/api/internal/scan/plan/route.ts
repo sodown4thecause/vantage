@@ -11,6 +11,6 @@ export async function POST(req: Request) {
     const plan = await planScan(workspaceId);
     if (plan.kind === "busy") return NextResponse.json({ error: "scan already running" }, { status: 409 });
     if (plan.kind === "skipped") return NextResponse.json({ skipped: true, reason: plan.reason });
-    return NextResponse.json({ leaseToken: plan.leaseToken, sourceIds: plan.sourceIds });
+    return NextResponse.json({ leaseToken: plan.leaseToken, sourceIds: plan.sourceIds, capped: plan.capped });
   });
 }

@@ -1,12 +1,12 @@
 import posthog from "posthog-js";
 
-import { isReplayExcludedPath, posthogHost, posthogKey, replayEnabled } from "@/lib/analytics/config";
+import { isReplayExcludedPath, posthogKey, replayEnabled } from "@/lib/analytics/config";
 
 const key = posthogKey();
 
 if (key) {
   posthog.init(key, {
-    api_host: posthogHost(),
+    api_host: "/ingest",
     defaults: "2026-08-30",
     // Anonymous visitors stay anonymous; a person profile exists only after identify on sign-in.
     person_profiles: "identified_only",
@@ -14,6 +14,8 @@ if (key) {
     respect_dnt: true,
     // Uncaught errors and unhandled rejections become error-tracking exceptions linked to the replay.
     capture_exceptions: true,
+    capture_performance: true,
+    advanced_disable_feature_flags: false,
     disable_session_recording: !replayEnabled() || isReplayExcludedPath(window.location.pathname),
     session_recording: {
       // Every input and textarea (draft and reply text, search boxes, sign-in fields) is masked.
