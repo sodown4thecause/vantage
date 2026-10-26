@@ -39,7 +39,7 @@ function formatLabel(format: ContentDraftRow["format"]): string {
 }
 
 function dateLabel(date: Date): string {
-  return new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short" }).format(date);
+  return new Intl.DateTimeFormat("en-AU", { timeZone: "UTC", day: "numeric", month: "short" }).format(date);
 }
 
 export function ContentWorkspaceClient({
