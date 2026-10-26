@@ -21,6 +21,13 @@ export type NextAction = { prompt: string; reason: string };
 export type Turn = { role: "user" | "assistant"; content: string; actions?: NextAction[]; evidence?: OpportunityDetailView[]; blocks?: Block[] };
 export class WorkspaceRequestError extends Error {}
 
+type PendingSend = { text: string; requestId: string; conversationId: string; create: boolean; priorMessages: GtmUIMessage[]; draftVersion: number; clearedDraft: boolean };
+
+export function nextSend(pending: PendingSend | null, text: string, conversationId: string | null, priorMessages: GtmUIMessage[], draftVersion: number, clearedDraft: boolean): PendingSend | null {
+  if (pending) return pending.text === text ? pending : null;
+  return { text, requestId: crypto.randomUUID(), conversationId: conversationId ?? crypto.randomUUID(), create: conversationId === null, priorMessages, draftVersion, clearedDraft };
+}
+
 export function workspaceErrorCopy(error: unknown): string {
   return error instanceof WorkspaceRequestError ? error.message : "That didn’t work. Try again.";
 }
@@ -117,15 +124,17 @@ export function WorkspaceClient({ workspaceId, productName, hasProfile, profile 
   const [confirmedProfile, setConfirmedProfile] = useState(profile);
   const profileReady = Boolean(confirmedProfile) || hasProfile;
   const [recovering, setRecovering] = useState(false);
+  const [unsavedText, setUnsavedText] = useState<string | null>(null);
   const [lastTurn, setLastTurn] = useState<{ requestId: string; state: string } | null>(initialTurn);
   const conversationId = useRef(initialConversationId), revision = useRef(initialRevision), inFlight = useRef(false);
+  const pendingSend = useRef<PendingSend | null>(null), draftVersion = useRef(0);
   const end = useRef<HTMLDivElement>(null);
   const q = `?workspaceId=${encodeURIComponent(workspaceId)}`;
   const { messages, setMessages, sendMessage, stop, status, error, clearError } = useChat<GtmUIMessage>({
     id: initialConversationId ?? "new", messages: initialMessages, resume: false,
     transport: new DefaultChatTransport({ api: "/api/gtm/chat", prepareSendMessagesRequest: ({ body }) => ({ body: body ?? {} }) }),
-    onFinish: async () => { await recover(); },
-    onError: () => { setNotice("The answer didn’t finish. Recover saved progress before continuing."); },
+    onFinish: async ({ isError }) => { if (!isError) await recover(); },
+    onError: () => { void recover(); },
   });
   const busy = status === "submitted" || status === "streaming" || recovering || lastTurn?.state === "running";
   async function recover() {
@@ -133,30 +142,58 @@ export function WorkspaceClient({ workspaceId, productName, hasProfile, profile 
     setRecovering(true);
     try {
       const response = await fetch(`/api/gtm/chat?${new URLSearchParams({ workspaceId, conversationId: conversationId.current })}`, { cache: "no-store" });
+      if (response.status === 404 && pendingSend.current?.create) {
+        const pending = pendingSend.current;
+        setMessages(pending.priorMessages);
+        setUnsavedText(pending.text);
+        if (pending.clearedDraft && draftVersion.current === pending.draftVersion) setDraft(pending.text);
+        setNotice("The first message wasn’t saved. Retry sending it with the same request, or recover saved progress again.");
+        return;
+      }
       if (!response.ok) throw new Error();
       const data = await response.json();
       const stored = await validateGtmMessages(data.messages);
       if (!Number.isSafeInteger(data.revision)) throw new Error();
       revision.current = data.revision;
+      const pending = pendingSend.current;
+      if (pending) {
+        if (data.turn?.requestId === pending.requestId) { pendingSend.current = null; setUnsavedText(null); }
+        else {
+          pending.create = false;
+          setUnsavedText(pending.text);
+          if (pending.clearedDraft && draftVersion.current === pending.draftVersion) setDraft(pending.text);
+        }
+      }
       setLastTurn(data.turn ?? null);
       setJobs(gtmDataSchemas.job.array().max(20).parse(data.jobs ?? []));
       setProposal(data.proposal ? gtmDataSchemas.proposal.parse(data.proposal) : null);
       setMessages(stored); clearError();
-      setNotice(data.turn?.state === "running" ? "This turn is still finishing. Recover progress again shortly." : "Saved progress loaded. You can retry an interrupted answer or continue with a new message.");
-    } catch { setNotice("Couldn’t reload saved progress. Try again shortly; your draft is kept."); }
+      setNotice(pendingSend.current ? "The message wasn’t saved. Retry sending it with the same request." : data.turn?.state === "running" ? "This turn is still finishing. Recover progress again shortly." : "Saved progress loaded. You can retry an interrupted answer or continue with a new message.");
+    } catch {
+      const pending = pendingSend.current;
+      if (pending) setUnsavedText(pending.text);
+      if (pending?.clearedDraft && draftVersion.current === pending.draftVersion) setDraft(pending.text);
+      setNotice("Couldn’t reload saved progress. Retry the unsaved message with the same request, or recover again shortly.");
+    }
     finally { setRecovering(false); }
   }
   async function send(prompt: string, scanRequested = false, retryOf?: string) {
     const text = prompt.trim();
     if (!text || busy || inFlight.current || !configured) return;
+    const clearedDraft = draft.trim() === text;
+    const submission = retryOf ? null : nextSend(pendingSend.current, text, conversationId.current, messages, draftVersion.current, clearedDraft);
+    if (!retryOf && !submission) { setNotice("Retry the unsaved message before starting another one, or open a new conversation."); return; }
     inFlight.current = true;
-    const create = conversationId.current === null;
-    conversationId.current ??= crypto.randomUUID();
-    const requestId = crypto.randomUUID();
-    setDraft(""); setNotice(""); clearError();
+    if (submission && submission === pendingSend.current) setMessages(submission.priorMessages);
+    if (submission) { pendingSend.current = submission; conversationId.current = submission.conversationId; }
+    else conversationId.current ??= crypto.randomUUID();
+    const requestId = submission?.requestId ?? crypto.randomUUID();
+    const create = submission?.create ?? false;
+    if (clearedDraft) setDraft("");
+    setUnsavedText(null); setNotice(""); clearError();
     window.history.replaceState(null, "", `/workspace${q}&c=${conversationId.current}`);
     try { await sendMessage(retryOf ? undefined : { text }, { body: { workspaceId, conversationId: conversationId.current, expectedRevision: revision.current, requestId, message: text, create, scanRequested, ...(retryOf ? { retryOf } : {}) } }); }
-    catch { setDraft(text); setNotice("That didn’t finish. Recover saved progress before trying again."); }
+    catch { await recover(); }
     finally { inFlight.current = false; }
   }
   function onSubmit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); void send(draft); }
@@ -193,11 +230,11 @@ export function WorkspaceClient({ workspaceId, productName, hasProfile, profile 
       <Saved workspaceId={workspaceId} items={saved} onDelete={id => setSaved(items => items.filter(item => item.id !== id))} />
     </div><div className={s.dock}>
       {messages.length === 0 && <div className={s.actions} role="group" aria-label="Recommended next actions">{actions.map((action, index) => <button type="button" key={action.prompt} className={s.action} disabled={busy || !configured} onClick={() => void send(action.prompt)}><span><strong>{action.prompt}</strong>{index === 0 && <span className={s.recommended}>Recommended</span>}<small>{action.reason}</small></span></button>)}</div>}
-      {(error || notice) && <p role={error ? "alert" : "status"} className={s.notice}>{notice || workspaceErrorCopy(error)} <button type="button" disabled={recovering || status === "streaming" || status === "submitted"} onClick={() => void recover()}>Recover saved progress</button></p>}
-      {lastTurn?.state === "interrupted" && <p className={s.disclaimer}><button type="button" disabled={busy || !configured} onClick={() => void send(messages.findLast(m => m.role === "user")?.parts.filter(p => p.type === "text").map(p => p.text).join("\n") ?? "", false, lastTurn.requestId)}>Retry answer</button> · Starts a new paid attempt and keeps the original message. Background scans are not repeated.</p>}
+      {(error || notice) && <p role={error ? "alert" : "status"} className={s.notice}>{notice || workspaceErrorCopy(error)} <button type="button" disabled={recovering || status === "streaming" || status === "submitted"} onClick={() => void recover()}>Recover saved progress</button>{unsavedText && <button type="button" disabled={busy || !configured} onClick={() => void send(unsavedText)}>Retry sending message</button>}</p>}
+      {lastTurn?.state === "interrupted" && <p className={s.disclaimer}><button type="button" disabled={busy || !configured || Boolean(unsavedText)} onClick={() => void send(messages.findLast(m => m.role === "user")?.parts.filter(p => p.type === "text").map(p => p.text).join("\n") ?? "", false, lastTurn.requestId)}>Retry answer</button> · Starts a new paid attempt and keeps the original message. Background scans are not repeated.</p>}
       {!configured && <p role="status" className={s.notice}>The assistant needs an AI Gateway connection. Your sources and opportunity queue are still available.</p>}
       <form onSubmit={onSubmit} className={s.composer} aria-label="Ask your GTM assistant"><label htmlFor="gtm-message" className="sr-only">Your message</label>
-        <textarea id="gtm-message" placeholder="What do you want to grow today?" maxLength={2000} rows={2} value={draft} onChange={event => setDraft(event.target.value)} disabled={!configured}
+        <textarea id="gtm-message" placeholder="What do you want to grow today?" maxLength={2000} rows={2} value={draft} onChange={event => { draftVersion.current++; setDraft(event.target.value); }} disabled={!configured}
           onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(draft); } }} />
         <div className={s.composerFooter}><span>GTM assistant · Grounded in your workspace</span>{status === "streaming" || status === "submitted" ? <button type="button" onClick={() => { void stop(); setNotice("Stopped the foreground answer. Background scans continue; use Cancel scan to stop one."); }}>Stop</button> : <button type="submit" aria-label="Send message" className={s.send} disabled={busy || !configured || !draft.trim()}>↑</button>}</div>
       </form>

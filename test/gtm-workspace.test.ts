@@ -2,7 +2,9 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { starterActions, WorkspaceClient, WorkspaceRequestError, workspaceErrorCopy } from "@/app/workspace/workspace-client";
+import { nextSend, starterActions, WorkspaceClient, WorkspaceRequestError, workspaceErrorCopy } from "@/app/workspace/workspace-client";
+import { GtmChatParts } from "@/components/gtm-chat-parts";
+import type { GtmUIMessage } from "@/lib/gtm/chat/types";
 import { PRIVATE_PATHS } from "@/lib/seo";
 import Page from "@/app/workspace/page";
 
@@ -15,6 +17,27 @@ vi.mock("@/lib/workspace/saved-artifacts", () => ({ listSavedArtifacts: mocks.sa
 vi.mock("@/app/source-controls", () => ({ ScanButton: () => null }));
 
 describe("guided GTM workspace", () => {
+  it("retries a first message after pre-creation transport failure with the same request and creation identity", () => {
+    const first = nextSend(null, "Help me find buyers", null, [], 0, true)!;
+    expect(first.create).toBe(true);
+    const retry = nextSend(first, "Help me find buyers", first.conversationId, [], 0, true)!;
+    expect(retry).toBe(first);
+    expect(retry.requestId).toBe(first.requestId);
+    expect(retry.conversationId).toBe(first.conversationId);
+    expect(nextSend(first, "A newly typed question", first.conversationId, [], 1, false)).toBeNull();
+    first.create = false; // A successful recovery GET found the conversation before retry.
+    expect(nextSend(first, first.text, first.conversationId, [], 0, true)?.create).toBe(false);
+  });
+  it("blocks proposal confirmation until the confirmed before-state is available", () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    const message = { id, role: "assistant", parts: [{ type: "data-proposal", data: {
+      id, workspaceId: id, conversationId: id, strategyVersion: 1, payload: { keywords: ["buyers", "operators", "founders"] },
+      payloadHash: "a".repeat(64), expiresAt: "2026-11-01T00:00:00.000Z", status: "pending",
+    } }] } as GtmUIMessage;
+    const html = renderToStaticMarkup(createElement(GtmChatParts, { message, workspaceId: id }));
+    expect(html).toContain("Loading confirmed state…");
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Confirm changes<\/button>/);
+  });
   it.each([new TypeError("Failed to fetch private browser details"), new SyntaxError("Unexpected token from upstream response"), new Error("Internal browser failure"), null])("hides unexpected network and JSON errors (%s)", (error) => {
     expect(workspaceErrorCopy(error)).toBe("That didn’t work. Try again.");
   });

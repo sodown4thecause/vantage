@@ -10,19 +10,21 @@ import { parseBlocks } from "@/lib/workspace/blocks";
 function Proposal({ initial, onConfirmed }: { initial: StrategyProposal; onConfirmed?: (state: StrategyState) => void }) {
   const [proposal, setProposal] = useState(initial), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [confirmed, setConfirmed] = useState<Record<string, unknown> | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [decision, setDecision] = useState<{ requestId: string; approved: boolean } | null>(null);
   const url = `/api/gtm/proposals/${encodeURIComponent(proposal.id)}`;
   useEffect(() => {
     let active = true;
-    void fetch(`${url}?${new URLSearchParams({ workspaceId: initial.workspaceId, conversationId: initial.conversationId })}`).then(async response => {
+    void fetch(`${url}?${new URLSearchParams({ workspaceId: initial.workspaceId, conversationId: initial.conversationId })}`, { cache: "no-store" }).then(async response => {
       if (!response.ok) throw new Error();
       const body = await response.json(), result = gtmDataSchemas.proposal.parse(body.proposal);
+      if (!body.state || typeof body.state !== "object") throw new Error();
       if (active) { setProposal(result); setConfirmed(body.state); }
-    }).catch(() => { if (active) setError("Couldn’t refresh this proposal. Confirming will recheck it."); });
+    }).catch(() => { if (active) { setConfirmed(null); setError("Confirmed state unavailable. Reload it before confirming."); } });
     return () => { active = false; };
-  }, [url, initial.workspaceId, initial.conversationId]);
+  }, [url, initial.workspaceId, initial.conversationId, refreshKey]);
   async function respond(approved: boolean) {
-    if (busy) return;
+    if (busy || (approved && !confirmed)) return;
     setBusy(true); setError("");
     const chosen = decision ?? { requestId: crypto.randomUUID(), approved };
     setDecision(chosen);
@@ -42,9 +44,10 @@ function Proposal({ initial, onConfirmed }: { initial: StrategyProposal; onConfi
     <div className="overflow-x-auto"><table><caption>Exact proposed diff</caption><thead><tr><th scope="col">Field</th><th scope="col">Currently confirmed</th><th scope="col">Proposed</th></tr></thead><tbody>{Object.entries(proposal.payload).flatMap(([field, value]) => {
       if (field === "profile" && value && typeof value === "object") return Object.entries(value).map(([key, next]) => ({ field: `profile.${key}`, before: (confirmed?.profile as Record<string, unknown> | null)?.[key], after: next }));
       return [{ field, before: confirmed?.[field], after: value }];
-    }).map(row => <tr key={row.field}><th scope="row">{row.field}</th><td><pre className="whitespace-pre-wrap break-words text-sm">{confirmed ? JSON.stringify(row.before ?? "Not recorded", null, 2) : "Loading confirmed state…"}</pre></td><td><pre className="whitespace-pre-wrap break-words text-sm">{JSON.stringify(row.after, null, 2)}</pre></td></tr>)}</tbody></table></div>
+    }).map(row => <tr key={row.field}><th scope="row">{row.field}</th><td><pre className="whitespace-pre-wrap break-words text-sm">{confirmed ? JSON.stringify(row.before ?? "Not recorded", null, 2) : error ? "Confirmed state unavailable" : "Loading confirmed state…"}</pre></td><td><pre className="whitespace-pre-wrap break-words text-sm">{JSON.stringify(row.after, null, 2)}</pre></td></tr>)}</tbody></table></div>
     <p>Nothing changes until you confirm this exact proposal.</p>
-    {proposal.status === "pending" && <div className="flex gap-3"><button type="button" disabled={busy || decision?.approved === false} onClick={() => void respond(true)}>Confirm changes</button><button type="button" disabled={busy || decision?.approved === true} onClick={() => void respond(false)}>Deny changes</button></div>}
+    {proposal.status === "pending" && <div className="flex gap-3"><button type="button" disabled={busy || !confirmed || decision?.approved === false} onClick={() => void respond(true)}>Confirm changes</button><button type="button" disabled={busy || decision?.approved === true} onClick={() => void respond(false)}>Deny changes</button></div>}
+    {error && !confirmed && <button type="button" onClick={() => { setError(""); setRefreshKey(value => value + 1); }}>Retry loading confirmed state</button>}
     {error && <p role="alert">{error}</p>}
   </section>;
 }
