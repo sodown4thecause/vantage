@@ -4,6 +4,7 @@ import { PostHogSpanProcessor } from "@posthog/ai/otel";
 import { registerTelemetry } from "ai";
 
 import { posthogHost, posthogKey } from "@/lib/analytics/config";
+import { getCloudflareRequestContext } from "@/lib/cf/env";
 
 type TelemetryEnvironment = Readonly<Record<string, string | undefined>>;
 type TelemetryState = { provider: BasicTracerProvider; fullContentEnabled: boolean };
@@ -89,13 +90,8 @@ export function posthogAiContext(userId: string | undefined, workspaceId: string
 }
 
 async function requestWaitUntil(): Promise<((promise: Promise<unknown>) => void) | null> {
-  try {
-    const { getCloudflareContext } = await import("@opennextjs/cloudflare");
-    const { ctx } = getCloudflareContext();
-    return typeof ctx?.waitUntil === "function" ? (promise) => ctx.waitUntil(promise) : null;
-  } catch {
-    return null;
-  }
+  const ctx = await getCloudflareRequestContext();
+  return typeof ctx?.waitUntil === "function" ? (promise) => ctx.waitUntil?.(promise) : null;
 }
 
 /** Flush AI spans without delaying a Worker response; outside Cloudflare, await the flush directly. */

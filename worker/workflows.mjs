@@ -9,7 +9,7 @@
 import { tracing, WorkflowEntrypoint } from "cloudflare:workers";
 import { NonRetryableError } from "cloudflare:workflows";
 
-import { withObservedSpan } from "../lib/analytics/spans.mjs";
+import { withObservedSpan } from "./observability.mjs";
 import { runScan } from "./scan-run.mjs";
 
 /**

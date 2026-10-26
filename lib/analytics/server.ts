@@ -1,4 +1,5 @@
 import { posthogHost, posthogKey } from "@/lib/analytics/config";
+import { getCloudflareRequestContext } from "@/lib/cf/env";
 
 const DELIVERY_TIMEOUT_MS = 3_000;
 const SAFE_ANALYTICS_ID = /^[A-Za-z0-9._:-]{1,128}$/;
@@ -27,13 +28,8 @@ const defaultDeps: ServerAnalyticsDeps = {
   host: posthogHost,
   fetch: (input, init) => fetch(input, init),
   waitUntil: async () => {
-    try {
-      const { getCloudflareContext } = await import("@opennextjs/cloudflare");
-      const { ctx } = getCloudflareContext();
-      return ctx?.waitUntil ? (promise) => ctx.waitUntil(promise) : null;
-    } catch {
-      return null;
-    }
+    const ctx = await getCloudflareRequestContext();
+    return typeof ctx?.waitUntil === "function" ? (promise) => ctx.waitUntil?.(promise) : null;
   },
 };
 

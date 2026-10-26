@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import nextConfig from "../next.config";
+import nextConfig from "@/next.config";
 
 describe("PostHog ingestion proxy", () => {
   it("rewrites the app ingestion prefix to the US PostHog API host", async () => {

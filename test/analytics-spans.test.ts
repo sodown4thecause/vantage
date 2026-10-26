@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { withObservedSpan, type CloudflareTracing } from "@/lib/analytics/spans.mjs";
+import { withObservedSpan as withWorkerObservedSpan } from "@/worker/observability.mjs";
 
 function fakeTracing(attributes: Record<string, unknown>) {
   return {
@@ -29,6 +30,25 @@ describe("allowlisted Cloudflare spans", () => {
       status: "ok",
     });
     expect(typeof attributes.durationMs).toBe("number");
+    expect(Object.keys(attributes).sort()).toEqual(["durationMs", "provider", "source", "status", "workspaceId"]);
+  });
+
+  it("emits ScanWorkspace steps through a Worker-owned span module", async () => {
+    const attributes: Record<string, unknown> = {};
+    const result = await withWorkerObservedSpan(
+      "ScanWorkspace.collect",
+      { workspaceId: "workspace-123", source: "collect", provider: "cloudflare_workflow" },
+      async () => ({ status: "ok" }),
+      fakeTracing(attributes),
+      (value: { status: string }) => value.status,
+    );
+    expect(result).toEqual({ status: "ok" });
+    expect(attributes).toMatchObject({
+      workspaceId: "workspace-123",
+      source: "collect",
+      provider: "cloudflare_workflow",
+      status: "ok",
+    });
     expect(Object.keys(attributes).sort()).toEqual(["durationMs", "provider", "source", "status", "workspaceId"]);
   });
 

@@ -37,8 +37,8 @@ vi.mock("@ai-sdk/otel", () => ({
   },
 }));
 vi.mock("ai", () => ({ registerTelemetry: mocks.registerTelemetry }));
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => ({ ctx: { waitUntil: mocks.waitUntil } }),
+vi.mock("@/lib/cf/env", () => ({
+  getCloudflareRequestContext: async () => ({ waitUntil: mocks.waitUntil }),
 }));
 
 import { aiTelemetryContext, aiTelemetrySettings, flushPostHogAiTelemetry, posthogAiTelemetry } from "@/lib/analytics/ai-telemetry";
