@@ -16,11 +16,27 @@ export class GtmChatLimitError extends Error {
 }
 
 export type GtmLegacyContext = Pick<SeoMessageRow, "status" | "creditsUsed" | "createdAt"> & Omit<SeoMessageRow["parts"], "cards">;
+export const discoveryPlanCardSchema = z.strictObject({
+  profile: z.strictObject({ productUrl: z.string().url().max(2_000).refine(value => ["http:", "https:"].includes(new URL(value).protocol)), productDescription: z.string().max(8_000), targetCustomer: z.string().max(8_000), evidenceIds: z.array(z.uuid()).max(20) }),
+  competitors: z.array(z.strictObject({ domain: z.string().max(253), positioning: z.string().max(1_000), evidenceIds: z.array(z.uuid()).max(20) })).max(10),
+  keywords: z.array(z.strictObject({ term: z.string().max(100), reason: z.string().max(1_000), evidenceIds: z.array(z.uuid()).max(20) })).max(20),
+  sources: z.array(z.strictObject({ type: z.enum(["hn", "reddit", "stackoverflow", "github", "forums", "blogs"]), config: z.strictObject({ query: z.string().max(100), subreddit: z.string().max(21).optional(), tag: z.string().max(35).optional() }), reason: z.string().max(1_000), evidenceIds: z.array(z.uuid()).max(20), sampleUrls: z.array(z.string().url().max(2_000).refine(value => ["http:", "https:"].includes(new URL(value).protocol))).max(10) })).max(12),
+  unknowns: z.array(z.string().max(500)).max(100),
+});
+export type DiscoveryProposalContext = {
+  plan: z.infer<typeof discoveryPlanCardSchema>;
+  evidence: Array<{ id: string; url: string; retrievedAt: string; excerpt: string; provider: string; contentKind: "full" | "preview"; status: "verified" | "partial" }>;
+  unknowns: string[];
+  cadence: { kind: "manual_only"; recurring: false; note: string };
+  cost: { estimateUsd: null; note: string };
+};
+export type GtmProposalView = StrategyProposal & { discovery?: DiscoveryProposalContext };
+
 export type GtmUIMessage = UIMessage<never, {
   card: ResultCard;
   interview: InterviewState;
   legacy: GtmLegacyContext;
-  proposal: StrategyProposal;
+  proposal: GtmProposalView;
   job: GtmJob;
   turn: { state: "complete" | "interrupted" };
 }, { show_card: { input: Record<string, never>; output: ResultCard } }>;
@@ -33,7 +49,17 @@ export const gtmDataSchemas = {
   card: gtmCardSchema,
   interview: interviewStateSchema,
   // Display-only JSON. The confirmation boundary re-reads and validates the authoritative server proposal.
-  proposal: z.strictObject({ id: z.uuid(), workspaceId: z.uuid(), conversationId: z.uuid(), strategyVersion: z.number().int().nonnegative(), payload: z.custom<StrategyProposal["payload"]>(value => z.record(z.string(), z.json()).safeParse(value).success && gtmJsonBytes(value) <= 65_536), payloadHash: z.string().regex(/^[a-f0-9]{64}$/), expiresAt: z.string().max(100), status: z.enum(["pending", "applied", "denied", "superseded", "expired"]) }),
+  proposal: z.strictObject({
+    id: z.uuid(), workspaceId: z.uuid(), conversationId: z.uuid(), strategyVersion: z.number().int().nonnegative(),
+    payload: z.custom<StrategyProposal["payload"]>(value => z.record(z.string(), z.json()).safeParse(value).success && gtmJsonBytes(value) <= 65_536),
+    payloadHash: z.string().regex(/^[a-f0-9]{64}$/), expiresAt: z.string().max(100), status: z.enum(["pending", "applied", "denied", "superseded", "expired"]),
+    discovery: z.strictObject({
+      plan: discoveryPlanCardSchema, evidence: z.array(z.strictObject({ id: z.uuid(), url: z.string().url().max(2_000).refine(value => ["http:", "https:"].includes(new URL(value).protocol)), retrievedAt: z.string().max(100), excerpt: z.string().max(500), provider: z.string().max(100), contentKind: z.enum(["full", "preview"]), status: z.enum(["verified", "partial"]) })).max(20),
+      unknowns: z.array(z.string().max(500)).max(100),
+      cadence: z.strictObject({ kind: z.literal("manual_only"), recurring: z.literal(false), note: z.string().max(500) }),
+      cost: z.strictObject({ estimateUsd: z.null(), note: z.string().max(500) }),
+    }).optional(),
+  }),
   job: z.strictObject({ id: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/), workspaceId: z.uuid(), state: z.enum(["queued", "running", "complete", "partial", "failed", "cancel_requested", "cancelled"]), health: z.custom<ScanHealth>(value => readScanHealth(value) !== undefined).nullable() }),
   turn: z.strictObject({ state: z.enum(["complete", "interrupted"]) }),
   legacy: z.strictObject({

@@ -69,7 +69,7 @@ export async function POST(req: Request): Promise<Response> {
         try {
           await runPaidCall({ context: { workspaceId: input.workspaceId, sourceKey: "gtm" }, provider: "gateway", action: "gtm_chat", estimateUsd, signal }, async () => {
             attempted = true;
-            const result = await createGtmAgent({ ...scope, signal, turn: { requestId: input.requestId, token: ownerToken } }).stream({ messages: gtmModelHistory(messages), abortSignal: signal });
+            const result = await createGtmAgent({ ...scope, requestId: input.requestId, signal, turn: { requestId: input.requestId, token: ownerToken } }).stream({ messages: gtmModelHistory(messages), abortSignal: signal });
             let failed = false, bytes = 0, parts = 0;
             const reader = toUIMessageStream({ stream: result.stream, sendReasoning: false, sendSources: false, onError: safeError }).getReader();
             let abortRead: () => void;

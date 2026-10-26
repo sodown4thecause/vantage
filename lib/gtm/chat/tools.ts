@@ -9,10 +9,11 @@ import { applyProposalSchema, strategyChangeSchema } from "@/lib/gtm/proposals/t
 import { getGtmJob, requestGtmJob } from "./jobs";
 import { gtmJsonBytes } from "./types";
 import { loadGtmEvidence } from "@/lib/gtm/answer";
+import { discoveryTools } from "@/lib/agents/discovery/tools";
 
 class GtmActionError extends Error {}
 
-export function gtmTools(context: { workspaceId: string; conversationId: string; signal: AbortSignal; turn?: { requestId: string; token: string } }) {
+export function gtmTools(context: { workspaceId: string; conversationId: string; requestId: string; signal: AbortSignal; turn?: { requestId: string; token: string } }) {
   const scope = { workspaceId: context.workspaceId, conversationId: context.conversationId };
   const check = () => context.signal.throwIfAborted();
   const guarded = async <T>(work: () => Promise<T>): Promise<T> => {
@@ -52,5 +53,6 @@ export function gtmTools(context: { workspaceId: string; conversationId: string;
       if (!grants.length) throw new GtmActionError("Use Scan confirmed sources to authorize this action");
       check(); return requestGtmJob({ ...scope, requestId: context.turn.requestId, token: context.turn.token });
     }) }),
+    ...discoveryTools({ ...scope, requestId: context.requestId, signal: context.signal }),
   };
 }

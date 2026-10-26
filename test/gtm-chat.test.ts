@@ -133,10 +133,10 @@ describe("GTM streaming SDK lifecycle and paid boundaries", () => {
     expect(history).toHaveLength(10); expect(history.every(m => typeof m.content === "string" && m.content.length === 2000)).toBe(true);
   });
   it("rejects a model scan request without the exact persisted owner grant", async () => {
-    const tools = gtmTools({ workspaceId: WS, conversationId: CONV, signal: new AbortController().signal });
+    const tools = gtmTools({ workspaceId: WS, conversationId: CONV, requestId: "turn-1", signal: new AbortController().signal });
     await expect(tools.request_scan.execute!({}, { toolCallId: "invented", messages: [], context: {} })).rejects.toThrow("Scan confirmed sources");
     expect(state.execute).not.toHaveBeenCalled();
-    const claimed = gtmTools({ workspaceId: WS, conversationId: CONV, signal: new AbortController().signal, turn: { requestId: "turn-1", token: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" } });
+    const claimed = gtmTools({ workspaceId: WS, conversationId: CONV, requestId: "turn-1", signal: new AbortController().signal, turn: { requestId: "turn-1", token: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" } });
     state.execute.mockResolvedValue([]);
     await expect(claimed.request_scan.execute!({}, { toolCallId: "invented", messages: [], context: {} })).rejects.toThrow("Scan confirmed sources");
   });

@@ -12,7 +12,7 @@ const words = z.array(z.string().trim().min(1).max(200));
 const profileSchema = z.strictObject({
   productUrl: z.string().max(2_000).optional(), docsUrls: z.array(z.string().max(2_000)).max(8).optional(),
   productDescription: text.optional(), targetCustomer: text.optional(),
-  competitors: words.min(3).max(5).optional(), topics: words.min(1).max(12).optional(),
+  competitors: words.max(5).optional(), topics: words.min(1).max(12).optional(),
   productMaterialManual: z.string().max(50_000).optional(), forceManualMaterial: z.boolean().optional(),
 }).refine(value => Object.keys(value).length > 0);
 const sourceChangeSchema = z.strictObject({
@@ -47,7 +47,7 @@ export function proposalHash(payload: StrategyChange): string {
 export function resolveProfileChange(change: StrategyChange, current: Partial<MonitoringProfileInput & MonitoringProfileView> | null): (MonitoringProfileInput & { materialStatus: ProductMaterialStatus; materialText: string }) | null {
   if (!change.profile && !change.competitors && !change.keywords) return null;
   const parsed = strategyChangeSchema.parse(change);
-  const result = validateMonitoringProfileInput({ ...current, ...parsed.profile, ...(parsed.competitors ? { competitors: parsed.competitors } : {}), ...(parsed.keywords ? { topics: parsed.keywords } : {}) });
+  const result = validateMonitoringProfileInput({ ...current, ...parsed.profile, ...(parsed.competitors ? { competitors: parsed.competitors } : {}), ...(parsed.keywords ? { topics: parsed.keywords } : {}) }, { minCompetitors: 0 });
   if (!result.ok) throw new Error("Invalid monitoring profile");
   const profile = result.value;
   const materialChanged = profile.productUrl !== current?.productUrl || JSON.stringify(profile.docsUrls) !== JSON.stringify(current?.docsUrls);
