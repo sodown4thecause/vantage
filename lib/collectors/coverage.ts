@@ -1,4 +1,5 @@
 import type { NewDocument } from "@/lib/db/schema";
+import { readScanHealth, type ScanHealth } from "@/lib/scan/health";
 
 /** Operator-facing coverage labels (Settings → Sources & Coverage). */
 export const COVERAGE_STATUSES = [
@@ -37,6 +38,7 @@ export type SourceRunReceipt = {
   resultCount: number;
   provider: string | null;
   ranAt: string;
+  scanHealth?: ScanHealth;
 };
 
 const ACCESS_RE =
@@ -195,6 +197,7 @@ export function readLastRunReceipt(
     resultCount: Number(o.resultCount ?? 0) || 0,
     provider: typeof o.provider === "string" ? o.provider : null,
     ranAt: typeof o.ranAt === "string" ? o.ranAt : "",
+    ...(readScanHealth(o.scanHealth) ? { scanHealth: readScanHealth(o.scanHealth) } : {}),
   };
 }
 

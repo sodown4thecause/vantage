@@ -168,7 +168,18 @@ describe("provider order", () => {
     const result = await fetchRedditPostsWithMeta({ ctx: context });
     expect(result).toMatchObject({ meta: { provider: "tinyfish_search_fetch" },
       posts: [{ id: "t1", body: "Literal synthetic excerpt", contentKind: "preview" }] });
+    expect(result.meta.issues).toContainEqual({ stage: "hydration", kind: "upstream_failed", provider: "tinyfish_search_fetch", retryable: true });
+    const collected = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: { query: "synthetic" } });
+    expect(collected.scanHealth).toEqual({ state: "partial", discovered: 1, verified: 0, issues: result.meta.issues });
     expect(agentRun).not.toHaveBeenCalled();
+  });
+
+  it("reports safe malformed-envelope metadata instead of a completed empty search", async () => {
+    vi.stubEnv("SCAVIO_API_KEY", "test-key");
+    redditSearch.mockResolvedValue({ data: { unexpected: "private provider text" } });
+    await expect(fetchRedditPostsWithMeta({ ctx: context })).rejects.toMatchObject({
+      issues: [{ stage: "discovery", kind: "invalid_payload", provider: "scavio", retryable: false }],
+    });
   });
 
   it.each([
@@ -179,6 +190,8 @@ describe("provider order", () => {
     search.mockResolvedValue([{ url: thread("t1"), title: "Synthetic question", snippet: "Literal synthetic excerpt", position: 1 }]);
     fetchPages.mockRejectedValue(failure);
     await expect(fetchRedditPostsWithMeta({ ctx: context })).rejects.toBe(failure);
+    expect(failure).toMatchObject({ issues: [{ stage: "hydration", kind: failure.name === "AbortError" ? "aborted" : "budget_exhausted",
+      provider: "tinyfish_search_fetch", retryable: false }] });
     expect(agentRun).not.toHaveBeenCalled();
   });
 });
@@ -226,6 +239,7 @@ describe("Scavio hydration", () => {
     expect(result.meta.provider).toBe("firecrawl_search");
     expect(result.posts[0]).toMatchObject({ id: "h1", contentKind: "preview", body: "2 days ago ... any recommendations?", score: null });
     expect(result.posts[1]).toMatchObject({ id: "h2", contentKind: "thread" });
+    expect(result.meta.issues).toContainEqual({ stage: "hydration", kind: "upstream_failed", provider: "scavio", retryable: true });
   });
 
   it("keeps the post text when only the comments request fails", async () => {
@@ -237,6 +251,22 @@ describe("Scavio hydration", () => {
   it("rejects a Scavio post that is not the requested thread", async () => {
     redditPost.mockResolvedValue(scavioPost("someoneelse"));
     expect((await fetchRedditPostsWithMeta({ ctx: context })).posts.every(post => post.contentKind === "preview")).toBe(true);
+  });
+
+  it("keeps previews unverified when Scavio does not supply the requested identity", async () => {
+    redditPost.mockResolvedValue({ data: { text: "Unattributed text", score: 12 } });
+    const collected = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: { query: "synthetic" } });
+    expect(collected.scanHealth).toMatchObject({ state: "partial", discovered: 3, verified: 0 });
+    expect(collected.scanHealth?.issues).toContainEqual({ stage: "hydration", kind: "invalid_payload", provider: "scavio", retryable: false });
+  });
+
+  it("does not count fetched page excerpts as verified thread context", async () => {
+    vi.stubEnv("FIRECRAWL_API_KEY", ""); vi.stubEnv("SCAVIO_API_KEY", ""); vi.stubEnv("TINYFISH_API_KEY", "test-key");
+    search.mockResolvedValue([{ url: thread("t1"), title: "Synthetic question", snippet: "Synthetic snippet", position: 1 }]);
+    fetchPages.mockResolvedValue([{ url: thread("t1"), text: "Synthetic page excerpt without validated thread fields", highlights: [] }]);
+    const collected = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: { query: "synthetic" } });
+    expect(collected.documents[0].metadata?.contentKind).toBe("page_excerpt");
+    expect(collected.scanHealth).toMatchObject({ state: "partial", discovered: 1, verified: 0 });
   });
 
   it("stops hydrating on a budget denial or when today's count is unavailable, without failing", async () => {

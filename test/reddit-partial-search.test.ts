@@ -17,6 +17,8 @@ it.each(["unprocessed-cursor", undefined])("retains genuine results and preserve
   expect(result.documents[0].metadata).toMatchObject({ provider: "firecrawl_search", mocked: false, discoveryOnly: true });
   expect(result.documents[0].title).toBe("Synthetic question");
   expect(result.nextState?.cursor).toBe(cursor);
+  expect(result.scanHealth).toEqual({ state: "partial", discovered: 1, verified: 0,
+    issues: [{ stage: "discovery", kind: "budget_exhausted", retryable: false }] });
 });
 
 it("propagates the first topic's failure instead of reporting an empty completed scan", async () => {
@@ -32,6 +34,7 @@ it("reports a completed empty search without fabricating conversations", async (
   expect(result.documents).toEqual([]);
   expect(result.partial).toBe(false);
   expect(result.nextState?.cursor).toBeNull();
+  expect(result.scanHealth).toEqual({ state: "complete", discovered: 0, verified: 0, issues: [] });
 });
 
 it("propagates cancellation after genuine results instead of treating it as a deferred topic", async () => {

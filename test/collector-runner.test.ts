@@ -103,6 +103,12 @@ afterEach(() => {
 });
 
 describe("runCollector", () => {
+  it("carries document-level partial coverage into scan health", async () => {
+    state.insertOutcomes = [[{ id: "doc-1" }]];
+    const result = await runCollector({ collector: { name: "hn", run: async () => ({ documents: [{ ...document, metadata: { partial: true } }] }) },
+      workspaceId: "workspace-1", sourceId: "source-1" });
+    expect(result.scanHealth).toMatchObject({ state: "partial", discovered: 1, verified: 0 });
+  });
   it("persists incomplete coverage even when the scan returns no matching documents", async () => {
     const result = await runCollector({ collector: { name: "hn", run: async () => ({ documents: [], partial: true, coverageReason: "Remaining pages are deferred." }) }, workspaceId: "workspace-1", sourceId: "source-1" });
     expect(result.receipt).toMatchObject({ coverage: "degraded", reason: "Remaining pages are deferred." });
@@ -309,6 +315,8 @@ describe("runCollector", () => {
     expect(errorSpy).toHaveBeenCalled();
     expect(state.updates.at(-1)).toMatchObject({ health: "failed" });
     expect(state.updates.at(-1)?.lastPolledAt).toBeInstanceOf(Date);
+    expect(result.scanHealth).toMatchObject({ state: "partial", discovered: 1, verified: 1,
+      issues: [{ stage: "persist", kind: "upstream_failed", retryable: true }] });
   });
 
   it("reports no partial inserts when the atomic document batch fails", async () => {
