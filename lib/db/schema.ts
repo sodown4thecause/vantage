@@ -1116,6 +1116,18 @@ export const seoConversation = pgTable(
   (table) => [index("seo_conversation_workspace_updated_idx").on(table.workspaceId, table.updatedAt)],
 );
 
+export const gtmChat = pgTable("gtm_chat", {
+  conversationId: uuid("conversation_id").primaryKey().references(() => seoConversation.id, { onDelete: "cascade" }),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+  messages: jsonb("messages").$type<import("@/lib/gtm/chat/types").GtmUIMessage[]>().notNull().default([]),
+  revision: integer("revision").notNull().default(0),
+  receipts: jsonb("receipts").$type<Record<string, { hash: string; revision: number; token: string }>>().notNull().default({}),
+}, table => [
+  check("gtm_chat_revision_check", sql`${table.revision} >= 0 and ${table.revision} <= 200`),
+  check("gtm_chat_messages_check", sql`jsonb_typeof(${table.messages}) = 'array' and jsonb_array_length(${table.messages}) <= 200 and octet_length(${table.messages}::text) <= 524288`),
+  check("gtm_chat_receipts_check", sql`jsonb_typeof(${table.receipts}) = 'object'`),
+]);
+
 export const seoMessage = pgTable(
   "seo_message",
   {

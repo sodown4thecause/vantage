@@ -239,6 +239,13 @@
       "when": 1792879577393,
       "tag": "0033_normal_rocket_raccoon",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792992560992,
+      "tag": "0034_purple_rawhide_kid",
+      "breakpoints": true
     }
   ]
 }
