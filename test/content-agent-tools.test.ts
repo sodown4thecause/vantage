@@ -30,7 +30,7 @@ vi.mock("@/lib/content-agent/repository", () => ({
 import { createContentAgent } from "@/lib/content-agent/agent";
 
 type DraftTool = {
-  execute: (input: { title: string; body: string; format: "blog_post" }, options: { abortSignal?: AbortSignal }) => Promise<unknown>;
+  execute: (input: { title: string; body: string; format: "blog_post"; sourceBacked: boolean }, options: { abortSignal?: AbortSignal }) => Promise<unknown>;
 };
 type DraftUpdateTool = {
   execute: (input: { draftId: string; title: string; body: string }) => Promise<unknown>;
@@ -101,7 +101,7 @@ describe("Content draft tool output", () => {
     const tool = (mocks.agentOptions as AgentOptions).tools.save_content_draft;
     const signal = new AbortController().signal;
 
-    await expect(tool.execute(savedDraft, { abortSignal: signal })).resolves.toEqual({
+    await expect(tool.execute({ ...savedDraft, sourceBacked: false }, { abortSignal: signal })).resolves.toEqual({
       saved: true,
       draftId: savedDraft.id,
       title: savedDraft.title,
@@ -144,6 +144,25 @@ describe("Content draft tool output", () => {
     expect(mocks.createDraft).not.toHaveBeenCalled();
   });
 
+  it("allows ordinary drafts to keep user-provided links without a source lookup", async () => {
+    const input = {
+      title: "A useful post",
+      body: "Learn more at https://vantage.example/product",
+      format: "blog_post" as const,
+      sourceBacked: false,
+    };
+    mocks.createDraft.mockResolvedValue({ id: "draft-link", title: input.title, body: input.body, format: input.format });
+    createAgent();
+
+    const tool = (mocks.agentOptions as AgentOptions).tools.save_content_draft;
+    await expect(tool.execute(input, {})).resolves.toMatchObject({ saved: true, draftId: "draft-link" });
+
+    expect(mocks.appendSourceCitations).not.toHaveBeenCalled();
+    expect(mocks.createDraft).toHaveBeenCalledWith(expect.objectContaining({
+      draft: { title: input.title, body: input.body, format: input.format },
+    }));
+  });
+
   it("appends returned citations before humanising a source-backed draft", async () => {
     mocks.createDraft.mockResolvedValue({ id: "draft-2", title: "A useful post", body: "Draft with its source.", format: "blog_post" });
     createAgent();
@@ -152,7 +171,7 @@ describe("Content draft tool output", () => {
     sourceOptions.onLookup({ citations, unsafeCitation: false });
 
     const tool = (mocks.agentOptions as AgentOptions).tools.save_content_draft;
-    await tool.execute({ title: "A useful post", body: "A grounded article.", format: "blog_post" }, {});
+    await tool.execute({ title: "A useful post", body: "A grounded article.", format: "blog_post", sourceBacked: true }, {});
 
     expect(mocks.appendSourceCitations).toHaveBeenCalledWith("A grounded article.", citations);
     expect(mocks.createDraft).toHaveBeenCalledWith(expect.objectContaining({
@@ -168,7 +187,7 @@ describe("Content draft tool output", () => {
     (mocks.sourceOptions as SourceOptions).onLookup(notice);
 
     const tool = (mocks.agentOptions as AgentOptions).tools.save_content_draft;
-    await expect(tool.execute({ title: "A useful post", body: "Uncited claims.", format: "blog_post" }, {})).rejects.toThrow();
+    await expect(tool.execute({ title: "A useful post", body: "Uncited claims.", format: "blog_post", sourceBacked: true }, {})).rejects.toThrow();
     expect(mocks.createDraft).not.toHaveBeenCalled();
   });
 
@@ -179,7 +198,20 @@ describe("Content draft tool output", () => {
     sourceOptions.onLookup({ citations: [], unsafeCitation: false });
 
     const tool = (mocks.agentOptions as AgentOptions).tools.save_content_draft;
-    await expect(tool.execute({ title: "A useful post", body: "Claims about source B.", format: "blog_post" }, {})).rejects.toThrow();
+    await expect(tool.execute({ title: "A useful post", body: "Claims about source B.", format: "blog_post", sourceBacked: true }, {})).rejects.toThrow();
+    expect(mocks.createDraft).not.toHaveBeenCalled();
+  });
+
+  it("requires a successful lookup when a draft is explicitly marked source-backed", async () => {
+    createAgent();
+    const tool = (mocks.agentOptions as AgentOptions).tools.save_content_draft;
+
+    await expect(tool.execute({
+      title: "A source-backed post",
+      body: "Claims that need evidence.",
+      format: "blog_post",
+      sourceBacked: true,
+    }, {})).rejects.toThrow("Cannot save a source-based draft without a safe source citation.");
     expect(mocks.createDraft).not.toHaveBeenCalled();
   });
 
@@ -190,6 +222,7 @@ describe("Content draft tool output", () => {
       title: "A revised post",
       body: "Updated draft.\n\nSources:\n- https://community.example/thread/1",
       format: "blog_post",
+      sourceBacked: true,
     }, {})).rejects.toThrow("Draft contains a citation URL that was not returned by a source tool.");
     expect(mocks.createDraft).not.toHaveBeenCalled();
   });
@@ -203,11 +236,12 @@ describe("Content draft tool output", () => {
     });
     const tool = (mocks.agentOptions as AgentOptions).tools.save_content_draft;
 
-    await tool.execute({ title: "A useful post", body: "Grounded draft.", format: "blog_post" }, {});
+    await tool.execute({ title: "A useful post", body: "Grounded draft.", format: "blog_post", sourceBacked: true }, {});
     await expect(tool.execute({
       title: "Another post",
       body: "Revision cites https://community.example/thread/1",
       format: "blog_post",
+      sourceBacked: true,
     }, {})).rejects.toThrow("Draft contains a citation URL that was not returned by a source tool.");
     expect(mocks.createDraft).toHaveBeenCalledTimes(1);
   });
