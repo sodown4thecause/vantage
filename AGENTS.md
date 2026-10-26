@@ -39,13 +39,30 @@ saying "it works" is not evidence.
 Claude Code: these skills live in `.agents/skills/`. Read the SKILL.md named
 above directly; don't wait for it to be auto-discovered.
 
-## Follow the Superpowers framework
+## The workflow: Superpowers spine, one loop for everything
 
-We work the way the [Superpowers](https://github.com/obra/superpowers)
-framework prescribes: plan before you build, keep changes small and
-reviewable, verify with real evidence rather than assumption, and leave the
-repo in a state the next agent can pick up cleanly. Plans, subagent handoffs
-and checklists are part of the work, not decoration.
+Every task, whether code, docs, research or ops, runs **Clarify → Define done
+→ Plan → Do → Prove → Review → Compound**.
+[Superpowers](https://github.com/obra/superpowers) owns Clarify, Plan and Do for
+code (brainstorming, writing-plans, using-git-worktrees,
+subagent-driven-development, test-driven-development, systematic-debugging).
+Install it in each harness: Claude Code `/plugin install
+superpowers@claude-plugins-official`, Codex `/plugins`. **Do not install a
+second workflow framework** (compound-engineering, gstack, spec-kit, BMAD) next
+to it: their skills overlap and fight over the same stages.
+
+What we add on top:
+- **Define done + Prove**: the section above, with verify-ui and verify-dataflow.
+- **Review**: adversarial-review with a *different* model, not only
+  Superpowers' same-model code review.
+- **Compound**: after each task, write the one lesson worth keeping into this
+  file or a skill in `.agents/skills/`, and delete rules that proved wrong. A
+  repeated mistake means a missing rule.
+- Skipping a stage needs a named reason and Liam's OK. "It's small", "tests
+  pass" and "I'm confident" are not reasons.
+
+Plans, subagent handoffs and checklists are part of the work, not decoration.
+Plans live in `docs/superpowers/`.
 
 ## MCP servers available to agents
 
