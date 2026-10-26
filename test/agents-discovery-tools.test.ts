@@ -119,6 +119,59 @@ describe("discovery tools", () => {
     expect(ctx.sources.filter((s) => s.review.accepted)).toHaveLength(1);
   });
 
+  describe("AI relevance review", () => {
+    const judgeResult = (fit: number, costUsd = 0.004) => vi.fn(async (_p: unknown, source: { queries: string[] }) =>
+      ({ judgements: source.queries.map((query) => ({ query, fit, rung: 3, situation: "other", why: "mock verdict" })), costUsd }));
+    const specific = { sourceType: "hn", name: "HN: vantage", queries: ["vantage tours"], rationale: "r", relevanceScore: 0.9 };
+
+    it("rejects a source that passes the term pre-filter when the review says it does not fit", async () => {
+      const judge = judgeResult(0.05);
+      const { run, ctx } = setup({ judge });
+      await run("propose_profile", profile);
+      const out = await run("propose_source", specific) as { status: string; review: { method: string } };
+      expect(out.status).toBe("rejected");
+      expect(out.review.method).toBe("ai");
+      expect(judge).toHaveBeenCalledTimes(1);
+      expect(ctx.sources[0]!.review.accepted).toBe(false);
+    });
+
+    it("never spends on the review for the broad HN profile source, even when the reviewer would approve it", async () => {
+      const judge = judgeResult(0.99);
+      const { run } = setup({ judge });
+      await run("propose_profile", profile);
+      const out = await run("propose_source", { ...specific, name: "Profile: Hacker News", queries: ["ai", "startup", "tools"] }) as { status: string };
+      expect(out.status).toBe("rejected");
+      expect(judge).not.toHaveBeenCalled();
+    });
+
+    it("counts the review's real cost against the run", async () => {
+      const { run, ctx } = setup({ judge: judgeResult(0.9, 0.004) });
+      await run("propose_profile", profile);
+      await run("propose_source", specific);
+      expect(ctx.spentUsd).toBeCloseTo(0.004, 6);
+    });
+
+    it("reserves the estimate up front, so parallel proposals cannot together overspend the run", async () => {
+      const judge = judgeResult(0.9);
+      const { run, ctx } = setup({ judge, remainingUsd: 0.015 });
+      await run("propose_profile", profile);
+      const outs = await Promise.all([1, 2, 3].map((n) => run("propose_source", { ...specific, name: `HN: vantage ${n}`, queries: [`vantage tours ${n}`] }))) as Array<{ review: { method: string } }>;
+      expect(judge).toHaveBeenCalledTimes(1);
+      expect(outs.map((o) => o.review.method)).toEqual(["ai", "terms", "terms"]);
+      expect(ctx.spentUsd).toBeLessThanOrEqual(0.015);
+    });
+
+    it("falls back to the term match, and says so, once the run's budget is spent", async () => {
+      const judge = judgeResult(0.9);
+      const { run } = setup({ judge, remainingUsd: 0.001 });
+      await run("propose_profile", profile);
+      const out = await run("propose_source", specific) as { status: string; review: { method: string; reasons: string[] } };
+      expect(judge).not.toHaveBeenCalled();
+      expect(out.review.method).toBe("terms");
+      expect(out.review.reasons.join(" ")).toMatch(/budget/i);
+    });
+  });
+
   it("exposes no tool that posts, comments, votes, submits or emails", () => {
     const { ctx } = setup();
     expect(Object.keys(discoveryTools(ctx)).sort()).toEqual(

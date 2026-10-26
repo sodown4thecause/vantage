@@ -15,6 +15,7 @@ import {
   type DiscoveryDeps,
   type ReviewedSource,
 } from "@/lib/agents/discovery/tools";
+import { createRelevanceJudge, type RelevanceJudge } from "@/lib/agents/discovery/relevance-ai";
 import { runPaidCall as realRunPaidCall } from "@/lib/providers/paid-call";
 import { costOfUsage, gatewayProvider, seoModels } from "@/lib/seo-agent/models";
 
@@ -52,6 +53,9 @@ export type DiscoveryOutcome = {
 export type DiscoveryRunDeps = {
   model?: LanguageModel;
   modelId?: string;
+  /** The model that reviews proposed sources. Defaults to the run's own model. */
+  judgeModel?: LanguageModel;
+  judge?: RelevanceJudge;
   env?: Record<string, string | undefined>;
   readSpent?: SpentReader;
   now?: Date;
@@ -97,6 +101,9 @@ export async function runDiscovery(
   const remaining = await assertDiscoveryBudget(input.workspaceId, kind, MIN_RUN_USD, { readSpent: deps.readSpent, env, now: deps.now });
   const ctx = createDiscoveryContext({
     workspaceId: input.workspaceId, productUrl: input.productUrl, kind, remainingUsd: remaining, signal: input.signal, deps: deps.tools,
+    judge: deps.judge ?? createRelevanceJudge({
+      model: deps.judgeModel ?? model, modelId, workspaceId: input.workspaceId, sourceKey: sourceKeyFor(kind), runPaidCall: deps.runPaidCall,
+    }),
   });
   const sourceKey = sourceKeyFor(kind);
   const paid = deps.runPaidCall ?? realRunPaidCall;

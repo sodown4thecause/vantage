@@ -62,10 +62,20 @@ describe("runDiscovery", () => {
       ),
       done,
     ];
-    const { full, meta } = deps({ script });
+    const judgeModel = new MockLanguageModelV4({
+      doGenerate: {
+        content: [{ type: "text", text: JSON.stringify({ queries: [{ query: "syften alternative", fit: 0.9, rung: 3, situation: "alternative_request", why: "Comparison threads." }] }) }],
+        finishReason: { unified: "stop", raw: "stop" }, usage, warnings: [],
+      } as never,
+    });
+    const { full, meta } = deps({ script, judgeModel });
     const outcome = await runDiscovery({ workspaceId: "ws", productUrl: "https://contextfor.dev/" }, full);
 
     expect(outcome.status).toBe("complete");
+    // Only the specific source reached the reviewer; the broad HN profile source was stopped by the term pre-filter.
+    expect(judgeModel.doGenerateCalls).toHaveLength(1);
+    expect(outcome.sources.find((s) => s.review.accepted)!.review.method).toBe("ai");
+    expect(meta.filter((m) => m.action === "discovery_relevance")).toHaveLength(1);
     expect(outcome.profile?.productName).toBe("Vantage");
     expect(outcome.competitors.map((c) => c.domain)).toEqual(["syften.com"]);
     expect(outcome.keywords).toHaveLength(1);
@@ -76,7 +86,10 @@ describe("runDiscovery", () => {
     expect(outcome.results.filter((r) => r.kind === "source").map((r) => r.status)).toEqual(["rejected", "proposed"]);
 
     expect(meta[0]).toMatchObject({ provider: "gateway", action: "discovery_initial", context: { workspaceId: "ws", sourceKey: "discovery" } });
-    expect(meta[1]!.costUsd).toBeCloseTo(STEP_COST * 4, 6);
+    const costs = meta.filter((m) => "costUsd" in m).map((m) => m.costUsd as number);
+    expect(costs).toHaveLength(2); // the relevance review settles first, then the run itself
+    expect(costs[0]).toBeCloseTo(STEP_COST, 6);
+    expect(costs[1]).toBeCloseTo(STEP_COST * 4, 6);
     expect(outcome.modelCostUsd).toBeCloseTo(STEP_COST * 4, 6);
   });
 

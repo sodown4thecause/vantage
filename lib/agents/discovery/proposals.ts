@@ -66,6 +66,8 @@ export const sourceReviewSchema = z.object({
   matchedTerms: z.array(z.string()),
   /** Plain-English reasons, shown to the owner under "proposed sources (reviewed)". */
   reasons: z.array(z.string()),
+  /** "ai" when the relevance review ran; "terms" when only the term match could (budget spent or review unavailable). */
+  method: z.enum(["ai", "terms"]).optional(),
 }).strict();
 export type SourceReview = z.infer<typeof sourceReviewSchema>;
 

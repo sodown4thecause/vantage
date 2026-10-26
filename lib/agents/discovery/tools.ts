@@ -12,7 +12,8 @@ import {
   type SourceProposal,
   type SourceReview,
 } from "@/lib/agents/discovery/proposals";
-import { reviewSourceProposal, type ReviewProfile } from "@/lib/agents/discovery/relevance";
+import type { ReviewProfile } from "@/lib/agents/discovery/relevance";
+import { gateSource, RELEVANCE_ESTIMATE_USD, type RelevanceJudge } from "@/lib/agents/discovery/relevance-ai";
 import { sourceKeyFor, type DiscoveryKind } from "@/lib/agents/discovery/budget";
 import {
   fetchLinkupPage,
@@ -60,6 +61,8 @@ export type DiscoveryContext = {
   stopped: boolean;
   signal?: AbortSignal;
   deps: DiscoveryDeps;
+  /** Asks the model whether a proposed source fits the product. Absent: the term match decides alone. */
+  judge?: RelevanceJudge;
   profile?: ProfileProposal;
   competitors: CompetitorProposal[];
   keywords: KeywordProposal[];
@@ -69,7 +72,7 @@ export type DiscoveryContext = {
 };
 
 export function createDiscoveryContext(input: {
-  workspaceId: string; productUrl: string; kind: DiscoveryKind; remainingUsd: number; signal?: AbortSignal; deps?: Partial<DiscoveryDeps>;
+  workspaceId: string; productUrl: string; kind: DiscoveryKind; remainingUsd: number; signal?: AbortSignal; deps?: Partial<DiscoveryDeps>; judge?: RelevanceJudge;
 }): DiscoveryContext {
   return {
     workspaceId: input.workspaceId,
@@ -81,6 +84,7 @@ export function createDiscoveryContext(input: {
     spentUsd: 0,
     stopped: false,
     signal: input.signal,
+    judge: input.judge,
     deps: { fetchPage: fetchLinkupPage, search: searchLinkup, ...input.deps },
     competitors: [], keywords: [], sources: [], results: [],
   };
@@ -205,7 +209,17 @@ export function discoveryTools(ctx: DiscoveryContext) {
         const profile = reviewProfileOf(ctx);
         if (!profile) return record(ctx, { kind: "source", status: "not_ready", reason: "Propose the profile first." });
         if (ctx.sources.length >= MAX_SOURCES) return record(ctx, { kind: "source", status: "limit_reached", reason: `At most ${MAX_SOURCES} sources.` });
-        const review = reviewSourceProposal(profile, proposal);
+        const review = await gateSource(profile, proposal, {
+          judge: ctx.judge,
+          signal: ctx.signal,
+          // The estimate is reserved before the call so parallel proposals cannot together overspend; the real cost replaces it after.
+          canAfford: () => {
+            if (ctx.remainingUsd - ctx.spentUsd < RELEVANCE_ESTIMATE_USD) return false;
+            ctx.spentUsd += RELEVANCE_ESTIMATE_USD;
+            return true;
+          },
+          onCost: (usd) => { ctx.spentUsd += usd - RELEVANCE_ESTIMATE_USD; },
+        });
         ctx.sources.push({ proposal, review });
         return record(ctx, { kind: "source", status: review.accepted ? "proposed" : "rejected", proposal, review });
       },
