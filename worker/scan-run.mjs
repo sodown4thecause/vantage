@@ -15,6 +15,7 @@ const COLLECT_PATH = "/api/internal/scan/collect";
 const EMBED_PATH = "/api/internal/scan/embed";
 const BUILD_PATH = "/api/internal/scan/build";
 const FINISH_PATH = "/api/internal/scan/finish";
+const OBSERVER_START_TIMEOUT_MS = 100;
 
 const COLLECT_STEP = {
   retries: { limit: 3, delay: "10 seconds", backoff: "exponential" },
@@ -98,16 +99,26 @@ function observedSteps(step, workspaceId, observeStep) {
       if (typeof callback === "function") {
         args[callbackIndex] = (...callbackArgs) => {
           let operationPromise;
+          let signalOperationStarted;
+          const operationStarted = new Promise((resolve) => { signalOperationStarted = resolve; });
           const runOnce = (...innerArgs) => {
-            operationPromise ??= Promise.resolve().then(() => callback(...innerArgs));
+            if (!operationPromise) {
+              operationPromise = Promise.resolve().then(() => callback(...innerArgs));
+              signalOperationStarted();
+            }
             return operationPromise;
           };
+          const observerPromise = Promise.resolve()
+            .then(() => observeStep(normalizeStepName(name), workspaceId, runOnce))
+            .catch(() => undefined);
+          let timer;
+          const timeout = new Promise((resolve) => {
+            timer = setTimeout(resolve, OBSERVER_START_TIMEOUT_MS);
+          });
           return (async () => {
-            try {
-              await observeStep(normalizeStepName(name), workspaceId, runOnce);
-            } catch {
-              // Observability must not fail a workflow step; runOnce still propagates operation errors.
-            }
+            await Promise.race([operationStarted, observerPromise, timeout]);
+            clearTimeout(timer);
+            // If observation stalls before invoking the callback, start it without waiting longer.
             return await runOnce(...callbackArgs);
           })();
         };

@@ -196,6 +196,16 @@ test("observer failures do not fail or repeat workflow callbacks", async () => {
   assert.equal(fake.calls.at(-1).path, "/api/internal/scan/finish");
 });
 
+test("a stuck observer cannot stall the workflow operation", async () => {
+  const step = fakeStep();
+  const fake = fakeCall({
+    "/api/internal/scan/plan": () => json({ skipped: true, reason: "already complete" }),
+  });
+  const result = await runScan(PARAMS, step, fake.call, () => new Promise(() => {}));
+  assert.deepEqual(result, { status: "skipped", failures: 0 });
+  assert.equal(fake.calls.length, 1);
+});
+
 test("a plan failure propagates without finishing, because no lease was handed back", async () => {
   const step = fakeStep();
   const fake = fakeCall({
