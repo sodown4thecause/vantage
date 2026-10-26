@@ -108,13 +108,14 @@ function mapPosts(rows: Array<Record<string, unknown>>, limit: number, subreddit
     if (subreddit && link.subreddit?.toLowerCase() !== subreddit.toLowerCase()) continue;
     const suppliedComments = row.topComments ?? row.top_comments ?? row.comments;
     const topComments = Array.isArray(suppliedComments) ? literalComments(suppliedComments, link.id) : undefined;
+    const body = stringField(row, "body", "selftext", "text", "content");
     posts.push({ id: link.id, title, url: link.url,
-      body: stringField(row, "body", "selftext", "text", "content", "snippet")?.slice(0, 20_000) ?? "",
+      body: (body ?? stringField(row, "snippet"))?.slice(0, 20_000) ?? "",
       author: stringField(row, "author", "author_name", "username"),
       subreddit: link.subreddit ?? stringField(row, "subreddit", "subreddit_name"),
       score: numberField(row, "score", "ups", "upvotes") ?? null, createdAt: publicationDate(row),
       numComments: numberField(row, "numComments", "num_comments", "comment_count") ?? null,
-      topComments, contentKind: "thread" });
+      topComments, contentKind: suppliedId && body ? "thread" : "preview" });
     seen.add(link.id);
     if (posts.length >= limit) break;
   }

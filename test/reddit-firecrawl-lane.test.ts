@@ -196,6 +196,49 @@ describe("provider order", () => {
   });
 });
 
+describe("Scavio search context", () => {
+  it.each([
+    { name: "a URL-identified search snippet", fields: { snippet: "Literal synthetic excerpt" }, kind: "preview", verified: 0, state: "partial" },
+    { name: "an ID-identified search snippet", fields: { id: "t3_s1", snippet: "Literal synthetic excerpt" }, kind: "preview", verified: 0, state: "partial" },
+    { name: "body context without supplied identity", fields: { body: "Literal synthetic full body" }, kind: "preview", verified: 0, state: "partial" },
+    { name: "a validated full thread", fields: { id: "t3_s1", body: "Literal synthetic full body" }, kind: "thread", verified: 1, state: "complete" },
+  ])("counts $name truthfully when hydration is disabled", async ({ fields, kind, verified, state }) => {
+    vi.stubEnv("SCAVIO_API_KEY", "test-key"); vi.stubEnv("REDDIT_HYDRATE_DAILY_MAX", "0");
+    redditSearch.mockResolvedValue({ data: { results: [{ title: "Synthetic question", url: thread("s1"), createdAt: "2026-10-25T00:00:00Z", ...fields }] } });
+    const collected = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: { query: "synthetic" } });
+    expect(collected.documents).toHaveLength(1);
+    expect(collected.documents[0].contentMd).toContain("Literal synthetic");
+    expect(collected.documents[0].metadata).toMatchObject({ contentKind: kind, discoveryOnly: kind === "preview" });
+    expect(collected.scanHealth).toMatchObject({ state, discovered: 1, verified });
+  });
+
+  it("upgrades a search snippet only after metered hydration supplies matching identity and full text", async () => {
+    vi.stubEnv("SCAVIO_API_KEY", "test-key");
+    redditSearch.mockResolvedValue({ data: { results: [{ title: "Synthetic question", url: thread("s1"), snippet: "Short excerpt", createdAt: "2026-10-25T00:00:00Z" }] } });
+    redditPost.mockResolvedValue({ data: { post_id: "t3_s1", text: "Synthetic full thread context" } });
+    redditComments.mockResolvedValue({ data: { comments: [] } });
+    const collected = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: { query: "synthetic" } });
+    expect(collected.documents[0].contentMd).toContain("Synthetic full thread context");
+    expect(collected.scanHealth).toEqual({ state: "complete", discovered: 1, verified: 1, issues: [] });
+    expect(paidCall).toHaveBeenCalledWith(expect.objectContaining({ provider: "scavio", action: "reddit_hydrate", estimateUsd: 0.008, context }), expect.any(Function));
+  });
+
+  it("keeps newly eligible Scavio snippets unverified and stops hydration on budget denial", async () => {
+    vi.stubEnv("SCAVIO_API_KEY", "test-key");
+    redditSearch.mockResolvedValue({ data: { results: ["s1", "s2"].map(id => ({ title: "Synthetic question", url: thread(id), snippet: "Short excerpt", createdAt: "2026-10-25T00:00:00Z" })) } });
+    paidCall.mockImplementation(async (options, work) => {
+      if (options.action === "reddit_hydrate") throw new PaidCallDeniedError("budget_exhausted", "Synthetic denied budget");
+      return (await work()).value;
+    });
+    const collected = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: { query: "synthetic" } });
+    expect(collected.documents).toHaveLength(2);
+    expect(collected.scanHealth).toEqual({ state: "partial", discovered: 2, verified: 0,
+      issues: [{ stage: "hydration", kind: "budget_exhausted", provider: "scavio", retryable: false }] });
+    expect(paidCall.mock.calls.filter(([options]) => options.action === "reddit_hydrate")).toHaveLength(1);
+    expect(redditPost).not.toHaveBeenCalled();
+  });
+});
+
 describe("Scavio hydration", () => {
   const scavioPost = (id: string) => ({ data: { post_id: `t3_${id}`, title: "Full", text: `Full text ${id}`, score: 12, num_comments: 4 } });
 
