@@ -54,7 +54,8 @@ export async function reserveDiscoveryBudget(
     }
   } catch (error) {
     if (error instanceof PaidCallDeniedError) throw error;
-    throw new PaidCallDeniedError("budget_exhausted", "Discovery budget could not be reserved.");
+    // An error is not the same as a spent budget: callers that can degrade (the term-only fallback) must not do so on an error.
+    throw new PaidCallDeniedError("access_pending", "Discovery budget could not be reserved.");
   }
   throw new PaidCallDeniedError("budget_exhausted", used);
 }

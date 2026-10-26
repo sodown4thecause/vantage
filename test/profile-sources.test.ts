@@ -29,7 +29,7 @@ beforeEach(() => {
 });
 
 it("provisions a bounded free HN source using the existing duplicate constraint", async () => {
-  await provisionProfileSources("ws-1", ["agent evaluation", "benchmarks"]);
+  await provisionProfileSources("ws-1", ["agent evaluation", "benchmarks"], undefined, "", { profile: { productDescription: "Agent evaluation and benchmarks for AI teams.", targetCustomer: "ML engineers", competitors: [] } });
   expect(state.values[0]).toMatchObject({ workspaceId: "ws-1", type: "hn", lane: "free", config: {
     queries: ["agent evaluation", "benchmarks"], maxPages: 1, enrich: false,
   } });
@@ -37,12 +37,14 @@ it("provisions a bounded free HN source using the existing duplicate constraint"
   expect(state.conflicts[0]).toHaveProperty("target");
 });
 
+const LISTENING = { productDescription: "Social listening and Reddit lead generation: finds buying intent and brand mentions.", targetCustomer: "Founders", competitors: [] };
+
 describe("keyed profile sources", () => {
   const topics = ["social listening", "reddit lead generation", "buying intent", "brand mentions"];
 
   it("adds Reddit and forums & blogs when TinyFish is configured, excluding the owner's own site", async () => {
     vi.stubEnv("TINYFISH_API_KEY", "tf-key");
-    await provisionProfileSources("ws-1", topics, "https://www.contextfor.dev/pricing");
+    await provisionProfileSources("ws-1", topics, "https://www.contextfor.dev/pricing", "", { profile: LISTENING });
     expect(state.values.map(v => v.name)).toEqual(["Profile: Hacker News", "Profile: Reddit", "Profile: Dev forums & blogs"]);
     expect(state.values[1]).toMatchObject({ type: "reddit", lane: "byok", config: { queries: topics.slice(0, 3), limit: 10 } });
     expect(state.values[2]).toMatchObject({ type: "web_search", lane: "byok", config: {
@@ -59,7 +61,7 @@ describe("keyed profile sources", () => {
   });
 
   it("adds nothing keyed when no provider can serve it", async () => {
-    await provisionProfileSources("ws-1", topics, "https://contextfor.dev");
+    await provisionProfileSources("ws-1", topics, "https://contextfor.dev", "", { profile: LISTENING });
     expect(state.values.map(v => v.name)).toEqual(["Profile: Hacker News"]);
   });
 
@@ -74,7 +76,7 @@ describe("keyed profile sources", () => {
     state.limit = 8;
     state.existing = [{ name: "Profile: Hacker News" }, { name: "Profile: Reddit" },
       ...Array.from({ length: 6 }, (_, i) => ({ name: `Other ${i}` }))];
-    await provisionProfileSources("ws-1", topics, "https://contextfor.dev");
+    await provisionProfileSources("ws-1", topics, "https://contextfor.dev", "", { profile: LISTENING });
     expect(state.values.map(v => v.name)).toEqual(["Profile: Hacker News", "Profile: Reddit"]);
   });
 });
@@ -84,7 +86,8 @@ describe("the form flow goes through the same relevance gate (25 Oct regression)
   const judgeSaying = (fit: number) => vi.fn<RelevanceJudge>(async (_profile, source) => ({
     judgements: source.queries.map((query) => ({ query, fit, rung: 3, situation: "other", why: "mock verdict" })), costUsd: 0.004,
   }));
-  const gate = (judge?: RelevanceJudge, committed = 0) => ({ judge, store: memoryBudgetStore(committed ? { "ws-1|initial": committed } : {}).store, env: {} });
+  const NOW = new Date("2026-10-26T10:00:00Z");
+  const gate = (judge?: RelevanceJudge, committed = 0) => ({ judge, store: memoryBudgetStore(committed ? { "ws-1|day:2026-10-26": committed } : {}).store, env: {}, now: NOW });
 
   it("REGRESSION: broad topics create no sources at all, and never reach the reviewer", async () => {
     vi.stubEnv("TINYFISH_API_KEY", "tf-key");
@@ -97,7 +100,7 @@ describe("the form flow goes through the same relevance gate (25 Oct regression)
   it("creates no sources when the review finds the topics do not fit the product", async () => {
     vi.stubEnv("TINYFISH_API_KEY", "tf-key");
     const judge = judgeSaying(0.05);
-    await provisionProfileSources("ws-1", ["vantage tours", "vantage photography"], "https://contextfor.dev", "", { profile, gate: gate(judge) });
+    await provisionProfileSources("ws-1", ["buying intent poetry", "developer gardening"], "https://contextfor.dev", "", { profile, gate: gate(judge) });
     expect(judge).toHaveBeenCalledTimes(1);
     expect(state.values).toEqual([]);
   });
@@ -110,18 +113,39 @@ describe("the form flow goes through the same relevance gate (25 Oct regression)
 
   it("falls back to the term match when the discovery budget is spent, still refusing broad topics", async () => {
     const judge = judgeSaying(0.9);
-    await provisionProfileSources("ws-1", ["syften alternative"], undefined, "", { profile, gate: gate(judge, 0.49) });
+    await provisionProfileSources("ws-1", ["syften alternative"], undefined, "", { profile, gate: gate(judge, 0.04) });
     expect(judge).not.toHaveBeenCalled();
     expect(state.values.map((v) => v.name)).toEqual(["Profile: Hacker News"]);
 
     state.values = [];
-    await provisionProfileSources("ws-1", ["ai", "tools"], undefined, "", { profile, gate: gate(judge, 0.49) });
+    await provisionProfileSources("ws-1", ["ai", "tools"], undefined, "", { profile, gate: gate(judge, 0.04) });
     expect(state.values).toEqual([]);
   });
 
   it("settles the review's cost against the workspace budget", async () => {
     const budget = memoryBudgetStore();
-    await provisionProfileSources("ws-1", ["syften alternative"], undefined, "", { profile, gate: { judge: judgeSaying(0.9), store: budget.store, env: {} } });
-    expect(budget.get("ws-1", "initial")).toBeCloseTo(0.004, 6);
+    await provisionProfileSources("ws-1", ["syften alternative"], undefined, "", { profile, gate: { judge: judgeSaying(0.9), store: budget.store, env: {}, now: NOW } });
+    // Profile saves draw on the small daily review pool, never on the one-time initial discovery budget.
+    expect(budget.get("ws-1", "day:2026-10-26")).toBeCloseTo(0.004, 6);
+    expect(budget.get("ws-1", "initial")).toBe(0);
+  });
+
+  it("REGRESSION: topics that only echo themselves are not enough, even with no reviewer available", async () => {
+    // "launch" and "week" are not generic words, but nothing in the product's own description or audience mentions them.
+    await provisionProfileSources("ws-1", ["launch week", "product hunt"], "https://contextfor.dev", "", { profile, gate: gate(undefined) });
+    expect(state.values).toEqual([]);
+  });
+
+  it("fails closed, creating nothing, when the budget store itself errors", async () => {
+    const store = { committed: async () => { throw new Error("db down"); }, reserve: async () => true, settle: async () => undefined };
+    await provisionProfileSources("ws-1", ["syften alternative"], undefined, "", { profile, gate: { judge: judgeSaying(0.9), store, env: {}, now: NOW } });
+    expect(state.values).toEqual([]);
+  });
+
+  it("charges the estimate against the budget when the review fails after it started", async () => {
+    const budget = memoryBudgetStore();
+    const failing: RelevanceJudge = async () => { throw new Error("malformed output"); };
+    await provisionProfileSources("ws-1", ["syften alternative"], undefined, "", { profile, gate: { judge: failing, store: budget.store, env: {}, now: NOW } });
+    expect(budget.get("ws-1", "day:2026-10-26")).toBeCloseTo(0.01, 6);
   });
 });

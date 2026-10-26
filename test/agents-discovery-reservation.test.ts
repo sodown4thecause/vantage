@@ -67,9 +67,9 @@ describe("reserveDiscoveryBudget", () => {
     expect((await reserveDiscoveryBudget(WS, "review", { store: b.store, env: { DISCOVERY_REVIEW_BUDGET_USD: "0.03" }, now: NOW })).reservedUsd).toBe(0.03);
   });
 
-  it("denies, rather than running unmetered, when the budget store fails", async () => {
+  it("denies, rather than running unmetered, when the budget store fails, and says it was an error and not a spent budget", async () => {
     const store = { committed: async () => { throw new Error("db down"); }, reserve: async () => true, settle: async () => undefined };
-    await expect(reserveDiscoveryBudget(WS, "initial", { store, env: {}, now: NOW })).rejects.toMatchObject({ code: "budget_exhausted" });
+    await expect(reserveDiscoveryBudget(WS, "initial", { store, env: {}, now: NOW })).rejects.toMatchObject({ code: "access_pending" });
   });
 
   it("keeps the reservation counted when settling fails, which only over-counts", async () => {
@@ -94,6 +94,19 @@ describe("dbBudgetStore", () => {
     expect(sql).toMatch(/where discovery_budget\.committed_usd \+ excluded\.committed_usd <= /i);
     expect(sql).toMatch(/returning/i);
     expect(params).toContain(WS);
+    // amount reserved (twice: the insert and the cap test) and the cap itself
+    expect(params.filter((p) => p === "0.250000")).toHaveLength(2);
+    expect(params.filter((p) => p === "0.500000")).toHaveLength(2);
+  });
+
+  it("reads what is committed for a workspace and period, as a number", async () => {
+    state.executed = []; state.result = [{ committed_usd: "0.340000" }];
+    expect(await dbBudgetStore.committed(WS, "initial")).toBeCloseTo(0.34, 6);
+    const { sql, params } = sqlOf(state.executed[0]);
+    expect(sql).toMatch(/from discovery_budget where workspace_id = /i);
+    expect(params).toEqual([WS, "initial"]);
+    state.result = [];
+    expect(await dbBudgetStore.committed(WS, "initial")).toBe(0);
   });
 
   it("reports false when the conditional upsert changed nothing", async () => {
@@ -109,6 +122,8 @@ describe("dbBudgetStore", () => {
     expect(sql).toMatch(/update discovery_budget/i);
     expect(sql).toMatch(/greatest\(0, committed_usd \+/i);
     expect(sql).toMatch(/workspace_id = /);
+    // actual minus reserved: a run that spent $0.04 of $0.25 gives back $0.21
+    expect(params).toContain("-0.210000");
     expect(params).toContain(WS);
   });
 });

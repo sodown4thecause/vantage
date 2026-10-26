@@ -2,17 +2,19 @@ import type { LanguageModel } from "ai";
 
 import { nameFromUrl } from "@/lib/agents/discovery/profile";
 import type { SourceReview } from "@/lib/agents/discovery/proposals";
-import { gateSource, createRelevanceJudge, type RelevanceJudge } from "@/lib/agents/discovery/relevance-ai";
-import { DISCOVERY_SOURCE_KEY } from "@/lib/agents/discovery/budget";
+import { gateSource, createRelevanceJudge, RELEVANCE_ESTIMATE_USD, type RelevanceJudge } from "@/lib/agents/discovery/relevance-ai";
+import { sourceKeyFor } from "@/lib/agents/discovery/budget";
 import { reserveDiscoveryBudget } from "@/lib/agents/discovery/reservation";
 import type { BudgetStore } from "@/lib/agents/discovery/store";
+import { PaidCallDeniedError } from "@/lib/providers/paid-call";
 import { gatewayProvider, seoModels } from "@/lib/seo-agent/models";
 
 /*
  * The same source quality gate, for sources the profile form creates by itself. Before this, saving a profile always
  * created "Profile: Hacker News" from the owner's raw topics, which is how the 25 Oct source pulled in 12 unrelated
  * documents. Now the topics must pass the gate first: the free term pre-filter, then the AI relevance review while the
- * workspace still has discovery budget. The review's cost is reserved in Neon first and settled after, like a run.
+ * workspace still has budget. Saves draw on the small DAILY review pool, not the one-time initial discovery budget, so
+ * tuning topics cannot use up a workspace's agent discovery. The cost is reserved in Neon first and settled after.
  */
 
 export type FormGateDeps = {
@@ -40,7 +42,7 @@ export async function gateProfileTopics(
       const models = seoModels(env);
       if (models) { model = gatewayProvider(env)(models.executor); modelId = models.executor; }
     }
-    if (model) judge = createRelevanceJudge({ model, modelId, workspaceId, sourceKey: DISCOVERY_SOURCE_KEY });
+    if (model) judge = createRelevanceJudge({ model, modelId, workspaceId, sourceKey: sourceKeyFor("review") });
   }
 
   const profile = {
@@ -50,8 +52,9 @@ export async function gateProfileTopics(
     audience: input.profile?.targetCustomer ?? "",
     differentiators: [],
     competitors: input.profile?.competitors ?? [],
-    // The owner's own topics are the product's vocabulary, so a topic is "generic" only if it names nothing but common words.
-    keywords: input.topics,
+    // The topics are deliberately NOT part of the vocabulary: a query must echo the product's own description, audience,
+    // name or competitors, otherwise every non-generic topic would trivially match itself.
+    keywords: [],
   };
   const source = {
     sourceType: "hn" as const, name: "Profile sources", queries: input.topics.slice(0, 5),
@@ -61,19 +64,25 @@ export async function gateProfileTopics(
   // Reserved lazily, only if the free pre-filter passes, and settled with the real cost afterwards.
   let settle: ((actualUsd: number) => Promise<void>) | undefined;
   let actual = 0;
+  let started = false;
   try {
     return await gateSource(profile, source, {
-      judge,
+      judge: judge && (async (...args) => { started = true; return judge(...args); }),
       canAfford: async () => {
         try {
-          const reservation = await reserveDiscoveryBudget(workspaceId, "initial", { store: deps.store, env, now: deps.now });
+          const reservation = await reserveDiscoveryBudget(workspaceId, "review", { store: deps.store, env, now: deps.now });
           settle = reservation.settle;
           return true;
-        } catch { return false; }
+        } catch (error) {
+          // Only a genuinely spent budget degrades to the term match. A store error fails closed (the caller creates nothing).
+          if (error instanceof PaidCallDeniedError && error.code === "budget_exhausted") return false;
+          throw error;
+        }
       },
       onCost: (usd) => { actual += usd; },
     });
   } finally {
-    await settle?.(actual);
+    // A review that started but failed was still charged by runPaidCall at its estimate; never refund that.
+    await settle?.(actual > 0 ? actual : started ? RELEVANCE_ESTIMATE_USD : 0);
   }
 }
