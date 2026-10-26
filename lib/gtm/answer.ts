@@ -94,8 +94,11 @@ export async function answerGtmQuestion(input: {
       experimental_telemetry: posthogAiTelemetry("gtm.answer"),
       runtimeContext: posthogAiContext(input.userId, input.workspaceId),
     }).finally(async () => {
-      await takoMeter.settlePending();
-      await flushPostHogAiTelemetry();
+      try {
+        await takoMeter.settlePending();
+      } finally {
+        await flushPostHogAiTelemetry();
+      }
     });
     const costUsd = costOfUsage(models.executor, {
       inputTokens: result.usage.inputTokens,
