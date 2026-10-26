@@ -21,11 +21,17 @@ export type NextAction = { prompt: string; reason: string };
 export type Turn = { role: "user" | "assistant"; content: string; actions?: NextAction[]; evidence?: OpportunityDetailView[]; blocks?: Block[] };
 export class WorkspaceRequestError extends Error {}
 
-type PendingSend = { text: string; requestId: string; conversationId: string; create: boolean; priorMessages: GtmUIMessage[]; draftVersion: number; clearedDraft: boolean };
+type PendingSend = { text: string; requestId: string; conversationId: string; create: boolean; expectedRevision: number; scanRequested: boolean; priorMessages: GtmUIMessage[]; draftVersion: number; clearedDraft: boolean };
 
-export function nextSend(pending: PendingSend | null, text: string, conversationId: string | null, priorMessages: GtmUIMessage[], draftVersion: number, clearedDraft: boolean): PendingSend | null {
+export function nextSend(pending: PendingSend | null, text: string, conversationId: string | null, priorMessages: GtmUIMessage[], draftVersion: number, clearedDraft: boolean, expectedRevision: number, scanRequested: boolean): PendingSend | null {
   if (pending) return pending.text === text ? pending : null;
-  return { text, requestId: crypto.randomUUID(), conversationId: conversationId ?? crypto.randomUUID(), create: conversationId === null, priorMessages, draftVersion, clearedDraft };
+  return { text, requestId: crypto.randomUUID(), conversationId: conversationId ?? crypto.randomUUID(), create: conversationId === null, expectedRevision, scanRequested, priorMessages, draftVersion, clearedDraft };
+}
+
+export function reconcileSend(pending: PendingSend, revision: number, requestedTurn: { requestId: string } | null): "saved" | "changed" | "retry" {
+  if (requestedTurn?.requestId === pending.requestId) return "saved";
+  if (revision !== pending.expectedRevision) return "changed";
+  return "retry";
 }
 
 export function workspaceErrorCopy(error: unknown): string {
@@ -141,7 +147,7 @@ export function WorkspaceClient({ workspaceId, productName, hasProfile, profile 
     if (!conversationId.current) return;
     setRecovering(true);
     try {
-      const response = await fetch(`/api/gtm/chat?${new URLSearchParams({ workspaceId, conversationId: conversationId.current })}`, { cache: "no-store" });
+      const response = await fetch(`/api/gtm/chat?${new URLSearchParams({ workspaceId, conversationId: conversationId.current, ...(pendingSend.current ? { requestId: pendingSend.current.requestId } : {}) })}`, { cache: "no-store" });
       if (response.status === 404 && pendingSend.current?.create) {
         const pending = pendingSend.current;
         setMessages(pending.priorMessages);
@@ -156,10 +162,15 @@ export function WorkspaceClient({ workspaceId, productName, hasProfile, profile 
       if (!Number.isSafeInteger(data.revision)) throw new Error();
       revision.current = data.revision;
       const pending = pendingSend.current;
+      let changedBeforeClaim = false;
       if (pending) {
-        if (data.turn?.requestId === pending.requestId) { pendingSend.current = null; setUnsavedText(null); }
+        const outcome = reconcileSend(pending, data.revision, data.requestedTurn ?? null);
+        if (outcome === "saved") { pendingSend.current = null; setUnsavedText(null); }
+        else if (outcome === "changed") {
+          pendingSend.current = null; setUnsavedText(null); changedBeforeClaim = true;
+          if (pending.clearedDraft && draftVersion.current === pending.draftVersion) setDraft(pending.text);
+        }
         else {
-          pending.create = false;
           setUnsavedText(pending.text);
           if (pending.clearedDraft && draftVersion.current === pending.draftVersion) setDraft(pending.text);
         }
@@ -168,7 +179,7 @@ export function WorkspaceClient({ workspaceId, productName, hasProfile, profile 
       setJobs(gtmDataSchemas.job.array().max(20).parse(data.jobs ?? []));
       setProposal(data.proposal ? gtmDataSchemas.proposal.parse(data.proposal) : null);
       setMessages(stored); clearError();
-      setNotice(pendingSend.current ? "The message wasn’t saved. Retry sending it with the same request." : data.turn?.state === "running" ? "This turn is still finishing. Recover progress again shortly." : "Saved progress loaded. You can retry an interrupted answer or continue with a new message.");
+      setNotice(changedBeforeClaim ? "The conversation changed before this message was saved. Review the saved turns, then send again." : pendingSend.current ? "The message wasn’t saved. Retry sending it with the same request." : data.turn?.state === "running" ? "This turn is still finishing. Recover progress again shortly." : "Saved progress loaded. You can retry an interrupted answer or continue with a new message.");
     } catch {
       const pending = pendingSend.current;
       if (pending) setUnsavedText(pending.text);
@@ -181,7 +192,7 @@ export function WorkspaceClient({ workspaceId, productName, hasProfile, profile 
     const text = prompt.trim();
     if (!text || busy || inFlight.current || !configured) return;
     const clearedDraft = draft.trim() === text;
-    const submission = retryOf ? null : nextSend(pendingSend.current, text, conversationId.current, messages, draftVersion.current, clearedDraft);
+    const submission = retryOf ? null : nextSend(pendingSend.current, text, conversationId.current, messages, draftVersion.current, clearedDraft, revision.current, scanRequested);
     if (!retryOf && !submission) { setNotice("Retry the unsaved message before starting another one, or open a new conversation."); return; }
     inFlight.current = true;
     if (submission && submission === pendingSend.current) setMessages(submission.priorMessages);
@@ -192,7 +203,7 @@ export function WorkspaceClient({ workspaceId, productName, hasProfile, profile 
     if (clearedDraft) setDraft("");
     setUnsavedText(null); setNotice(""); clearError();
     window.history.replaceState(null, "", `/workspace${q}&c=${conversationId.current}`);
-    try { await sendMessage(retryOf ? undefined : { text }, { body: { workspaceId, conversationId: conversationId.current, expectedRevision: revision.current, requestId, message: text, create, scanRequested, ...(retryOf ? { retryOf } : {}) } }); }
+    try { await sendMessage(retryOf ? undefined : { text }, { body: { workspaceId, conversationId: conversationId.current, expectedRevision: submission?.expectedRevision ?? revision.current, requestId, message: text, create, scanRequested: submission?.scanRequested ?? scanRequested, ...(retryOf ? { retryOf } : {}) } }); }
     catch { await recover(); }
     finally { inFlight.current = false; }
   }

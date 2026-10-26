@@ -1,8 +1,9 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { AbstractChat, type ChatState, type ChatTransport } from "ai";
 
-import { nextSend, starterActions, WorkspaceClient, WorkspaceRequestError, workspaceErrorCopy } from "@/app/workspace/workspace-client";
+import { nextSend, reconcileSend, starterActions, WorkspaceClient, WorkspaceRequestError, workspaceErrorCopy } from "@/app/workspace/workspace-client";
 import { GtmChatParts } from "@/components/gtm-chat-parts";
 import type { GtmUIMessage } from "@/lib/gtm/chat/types";
 import { PRIVATE_PATHS } from "@/lib/seo";
@@ -17,16 +18,86 @@ vi.mock("@/lib/workspace/saved-artifacts", () => ({ listSavedArtifacts: mocks.sa
 vi.mock("@/app/source-controls", () => ({ ScanButton: () => null }));
 
 describe("guided GTM workspace", () => {
+  it.each(["missing", "unavailable", "later turn"])("reconciles a granted scan after SDK onError and %s recovery GET", async outcome => {
+    const first = nextSend(null, "Scan my confirmed sources", null, [], 0, false, 0, true)!;
+    let pending: typeof first | null = first;
+    const bodies: unknown[] = [];
+    let accepted = 0, errorCalls = 0;
+    let recoveryDone!: () => void;
+    const recovered = new Promise<void>(resolve => { recoveryDone = resolve; });
+    const get = vi.fn(async (url: string) => {
+      expect(url).toContain(`requestId=${first.requestId}`);
+      if (outcome === "unavailable") throw new TypeError("network");
+      if (outcome === "later turn") return Response.json({ revision: 4, turn: { requestId: "tab-b", state: "complete" },
+        requestedTurn: { requestId: first.requestId, state: "complete" }, messages: [
+          { id: "a-user", role: "user", parts: [{ type: "text", text: first.text }] },
+          { id: "b-user", role: "user", parts: [{ type: "text", text: "Later question" }] },
+        ] });
+      return new Response(null, { status: 404 });
+    });
+    const state: ChatState<GtmUIMessage> = {
+      status: "ready", error: undefined, messages: [],
+      pushMessage(message) { this.messages.push(message); }, popMessage() { this.messages.pop(); },
+      replaceMessage(index, message) { this.messages[index] = message; }, snapshot(value) { return value; },
+    };
+    class TestChat extends AbstractChat<GtmUIMessage> {}
+    const transport: ChatTransport<GtmUIMessage> = {
+      sendMessages: async ({ body }) => {
+        bodies.push(body);
+        if (outcome === "later turn" ? bodies.length === 1 : bodies.length === 2) accepted++;
+        throw new TypeError("network");
+      },
+      reconnectToStream: async () => null,
+    };
+    const chat = new TestChat({ id: "test", state, transport, onError: () => {
+      if (++errorCalls !== 1) return;
+      void get(`/api/gtm/chat?${new URLSearchParams({ workspaceId: "workspace", conversationId: first.conversationId, requestId: first.requestId })}`)
+        .then(async response => {
+          if (!response.ok) return;
+          const data = await response.json();
+          if (pending && reconcileSend(pending, data.revision, data.requestedTurn) === "saved") {
+            pending = null;
+            state.messages = data.messages;
+          }
+        }).catch(() => {}).finally(recoveryDone);
+    } });
+    const body = (pending: typeof first) => ({ workspaceId: "workspace", conversationId: pending.conversationId,
+      requestId: pending.requestId, expectedRevision: pending.expectedRevision, message: pending.text, create: pending.create, scanRequested: pending.scanRequested });
+    await chat.sendMessage({ text: first.text }, { body: body(first) });
+    await recovered;
+    expect(errorCalls).toBe(1);
+    expect(get).toHaveBeenCalledWith(expect.stringContaining(`requestId=${first.requestId}`));
+    if (outcome === "later turn") {
+      expect(pending).toBeNull();
+      expect(state.messages).toHaveLength(2);
+      expect(bodies).toEqual([body(first)]);
+      expect(accepted).toBe(1);
+      expect(nextSend(null, "New question", first.conversationId, state.messages, 1, true, 4, false)?.requestId).not.toBe(first.requestId);
+      return;
+    }
+    const retry = nextSend(first, first.text, first.conversationId, state.messages, 1, false, 9, false)!;
+    state.messages = [];
+    await chat.sendMessage({ text: retry.text }, { body: body(retry) });
+    expect(bodies).toEqual([body(first), body(first)]);
+    expect(accepted).toBe(1);
+    expect(retry.scanRequested).toBe(true);
+    expect(retry.expectedRevision).toBe(0);
+  });
+  it("reconciles A's receipt when a second tab's later turn is the latest", () => {
+    const first = nextSend(null, "Help me find buyers", "conversation", [], 0, true, 2, false)!;
+    expect(reconcileSend(first, 6, { requestId: first.requestId })).toBe("saved");
+    expect(reconcileSend(first, 6, null)).toBe("changed");
+  });
   it("retries a first message after pre-creation transport failure with the same request and creation identity", () => {
-    const first = nextSend(null, "Help me find buyers", null, [], 0, true)!;
+    const first = nextSend(null, "Help me find buyers", null, [], 0, true, 0, false)!;
     expect(first.create).toBe(true);
-    const retry = nextSend(first, "Help me find buyers", first.conversationId, [], 0, true)!;
+    const retry = nextSend(first, "Help me find buyers", first.conversationId, [], 0, true, 5, false)!;
     expect(retry).toBe(first);
     expect(retry.requestId).toBe(first.requestId);
     expect(retry.conversationId).toBe(first.conversationId);
-    expect(nextSend(first, "A newly typed question", first.conversationId, [], 1, false)).toBeNull();
-    first.create = false; // A successful recovery GET found the conversation before retry.
-    expect(nextSend(first, first.text, first.conversationId, [], 0, true)?.create).toBe(false);
+    expect(nextSend(first, "A newly typed question", first.conversationId, [], 1, false, 5, false)).toBeNull();
+    expect(reconcileSend(first, 0, null)).toBe("retry"); // The conversation exists, but the original turn is still unclaimed.
+    expect(nextSend(first, first.text, first.conversationId, [], 0, true, 5, false)?.create).toBe(true);
   });
   it("blocks proposal confirmation until the confirmed before-state is available", () => {
     const id = "11111111-1111-4111-8111-111111111111";

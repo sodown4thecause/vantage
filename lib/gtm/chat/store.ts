@@ -68,10 +68,11 @@ export async function claimGtmTurn(input: Scope & { requestId: string; expectedR
   return row;
 }
 
-export async function getGtmTurnStatus(input: Scope): Promise<{ requestId: string; state: "running" | "complete" | "interrupted" } | null> {
-  const { workspaceId, conversationId } = scopeSchema.parse(input);
+export async function getGtmTurnStatus(input: Scope & { requestId?: string }): Promise<{ requestId: string; state: "running" | "complete" | "interrupted" } | null> {
+  const { workspaceId, conversationId } = scopeSchema.parse({ workspaceId: input.workspaceId, conversationId: input.conversationId });
+  const requestId = input.requestId ? requestIdSchema.parse(input.requestId) : null;
   const [row] = rowsOf(await getDb().execute(sql`select request_id as "requestId", case when state = 'running' and expires_at <= now() then 'interrupted' else state end as state
-    from gtm_chat_turn where workspace_id = ${workspaceId}::uuid and conversation_id = ${conversationId}::uuid order by expires_at desc limit 1`)) as { requestId: string; state: "running" | "complete" | "interrupted" }[];
+    from gtm_chat_turn where workspace_id = ${workspaceId}::uuid and conversation_id = ${conversationId}::uuid and (${requestId}::text is null or request_id = ${requestId}) order by expires_at desc limit 1`)) as { requestId: string; state: "running" | "complete" | "interrupted" }[];
   return row ?? null;
 }
 

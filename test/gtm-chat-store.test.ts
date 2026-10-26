@@ -4,7 +4,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 const mocks = vi.hoisted(() => ({ execute: vi.fn() }));
 vi.mock("@/lib/db/client", () => ({ getDb: () => ({ execute: mocks.execute }) }));
 
-import { appendGtmMessages, loadGtmChat } from "@/lib/gtm/chat/store";
+import { appendGtmMessages, getGtmTurnStatus, loadGtmChat } from "@/lib/gtm/chat/store";
 import { validateGtmMessages, type GtmUIMessage } from "@/lib/gtm/chat/types";
 import { gtmChat } from "@/lib/db/schema";
 
@@ -15,6 +15,14 @@ const dialect = new PgDialect();
 beforeEach(() => { mocks.execute.mockReset(); });
 
 it("has an additive schema export independently of repository behavior", () => { expect(gtmChat).toBeDefined(); });
+
+it("looks up a receipt only inside its workspace and conversation", async () => {
+  mocks.execute.mockResolvedValue({ rows: [] });
+  expect(await getGtmTurnStatus({ ...scope, requestId: "turn-a" })).toBeNull();
+  const query = dialect.sqlToQuery(mocks.execute.mock.calls[0]![0]);
+  expect(query.sql).toContain("request_id =");
+  expect(query.params).toEqual(expect.arrayContaining([scope.workspaceId, scope.conversationId, "turn-a"]));
+});
 
 it("refuses missing or foreign conversations for reads and appends", async () => {
   mocks.execute.mockResolvedValue([]);

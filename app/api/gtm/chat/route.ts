@@ -13,16 +13,18 @@ import { getGtmConversationJobs } from "@/lib/gtm/chat/jobs";
 import { getPendingStrategyProposal } from "@/lib/gtm/proposals/repository";
 
 const scopeSchema = z.strictObject({ workspaceId: z.uuid(), conversationId: z.uuid() });
+const getSchema = scopeSchema.extend({ requestId: z.string().min(1).max(100).regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/).optional() });
 const bodySchema = scopeSchema.extend({ message: z.string().trim().min(1).max(2000), requestId: z.string().min(1).max(100).regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/), expectedRevision: z.number().int().min(0).max(200), create: z.boolean().optional(), scanRequested: z.boolean().optional(), retryOf: z.string().min(1).max(100).regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/).optional() });
 const QUESTION_LIMIT = "seo_questions_per_month";
 const safeError = () => "That didn’t finish. Reload the conversation to recover saved progress.";
 
 export async function GET(req: Request): Promise<Response> {
-  const parsed = scopeSchema.safeParse(Object.fromEntries(new URL(req.url).searchParams));
+  const parsed = getSchema.safeParse(Object.fromEntries(new URL(req.url).searchParams));
   if (!parsed.success) return Response.json({ error: "invalid_request" }, { status: 400 });
   try {
     if (!(await authorizeWorkspace(parsed.data.workspaceId)).ok) return Response.json({ error: "forbidden" }, { status: 403 });
-    return Response.json({ ...await loadGtmChat(parsed.data), turn: await getGtmTurnStatus(parsed.data), jobs: await getGtmConversationJobs(parsed.data), proposal: await getPendingStrategyProposal(parsed.data) }, { headers: { "Cache-Control": "no-store" } });
+    const scope = { workspaceId: parsed.data.workspaceId, conversationId: parsed.data.conversationId };
+    return Response.json({ ...await loadGtmChat(scope), turn: await getGtmTurnStatus(scope), requestedTurn: parsed.data.requestId ? await getGtmTurnStatus({ ...scope, requestId: parsed.data.requestId }) : null, jobs: await getGtmConversationJobs(scope), proposal: await getPendingStrategyProposal(scope) }, { headers: { "Cache-Control": "no-store" } });
   } catch { return Response.json({ error: "not_found" }, { status: 404 }); }
 }
 
