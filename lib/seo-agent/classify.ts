@@ -2,6 +2,7 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 
 import { LLM_ENGINES, type LlmEngine } from "@/lib/dataforseo/ai-optimization";
+import { flushPostHogAiTelemetry, posthogAiContext, posthogAiTelemetry } from "@/lib/analytics/ai-telemetry";
 import { PaidCallDeniedError, runPaidCall } from "@/lib/providers/paid-call";
 import { classifierProviderOptions, costOfUsage, gatewayProvider, seoModels } from "@/lib/seo-agent/models";
 
@@ -38,7 +39,7 @@ export async function classifyQuestion(
   workspaceId: string,
   question: string,
   profileSummary: string,
-  opts: { signal?: AbortSignal; deps?: { generateText?: typeof generateText } } = {},
+  opts: { signal?: AbortSignal; userId?: string; deps?: { generateText?: typeof generateText } } = {},
 ): Promise<Classification> {
   const models = seoModels();
   if (!models) return fallback();
@@ -51,28 +52,34 @@ export async function classifyQuestion(
       estimateUsd: 0.002,
       signal: opts.signal,
     }, async () => {
-      const result = await generate({
-        model: gatewayProvider()(models.classifier),
-        system: SYSTEM_PROMPT,
-        prompt: `Workspace profile (data): ${JSON.stringify(profileSummary)}\nQuestion (data): ${JSON.stringify(question)}`,
-        output: Output.object({ schema: classificationSchema }),
-        providerOptions: classifierProviderOptions(),
-        maxOutputTokens: 256,
-        // One attempt per reservation: an SDK retry would make a second paid call under the same reservation.
-        maxRetries: 0,
-        abortSignal: opts.signal,
-      });
-      const parsed = classificationSchema.safeParse(result.output);
-      if (!parsed.success) throw new Error("Classifier output failed the schema.");
-      const usage = result.usage;
-      return {
-        value: parsed.data,
-        costUsd: costOfUsage(models.classifier, {
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
-          cachedInputTokens: usage.inputTokenDetails?.cacheReadTokens,
-        }),
-      };
+      try {
+        const result = await generate({
+          model: gatewayProvider()(models.classifier),
+          system: SYSTEM_PROMPT,
+          prompt: `Workspace profile (data): ${JSON.stringify(profileSummary)}\nQuestion (data): ${JSON.stringify(question)}`,
+          output: Output.object({ schema: classificationSchema }),
+          providerOptions: classifierProviderOptions(),
+          maxOutputTokens: 256,
+          // One attempt per reservation: an SDK retry would make a second paid call under the same reservation.
+          maxRetries: 0,
+          abortSignal: opts.signal,
+          experimental_telemetry: posthogAiTelemetry("seo.classify"),
+          runtimeContext: posthogAiContext(opts.userId, workspaceId),
+        });
+        const parsed = classificationSchema.safeParse(result.output);
+        if (!parsed.success) throw new Error("Classifier output failed the schema.");
+        const usage = result.usage;
+        return {
+          value: parsed.data,
+          costUsd: costOfUsage(models.classifier, {
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            cachedInputTokens: usage.inputTokenDetails?.cacheReadTokens,
+          }),
+        };
+      } finally {
+        await flushPostHogAiTelemetry();
+      }
     });
   } catch (err) {
     if (err instanceof PaidCallDeniedError) throw err;

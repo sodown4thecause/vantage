@@ -18,6 +18,27 @@ export type VectorizeBinding = {
 
 export type SemanticMode = "off" | "shadow" | "on";
 
+export type CloudflareRequestContext = {
+  waitUntil?: (promise: Promise<unknown>) => void;
+  tracing?: {
+    enterSpan: (name: string, callback: (span: {
+      setAttribute: (name: string, value: unknown) => void;
+      setAttributes: (attributes: Record<string, unknown>) => void;
+    }) => Promise<unknown>) => Promise<unknown>;
+  };
+};
+
+/** Reads the request context, or null outside an OpenNext Cloudflare request. */
+export async function getCloudflareRequestContext(): Promise<CloudflareRequestContext | null> {
+  try {
+    const { getCloudflareContext } = await import("@opennextjs/cloudflare");
+    const context: unknown = getCloudflareContext().ctx;
+    return typeof context === "object" && context !== null ? context as CloudflareRequestContext : null;
+  } catch {
+    return null;
+  }
+}
+
 function isAiBinding(value: unknown): value is AiBinding {
   return typeof value === "object" && value !== null && "run" in value && typeof value.run === "function";
 }

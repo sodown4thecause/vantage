@@ -238,7 +238,7 @@ export function DraftPanel({
           </button>
         </div>
       ) : (
-        <div className="space-y-5">
+        <div className="space-y-5 ph-no-capture">
           {draft.quality ? (
             <div className="space-y-1 text-sm text-ridge">
               <p className="font-medium text-ink">{kind === "draft" ? "Draft for you to review" : kind === "brief" ? "Research brief, reference material" : "No reply recommended"}</p>

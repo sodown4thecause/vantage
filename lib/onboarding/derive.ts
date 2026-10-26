@@ -2,6 +2,7 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 
 import { normaliseDraft, type ProfileDraft } from "@/lib/onboarding/draft";
+import { flushPostHogAiTelemetry, posthogAiContext, posthogAiTelemetry } from "@/lib/analytics/ai-telemetry";
 import { retrieveProductMaterial, type FetchLike } from "@/lib/profile/retrieve";
 import { runPaidCall } from "@/lib/providers/paid-call";
 import { costOfUsage, gatewayProvider, seoModels } from "@/lib/seo-agent/models";
@@ -64,7 +65,7 @@ const INSTRUCTIONS = [
  * Reads the site and drafts the profile. Returns null when the model is not configured, the site can't be read, or
  * the call fails, so onboarding falls back to asking each question.
  */
-export async function deriveProfileFromUrl(input: { workspaceId: string; url: string; signal?: AbortSignal } & SiteReaders): Promise<ProfileDraft | null> {
+export async function deriveProfileFromUrl(input: { workspaceId: string; userId?: string; url: string; signal?: AbortSignal } & SiteReaders): Promise<ProfileDraft | null> {
   const models = seoModels();
   if (!models) return null;
   try {
@@ -77,21 +78,27 @@ export async function deriveProfileFromUrl(input: { workspaceId: string; url: st
       estimateUsd: 0.03,
       signal: input.signal,
     }, async () => {
-      const result = await generateText({
-        model: gatewayProvider()(models.executor),
-        instructions: INSTRUCTIONS,
-        prompt: JSON.stringify({ url: input.url, websiteText: site }),
-        output: Output.object({ schema: derivedProfileModelSchema }),
-        maxOutputTokens: 1500,
-        maxRetries: 0,
-        abortSignal: input.signal,
-      });
-      const costUsd = costOfUsage(models.executor, {
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
-        cachedInputTokens: result.usage.inputTokenDetails?.cacheReadTokens,
-      });
-      return { value: normaliseDraft(result.output), costUsd };
+      try {
+        const result = await generateText({
+          model: gatewayProvider()(models.executor),
+          instructions: INSTRUCTIONS,
+          prompt: JSON.stringify({ url: input.url, websiteText: site }),
+          output: Output.object({ schema: derivedProfileModelSchema }),
+          maxOutputTokens: 1500,
+          maxRetries: 0,
+          abortSignal: input.signal,
+          experimental_telemetry: posthogAiTelemetry("interview.profile_draft"),
+          runtimeContext: posthogAiContext(input.userId, input.workspaceId),
+        });
+        const costUsd = costOfUsage(models.executor, {
+          inputTokens: result.usage.inputTokens,
+          outputTokens: result.usage.outputTokens,
+          cachedInputTokens: result.usage.inputTokenDetails?.cacheReadTokens,
+        });
+        return { value: normaliseDraft(result.output), costUsd };
+      } finally {
+        await flushPostHogAiTelemetry();
+      }
     });
     return Object.keys(draft).length ? draft : null;
   } catch {

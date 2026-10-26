@@ -16,10 +16,12 @@ export async function claimScanLease(workspaceId: string, ttlMinutes: number, ex
 }
 
 // Clears the lease only while it still carries this token, so a stale holder cannot release a newer lease.
-export async function releaseScanLease(workspaceId: string, token: string): Promise<void> {
+export async function releaseScanLease(workspaceId: string, token: string): Promise<boolean> {
   const db = getDb();
-  await db.update(workspace).set({ scanLeaseToken: null, scanLeaseUntil: null, updatedAt: new Date() })
-    .where(and(eq(workspace.id, workspaceId), eq(workspace.scanLeaseToken, token)));
+  const [released] = await db.update(workspace).set({ scanLeaseToken: null, scanLeaseUntil: null, updatedAt: new Date() })
+    .where(and(eq(workspace.id, workspaceId), eq(workspace.scanLeaseToken, token)))
+    .returning({ id: workspace.id });
+  return Boolean(released);
 }
 
 export { ScanLeaseBusyError };

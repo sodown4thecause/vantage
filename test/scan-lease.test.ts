@@ -28,7 +28,7 @@ it("claimScanLease takes only unset or expired leases and returns its token with
   expect(toSql(state.writes[0].values.scanLeaseUntil).params).toContain(5);
 });
 it("releaseScanLease clears the lease in one UPDATE conditional on the token", async () => {
-  await releaseScanLease("ws-1", "tok-a");
+  await expect(releaseScanLease("ws-1", "tok-a")).resolves.toBe(true);
   expect(state.writes).toHaveLength(1);
   const release = toSql(state.writes[0].where);
   expect(release.sql).toContain('"scan_lease_token" = ');
@@ -36,7 +36,8 @@ it("releaseScanLease clears the lease in one UPDATE conditional on the token", a
   expect(state.writes[0].values).toMatchObject({ scanLeaseToken: null, scanLeaseUntil: null });
 });
 it("releaseScanLease with a stale token only matches that token", async () => {
-  await releaseScanLease("ws-1", "stale-token");
+  state.claimed = false;
+  await expect(releaseScanLease("ws-1", "stale-token")).resolves.toBe(false);
   const release = toSql(state.writes[0].where);
   expect(release.params).toContain("stale-token");
   expect(release.params).not.toContain(null);

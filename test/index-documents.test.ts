@@ -69,6 +69,7 @@ vi.mock("@/lib/db/client", () => ({
 
 vi.mock("@/lib/cf/env", () => ({
   getAi: async () => state.ai,
+  getCloudflareRequestContext: async () => null,
   getVectorize: async () => state.vectorize,
 }));
 vi.mock("@/lib/costs/ledger", () => ({

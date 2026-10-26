@@ -4,6 +4,7 @@ import { rowsOf } from "@/lib/db/rows";
 import { recordCost, roundUsd } from "@/lib/costs/ledger";
 import type { CostContext } from "@/lib/costs/meter";
 import { reserveScanSpend } from "@/lib/activation/budget";
+import { withObservedSpan } from "@/lib/analytics/spans.mjs";
 
 export class PaidCallDeniedError extends Error {
   constructor(public readonly code: "provider_disabled" | "budget_exhausted" | "access_pending", message: string) {
@@ -102,7 +103,13 @@ export async function runPaidCall<T>(meta: {
   try {
     meta.signal?.throwIfAborted();
     started = true;
-    result = await work();
+    result = await withObservedSpan(
+      `provider.${meta.provider}`,
+      { workspaceId: meta.context.workspaceId, source: meta.context.sourceKey, provider: meta.provider },
+      work,
+      undefined,
+      (outcome) => outcome.error === undefined ? "ok" : "error",
+    );
   } catch (error) {
     if (started && !(await record(estimate, false))) throw new PaidCallDeniedError("access_pending", "Provider cost recording is pending; further paid calls are blocked.");
     await settle(started ? estimate : 0);
