@@ -267,11 +267,19 @@ export async function claimPlan(workspaceId: string, messageId: string): Promise
 /**
  * Returns an approved plan to `needs_approval` when its run produced no answer, so the owner can run it again. One
  * conditional UPDATE: only a message that is still `approved` in this workspace changes. Returns whether it did.
+ *
+ * `execution` is the attempt ledger the failed run ended with. It is written in the same UPDATE, so a retry reads the
+ * attempts this run already spent instead of the count the plan was approved with.
  */
-export async function unclaimPlan(workspaceId: string, messageId: string): Promise<boolean> {
+export async function unclaimPlan(workspaceId: string, messageId: string, execution?: ExecutionState): Promise<boolean> {
   const rows = await getDb()
     .update(seoMessage)
-    .set({ status: "needs_approval" })
+    .set({
+      status: "needs_approval",
+      ...(execution
+        ? { parts: sql`jsonb_set(${seoMessage.parts}, '{execution}', ${JSON.stringify(execution)}::jsonb, true)` }
+        : {}),
+    })
     .where(
       and(
         eq(seoMessage.id, messageId),

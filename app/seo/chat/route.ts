@@ -12,6 +12,7 @@ import {
   appendMessage,
   claimPlan,
   ConversationNotFoundError,
+  type ExecutionState,
   createConversation,
   getConversation,
   type SeoMessageRow,
@@ -162,10 +163,10 @@ async function approvePlan(
       approved: claimed.plan,
       execution: claimed.execution,
     }, { signal: req.signal });
-    return answerResponse({ workspaceId, conversationId, run, approvedMessageId: messageId });
+    return answerResponse({ workspaceId, conversationId, run, approvedMessageId: messageId, execution: claimed.execution });
   } catch (err) {
     console.error("[seo-agent] approved plan failed", { error: err instanceof Error ? err.name : "unknown" });
-    const returned = await returnPlan(workspaceId, messageId);
+    const returned = await returnPlan(workspaceId, messageId, claimed.execution);
     return textResponse(FAILURE_COPY, conversationId, returned);
   }
 }
@@ -213,6 +214,8 @@ function answerResponse(args: {
   run: AgentRun;
   /** Set for an approved plan: the message whose plan this run belongs to. Its run is not a charged question. */
   approvedMessageId?: string;
+  /** Set with `approvedMessageId`: the attempt ledger the plan was approved with. */
+  execution?: ExecutionState;
 }): Response {
   // The turn's work is registered with the platform, so a client that disconnects does not cancel its settlement
   // (the ledger, in-flight lookup costs, the saved answer and the released charge). The stream streams unchanged.
@@ -231,7 +234,7 @@ function answerResponse(args: {
 }
 
 async function runTurn(
-  args: { workspaceId: string; conversationId: string; run: AgentRun; approvedMessageId?: string },
+  args: { workspaceId: string; conversationId: string; run: AgentRun; approvedMessageId?: string; execution?: ExecutionState },
   writer: Parameters<AgentRun["write"]>[0],
 ): Promise<void> {
   writer.write({ type: "message-metadata", messageMetadata: { conversationId: args.conversationId } });
@@ -253,7 +256,7 @@ async function runTurn(
       plan: [],
       notices: [],
       creditsUsed: 0,
-      execution: { rootMessageId: args.run.messageId, attemptedEndpoints: 0 },
+      execution: args.execution ?? { rootMessageId: args.run.messageId, attemptedEndpoints: 0 },
     };
   }
   const returned = await settleTurn({ ...args, messageId: args.run.messageId }, outcome);
@@ -279,7 +282,7 @@ async function settleTurn(
 ): Promise<boolean> {
   try {
     if (outcome.status === "failed" || outcome.status === "refused") {
-      if (args.approvedMessageId) return await returnPlan(args.workspaceId, args.approvedMessageId);
+      if (args.approvedMessageId) return await returnPlan(args.workspaceId, args.approvedMessageId, outcome.execution);
       await release(args.workspaceId, QUESTION_LIMIT);
       await saveFailure(
         args.workspaceId,
@@ -326,10 +329,13 @@ async function saveFailure(workspaceId: string, conversationId: string, copy: st
   }
 }
 
-/** Returns an approved plan to needs_approval after a run that produced no answer. Best effort; true when it went back. */
-async function returnPlan(workspaceId: string, messageId: string): Promise<boolean> {
+/**
+ * Returns an approved plan to needs_approval after a run that produced no answer, saving the attempts the run spent so
+ * a retry cannot regain them. Best effort; true when it went back.
+ */
+async function returnPlan(workspaceId: string, messageId: string, execution: ExecutionState): Promise<boolean> {
   try {
-    return await unclaimPlan(workspaceId, messageId);
+    return await unclaimPlan(workspaceId, messageId, execution);
   } catch (err) {
     console.error("[seo-agent] returning the plan failed", { error: err instanceof Error ? err.name : "unknown" });
     return false;

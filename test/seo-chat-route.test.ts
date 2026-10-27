@@ -450,11 +450,30 @@ mocks.claimPlan.mockResolvedValue(CLAIMED);
     mocks.runAgent.mockResolvedValue(fakeRun({ status: "failed", content: "", creditsUsed: 0 }, ERROR_COPY));
     const { text } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
     expect(text).toContain(ERROR_COPY);
-    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN);
+    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN, expect.anything());
     expect(mocks.consume).not.toHaveBeenCalled();
     expect(mocks.release).not.toHaveBeenCalled();
     expect(mocks.appendMessage).not.toHaveBeenCalled();
     expect(text).toContain('"planReturned":true');
+  });
+
+  it("hands the attempts the failed run spent to unclaimPlan so a retry cannot regain them", async () => {
+    mocks.getConversation.mockResolvedValue(conversation());
+    mocks.claimPlan.mockResolvedValue(CLAIMED);
+    const spent = { rootMessageId: MSG_PLAN, attemptedEndpoints: 4 };
+    mocks.runAgent.mockResolvedValue(fakeRun({ status: "failed", content: "", creditsUsed: 0, execution: spent }, ERROR_COPY));
+    await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
+    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN, spent);
+  });
+
+  it("keeps the claimed attempt count when the approved run's stream throws", async () => {
+    mocks.getConversation.mockResolvedValue(conversation());
+    mocks.claimPlan.mockResolvedValue(CLAIMED);
+    const run = fakeRun();
+    run.write.mockRejectedValue(new Error("stream broke"));
+    mocks.runAgent.mockResolvedValue(run);
+    await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
+    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN, EXECUTION);
   });
 
   it("does not say the plan went back when it was no longer claimed", async () => {
@@ -471,7 +490,7 @@ mocks.unclaimPlan.mockResolvedValue(false);
 mocks.claimPlan.mockResolvedValue(CLAIMED);
     mocks.runAgent.mockResolvedValue(fakeRun({ status: "refused", content: "" }, REFUSAL));
     await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
-    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN);
+    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN, expect.anything());
     expect(mocks.release).not.toHaveBeenCalled();
   });
 
@@ -483,7 +502,7 @@ mocks.claimPlan.mockResolvedValue(CLAIMED);
     mocks.runAgent.mockResolvedValue(run);
     const { text } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
     expect(text).toContain(ERROR_COPY);
-    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN);
+    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN, expect.anything());
     expect(mocks.release).not.toHaveBeenCalled();
   });
 
@@ -494,7 +513,7 @@ mocks.claimPlan.mockResolvedValue(CLAIMED);
     const { res, text } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
     expect(res.status).toBe(200);
     expect(text).toContain(ERROR_COPY);
-    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN);
+    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN, expect.anything());
     expect(mocks.release).not.toHaveBeenCalled();
     expect(text).toContain('"planReturned":true');
   });

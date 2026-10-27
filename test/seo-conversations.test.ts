@@ -111,7 +111,16 @@ vi.mock("@/lib/db/client", async () => {
         const apply = () => {
           store.calls.push({ op: "update", table: nameOf(table), where, values, returning } satisfies Call);
           const matched = tableRows(table).filter((row) => matches(row, where));
-          for (const row of matched) Object.assign(row, values);
+          for (const row of matched) {
+            for (const [key, value] of Object.entries(values)) {
+              const node = value as { queryChunks?: unknown };
+              if (key === "parts" && node && typeof node === "object" && node.queryChunks) {
+                // jsonb_set(parts, '{execution}', $n::jsonb): merge the bound JSON under `execution`.
+                const execution = dialect.sqlToQuery(value as SQL).params.find((p) => typeof p === "string");
+                row.parts = { ...(row.parts as object), execution: JSON.parse(execution as string) };
+              } else row[key] = value;
+            }
+          }
           return matched.map(copy);
         };
         const builder = {
@@ -340,6 +349,23 @@ describe("unclaimPlan", () => {
     expect(text).toContain('"status" = $');
     expect(params).toEqual(expect.arrayContaining([MSG_A, WS_A, "approved"]));
     expect(store.messages[0]!.status).toBe("needs_approval");
+  });
+
+  it("saves the attempts the failed run spent in the same UPDATE, so the next claim sees them", async () => {
+    await claimPlan(WS_A, MSG_A);
+    store.calls.length = 0;
+
+    const spent = { rootMessageId: MSG_A, attemptedEndpoints: 4 };
+    expect(await unclaimPlan(WS_A, MSG_A, spent)).toBe(true);
+
+    const updates = callsOf("update", "seo_message");
+    expect(updates).toHaveLength(1);
+    expect(updates[0]!.values).toEqual({ status: "needs_approval", parts: expect.anything() });
+    expect(sqlOf(updates[0]!.values!.parts as SQL).params).toContain(JSON.stringify(spent));
+    expect(await claimPlan(WS_A, MSG_A)).toEqual({
+      plan: [{ tool: "backlinks", input: { target: "example.com" }, credits: 2 }],
+      execution: spent,
+    });
   });
 
   it("lets the owner claim the plan again after it was returned", async () => {
