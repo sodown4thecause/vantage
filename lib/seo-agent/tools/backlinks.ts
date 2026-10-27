@@ -51,7 +51,7 @@ async function backlinkGap(ctx: ToolContext, own: string, rival: string): Promis
 
   if (ownHit !== null && rivalHit !== null) {
     const gap = referringDomainGap(ownHit, rivalHit, own);
-    addCard(ctx, { tool: "backlink_gap", title, cached: true, data: gap });
+    addCard(ctx, { tool: "backlink_gap", title, cached: true, data: gap, input });
     return forModelData("cached", gap, "backlink_gap");
   }
 
@@ -82,7 +82,7 @@ async function backlinkGap(ctx: ToolContext, own: string, rival: string): Promis
 
   const [ownRows, rivalRows] = results.map((result) => (result.ok ? result.value.value : []));
   const gap = referringDomainGap(ownRows, rivalRows, own);
-  addCard(ctx, { tool: "backlink_gap", title, cached: !fresh, data: gap });
+  addCard(ctx, { tool: "backlink_gap", title, cached: !fresh, data: gap, input });
   return forModelData(fresh ? "live" : "cached", gap, "backlink_gap");
 }
 

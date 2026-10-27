@@ -362,6 +362,7 @@ export async function runAgent(
     attempts,
     brandDomains: profile.productDomain ? [profile.productDomain] : [],
     cards: [],
+    evidence: [],
     notices: [],
     signal,
     insightRetriever: createInsightRetriever(),

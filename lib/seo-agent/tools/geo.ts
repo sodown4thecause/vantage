@@ -78,7 +78,7 @@ async function askEngines(ctx: ToolContext, rawPrompt: string, requested: LlmEng
     if (hit) {
       const short = shortAnswer(hit);
       answers.set(item.engine, { answer: short, source: "cached" });
-      addCard(ctx, { tool: "llm_response", title: `AI answer — ${ENGINE_LABELS[item.engine]}`, cached: true, data: short });
+      addCard(ctx, { tool: "llm_response", title: `AI answer — ${ENGINE_LABELS[item.engine]}`, cached: true, data: short, input });
     } else {
       misses.push(item);
     }
@@ -121,6 +121,7 @@ async function askEngines(ctx: ToolContext, rawPrompt: string, requested: LlmEng
       title: `AI answer — ${ENGINE_LABELS[result.item.engine]}`,
       cached: result.value.cached,
       data: short,
+      input,
     });
   }
   ctx.budget.refund(refund);

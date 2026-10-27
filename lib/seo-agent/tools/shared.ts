@@ -9,6 +9,14 @@ import type { FollowUps, PlannedCall, ResultCard } from "@/lib/seo-agent/convers
 import type { InsightRetriever } from "@/lib/seo-agent/insights";
 
 /** Per-request state shared by the tools. The route reads cards, notices and followUps after the stream ends. */
+export type ModelEvidence = {
+  tool: string;
+  source: DataSource;
+  value: unknown;
+  /** The normalised lookup input, so results of the same tool for different questions stay distinguishable. */
+  input?: Record<string, unknown>;
+};
+
 export type ToolContext = {
   workspaceId: string;
   budget: QuestionBudget;
@@ -16,6 +24,11 @@ export type ToolContext = {
   attempts: EndpointAttemptBudget;
   brandDomains: string[];
   cards: ResultCard[];
+  /**
+   * What the summarizer reads, kept apart from `cards`: a card is cut to CARD_ROW_LIMIT rows for storage, evidence keeps
+   * the whole value (so list totals stay true) and the normalised input that produced it.
+   */
+  evidence?: ModelEvidence[];
   notices: string[];
   followUps?: FollowUps;
   signal?: AbortSignal;
@@ -118,7 +131,16 @@ export function forModelData(source: DataSource, value: unknown, tool: string): 
   return { source, data: filterToolEvidence(tool, value) };
 }
 
-export function addCard(ctx: ToolContext, card: { tool: string; title: string; cached: boolean; data: unknown; sandbox?: boolean }): void {
+export function addCard(
+  ctx: ToolContext,
+  card: { tool: string; title: string; cached: boolean; data: unknown; sandbox?: boolean; input?: Record<string, unknown> },
+): void {
+  ctx.evidence?.push({
+    tool: card.tool,
+    source: card.cached ? "cached" : "live",
+    value: card.data,
+    ...(card.input ? { input: card.input } : {}),
+  });
   ctx.cards.push({
     tool: card.tool,
     title: card.title,
@@ -149,7 +171,7 @@ export async function runGated<T>(ctx: ToolContext, call: GatedCall<T>): Promise
   try {
     const hit = await call.peek();
     if (hit !== null) {
-      addCard(ctx, { tool: call.tool, title: call.title, cached: true, data: hit });
+      addCard(ctx, { tool: call.tool, title: call.title, cached: true, data: hit, input: call.input });
       return forModelData("cached", hit, call.tool);
     }
   } catch {
@@ -164,7 +186,7 @@ export async function runGated<T>(ctx: ToolContext, call: GatedCall<T>): Promise
   try {
     const { value, cached } = await call.fetch();
     if (cached) ctx.budget.refund(call.credits);
-    addCard(ctx, { tool: call.tool, title: call.title, cached, data: value });
+    addCard(ctx, { tool: call.tool, title: call.title, cached, data: value, input: call.input });
     return forModelData(cached ? "cached" : "live", value, call.tool);
   } catch (err) {
     ctx.budget.refund(call.credits);

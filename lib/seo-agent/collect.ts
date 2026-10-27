@@ -74,6 +74,7 @@ function chooseTools(ctx: ToolContext, intent: Intent): Record<string, Tool> {
 }
 
 function resultsFromContext(ctx: ToolContext): EvidenceResultInput[] {
+  if (ctx.evidence) return ctx.evidence;
   return ctx.cards.map((card) => ({
     tool: card.tool,
     source: card.cached ? "cached" : "live",
@@ -113,42 +114,47 @@ export async function collectEvidence(
     estimateUsd: COLLECT_ESTIMATE_USD,
     signal: opts.signal,
   }, async () => {
-    const result = await generate({
-      model: gatewayProvider()(modelId),
-      system,
-      messages,
-      tools: dataTools,
-      stopWhen: stepCountIs(STEP_LIMIT),
-      maxRetries: 0,
-      maxOutputTokens: COLLECT_MAX_OUTPUT_TOKENS,
-      abortSignal: opts.signal,
-      providerOptions: { anthropic: { effort: "medium" } },
-      toolApproval: "tako_search" in dataTools
-        ? { tako_search: (_input: unknown, { toolCallId }: { toolCallId: string }) => takoMeter.approve(toolCallId) }
-        : undefined,
-      prepareStep: ({ steps }) => {
-        const calls = steps.flatMap((step) => step.toolCalls as unknown as ObservedToolCall[]);
-        const takoCall = calls.findLast((call) => call.toolName === "tako_search");
-        if (!takoCall) return undefined;
-        const toolResults = steps.flatMap((step) => step.toolResults as unknown as ObservedToolResult[]);
-        if (toolResults.some((item) => item.toolName === "web_research")) return undefined;
-        const takoResult = toolResults.findLast((item) => item.toolName === "tako_search"
-          && (typeof takoCall.toolCallId !== "string" || item.toolCallId === takoCall.toolCallId));
-        if (!isTakoFilterRequest(takoCall.input) && takoWebResultCount(takoResult?.output) >= 3) return undefined;
-        return { activeTools: ["web_research"], toolChoice: { type: "tool" as const, toolName: "web_research" } };
-      },
-      onStepFinish: async ({ toolResults }) => {
-        for (const value of toolResults as unknown as ObservedToolResult[]) {
-          if (value.toolName !== "tako_search") continue;
-          if (typeof value.toolCallId === "string") await takoMeter.complete(value.toolCallId, value.output);
-          const data = normalizeTakoSearchOutput(value.output);
-          if (data.web_results.length > 0 || data.cards.length > 0) {
-            addCard(ctx, { tool: "tako_search", title: "Tako Search", cached: false, data, sandbox: false });
+    let result: Awaited<ReturnType<typeof generate>>;
+    try {
+      result = await generate({
+        model: gatewayProvider()(modelId),
+        system,
+        messages,
+        tools: dataTools,
+        stopWhen: stepCountIs(STEP_LIMIT),
+        maxRetries: 0,
+        maxOutputTokens: COLLECT_MAX_OUTPUT_TOKENS,
+        abortSignal: opts.signal,
+        providerOptions: { anthropic: { effort: "medium" } },
+        toolApproval: "tako_search" in dataTools
+          ? { tako_search: (_input: unknown, { toolCallId }: { toolCallId: string }) => takoMeter.approve(toolCallId) }
+          : undefined,
+        prepareStep: ({ steps }) => {
+          const calls = steps.flatMap((step) => step.toolCalls as unknown as ObservedToolCall[]);
+          const takoCall = calls.findLast((call) => call.toolName === "tako_search");
+          if (!takoCall) return undefined;
+          const toolResults = steps.flatMap((step) => step.toolResults as unknown as ObservedToolResult[]);
+          if (toolResults.some((item) => item.toolName === "web_research")) return undefined;
+          const takoResult = toolResults.findLast((item) => item.toolName === "tako_search"
+            && (typeof takoCall.toolCallId !== "string" || item.toolCallId === takoCall.toolCallId));
+          if (!isTakoFilterRequest(takoCall.input) && takoWebResultCount(takoResult?.output) >= 3) return undefined;
+          return { activeTools: ["web_research"], toolChoice: { type: "tool" as const, toolName: "web_research" } };
+        },
+        onStepFinish: async ({ toolResults }) => {
+          for (const value of toolResults as unknown as ObservedToolResult[]) {
+            if (value.toolName !== "tako_search") continue;
+            if (typeof value.toolCallId === "string") await takoMeter.complete(value.toolCallId, value.output);
+            const data = normalizeTakoSearchOutput(value.output);
+            if (data.web_results.length > 0 || data.cards.length > 0) {
+              addCard(ctx, { tool: "tako_search", title: "Tako Search", cached: false, data, sandbox: false });
+            }
           }
-        }
-      },
-    });
-    await takoMeter.settlePending();
+        },
+      });
+    } finally {
+      // A provider error or cancellation can end the call before onStepFinish settles a reserved Tako search.
+      await takoMeter.settlePending();
+    }
     const packet = buildEvidencePacket({
       question: input.question,
       conversationContext: conversationContext(input.history),
