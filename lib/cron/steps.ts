@@ -14,7 +14,6 @@ import { monitoringProfile, source, workspace } from "@/lib/db/schema";
 import { embedPendingDocuments } from "@/lib/embeddings/index-documents";
 import { buildOpportunities } from "@/lib/opportunities/run";
 import { getLatestMonitoringProfile } from "@/lib/profile/repository";
-import { recordWorkspaceTopicVolume } from "@/lib/trends/volume";
 
 /** Shared bodies of the internal per-step scan routes (Workflow steps). Routes stay thin. */
 export const MAX_DUE_WORKSPACES = 200;
@@ -124,14 +123,8 @@ export async function embedWorkspace(workspaceId: string, signal: AbortSignal): 
 }
 
 export async function buildWorkspace(workspaceId: string, signal: AbortSignal) {
-  const profile = await getLatestMonitoringProfile(workspaceId);
-  if (!profile) return { skipped: true, reason: "monitoring profile required" };
-  // Topic counts land after the collectors' filters have run; a failure never blocks the build.
-  try {
-    await recordWorkspaceTopicVolume(workspaceId, profile.topics ?? []);
-  } catch (err) {
-    console.error("[scan-steps] topic volume recording skipped:", err instanceof Error ? err.message : "unknown error");
-  }
+  // Topic volume is recorded inside buildOpportunities, shared by every scan path.
+  if (!(await getLatestMonitoringProfile(workspaceId))) return { skipped: true, reason: "monitoring profile required" };
   return buildOpportunities({ workspaceId, limitDocs: OPPORTUNITY_DOC_LIMIT, signal });
 }
 

@@ -20,7 +20,7 @@ import { getDb } from "@/lib/db/client";
 import { documentsAreFixtureOnly } from "@/lib/collectors/coverage";
 import { attachLinkedContext, enrichLinkDocuments } from "@/lib/enrich/run";
 import { topicWowForWorkspace, wowToMomentum, type WowChange } from "@/lib/trends/momentum";
-import { docMatchesTopic } from "@/lib/trends/volume";
+import { docMatchesTopic, recordWorkspaceTopicVolume } from "@/lib/trends/volume";
 import { getLatestMonitoringProfile } from "@/lib/profile/repository";
 import {
   document,
@@ -181,6 +181,14 @@ export async function buildOpportunities(opts: {
   const limitDocs = Math.min(Math.max(Math.floor(opts.limitDocs ?? 200), 1), 200);
   const profile = await getLatestMonitoringProfile(opts.workspaceId);
   if (!profile) throw new Error("Monitoring profile required before opportunity generation.");
+
+  // Every build path (cron, manual scan, source scan, fallback tick) counts topic mentions here,
+  // so charts and trend-based scores never lag the queue. A failure never blocks the build.
+  try {
+    await recordWorkspaceTopicVolume(opts.workspaceId, profile.topics ?? []);
+  } catch (err) {
+    console.error("[opportunities] topic volume recording skipped:", err instanceof Error ? err.message : "unknown error");
+  }
 
   const rows = await db
     .select()
