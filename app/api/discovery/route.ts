@@ -1,11 +1,8 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
-import { ingestReviewedSources, runDiscovery, saveDiscoveryProposals } from "@/lib/agents/discovery";
+import { ingestReviewedSources, listPendingProposals, runDiscovery, saveDiscoveryProposals } from "@/lib/agents/discovery";
 import { captureServerException } from "@/lib/analytics/server";
 import { authorizeWorkspace } from "@/lib/auth/workspace";
-import { getDb } from "@/lib/db/client";
-import { competitor, keywordRecommendation, proposedProfile, sourceProposal } from "@/lib/db/schema";
 import { isPublicHttpUrl } from "@/lib/http/public-fetch";
 import { PaidCallDeniedError } from "@/lib/providers/paid-call";
 
@@ -63,14 +60,5 @@ export async function GET(req: Request): Promise<Response> {
   const authorization = await authorizeWorkspace(workspaceId);
   if (!authorization.ok) return NextResponse.json({ error: authorization.error }, { status: authorization.status });
 
-  const db = getDb();
-  const [profile] = await db.select().from(proposedProfile)
-    .where(and(eq(proposedProfile.workspaceId, workspaceId), eq(proposedProfile.status, "proposed"))).orderBy(desc(proposedProfile.createdAt)).limit(1);
-  const competitors = await db.select().from(competitor)
-    .where(and(eq(competitor.workspaceId, workspaceId), eq(competitor.status, "proposed"))).limit(50);
-  const keywords = await db.select().from(keywordRecommendation)
-    .where(and(eq(keywordRecommendation.workspaceId, workspaceId), eq(keywordRecommendation.status, "proposed"))).limit(50);
-  const sources = await db.select().from(sourceProposal)
-    .where(and(eq(sourceProposal.workspaceId, workspaceId), inArray(sourceProposal.status, ["reviewed", "rejected", "removal_proposed"]))).limit(100);
-  return NextResponse.json({ profile: profile ?? null, competitors, keywords, sources });
+  return NextResponse.json(await listPendingProposals(workspaceId));
 }
