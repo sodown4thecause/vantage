@@ -307,52 +307,72 @@ function projectWebResearch(value: unknown): Json {
   return { unsupported: true };
 }
 
+const jsonLength = (value: unknown): number => JSON.stringify(value).length;
+
+/** The longest prefix of `value` whose JSON string form (quotes and escapes included) fits in `room` characters. */
+function clipToJsonLength(value: string, room: number): string {
+  if (room < 2) return "";
+  if (jsonLength(value) <= room) return value;
+  let low = 0;
+  let high = value.length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (jsonLength(value.slice(0, mid)) <= room) low = mid;
+    else high = mid - 1;
+  }
+  return value.slice(0, low);
+}
+
 function boundArray(value: unknown[], limit: number): unknown[] {
   const rows: unknown[] = [];
+  const share = Math.floor(limit / Math.max(2, Math.min(value.length, MODEL_ROW_LIMIT)));
   for (const item of value) {
-    const sizedItem = typeof item === "string"
-      ? clipString(item).value
-      : boundJsonSize(item, Math.max(256, Math.floor(limit / Math.max(2, Math.min(value.length, MODEL_ROW_LIMIT)))));
+    const sizedItem = boundJsonSize(item, share);
     const candidate = [...rows, sizedItem];
-    if (JSON.stringify(candidate).length > limit) break;
+    if (jsonLength(candidate) > limit) break;
     rows.push(sizedItem);
   }
   return rows;
 }
 
-/** Shrink arbitrary JSON until it fits a serialized size budget, preserving array/object shape. */
+function boundRecord(value: Record<string, unknown>, limit: number): Record<string, unknown> {
+  const next: Record<string, unknown> = { truncated: true };
+  for (const [key, nested] of Object.entries(value)) {
+    if (key === "truncated") continue;
+    const candidate = { ...next, [key]: nested };
+    if (jsonLength(candidate) <= limit) {
+      next[key] = nested;
+      continue;
+    }
+    // Room for this value alone: what is left once the key is present with an empty placeholder, plus that placeholder.
+    const placeholder = typeof nested === "string" ? "" : Array.isArray(nested) ? [] : isRecord(nested) ? {} : null;
+    if (placeholder === null) continue;
+    const placeholderLength = jsonLength(placeholder);
+    const room = limit - jsonLength({ ...next, [key]: placeholder }) + placeholderLength;
+    if (room < placeholderLength) continue;
+    const bounded = typeof nested === "string" ? clipToJsonLength(nested, room) : boundJsonSize(nested, room);
+    if (jsonLength({ ...next, [key]: bounded }) <= limit) next[key] = bounded;
+  }
+  return next;
+}
+
+/**
+ * Shrink arbitrary JSON until it fits a serialized size budget, preserving array/object shape. The result's JSON form
+ * is never longer than `limit` (escapes and nesting included); when nothing meaningful fits it is a bare marker or null.
+ */
 export function boundJsonSize(value: unknown, limit: number): unknown {
   const raw = JSON.stringify(value);
-  if (raw.length <= limit) return value;
-  if (Array.isArray(value)) return boundArray(value, limit);
-  if (isRecord(value)) {
-    const next: Record<string, unknown> = { truncated: true };
-    for (const [key, nested] of Object.entries(value)) {
-      if (key === "truncated") continue;
-      const candidate = { ...next, [key]: nested };
-      if (JSON.stringify(candidate).length <= limit) {
-        next[key] = nested;
-        continue;
-      }
-      if (typeof nested === "string") {
-        const room = Math.max(0, limit - JSON.stringify({ ...next, [key]: "" }).length);
-        next[key] = clipString(nested, room).value;
-        continue;
-      }
-      if (Array.isArray(nested)) {
-        const room = Math.max(256, limit - JSON.stringify({ ...next, [key]: [] }).length);
-        next[key] = boundArray(nested, room);
-        continue;
-      }
-      if (isRecord(nested)) {
-        const room = Math.max(256, limit - JSON.stringify({ ...next, [key]: {} }).length);
-        next[key] = boundJsonSize(nested, room);
-      }
-    }
-    return next;
+  if (raw === undefined || raw.length <= limit) return value;
+  let bounded: unknown;
+  if (Array.isArray(value)) bounded = boundArray(value, limit);
+  else if (isRecord(value)) bounded = boundRecord(value, limit);
+  else if (typeof value === "string") bounded = clipToJsonLength(value, limit);
+  else bounded = { truncated: true };
+  if (jsonLength(bounded) <= limit) return bounded;
+  for (const fallback of [{ truncated: true }, null, ""]) {
+    if (jsonLength(fallback) <= limit) return fallback;
   }
-  if (typeof value === "string") return clipString(value, Math.max(0, limit - 2)).value;
-  return { truncated: true };
+  return "";
 }
 
 export type ProjectedToolFields =

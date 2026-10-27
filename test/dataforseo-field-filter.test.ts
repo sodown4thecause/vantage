@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   MODEL_PAYLOAD_JSON_LIMIT,
+  boundJsonSize,
   MODEL_STRING_LIMIT,
   filterToolEvidence,
   projectToolFields,
@@ -174,5 +175,34 @@ describe("filterToolEvidence", () => {
       spamScore: 0,
       firstSeen: "2024-01-02T00:00:00.000Z",
     });
+  });
+});
+
+describe("boundJsonSize", () => {
+  const size = (value: unknown) => JSON.stringify(value).length;
+
+  it("keeps newline-heavy strings inside the serialized limit", () => {
+    const bounded = boundJsonSize({ note: "\n".repeat(5_000), other: "\"".repeat(500) }, 1_000);
+    expect(size(bounded)).toBeLessThanOrEqual(1_000);
+    expect(size(boundJsonSize("\n".repeat(5_000), 1_000))).toBeLessThanOrEqual(1_000);
+  });
+
+  it("keeps nearly full objects inside the limit instead of granting nested values 256 characters", () => {
+    const bounded = boundJsonSize({ a: "x".repeat(950), nested: { b: "y".repeat(1_000) }, list: ["z".repeat(500)] }, 1_000);
+    expect(size(bounded)).toBeLessThanOrEqual(1_000);
+  });
+
+  it("keeps arrays of long or escaped items inside the limit", () => {
+    const rows = Array.from({ length: 30 }, (_, i) => ({ id: i, text: "line\n".repeat(200) }));
+    expect(size(boundJsonSize(rows, 2_000))).toBeLessThanOrEqual(2_000);
+    expect(size(boundJsonSize(["\n".repeat(900), "\n".repeat(900)], 1_000))).toBeLessThanOrEqual(1_000);
+  });
+
+  it("returns small values unchanged and never exceeds a tiny limit", () => {
+    const small = { a: 1, b: ["c"] };
+    expect(boundJsonSize(small, 1_000)).toBe(small);
+    for (const limit of [2, 5, 20, 40]) {
+      expect(size(boundJsonSize({ a: "x".repeat(100), b: [1, 2, 3] }, limit))).toBeLessThanOrEqual(limit);
+    }
   });
 });
