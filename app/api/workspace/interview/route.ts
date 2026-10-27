@@ -84,7 +84,7 @@ export async function POST(req: Request): Promise<Response> {
       if (!applied.ok) return rejected(applied.error, promptFor(step, answers, current, timeZone));
       answers = applied.answers;
       if (step === "productUrl") {
-        draft = await deriveProfileFromUrl({ workspaceId, url: answers.productUrl!, signal: AbortSignal.timeout(DERIVE_TIMEOUT_MS) }) ?? undefined;
+        draft = await deriveProfileFromUrl({ workspaceId, userId: authorization.userId, url: answers.productUrl!, signal: AbortSignal.timeout(DERIVE_TIMEOUT_MS) }) ?? undefined;
       }
     }
 

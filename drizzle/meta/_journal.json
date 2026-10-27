@@ -243,8 +243,22 @@
     {
       "idx": 34,
       "version": "7",
-      "when": 1792990827132,
-      "tag": "0034_fair_dracula",
+      "when": 1792988658125,
+      "tag": "0034_cuddly_monster_badoon",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1792989993126,
+      "tag": "0035_daily_impossible_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1793074318313,
+      "tag": "0036_zippy_baron_strucker",
       "breakpoints": true
     }
   ]

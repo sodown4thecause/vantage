@@ -6,6 +6,8 @@ import { OUTPUT_FILE, buildPosts, compilePost, parseFrontmatter, renderMarkdown,
 import { GET as llms } from "@/app/llms.txt/route";
 import robots from "@/app/robots";
 import { GET as rss } from "@/app/blog/rss.xml/route";
+import * as postPage from "@/app/blog/[slug]/page";
+import * as tagPage from "@/app/blog/tag/[tag]/page";
 import { getAdjacentPosts, getAllPosts, getAllTags, getPost, getRelatedPosts } from "@/lib/blog";
 
 const minimal = (extra = "", body = "Hello.") =>
@@ -98,6 +100,17 @@ describe("generated posts module", () => {
     expect(getRelatedPosts(newest).every((p) => p.slug !== newest.slug)).toBe(true);
     expect(getAdjacentPosts(newest.slug).newer).toBeNull();
     if (older) expect(getAdjacentPosts(newest.slug).older).toBe(older);
+  });
+});
+
+describe("blog dynamic routes", () => {
+  it("renders posts and tag pages per Worker request instead of relying on prerendered paths", () => {
+    expect(postPage.dynamic).toBe("force-dynamic");
+    expect("generateStaticParams" in postPage).toBe(false);
+    expect("dynamicParams" in postPage).toBe(false);
+    expect(tagPage.dynamic).toBe("force-dynamic");
+    expect("generateStaticParams" in tagPage).toBe(false);
+    expect("dynamicParams" in tagPage).toBe(false);
   });
 });
 

@@ -2,12 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   ai: null as unknown,
+  requestContext: null as unknown,
   recorded: [] as Array<Record<string, unknown>>,
   costError: null as Error | null,
 }));
 
 vi.mock("@/lib/cf/env", () => ({
   getAi: async () => state.ai,
+  getCloudflareRequestContext: async () => state.requestContext,
 }));
 vi.mock("@/lib/costs/ledger", () => ({
   recordCost: async (input: Record<string, unknown>) => {
@@ -27,6 +29,7 @@ const ctx = { workspaceId: "ws-1", sourceKey: "reddit" };
 
 beforeEach(() => {
   state.ai = null;
+  state.requestContext = null;
   state.recorded = [];
   state.costError = null;
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -48,6 +51,34 @@ describe("embedTexts", () => {
       text: ["alpha", "beta", "gamma"],
       options: { gateway: { id: "vantage" } },
     });
+  });
+
+  it("records an allowlisted span around Workers AI embeddings", async () => {
+    const fake = createFakeAi();
+    const attributes: Record<string, unknown> = {};
+    const spanNames: string[] = [];
+    state.ai = fake.binding;
+    state.requestContext = {
+      tracing: {
+        enterSpan: async (name: string, callback: (span: {
+          setAttribute: (key: string, value: unknown) => void;
+          setAttributes: (values: Record<string, unknown>) => void;
+        }) => unknown) => {
+          spanNames.push(name);
+          return callback({
+            setAttribute: (key, value) => { attributes[key] = value; },
+            setAttributes: (values) => Object.assign(attributes, values),
+          });
+        },
+      },
+    };
+    await embedTexts(["private embedding text"], ctx);
+    expect(spanNames).toEqual(["ai.embedding"]);
+    expect(attributes).toMatchObject({
+      workspaceId: "ws-1", source: "reddit", provider: "workers_ai", status: "ok",
+    });
+    expect(Object.keys(attributes).sort()).toEqual(["durationMs", "provider", "source", "status", "workspaceId"]);
+    expect(JSON.stringify(attributes)).not.toContain("private embedding text");
   });
 
   it("does not send blank text and returns an empty array at that index", async () => {

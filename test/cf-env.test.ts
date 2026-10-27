@@ -12,7 +12,7 @@ vi.mock("@opennextjs/cloudflare", () => ({
   },
 }));
 
-import { getAi, getSemanticMode, getVectorize } from "@/lib/cf/env";
+import { getAi, getCloudflareRequestContext, getSemanticMode, getVectorize } from "@/lib/cf/env";
 
 const originalMode = process.env.VANTAGE_SEMANTIC_MODE;
 
@@ -25,6 +25,13 @@ afterEach(() => {
   if (originalMode === undefined) delete process.env.VANTAGE_SEMANTIC_MODE;
   else process.env.VANTAGE_SEMANTIC_MODE = originalMode;
   vi.restoreAllMocks();
+});
+
+describe("getCloudflareRequestContext", () => {
+  it("returns null outside a Cloudflare request context", async () => {
+    state.throwContext = true;
+    expect(await getCloudflareRequestContext()).toBeNull();
+  });
 });
 
 describe("getSemanticMode", () => {
