@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   eligible: [] as Array<{ id: string }>,
   sourceRow: null as Record<string, unknown> | null,
   dueWorkspaces: [] as Array<{ id: string }>,
+  dueThrow: null as Error | null,
   limits: [] as unknown[],
   writes: [] as Array<{ table: string; set: Record<string, unknown>; where: unknown }>,
   dueWhere: undefined as unknown,
@@ -18,6 +19,7 @@ const state = vi.hoisted(() => ({
   embed: vi.fn(),
   build: vi.fn(),
   rollup: vi.fn(),
+  productEvents: [] as Array<unknown>,
 }));
 
 // Minimal thenable query builder: records chained calls, resolves them against `state`.
@@ -59,6 +61,7 @@ function readRows(ops: Op[]) {
   if (from === source) return find(ops, "orderBy") ? state.eligible : state.sourceRow ? [state.sourceRow] : [];
   if (from === workspace) {
     state.dueWhere = find(ops, "where")?.args[0];
+    if (state.dueThrow) throw state.dueThrow;
     return state.dueWorkspaces;
   }
   return [];
@@ -66,7 +69,15 @@ function readRows(ops: Op[]) {
 function writeRows(ops: Op[]) {
   const table = find(ops, "update")?.args[0] === workspace ? "workspace" : "source";
   state.writes.push({ table, set: find(ops, "set")?.args[0] as Record<string, unknown>, where: find(ops, "where")?.args[0] });
-  if (find(ops, "returning")) return state.leaseHeld ? [] : [{ id: WS }];
+  if (find(ops, "returning")) {
+    const values = find(ops, "set")?.args[0] as Record<string, unknown> | undefined;
+    if (table === "workspace" && values?.scanLeaseToken === null) {
+      const released = state.leaseHeld;
+      state.leaseHeld = false;
+      return released ? [{ id: WS }] : [];
+    }
+    return state.leaseHeld ? [] : [{ id: WS }];
+  }
   return undefined;
 }
 function insertRows(ops: Op[]) {
@@ -99,6 +110,10 @@ vi.mock("@/lib/opportunities/run", () => ({
 }));
 vi.mock("@/lib/costs/rollup", () => ({
   rollupRecent: (...args: unknown[]) => state.rollup(...args),
+}));
+vi.mock("@/lib/analytics/server", () => ({
+  captureProductEvent: async (event: unknown) => { state.productEvents.push(event); },
+  captureServerException: vi.fn(async () => undefined),
 }));
 
 import { workspace, source } from "@/lib/db/schema";
@@ -134,9 +149,11 @@ beforeEach(() => {
   state.eligible = [];
   state.sourceRow = { id: SRC, workspaceId: WS, type: "hn", lane: "free", health: "healthy", config: {}, etag: null, lastModified: null, cursor: null };
   state.dueWorkspaces = [{ id: WS }];
+  state.dueThrow = null;
   state.limits = [];
   state.writes = [];
   state.hashes = new Set();
+  state.productEvents = [];
   state.collectorRun = vi.fn(async () => ({ documents: [doc("h1"), doc("h2")] }));
   state.embed = vi.fn(async () => ({ embedded: 3 }));
   state.build = vi.fn(async () => ({ scanned: 2, clusters: 1, upserted: 1, top: [] }));
@@ -170,6 +187,21 @@ describe("internal scan step routes: validation", () => {
 });
 
 describe("due", () => {
+  it("logs the error class when the lookup throws, without the message", async () => {
+    state.dueThrow = Object.assign(new Error("select secret from workspace"), { name: "NeonDbError" });
+    const response = await call(dueRoute);
+    expect(response.status).toBe(500);
+    expect(console.error).toHaveBeenCalledWith("[scan-due] lookup failed", "NeonDbError");
+    for (const args of vi.mocked(console.error).mock.calls) {
+      for (const arg of args) {
+        expect(String(arg)).not.toContain("select secret");
+        if (arg instanceof Error) {
+          expect(arg.message).not.toContain("select secret");
+        }
+      }
+    }
+  });
+
   it("returns workspaces whose cadence has elapsed", async () => {
     const response = await call(dueRoute);
     expect(await response.json()).toEqual({ workspaceIds: [WS] });
@@ -197,7 +229,7 @@ describe("plan", () => {
     expect(response.status).toBe(200);
     expect(body.leaseToken).toMatch(UUID_RE);
     expect(body.sourceIds).toHaveLength(40);
-    expect(state.limits).toContain(40);
+    expect(state.limits).toContain(41);
     const claim = state.writes.find((write) => write.table === "workspace" && "scanLeaseToken" in write.set);
     expect(claim?.set).toMatchObject({ scanLeaseToken: body.leaseToken });
     expect(toSql(claim?.set.scanLeaseUntil).params).toContain(30);
@@ -298,6 +330,7 @@ describe("build", () => {
 
 describe("finish", () => {
   it("releases only the lease that carries the supplied token", async () => {
+    state.leaseHeld = true;
     const response = await call(finishRoute, { workspaceId: WS, leaseToken: TOKEN });
     expect(await response.json()).toEqual({ released: true });
     const release = state.writes.find((write) => write.table === "workspace" && write.set.scanLeaseToken === null);
@@ -305,6 +338,18 @@ describe("finish", () => {
     const condition = toSql(release?.where);
     expect(condition.params).toContain(TOKEN);
     expect(condition.sql).toContain('"scan_lease_token"');
+  });
+
+  it("emits scan_finished once with outcome status across finish retries", async () => {
+    state.leaseHeld = true;
+    const body = {
+      workspaceId: WS, leaseToken: TOKEN, read: 42, relevant: 9, picked: 3, capped: true, status: "partial",
+    };
+    await call(finishRoute, body);
+    await call(finishRoute, body);
+    expect(state.productEvents).toEqual([{
+      event: "scan_finished", workspaceId: WS, read: 42, relevant: 9, picked: 3, capped: true, status: "partial",
+    }]);
   });
 });
 

@@ -16,4 +16,4 @@
 .footerInner { max-width: 1360px; margin: auto; padding: 36px 40px; display: grid; grid-template-columns: 1.6fr 1fr 1fr; gap: 40px; font-size: 13px; }
 .footerInner :global(.text-lg) { font-size: 16px; }
 @media (max-width: 960px) { .headerInner { align-items: flex-start; flex-direction: column; gap: 18px; } .nav { gap: 16px; } }
-@media (max-width: 600px) { .headerInner { padding: 20px; } .nav { gap: 14px; font-size: 12px; } .content { padding: 36px 20px 56px; } .footerInner { padding: 28px 20px; grid-template-columns: 1fr 1fr; gap: 28px; } .footerInner > :first-child { grid-column: 1 / -1; } }
+@media (max-width: 600px) { .headerInner { padding: 20px; } .nav { flex-wrap: nowrap; gap: 14px; font-size: 12px; } .nav > a:first-child, .nav > a:nth-child(5) { display: none; } .nav :global(.btn) { padding: 9px 13px; } .content { padding: 36px 20px 56px; } .footerInner { padding: 28px 20px; grid-template-columns: 1fr 1fr; gap: 28px; } .footerInner > :first-child { grid-column: 1 / -1; } }

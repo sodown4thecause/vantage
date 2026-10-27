@@ -22,7 +22,7 @@ export type TinyFishStructuredRunOptions = {
 export async function runTinyFishStructuredAgent(
   opts: TinyFishStructuredRunOptions,
 ): Promise<Record<string, unknown>> {
-  const client = opts.client ?? createTinyFishClient();
+  const client = opts.client ?? (await createTinyFishClient());
   const params: AgentRunParams = {
     url: opts.url,
     goal: opts.goal,

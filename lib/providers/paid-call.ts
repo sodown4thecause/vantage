@@ -3,6 +3,8 @@ import { getDb } from "@/lib/db/client";
 import { rowsOf } from "@/lib/db/rows";
 import { recordCost, roundUsd } from "@/lib/costs/ledger";
 import type { CostContext } from "@/lib/costs/meter";
+import { reserveScanSpend } from "@/lib/activation/budget";
+import { withObservedSpan } from "@/lib/analytics/spans.mjs";
 
 export class PaidCallDeniedError extends Error {
   constructor(public readonly code: "provider_disabled" | "budget_exhausted" | "access_pending", message: string) {
@@ -72,12 +74,21 @@ export async function runPaidCall<T>(meta: {
     throw new PaidCallDeniedError("budget_exhausted", "Provider budget could not be reserved.");
   }
   if (!reserved) throw new PaidCallDeniedError("budget_exhausted", "Daily provider budget exhausted.");
+  let scanSpend: Awaited<ReturnType<typeof reserveScanSpend>>;
+  try {
+    scanSpend = await reserveScanSpend(meta.context.workspaceId, meta.provider, meta.action, estimate);
+  } catch {
+    await db.execute(sql`update provider_budget_reservation set spent_usd = greatest(0, spent_usd - ${estimate.toFixed(6)}::numeric)
+      where day = ${day}::date and provider = ${meta.provider}::text`);
+    throw new PaidCallDeniedError("budget_exhausted", "First scan allowance unavailable.");
+  }
   const record = (cost: number, ok: boolean) => recordCost({
     ...meta.context, provider: meta.provider, action: meta.action,
     units: 1, unitCostUsd: cost, ok, chargedOnFailure: !ok,
     requestRef: reservationRef,
   });
   const settle = async (cost: number) => {
+    await scanSpend?.settle(cost);
     try {
       const delta = (roundUsd(cost) - estimate).toFixed(6);
       await db.execute(sql`update provider_budget_reservation
@@ -92,7 +103,13 @@ export async function runPaidCall<T>(meta: {
   try {
     meta.signal?.throwIfAborted();
     started = true;
-    result = await work();
+    result = await withObservedSpan(
+      `provider.${meta.provider}`,
+      { workspaceId: meta.context.workspaceId, source: meta.context.sourceKey, provider: meta.provider },
+      work,
+      undefined,
+      (outcome) => outcome.error === undefined ? "ok" : "error",
+    );
   } catch (error) {
     if (started && !(await record(estimate, false))) throw new PaidCallDeniedError("access_pending", "Provider cost recording is pending; further paid calls are blocked.");
     await settle(started ? estimate : 0);

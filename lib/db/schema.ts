@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import type { SeoMessageParts, SeoMessageRole, SeoMessageStatus } from "@/lib/seo-agent/conversations";
 import type { Block } from "@/lib/workspace/blocks";
 import type { SavedArtifactLane } from "@/lib/workspace/saved-artifact-types";
+import type { ContentBrandVoiceProfile, ContentDraftFormat, ContentMessageRole, ContentMessageStatus } from "@/lib/content-agent/contracts";
 import {
   boolean,
   check,
@@ -124,6 +125,8 @@ export const workspace = pgTable("workspace", {
     .default({}),
   /** Daily digest delivery, opt-in per workspace. */
   digestEnabled: boolean("digest_enabled").notNull().default(false),
+  productEmailSuppressedAt: timestamp("product_email_suppressed_at", { withTimezone: true }),
+  activationEmail: text("activation_email"),
   digestEmail: text("digest_email"),
   digestHourUtc: integer("digest_hour_utc").notNull().default(13),
   /** Local send hour in `digestTimeZone` (IANA, e.g. Australia/Brisbane). When both are set they replace the UTC hour. */
@@ -140,6 +143,35 @@ export const workspace = pgTable("workspace", {
     .defaultNow()
     .notNull(),
 });
+
+export const scanRun = pgTable("scan_run", {
+  id: text("id").primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+  kind: text("kind").$type<"first" | "scheduled">().notNull(),
+  status: text("status").$type<"queued" | "running" | "done" | "partial" | "failed">().notNull().default("queued"),
+  read: integer("read").notNull().default(0),
+  relevant: integer("relevant").notNull().default(0),
+  picked: integer("picked").notNull().default(0),
+  costUsd: numeric("cost_usd", { precision: 12, scale: 6 }).notNull().default("0"),
+  reservedUsd: numeric("reserved_usd", { precision: 12, scale: 6 }).notNull().default("0"),
+  hydrationAttempts: integer("hydration_attempts").notNull().default(0),
+  capped: boolean("capped").notNull().default(false),
+  leaseToken: uuid("lease_token").notNull(),
+  sourceIds: jsonb("source_ids").$type<string[]>(),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("scan_run_active_workspace_uidx").on(table.workspaceId).where(sql`${table.status} in ('queued', 'running')`),
+  index("scan_run_workspace_idx").on(table.workspaceId),
+]);
+
+export const productEmailSent = pgTable("product_email_sent", {
+  workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(),
+  claimedAt: timestamp("claimed_at", { withTimezone: true }).defaultNow().notNull(),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+}, (table) => [primaryKey({ columns: [table.workspaceId, table.kind] })]);
 
 export const source = pgTable(
   "source",
@@ -429,6 +461,10 @@ export const opportunityOutcomeEventEnum = pgEnum("opportunity_outcome_event", [
   "published_url",
   "utm_click",
   "conversion",
+  "copy",
+  "open",
+  "sent",
+  "replied",
 ]);
 
 /** Append-only outcome/feedback audit log (Slice 5). */
@@ -456,6 +492,29 @@ export const opportunityOutcome = pgTable("opportunity_outcome", {
     table.workspaceId,
     table.idempotencyKey,
   ),
+]);
+
+/**
+ * Every conversation a workspace was shown on a local day. This is the durable shown history. A pick
+ * holds one of the day's five slots while its rank is 1-5 (unique per day); when it stops being
+ * eligible its rank is cleared to free the slot, and the row stays so it is never picked again on
+ * another day and still appears in the day's follow-up list.
+ */
+export const opportunityPick = pgTable("opportunity_pick", {
+  workspaceId: uuid("workspace_id")
+    .notNull()
+    .references(() => workspace.id, { onDelete: "cascade" }),
+  pickDate: date("pick_date", { mode: "string" }).notNull(),
+  rank: integer("rank"),
+  opportunityId: uuid("opportunity_id")
+    .notNull()
+    .references(() => opportunity.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.workspaceId, table.pickDate, table.opportunityId] }),
+  uniqueIndex("opportunity_pick_day_rank_uidx").on(table.workspaceId, table.pickDate, table.rank).where(sql`${table.rank} is not null`),
+  index("opportunity_pick_opportunity_idx").on(table.workspaceId, table.opportunityId),
+  check("opportunity_pick_rank_check", sql`${table.rank} is null or ${table.rank} between 1 and 5`),
 ]);
 
 export type OpportunityDraft = typeof opportunityDraft.$inferSelect;
@@ -1097,5 +1156,75 @@ export const savedArtifact = pgTable(
   (table) => [
     index("saved_artifact_workspace_created_idx").on(table.workspaceId, table.createdAt),
     check("saved_artifact_lane_check", sql`${table.lane} in ('gtm', 'seo', 'geo', 'content')`),
+  ],
+);
+
+/** Workspace-owned Content brand voice profile used by the Content agent. */
+export const contentBrandVoiceProfile = pgTable(
+  "content_brand_voice_profile",
+  {
+    workspaceId: uuid("workspace_id").primaryKey().references(() => workspace.id, { onDelete: "cascade" }),
+    audience: text("audience").notNull(),
+    purpose: text("purpose").notNull(),
+    voice: text("voice").notNull(),
+    structure: text("structure").notNull(),
+    avoid: jsonb("avoid").$type<ContentBrandVoiceProfile["avoid"]>().notNull().default([]),
+    sampleText: text("sample_text"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+);
+
+export type ContentBrandVoiceProfileRow = typeof contentBrandVoiceProfile.$inferSelect;
+
+/** Workspace-owned Content threads, streamed messages and private generated drafts. */
+export const contentThread = pgTable(
+  "content_thread",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+    title: text("title").notNull().default("New content draft"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("content_thread_workspace_updated_idx").on(table.workspaceId, table.updatedAt)],
+);
+
+export const contentMessage = pgTable(
+  "content_message",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+    threadId: uuid("thread_id").notNull().references(() => contentThread.id, { onDelete: "cascade" }),
+    role: text("role").$type<ContentMessageRole>().notNull(),
+    content: text("content").notNull().default(""),
+    status: text("status").$type<ContentMessageStatus>().notNull().default("complete"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("content_message_workspace_thread_created_idx").on(table.workspaceId, table.threadId, table.createdAt),
+    index("content_message_thread_id_idx").on(table.threadId),
+    check("content_message_role_check", sql`${table.role} in ('user', 'assistant')`),
+    check("content_message_status_check", sql`${table.status} in ('streaming', 'complete', 'incomplete', 'failed')`),
+  ],
+);
+
+export const contentDraft = pgTable(
+  "content_draft",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+    threadId: uuid("thread_id").references(() => contentThread.id, { onDelete: "set null" }),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    format: text("format").$type<ContentDraftFormat>().notNull().default("blog_post"),
+    status: text("status").$type<"idea" | "draft" | "ready">().notNull().default("draft"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("content_draft_workspace_updated_idx").on(table.workspaceId, table.updatedAt),
+    check("content_draft_format_check", sql`${table.format} in ('blog_outline', 'blog_post', 'x_thread', 'linkedin_post', 'reddit_reply', 'hn_reply', 'newsletter_section')`),
+    check("content_draft_status_check", sql`${table.status} in ('idea', 'draft', 'ready')`),
   ],
 );

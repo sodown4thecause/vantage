@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { JsonLd } from "@/components/json-ld";
 import { Shell } from "@/components/shell";
+import { HomeShowcase } from "@/app/home-showcase";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth/server";
 import { getCurrentWorkspace } from "@/lib/auth/workspace";
@@ -124,84 +125,36 @@ export default async function Home() {
     <Shell wide>
       <JsonLd data={jsonLd} />
       <div className={styles.home}>
-        <section className={styles.hero} aria-labelledby="home-heading">
-          <p className={styles.eyebrow}>Your go-to-market workspace</p>
-          <h1 id="home-heading">Find the conversations<br />worth showing up for.</h1>
-          <p className={styles.intro}>
-            A quieter way to find your next customers. contextfor.dev reads the
-            places they talk and brings you up to five relevant conversations a day,
-            with the evidence behind each one. You write every reply.
-          </p>
-          {session?.user ? (
-            <form action={startWorkspace} className={styles.createForm}>
-              <label htmlFor="workspace-name">Name your workspace</label>
-              <div>
-                <input id="workspace-name" name="name" required maxLength={100}
-                  autoComplete="organization" placeholder="Acme Analytics" />
-                <button className={styles.primary}>Create workspace <span aria-hidden="true">↗</span></button>
-              </div>
-            </form>
-          ) : (
-            <>
-              <div className={styles.heroActions}>
-                <Link href="/auth/sign-up" className={styles.primary}>Create a free account <span aria-hidden="true">↗</span></Link>
-                <Link href="/tour" className={styles.secondary}>Explore the workspace <span aria-hidden="true">→</span></Link>
-              </div>
-              <p className={styles.signIn}>Already have an account? <Link href="/auth/sign-in">Sign in</Link></p>
-            </>
-          )}
-        </section>
-
-        <figure className={styles.preview} aria-labelledby="preview-caption">
-          <figcaption id="preview-caption" className={styles.previewCaption}>
-            <span><span className={styles.statusDot} />A look inside your workspace</span>
-            <span>Static preview · sample data</span>
-          </figcaption>
-          <div className={styles.previewBody}>
-            <div className={styles.previewSidebar} aria-hidden="true">
-              <div className={styles.previewBrand}>c<span>contextfor.dev</span></div>
-              <p>Acme workspace</p>
-              <div className={styles.selectedNav}>◈ <span>GTM workspace</span></div>
-              <div>☷ <span>Queue</span><small>3</small></div>
-              <div>⌁ <span>Sources</span></div>
-              <div>◎ <span>Profile</span></div>
-              <div className={styles.sidebarBottom}><span className={styles.avatar}>A</span>Acme Analytics</div>
-            </div>
-            <div className={styles.previewMain}>
-              <div className={styles.previewTopbar}><span>GTM workspace</span><span>Acme Analytics</span></div>
-              <div className={styles.previewColumns}>
-                <div className={styles.previewConversation}>
-                  <div className={styles.previewAnswer}>
-                    <span className={styles.assistantMark} aria-hidden="true">c</span>
-                    <p className={styles.responseLabel}>Your next move</p>
-                    <h2>Start with a useful conversation.</h2>
-                    <p>There’s a founder looking for a simpler way to track brand mentions. The problem fits your product, and the thread is still active.</p>
-                    <p className={styles.actionLabel}>Three ways forward</p>
-                    <ol className={styles.nextActions}>
-                      <li><span>01</span><div>Review the conversation<small>Read the source and check the fit.</small></div><span aria-hidden="true">↗</span></li>
-                      <li><span>02</span><div>Find the right angle<small>Lead with an answer, not a pitch.</small></div><span aria-hidden="true">→</span></li>
-                      <li><span>03</span><div>Keep your queue focused<small>Review the next relevant conversation.</small></div><span aria-hidden="true">→</span></li>
-                    </ol>
-                  </div>
-                  <div className={styles.composer}>
-                    <span>Ask about your next move…</span>
-                    <div><small>Sample workspace · not interactive</small><span aria-hidden="true">↑</span></div>
-                  </div>
-                  <p className={styles.previewDisclaimer}>You decide what to say. Nothing is posted for you.</p>
+        <div className={styles.hero}>
+          <section className={styles.heroCopy} aria-labelledby="home-heading">
+            <p className={styles.eyebrow}>For developer tools and AI products</p>
+            <h1 id="home-heading">Find the people already asking for what you build.</h1>
+            <p className={styles.intro}>
+              contextfor.dev reads the places your buyers talk and brings the most
+              relevant conversations into one GTM workspace. See the evidence
+              behind each one. You write every reply.
+            </p>
+            {session?.user ? (
+              <form action={startWorkspace} className={styles.createForm}>
+                <label htmlFor="workspace-name">Name your workspace</label>
+                <div>
+                  <input id="workspace-name" name="name" required maxLength={100}
+                    autoComplete="organization" placeholder="Acme Analytics" />
+                  <button className={styles.primary}>Create workspace <span aria-hidden="true">↗</span></button>
                 </div>
-                <aside className={styles.evidence} aria-label="Illustrative source evidence">
-                  <p className={styles.actionLabel}>The context</p>
-                  <div className={styles.evidenceHeading}><span className={styles.sourceIcon}>r</span><div>Reddit<small>Illustrative forum conversation</small></div></div>
-                  <h3>Looking for a simpler way to track mentions</h3>
-                  <blockquote>“How are other small teams keeping track of where people mention their product? I’m trying to move beyond checking everything manually.”</blockquote>
-                  <div className={styles.evidenceSignal}><span>Product fit</span><strong>Strong</strong></div>
-                  <div className={styles.evidenceSignal}><span>Intent</span><strong>Asking for a solution</strong></div>
-                  <p className={styles.evidenceNote}>An illustrative example, not a live lead or a customer quote.</p>
-                </aside>
-              </div>
-            </div>
-          </div>
-        </figure>
+              </form>
+            ) : (
+              <>
+                <div className={styles.heroActions}>
+                  <Link href="/auth/sign-up" className={styles.primary}>Create a free account <span aria-hidden="true">↗</span></Link>
+                  <Link href="/tour" className={styles.secondary}>Explore the GTM workspace <span aria-hidden="true">→</span></Link>
+                </div>
+                <p className={styles.signIn}>Already have an account? <Link href="/auth/sign-in">Sign in</Link></p>
+              </>
+            )}
+          </section>
+          <HomeShowcase />
+        </div>
 
         <section aria-labelledby="sources-heading" className={styles.sources}>
           <h2 id="sources-heading">Context from the places your buyers talk</h2>

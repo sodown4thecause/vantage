@@ -64,6 +64,7 @@ export type BuildOpportunitiesResult = {
   scanned: number;
   clusters: number;
   upserted: number;
+  relevant?: number;
   top: OpportunityCardView[];
   /** "budget_limited" when the plan's daily scored-lead cap stopped new leads. */
   coverage?: "budget_limited";

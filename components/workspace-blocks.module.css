@@ -2,9 +2,9 @@
 .block { display: grid; gap: 8px; }
 .text { white-space: pre-wrap; font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
 .link { color: var(--signal); font-size: 12px; overflow-wrap: anywhere; }
-.thread { border: 1px solid var(--contour); border-radius: 12px; padding: 16px; background: var(--sheet); }
-.researchCard { display: grid; gap: 8px; border: 1px solid var(--contour); border-radius: 12px; padding: 16px; background: var(--sheet); }
-.researchCard h3 { font-size: 13px; font-weight: 600; line-height: 1.5; }
+.thread { border: 1px solid var(--contour); border-radius: 10px; padding: 16px; background: var(--sheet); }
+.researchCard { display: grid; gap: 8px; border: 1px solid var(--contour); border-radius: 10px; padding: 16px; background: var(--sheet); }
+.researchCard h3 { font-size: 13px; font-weight: 500; line-height: 1.5; }
 .researchCard p { font-size: 14px; line-height: 1.65; color: var(--ink); overflow-wrap: anywhere; }
 .threadMeta { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; color: var(--ridge); margin-bottom: 8px; }
 .thread h3 { font-size: 14px; font-weight: 500; line-height: 1.5; margin-bottom: 8px; }
@@ -12,14 +12,14 @@
 .comments { display: grid; gap: 8px; margin: 0 0 12px; padding-left: 12px; border-left: 2px solid var(--contour-strong); }
 .comments p { font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .comments small { font-size: 11px; color: var(--ridge); }
-.tableWrap { overflow-x: auto; border: 1px solid var(--contour); border-radius: 12px; }
+.tableWrap { overflow-x: auto; border: 1px solid var(--contour); border-radius: 10px; }
 .table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.table caption { text-align: left; font-weight: 600; font-size: 13px; padding: 12px 14px 6px; }
+.table caption { text-align: left; font-weight: 500; font-size: 13px; padding: 12px 14px 6px; }
 .table th { text-align: left; font-weight: 500; color: var(--ridge); padding: 8px 14px; border-bottom: 1px solid var(--contour); }
 .table td { padding: 8px 14px; border-bottom: 1px solid var(--contour); overflow-wrap: anywhere; }
 .table tr:last-child td { border-bottom: 0; }
-.chart { border: 1px solid var(--contour); border-radius: 12px; padding: 12px 14px; }
-.chart figcaption { font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+.chart { border: 1px solid var(--contour); border-radius: 10px; padding: 12px 14px; }
+.chart figcaption { font-weight: 500; font-size: 13px; margin-bottom: 6px; }
 .chart svg { width: 100%; height: auto; display: block; }
 .grid { stroke: var(--contour); stroke-width: 1; }
 .axis { fill: var(--ridge); font-size: 11px; }

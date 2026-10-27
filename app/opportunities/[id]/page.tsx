@@ -3,6 +3,9 @@ import Link from "next/link";
 import { authorizeWorkspace } from "@/lib/auth/workspace";
 import { contentKindLabel } from "@/lib/opportunities/content-kind";
 import { getOpportunityDetail } from "@/lib/opportunities/run";
+import { listOutcomes } from "@/lib/outcomes/repository";
+import { ruleLineFor } from "@/lib/reddit/subreddit-rules";
+import { handoffState } from "@/lib/retention/handoff-state";
 
 import { safeHttpUrl } from "@/lib/http/safe-url";
 import { Glyph } from "@/components/glyph";
@@ -60,6 +63,7 @@ export default async function OpportunityDetailPage({
     );
   }
 
+  const outcomes = await listOutcomes({ workspaceId, opportunityId: detail.id, limit: 200 });
   const f = detail.features;
   const axes = [
     ["Fit", f.fit],
@@ -96,6 +100,15 @@ export default async function OpportunityDetailPage({
             </div>
           </header>
 
+          <DraftPanel
+            workspaceId={workspaceId}
+            opportunityId={detail.id}
+            conversations={detail.evidence.map(({ documentId, title, urlCanonical, platform, discoveryOnly, subreddit }) => ({
+              documentId, title, urlCanonical, platform, discoveryOnly,
+              ruleLine: ruleLineFor(urlCanonical, subreddit),
+            }))}
+          />
+
           <section className="space-y-5 text-[1.0625rem] leading-snug">
             <div>
               <h2 className="font-semibold">Why it matters</h2>
@@ -112,8 +125,7 @@ export default async function OpportunityDetailPage({
           </section>
 
           <PlaysPanel workspaceId={workspaceId} opportunityId={detail.id} />
-          <DraftPanel workspaceId={workspaceId} opportunityId={detail.id} conversations={detail.evidence.map(({ documentId, title, urlCanonical, platform, discoveryOnly }) => ({ documentId, title, urlCanonical, platform, discoveryOnly }))} />
-          <FeedbackPanel workspaceId={workspaceId} opportunityId={detail.id} />
+          <FeedbackPanel workspaceId={workspaceId} opportunityId={detail.id} initialState={handoffState(outcomes.map((outcome) => outcome.event))} />
         </div>
 
         <aside className="min-w-0 space-y-10 lg:sticky lg:top-6">

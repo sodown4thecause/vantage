@@ -2,10 +2,14 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 
 import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
-import { listOpportunityQueue } from "@/lib/opportunities/run";
+import { ensureTodaysPicks, listEarlierPicks } from "@/lib/retention/picks";
+import { listMarkedReplies, monthlyRecap } from "@/lib/retention/outcomes";
+import { workspaceTimeZone } from "@/lib/retention/zone";
+import { RetentionLists } from "@/app/queue/retention-lists";
 import { ScanButton } from "@/app/source-controls";
 import { Glyph } from "@/components/glyph";
 import { PageHead, Shell } from "@/components/shell";
+import { FirstScanStatus } from "@/components/first-scan-status";
 
 export default async function OpportunityQueuePage({
   searchParams,
@@ -28,20 +32,27 @@ export default async function OpportunityQueuePage({
     );
   }
 
-  const cards = await listOpportunityQueue({ workspaceId, limit: 5 });
+  const timeZone = await workspaceTimeZone(workspaceId);
+  const { day, cards } = await ensureTodaysPicks({ workspaceId, timeZone });
+  const [earlier, marked, recap] = await Promise.all([
+    listEarlierPicks({ workspaceId, beforeDay: day }),
+    listMarkedReplies({ workspaceId }),
+    monthlyRecap({ workspaceId, timeZone }),
+  ]);
 
   return (
     <Shell workspaceId={workspaceId} active="queue" wide>
       <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
         <PageHead
           title="Today's opportunities"
-          lede="Up to five conversations worth joining, each backed by posts you can read."
+          lede="Up to five new conversations a day, each backed by posts you can read."
         />
         <div className="mb-8">
           <ScanButton workspaceId={workspaceId} />
         </div>
       </div>
 
+      <FirstScanStatus workspaceId={workspaceId} />
       {cards.length === 0 ? (
         <div className="max-w-xl space-y-2 border-t border-contour pt-6" data-testid="queue-empty">
           <p className="text-xl font-semibold tracking-tight">Nothing strong right now.</p>
@@ -98,6 +109,8 @@ export default async function OpportunityQueuePage({
           ))}
         </ol>
       )}
+
+      <RetentionLists workspaceId={workspaceId} today={day} timeZone={timeZone} earlier={earlier} marked={marked} recap={recap} />
     </Shell>
   );
 }

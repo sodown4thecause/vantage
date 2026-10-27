@@ -7,16 +7,18 @@ import { safeHttpUrl } from "@/lib/http/safe-url";
 export function SafeLink({
   href,
   className,
+  onClick,
   children,
 }: {
   href: string | null | undefined;
   className?: string;
+  onClick?: () => void;
   children: React.ReactNode;
 }) {
   const safe = safeHttpUrl(href);
   if (!safe) return <span className={className}>{children}</span>;
   return (
-    <a href={safe} className={className} target="_blank" rel="noopener noreferrer">
+    <a href={safe} className={className} target="_blank" rel="noopener noreferrer" onClick={onClick}>
       {children}
     </a>
   );

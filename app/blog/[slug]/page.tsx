@@ -5,16 +5,13 @@ import { notFound } from "next/navigation";
 import { JsonLd } from "@/components/json-ld";
 import { TagLinks } from "@/components/post-list";
 import { Shell } from "@/components/shell";
-import { formatDate, getAdjacentPosts, getAllPosts, getPost, getRelatedPosts, tagLabel } from "@/lib/blog";
+import { formatDate, getAdjacentPosts, getPost, getRelatedPosts, tagLabel } from "@/lib/blog";
 import { SITE_NAME, absoluteUrl } from "@/lib/site";
+import styles from "../blog.module.css";
 
-export const dynamicParams = false;
+export const dynamic = "force-dynamic";
 
 type Props = { params: Promise<{ slug: string }> };
-
-export function generateStaticParams() {
-  return getAllPosts().map((p) => ({ slug: p.slug }));
-}
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
@@ -98,7 +95,7 @@ export default async function BlogPost({ params }: Props) {
     <Shell wide section="blog">
       <JsonLd data={jsonLd} />
       <article>
-        <header className="max-w-[46rem] space-y-5">
+        <header className={styles.articleHeader}>
           <nav aria-label="Breadcrumb" className="text-sm text-ridge">
             <ol className="flex flex-wrap gap-2">
               <li><Link href="/blog" className="link">Blog</Link></li>
@@ -109,9 +106,9 @@ export default async function BlogPost({ params }: Props) {
               )}
             </ol>
           </nav>
-          <h1 className="display text-4xl sm:text-5xl">{post.title}</h1>
+          <h1 className={styles.articleTitle}>{post.title}</h1>
           <p className="max-w-[56ch] text-lg leading-snug text-ridge">{post.description}</p>
-          <div className="flex flex-wrap gap-x-6 gap-y-1 border-t border-contour pt-4 text-sm text-ridge">
+          <div className={styles.articleMeta}>
             <span>By <span className="font-semibold text-ink">{post.author}</span></span>
             <span>
               Published <time dateTime={post.date}>{formatDate(post.date)}</time>
@@ -162,13 +159,9 @@ export default async function BlogPost({ params }: Props) {
 
             {post.tags.length > 0 && <TagLinks tags={post.tags} />}
 
-            <aside className="max-w-[46rem] rounded-lg bg-ink px-6 py-8 text-paper sm:px-8">
-              <p className="text-2xl font-bold leading-tight tracking-tight">
-                Find the people already asking for what you build.
-              </p>
-              <p className="mt-2 max-w-[52ch] opacity-75">
-                contextfor.dev hands you up to five conversations worth joining each day, with the posts that prove it. You write the reply.
-              </p>
+            <aside className={styles.articleCta}>
+              <p className={styles.articleCtaTitle}>Find the people already asking for what you build.</p>
+              <p>contextfor.dev hands you up to five conversations worth joining each day, with the posts that prove it. You write the reply.</p>
               <Link href="/auth/sign-up" className="btn mt-5">Create a free account</Link>
             </aside>
           </div>

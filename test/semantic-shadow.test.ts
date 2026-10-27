@@ -17,6 +17,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@/lib/cf/env", () => ({
   getAi: async () => state.ai,
+  getCloudflareRequestContext: async () => null,
   getVectorize: async () => state.vectorize,
   getSemanticMode: () => state.mode,
 }));

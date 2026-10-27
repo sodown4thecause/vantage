@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { startFirstScan } from "@/lib/activation/dispatch";
 
 import { authorizeWorkspace } from "@/lib/auth/workspace";
 import { setDigestSchedule } from "@/lib/digest/preferences";
@@ -83,7 +84,7 @@ export async function POST(req: Request): Promise<Response> {
       if (!applied.ok) return rejected(applied.error, promptFor(step, answers, current, timeZone));
       answers = applied.answers;
       if (step === "productUrl") {
-        draft = await deriveProfileFromUrl({ workspaceId, url: answers.productUrl!, signal: AbortSignal.timeout(DERIVE_TIMEOUT_MS) }) ?? undefined;
+        draft = await deriveProfileFromUrl({ workspaceId, userId: authorization.userId, url: answers.productUrl!, signal: AbortSignal.timeout(DERIVE_TIMEOUT_MS) }) ?? undefined;
       }
     }
 
@@ -154,7 +155,11 @@ export async function POST(req: Request): Promise<Response> {
         console.error("[interview route] digest save failed");
       }
     }
-    return await reply(completionMessage(answers, digestSaved), { answers, draft, complete: digestSaved }, undefined, true);
+    const scan = await startFirstScan(workspaceId);
+    const scanMessage = scan.status === "failed"
+      ? "Your first scan couldn’t start. Open your opportunity queue to retry."
+      : "Your first scan is queued or underway. Open your opportunity queue to check its progress.";
+    return await reply(`${completionMessage(answers, digestSaved)}\n\n${scanMessage}`, { answers, draft, complete: digestSaved }, undefined, true);
   } catch (error) {
     if (error instanceof ConversationNotFoundError) return Response.json({ error: "not_found" }, { status: 404 });
     console.error("[interview route] failed");

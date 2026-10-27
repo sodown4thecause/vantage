@@ -2,8 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { SafeLink } from "@/components/safe-link";
+import { copyThenOpen, writeClipboardDuringClick } from "@/lib/handoff/copy-and-open";
+import { safeHttpUrl } from "@/lib/http/safe-url";
 import type { ContributionReview } from "@/lib/drafting/generate";
 import { contributionRule } from "@/lib/drafting/rules";
+import type { RuleLine } from "@/lib/reddit/subreddit-rules";
 
 type Draft = {
   id: string;
@@ -15,6 +18,17 @@ type Draft = {
   quality: ContributionReview | null;
 };
 
+export type DraftConversation = {
+  documentId: string;
+  title: string | null;
+  urlCanonical: string;
+  platform: string;
+  discoveryOnly?: boolean;
+  ruleLine: RuleLine;
+};
+
+const FIELD = "w-full rounded-lg border border-contour bg-sheet p-3 text-ink placeholder:text-ridge";
+
 export function DraftPanel({
   workspaceId,
   opportunityId,
@@ -22,31 +36,28 @@ export function DraftPanel({
 }: {
   workspaceId: string;
   opportunityId: string;
-  conversations: Array<{ documentId: string; title: string | null; urlCanonical: string; platform: string; discoveryOnly?: boolean }>;
+  conversations: DraftConversation[];
 }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [edited, setEdited] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [target, setTarget] = useState(conversations[0]?.documentId ?? "");
-  const [rulesReviewed, setRulesReviewed] = useState(false);
-  const [factsReviewed, setFactsReviewed] = useState(false);
   const requestRevision = useRef(0);
   const selected = conversations.find(c => c.documentId === target);
   const rule = contributionRule(selected?.platform ?? "", selected?.urlCanonical ?? "");
   const researchOnly = selected?.discoveryOnly === true || rule.aiText === "prohibited";
   const kind = draft?.quality?.kind;
   const draftMatchesTarget = Boolean(selected && draft?.quality?.targetDocumentId === target);
+  const canCopy = draftMatchesTarget && (kind === "draft" || kind === "brief");
 
   function changeTarget(documentId: string) {
     requestRevision.current += 1;
     setTarget(documentId);
     setDraft(null);
     setEdited("");
-    setCopied(false);
-    setRulesReviewed(false);
-    setFactsReviewed(false);
+    setNotice(null);
     setError(null);
     setBusy(false);
   }
@@ -72,9 +83,7 @@ export function DraftPanel({
       if (data.draft && (data.draft.quality === null || data.draft.quality?.targetDocumentId === target)) {
         setDraft(data.draft);
         setEdited(data.draft.editedText);
-        setCopied(false);
-        setRulesReviewed(false);
-        setFactsReviewed(false);
+        setNotice(null);
       }
     })().catch(() => {
       if (!cancelled && revision === requestRevision.current) {
@@ -88,277 +97,230 @@ export function DraftPanel({
     };
   }, [workspaceId, opportunityId, target]);
 
+  async function postDraft(body: Record<string, unknown>): Promise<{ draft?: Draft; error?: string; ok: boolean }> {
+    const res = await fetch("/api/drafts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workspaceId, ...body }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { draft?: Draft; error?: string };
+    return { ...data, ok: res.ok };
+  }
+
+  async function recordEvent(event: "copy" | "open", draftId: string | null): Promise<boolean> {
+    try {
+      const res = await fetch("/api/outcomes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          workspaceId,
+          opportunityId,
+          event,
+          draftId,
+          payload: { documentId: target },
+          idempotencyKey: `${opportunityId}:${event}:${Date.now()}`,
+        }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
   async function createDraft() {
     if (!selected) return;
     const revision = ++requestRevision.current;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
-      const res = await fetch("/api/drafts", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          action: "create",
-          workspaceId,
-          opportunityId,
-          targetDocumentId: target,
-          rulesReviewed,
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        draft?: Draft;
-        error?: string;
-      };
+      const data = await postDraft({ action: "create", opportunityId, targetDocumentId: target, rulesReviewed: true });
       if (revision !== requestRevision.current) return;
-      if (!res.ok || !data.draft) {
+      if (!data.ok || !data.draft) {
         setError(data.error ?? "Create failed");
         return;
       }
       setDraft(data.draft);
       setEdited(data.draft.editedText);
-      setFactsReviewed(false);
-      setCopied(false);
     } catch {
-      if (revision === requestRevision.current) setError("Contribution could not be prepared. Please try again.");
+      if (revision === requestRevision.current) setError("The draft could not be prepared. Please try again.");
     } finally {
       if (revision === requestRevision.current) setBusy(false);
     }
   }
 
-  async function saveEdit() {
-    if (!draft || !draftMatchesTarget) return;
+  async function handoff(openAfterCopy: boolean) {
+    const threadUrl = safeHttpUrl(selected?.urlCanonical);
+    if (!draft || !draftMatchesTarget || (openAfterCopy && !threadUrl)) return;
     const revision = ++requestRevision.current;
     setBusy(true);
     setError(null);
-    try {
-      const res = await fetch("/api/drafts", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          action: "update",
-          workspaceId,
-          draftId: draft.id,
-          editedText: edited,
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        draft?: Draft;
-        error?: string;
-      };
-      if (revision !== requestRevision.current) return;
-      if (!res.ok || !data.draft) {
-        setError(data.error ?? "Save failed");
-        return;
-      }
-      setDraft(data.draft);
-      setEdited(data.draft.editedText);
-    } catch {
-      if (revision === requestRevision.current) setError("Edits could not be saved. Please try again.");
-    } finally {
-      if (revision === requestRevision.current) setBusy(false);
-    }
-  }
-
-  async function approveAndCopy() {
-    if (!draft || !draftMatchesTarget) return;
-    const revision = ++requestRevision.current;
-    setBusy(true);
-    setError(null);
-    setCopied(false);
-    try {
-      const saveRes = await fetch("/api/drafts", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          action: "update",
-          workspaceId,
-          draftId: draft.id,
-          editedText: edited,
-        }),
-      });
-      const saved = (await saveRes.json().catch(() => ({}))) as {
-        draft?: Draft;
-        error?: string;
-      };
-      if (revision !== requestRevision.current) return;
-      if (!saveRes.ok || !saved.draft || saved.draft.quality?.targetDocumentId !== target) {
-        setError(saved.error ?? "Save failed");
-        return;
-      }
-      const res = await fetch("/api/drafts", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          action: "approve",
-          workspaceId,
-          draftId: saved.draft.id,
-          rulesReviewed,
-          factsReviewed,
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        draft?: Draft;
-        error?: string;
-      };
-      if (revision !== requestRevision.current) return;
-      if (!res.ok || !data.draft || data.draft.quality?.targetDocumentId !== target) {
-        setError(data.error ?? "Approve failed");
-        return;
-      }
-      setDraft(data.draft);
-      setEdited(data.draft.editedText);
-      await navigator.clipboard.writeText(data.draft.editedText);
-      if (revision === requestRevision.current) setCopied(true);
-    } catch {
-      if (revision === requestRevision.current) setError("Handoff could not be completed. Check clipboard access and try again.");
-    } finally {
-      if (revision === requestRevision.current) setBusy(false);
-    }
-  }
-
-  function openConversation() {
-    if (!draftMatchesTarget || !draft?.approvedAt) {
-      setError("Approve & copy before opening the conversation handoff.");
+    setNotice(null);
+    let draftId = draft.id;
+    const result = await copyThenOpen({
+      prepare: async () => {
+        const saved = await postDraft({ action: "update", draftId: draft.id, editedText: edited });
+        if (!saved.ok || !saved.draft || saved.draft.quality?.targetDocumentId !== target) throw new Error(saved.error ?? "Save failed");
+        const approved = await postDraft({ action: "approve", draftId: saved.draft.id, rulesReviewed: true, factsReviewed: true });
+        if (!approved.ok || !approved.draft || approved.draft.quality?.targetDocumentId !== target) throw new Error(approved.error ?? "This reply cannot be copied yet.");
+        draftId = approved.draft.id;
+        if (revision === requestRevision.current) {
+          setDraft(approved.draft);
+          setEdited(approved.draft.editedText);
+        }
+        return approved.draft.editedText;
+      },
+      writeClipboard: writeClipboardDuringClick,
+      openThread: () => {
+        const tab = window.open(threadUrl ?? "", "_blank");
+        if (tab) tab.opener = null;
+        return Boolean(tab);
+      },
+      record: (event) => recordEvent(event, draftId),
+    }, { openAfterCopy });
+    if (revision !== requestRevision.current) return;
+    setBusy(false);
+    if (!result.copied) {
+      setError(result.error);
       return;
     }
-    const first = draft.citations.find(c => c.documentId === draft.quality?.targetDocumentId)?.url;
-    if (first) {
-      window.open(first, "_blank", "noopener,noreferrer");
-    } else {
-      setError("No conversation URL available in citations.");
-    }
+    setNotice(
+      [
+        "Copied to your clipboard. Paste it into the thread yourself; Vantage never posts for you.",
+        result.copyRecorded ? "" : "We could not save this copy to your history.",
+        openAfterCopy && !result.opened ? "Your browser blocked the new tab, so use Open thread." : "",
+      ].filter(Boolean).join(" "),
+    );
   }
 
+  const heading = researchOnly ? "Research brief" : "Your reply";
+
   return (
-    <section className="space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">{researchOnly ? "Research brief" : "Contribution draft"}</h2>
-        {(
-          <button
-            type="button"
-            disabled={busy || !selected}
-            onClick={() => void createDraft()}
-            className="rounded-full bg-zinc-950 px-3 py-1.5 text-xs font-medium text-white dark:bg-zinc-50 dark:text-zinc-950"
-          >
-            {researchOnly ? "Build research brief" : draft ? "Regenerate contribution" : "Generate contribution"}
-          </button>
-        )}
-      </div>
+    <section aria-labelledby="reply-heading" className="space-y-5 border-t border-contour pt-8">
+      <h2 id="reply-heading" className="display text-2xl">{heading}</h2>
 
-      <div className="space-y-2">
-        <label htmlFor="draft-conversation" className="block text-xs font-medium">Conversation or research source</label>
-        <select id="draft-conversation" value={target} disabled={busy} onChange={e => changeTarget(e.target.value)} className="w-full rounded border p-2 text-sm">
-          {conversations.map(c => <option key={c.documentId} value={c.documentId}>{c.discoveryOnly ? `Research source (${c.platform})` : c.platform}: {c.title || c.urlCanonical}</option>)}
-        </select>
-        {selected?.discoveryOnly ? <p className="text-sm">This is a research source. Read the original source before preparing a contribution.</p> :
-          rule.aiText === "prohibited" ? <p className="text-sm">{rule.venue} prohibits AI-written contributions. Research briefs are for reference.</p> :
-          <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={rulesReviewed} onChange={e => setRulesReviewed(e.target.checked)} />I reviewed the current community rules and AI assistance is permitted here.</label>}
-        {selected && <SafeLink href={selected.discoveryOnly ? selected.urlCanonical : rule.url || selected.urlCanonical} className="text-xs underline">{selected.discoveryOnly ? "Open research source" : rule.url ? "Community policy" : "Open the thread to review its rules"}</SafeLink>}
-      </div>
-
-      {error ? (
-        <p className="text-xs text-red-600" role="alert">
-          {error}
-        </p>
+      {conversations.length > 1 ? (
+        <div className="space-y-1.5">
+          <label htmlFor="draft-conversation" className="block text-sm font-medium">Conversation</label>
+          <select id="draft-conversation" value={target} disabled={busy} onChange={e => changeTarget(e.target.value)} className={FIELD}>
+            {conversations.map(c => <option key={c.documentId} value={c.documentId}>{c.discoveryOnly ? `Research source (${c.platform})` : c.platform}: {c.title || c.urlCanonical}</option>)}
+          </select>
+        </div>
       ) : null}
 
-      {draft ? (
-        <>
-          {draft.quality ? <div className="space-y-2 text-xs">
-            <p className="font-medium">{kind === "draft" ? "Draft for human review" : kind === "brief" ? "Research brief · reference material" : "No reply recommended"}</p>
-            {draft.quality.angle && <p><strong>What this adds:</strong> {draft.quality.angle}</p>}
-            <p>{draft.quality.gap.note}</p>
-            {draft.quality.notes.map(note => <p key={note}>{note}</p>)}
-          </div> : <p className="text-xs">Legacy draft · conversation not recorded. Review this saved text or regenerate for the selected conversation before handoff.</p>}
-          <div>
-            <p className="text-xs font-medium text-zinc-500">Original</p>
-            <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-zinc-50 p-3 text-xs dark:bg-zinc-900">
-              {draft.originalText}
-            </pre>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-zinc-500" htmlFor="edited">
-              {kind === "draft" ? "Review and edit" : "Reference text"}
-            </label>
+      {selected ? (
+        <div className="space-y-1 border-l-2 border-flag pl-4" data-testid="rule-line">
+          <p className="font-medium">
+            {rule.aiText === "prohibited" ? `${rule.venue} prohibits AI-written replies. Use the research brief for reference.` : selected.ruleLine.text}
+          </p>
+          <p className="text-sm text-ridge">
+            {selected.ruleLine.checked ? `Rule checked ${selected.ruleLine.checked}. ` : ""}
+            <SafeLink href={rule.url ?? selected.ruleLine.url ?? selected.urlCanonical} className="link">
+              {rule.url || selected.ruleLine.url ? "Read the rules" : "Open the thread to read its rules"}
+            </SafeLink>
+          </p>
+        </div>
+      ) : null}
+
+      {selected?.discoveryOnly ? <p className="text-sm text-ridge">This is a research source. Read the original before you reply.</p> : null}
+
+      {error ? <p className="text-sm text-stop" role="alert">{error}</p> : null}
+
+      {!draft ? (
+        <div className="space-y-3">
+          <p className="max-w-[62ch] text-ridge">
+            {researchOnly
+              ? "Vantage builds a research brief from the evidence. It is reference material, not a reply."
+              : "Vantage writes a first draft from the evidence. You edit it and post it yourself."}
+          </p>
+          <button type="button" disabled={busy || !selected} onClick={() => void createDraft()} className="btn btn-lg disabled:opacity-50">
+            {busy ? "Working…" : researchOnly ? "Build research brief" : "Write a draft"}
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-5 ph-no-capture">
+          {draft.quality ? (
+            <div className="space-y-1 text-sm text-ridge">
+              <p className="font-medium text-ink">{kind === "draft" ? "Draft for you to review" : kind === "brief" ? "Research brief, reference material" : "No reply recommended"}</p>
+              {draft.quality.angle ? <p>What this adds: {draft.quality.angle}</p> : null}
+              <p>{draft.quality.gap.note}</p>
+              {draft.quality.notes.map(note => <p key={note}>{note}</p>)}
+            </div>
+          ) : (
+            <p className="text-sm text-ridge">This saved draft has no conversation recorded. Write a new draft for this conversation before you copy it.</p>
+          )}
+
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium" htmlFor="edited">{kind === "draft" ? "Edit your reply" : "Reference text"}</label>
             <textarea
               id="edited"
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white p-3 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+              className={`${FIELD} ${kind === "draft" ? "" : "text-ridge"}`}
               rows={10}
               maxLength={kind === "draft" ? 2200 : 12000}
               readOnly={kind !== "draft"}
               value={edited}
-              onChange={(e) => { setEdited(e.target.value); setFactsReviewed(false); setCopied(false); setDraft({ ...draft, approvedAt: null }); }}
+              onChange={(e) => { setEdited(e.target.value); setNotice(null); setDraft({ ...draft, approvedAt: null }); }}
             />
           </div>
-          {!!draft.quality?.claims.length && <details className="text-xs"><summary className="cursor-pointer font-medium">Evidence for claims ({draft.quality.claims.length})</summary>
-            <ul className="mt-2 space-y-3">{draft.quality.claims.map((claim, i) => {
-              const citation = draft.citations.find(c => c.documentId === claim.documentId);
-              return <li key={i}><p>{claim.sentence}</p><blockquote className="mt-1 border-l-2 pl-2">“{claim.quote}”</blockquote>
-                {citation && <SafeLink href={citation.url} className="mt-1 inline-block underline">Open evidence</SafeLink>}
-              </li>;
-            })}</ul>
-          </details>}
+
           {draft.flags.length > 0 ? (
-            <ul className="text-xs text-amber-800 dark:text-amber-200">
-              {draft.flags.map((f) => (
-                <li key={f.claim}>
-                  Flagged “{f.claim}”: {f.reason}
-                </li>
-              ))}
+            <ul className="space-y-1 text-sm text-flag-ink">
+              {draft.flags.map((f) => <li key={f.claim}>Check “{f.claim}”: {f.reason}</li>)}
             </ul>
           ) : null}
-          <div>
-            <p className="text-xs font-medium text-zinc-500">Citations</p>
-            <ul className="mt-1 space-y-1 text-xs">
+
+          {canCopy ? (
+            <div className="space-y-3">
+              <p className="max-w-[62ch] text-sm text-ridge">You post this yourself. Check the facts and the rule above first.</p>
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                <button type="button" disabled={busy} onClick={() => void handoff(true)} className="btn btn-lg justify-center disabled:opacity-50">
+                  {kind === "brief" ? "Copy brief and open source" : "Copy reply and open thread"}
+                </button>
+                <button type="button" disabled={busy} onClick={() => void handoff(false)} className="btn btn-quiet justify-center disabled:opacity-50">
+                  {kind === "brief" ? "Copy research brief" : "Copy reply"}
+                </button>
+                <SafeLink href={selected?.urlCanonical} className="btn btn-quiet justify-center" onClick={() => void recordEvent("open", draft.id)}>
+                  Open thread
+                </SafeLink>
+              </div>
+            </div>
+          ) : null}
+          {notice ? <p className="text-sm text-sage" role="status">{notice}</p> : null}
+
+          {!!draft.quality?.claims.length && (
+            <details className="text-sm">
+              <summary className="cursor-pointer font-medium">Evidence for the claims ({draft.quality.claims.length})</summary>
+              <ul className="mt-3 space-y-4">
+                {draft.quality.claims.map((claim, i) => {
+                  const citation = draft.citations.find(c => c.documentId === claim.documentId);
+                  return (
+                    <li key={i} className="space-y-1">
+                      <p>{claim.sentence}</p>
+                      <blockquote className="quote border-l-2 border-contour pl-3 text-ridge">“{claim.quote}”</blockquote>
+                      {citation ? <SafeLink href={citation.url} className="link">Open evidence</SafeLink> : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            </details>
+          )}
+
+          <details className="text-sm">
+            <summary className="cursor-pointer font-medium">Original draft and citations</summary>
+            <pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-sheet p-3 text-ridge">{draft.originalText}</pre>
+            <ul className="mt-3 space-y-1">
               {draft.citations.map((c) => (
-                <li key={c.url}>
-                  <SafeLink href={c.url} className="underline">
-                    {c.label}
-                  </SafeLink>
-                </li>
+                <li key={c.url}><SafeLink href={c.url} className="link">{c.label}</SafeLink></li>
               ))}
             </ul>
-          </div>
-          {kind === "draft" && <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={factsReviewed} onChange={e => setFactsReviewed(e.target.checked)} />I verified the facts and checked that this adds something useful to the thread.</label>}
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              disabled={busy || !draftMatchesTarget || kind !== "draft"}
-              onClick={() => void saveEdit()}
-              className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium"
-            >
-              Save edits
-            </button>
-            <button
-              type="button"
-              disabled={busy || !draftMatchesTarget || !kind || kind === "abstain" || (kind === "draft" && (!factsReviewed || !rulesReviewed))}
-              onClick={() => void approveAndCopy()}
-              className="rounded-full bg-zinc-950 px-3 py-1.5 text-xs font-medium text-white dark:bg-zinc-50 dark:text-zinc-950"
-            >
-              {kind === "brief" ? "Copy research brief" : "Approve & copy draft"}
-            </button>
-            <button
-              type="button"
-              disabled={busy || !draftMatchesTarget || !draft.approvedAt}
-              onClick={openConversation}
-              className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-medium disabled:opacity-50"
-            >
-              {selected?.discoveryOnly ? "Open research source" : "Open conversation"}
+          </details>
+
+          <div>
+            <button type="button" disabled={busy || !selected} onClick={() => void createDraft()} className="btn btn-quiet disabled:opacity-50">
+              {researchOnly ? "Rebuild research brief" : "Write a new draft"}
             </button>
           </div>
-          {copied ? (
-            <p className="text-xs text-emerald-700">Copied to clipboard.</p>
-          ) : null}
-          {draft.approvedAt ? (
-            <p className="text-xs text-zinc-500">
-              Reviewed at {draft.approvedAt}. {kind === "brief" ? "Reference material only." : "Review again in the thread before posting."}
-            </p>
-          ) : null}
-        </>
-      ) : (
-        <p className="text-xs text-zinc-500">
-          Prepare a useful contribution from verified evidence, or a research brief when drafting is unavailable.
-        </p>
+        </div>
       )}
     </section>
   );

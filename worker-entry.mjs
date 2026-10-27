@@ -40,15 +40,32 @@ function scanSlot(scheduledTime) {
 	return new Date(scheduledTime).toISOString().slice(0, 13).replace(/\D/g, "");
 }
 
+function dueRequest(env) {
+	return new Request(`https://vantage.internal${SCAN_DUE_PATH}`, {
+		method: "POST",
+		headers: { authorization: `Bearer ${env.CRON_SECRET}`, "content-type": "application/json" },
+		body: "{}",
+	});
+}
+
+/**
+ * One due lookup. A 5xx is retried once: the staging cron of 2026-10-24 09:00 UTC
+ * aborted its Neon fetch at the 10s client timeout and that single 500 dropped the
+ * whole 3-hour slot. The compute was already awake, so the next attempt is the cheap one.
+ */
+async function fetchDueWorkspaces(env) {
+	let response = await env.WORKER_SELF_REFERENCE.fetch(dueRequest(env));
+	if (response.status >= 500) {
+		console.error(`[cron] due lookup failed: HTTP ${response.status}; retrying once`);
+		await response.body?.cancel().catch(() => {});
+		response = await env.WORKER_SELF_REFERENCE.fetch(dueRequest(env));
+	}
+	return response;
+}
+
 /** Starts one Workflow instance per due workspace; duplicates from a retried firing count as skipped. */
 async function startScanInstances(controller, env) {
-	const response = await env.WORKER_SELF_REFERENCE.fetch(
-		new Request(`https://vantage.internal${SCAN_DUE_PATH}`, {
-			method: "POST",
-			headers: { authorization: `Bearer ${env.CRON_SECRET}`, "content-type": "application/json" },
-			body: "{}",
-		}),
-	);
+	const response = await fetchDueWorkspaces(env);
 	if (!response.ok) throw new Error(`due failed: HTTP ${response.status}`);
 	const { workspaceIds = [] } = await response.json();
 
@@ -135,13 +152,19 @@ const worker = {
 
 		// Rollout switch: with the Workflow binding present, the tick path is not used.
 		if (env.SCAN) {
-			// Best-effort side effects still run when starting scans fails.
+			let scanError;
 			try {
 				await startScanInstances(controller, env);
-			} finally {
-				await triggerCostRollup(env);
-				await triggerDigests(env);
+			} catch (error) {
+				scanError = error;
 			}
+			// Best-effort side effects always run, even when scan starts fail.
+			// These self-fetches are awaited directly in the handler body so the
+			// Workers runtime tracks them as part of the invocation rather than
+			// cancelling them as orphaned subrequests from a finally block.
+			await triggerCostRollup(env);
+			await triggerDigests(env);
+			if (scanError) throw scanError;
 			return;
 		}
 
