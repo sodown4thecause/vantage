@@ -13,6 +13,15 @@ const NOW = new Date("2026-10-26T10:00:00Z");
 const usage = { inputTokens: { total: 1000, noCache: 1000, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 200, text: 200, reasoning: 0 } };
 const done = { content: [{ type: "text" as const, text: "Done." }], finishReason: { unified: "stop" as const, raw: "stop" }, usage, warnings: [] };
 
+describe("reserveDiscoveryBudget with a zero cap", () => {
+  it("denies the run before any model call or reservation", async () => {
+    const memory = memoryBudgetStore();
+    await expect(reserveDiscoveryBudget(WS, "initial", { store: memory.store, env: { DISCOVERY_BUDGET_USD: "0" }, now: NOW }))
+      .rejects.toMatchObject({ name: "PaidCallDeniedError", code: "budget_exhausted" });
+    expect(memory.get(WS, "initial")).toBe(0);
+  });
+});
+
 describe("reserveDiscoveryBudget", () => {
   it("reserves up to the per-run maximum and records it before any spend", async () => {
     const { store, get } = memoryBudgetStore();

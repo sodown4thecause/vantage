@@ -40,7 +40,7 @@ export async function reserveDiscoveryBudget(
   try {
     for (let attempt = 0; attempt < RESERVE_ATTEMPTS; attempt++) {
       const amount = roundUsd(Math.min(MAX_RUN_USD, cap - (await store.committed(workspaceId, period))));
-      if (amount < Math.min(MIN_RUN_USD, cap)) throw new PaidCallDeniedError("budget_exhausted", used);
+      if (amount <= 0 || amount < Math.min(MIN_RUN_USD, cap)) throw new PaidCallDeniedError("budget_exhausted", used);
       // A rival request may take the budget between the read and this statement; then the upsert changes nothing and we re-read.
       if (await store.reserve(workspaceId, period, amount, cap)) {
         return {

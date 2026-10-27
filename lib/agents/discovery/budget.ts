@@ -20,13 +20,14 @@ export const REVIEW_SOURCE_KEY = "discovery_review";
 export type DiscoveryKind = "initial" | "review";
 type Env = Record<string, string | undefined>;
 
-function positive(raw: string | undefined, fallback: number): number {
+/** A cap from the environment. Zero is a real cap (it switches discovery off); unset, negative or unreadable values use the default. */
+function cap(raw: string | undefined, fallback: number): number {
   const value = Number(raw?.trim());
-  return raw?.trim() && Number.isFinite(value) && value > 0 ? value : fallback;
+  return raw?.trim() && Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
-export const discoveryBudgetUsd = (env: Env = process.env) => positive(env.DISCOVERY_BUDGET_USD, DEFAULT_INITIAL_BUDGET_USD);
-export const reviewDailyBudgetUsd = (env: Env = process.env) => positive(env.DISCOVERY_REVIEW_BUDGET_USD, DEFAULT_REVIEW_DAILY_BUDGET_USD);
+export const discoveryBudgetUsd = (env: Env = process.env) => cap(env.DISCOVERY_BUDGET_USD, DEFAULT_INITIAL_BUDGET_USD);
+export const reviewDailyBudgetUsd = (env: Env = process.env) => cap(env.DISCOVERY_REVIEW_BUDGET_USD, DEFAULT_REVIEW_DAILY_BUDGET_USD);
 export const sourceKeyFor = (kind: DiscoveryKind) => (kind === "initial" ? DISCOVERY_SOURCE_KEY : REVIEW_SOURCE_KEY);
 
 export { utcDayStart };

@@ -11,6 +11,16 @@ import {
 } from "@/lib/agents/discovery";
 import { PaidCallDeniedError } from "@/lib/providers/paid-call";
 
+describe("a cap of zero", () => {
+  it("is a real cap, not an unset value", () => {
+    expect(discoveryBudgetUsd({ DISCOVERY_BUDGET_USD: "0" })).toBe(0);
+    expect(reviewDailyBudgetUsd({ DISCOVERY_REVIEW_BUDGET_USD: "0" })).toBe(0);
+    expect(discoveryBudgetUsd({ DISCOVERY_BUDGET_USD: "-1" })).toBe(DEFAULT_INITIAL_BUDGET_USD);
+    expect(discoveryBudgetUsd({ DISCOVERY_BUDGET_USD: "abc" })).toBe(DEFAULT_INITIAL_BUDGET_USD);
+    expect(discoveryBudgetUsd({})).toBe(DEFAULT_INITIAL_BUDGET_USD);
+  });
+});
+
 describe("discovery budget", () => {
   it("defaults to $0.50 for initial discovery and $0.05 a day for review loops", () => {
     expect(DEFAULT_INITIAL_BUDGET_USD).toBe(0.5);
@@ -19,9 +29,9 @@ describe("discovery budget", () => {
     expect(reviewDailyBudgetUsd({})).toBe(0.05);
   });
 
-  it("reads DISCOVERY_BUDGET_USD and ignores blank, zero, negative or malformed values", () => {
+  it("reads DISCOVERY_BUDGET_USD and ignores blank, negative or malformed values (zero is a real cap)", () => {
     expect(discoveryBudgetUsd({ DISCOVERY_BUDGET_USD: "0.25" })).toBe(0.25);
-    for (const bad of ["", "  ", "0", "-1", "abc", "NaN", "Infinity"]) {
+    for (const bad of ["", "  ", "-1", "abc", "NaN", "Infinity"]) {
       expect(discoveryBudgetUsd({ DISCOVERY_BUDGET_USD: bad })).toBe(0.5);
     }
     expect(reviewDailyBudgetUsd({ DISCOVERY_REVIEW_BUDGET_USD: "0.1" })).toBe(0.1);
