@@ -183,13 +183,13 @@ describe("starterChips", () => {
     expect(starterChips(FULL, OCT_19)[1]!.costLabel).toBe("Est. ~2 credits");
   });
 
-  it("labels generic chips as free", () => {
-    expect(labels(starterChips(EMPTY, OCT_19))).toEqual(["Free", "Free", "Free"]);
+  it("estimates generic chips that ask for Google results or AI visibility, and keeps the research chip free", () => {
+    expect(labels(starterChips(EMPTY, OCT_19, false))).toEqual(["Est. ~1 credit", "Est. ~2 credits", "Free"]);
   });
 });
 
 describe("STARTER_TOOLS", () => {
-  it("maps each profile template to the tool it runs and generic templates to none", () => {
+  it("maps each profile template to the tool it runs and generic templates to the lookup they ask for (the research one runs none)", () => {
     expect(STARTER_TOOLS).toEqual({
       "seo-0": "ranked_keywords",
       "seo-1": "backlink_gap",
@@ -200,8 +200,8 @@ describe("STARTER_TOOLS", () => {
       "content-0": "keyword_ideas",
       "content-1": "keyword_ideas",
       "content-2": "keyword_gap",
-      "seo-generic": null,
-      "geo-generic": null,
+      "seo-generic": "google_serp",
+      "geo-generic": "llm_response",
       "content-generic": null,
     });
   });

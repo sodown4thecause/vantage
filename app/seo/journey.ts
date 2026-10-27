@@ -52,6 +52,9 @@ function reasonFor(category: Category, focus: "seo" | "geo", latestTools: string
 export function journeyActionsFromClient(input: JourneyInput): JourneyChip[] {
   const order: Category[] = input.focus === "geo" ? ["geo", "seo", "content"] : ["seo", "geo", "content"];
   const latestTools = input.latestTools ?? [];
+  // A starter's reason describes the starter's question, so it applies only while that question is the one shown.
+  const shownStarter = (chip: JourneyChip) =>
+    input.starters.find((item) => item.category === chip.category && item.text === chip.text);
   const chips = order.map((category) => {
     const fromFollowUp = input.followUps?.[category]?.trim();
     if (fromFollowUp) return { category, text: fromFollowUp, costLabel: "" };
@@ -69,7 +72,7 @@ export function journeyActionsFromClient(input: JourneyInput): JourneyChip[] {
         const { recommended: _r, reason: _reason, ...rest } = chip;
         return rest;
       }
-      const starter = input.starters.find((item) => item.category === chip.category);
+      const starter = shownStarter(chip);
       return {
         ...chip,
         recommended: true,
@@ -84,7 +87,7 @@ export function journeyActionsFromClient(input: JourneyInput): JourneyChip[] {
       const { recommended: _r, reason: _reason, ...rest } = chip;
       return rest;
     }
-    const starter = input.starters.find((item) => item.category === chip.category);
+    const starter = shownStarter(chip);
     return {
       ...chip,
       recommended: true,

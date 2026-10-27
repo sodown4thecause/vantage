@@ -105,7 +105,9 @@ export async function summarizeEvidence(args: {
           args.onUsage?.(cost);
         },
       });
-      const finishReason = await result.finishReason;
+      // Read the stream first so answer text reaches the owner while the model is still finishing.
+      const finishing = Promise.resolve(result.finishReason);
+      finishing.catch(() => undefined);
       const stream = result.toUIMessageStream();
       const reader = stream.getReader();
       for (;;) {
@@ -134,6 +136,7 @@ export async function summarizeEvidence(args: {
         if (!flushed) pending.push(chunk);
         else args.writer.write(chunk);
       }
+      const finishReason = await finishing;
       if (finishReason === "content-filter" && text.trim() === "") {
         return { kind: "refused", flushed, text, spendUsd: meter.spendUsd, unpriced: meter.unpriced, erred: meter.erred };
       }

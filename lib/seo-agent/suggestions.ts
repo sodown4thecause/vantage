@@ -65,7 +65,10 @@ const GENERIC_TEMPLATES: Record<Category, Template> = {
   content: { id: "content-generic", text: "What research would shape our next comparison brief?" },
 };
 
-/** Template id to the data tool its chip would run. Generic templates run no tool. */
+/**
+ * Template id to the data tool its chip would run. The generic SEO and GEO chips ask for Google results and AI answers,
+ * so they carry those tools (and an estimate, not "Free"); only the generic research chip runs no tool.
+ */
 export const STARTER_TOOLS: Readonly<Record<string, string | null>> = {
   "seo-0": "ranked_keywords",
   "seo-1": "backlink_gap",
@@ -76,8 +79,8 @@ export const STARTER_TOOLS: Readonly<Record<string, string | null>> = {
   "content-0": "keyword_ideas",
   "content-1": "keyword_ideas",
   "content-2": "keyword_gap",
-  "seo-generic": null,
-  "geo-generic": null,
+  "seo-generic": "google_serp",
+  "geo-generic": "llm_response",
   "content-generic": null,
 };
 
@@ -146,7 +149,8 @@ function pick(category: Category, index: number, ctx: ProfileContext): Rendered 
   const template = PROFILE_TEMPLATES[category][index]!;
   const text = fill(template.text, ctx);
   if (text !== null) return { text, tool: STARTER_TOOLS[template.id] ?? null };
-  return { text: GENERIC_TEMPLATES[category].text, tool: null };
+  const generic = GENERIC_TEMPLATES[category];
+  return { text: generic.text, tool: STARTER_TOOLS[generic.id] ?? null };
 }
 
 /** Three starter chips in seo, geo, content order. Cost labels are the uncached default; see withCacheLabels. */
