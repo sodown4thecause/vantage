@@ -10,6 +10,12 @@ export type NormalizedDocument = {
   authorRef: string | null;
   postedAt: Date | null;
   text: string;
+  /**
+   * The post's own words, without any linked-page summary. Grouping reads this
+   * so enrichment can neither merge unrelated posts nor change a cluster key.
+   * Absent means `text` is already the post's own words.
+   */
+  groupText?: string;
   contentHash: string;
 };
 
@@ -32,8 +38,7 @@ export function normalizeDocument(
   doc: DocumentRecord,
 ): NormalizedDocument | null {
   const linked = linkedContextOf(doc.metadata);
-  const raw = [doc.title ?? "", doc.contentMd ?? "", linked ? `Linked page: ${linked.summary}` : ""].join("\n");
-  const text = raw
+  const clean = (raw: string) => raw
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
@@ -41,6 +46,8 @@ export function normalizeDocument(
     .replace(/&gt;/g, ">")
     .replace(/\s+/g, " ")
     .trim();
+  const own = clean([doc.title ?? "", doc.contentMd ?? ""].join("\n"));
+  const text = linked ? clean([own, `Linked page: ${linked.summary}`].join("\n")) : own;
   if (!text) return null;
   return {
     id: doc.id,
@@ -51,6 +58,7 @@ export function normalizeDocument(
     authorRef: doc.authorRef,
     postedAt: doc.postedAt,
     text,
+    ...(linked ? { groupText: own } : {}),
     contentHash: doc.contentHash,
   };
 }
