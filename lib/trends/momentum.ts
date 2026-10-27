@@ -38,6 +38,36 @@ export function wowToMomentum(change: WowChange): number | null {
 
 export type TopicWow = { topic: string; wow: WowChange };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The single week-over-week window used by the charts and the scorer: the last
+ * 7 completed UTC days against the 7 before them. Today is partial, so it is
+ * in neither window. Dates are UTC `YYYY-MM-DD`.
+ */
+export function wowWindow(now = new Date()): { previousStart: string; currentStart: string; today: string } {
+  return {
+    previousStart: new Date(now.getTime() - 14 * DAY_MS).toISOString().slice(0, 10),
+    currentStart: new Date(now.getTime() - 7 * DAY_MS).toISOString().slice(0, 10),
+    today: now.toISOString().slice(0, 10),
+  };
+}
+
+/** WoW from per-day counts using {@link wowWindow}; days outside the windows are ignored. */
+export function wowFromDailyCounts(
+  days: ReadonlyArray<{ day: string; mentions: number }>,
+  now = new Date(),
+): WowChange {
+  const { previousStart, currentStart, today } = wowWindow(now);
+  let current = 0;
+  let previous = 0;
+  for (const { day, mentions } of days) {
+    if (day >= currentStart && day < today) current += mentions;
+    else if (day >= previousStart && day < currentStart) previous += mentions;
+  }
+  return wowChange(current, previous);
+}
+
 /** Sums per-topic mentions over the two windows, straight from topic_volume_daily. */
 export async function topicWowForWorkspace(
   workspaceId: string,
@@ -46,9 +76,7 @@ export async function topicWowForWorkspace(
 ): Promise<Map<string, WowChange>> {
   const out = new Map<string, WowChange>();
   if (topics.length === 0) return out;
-  const dayMs = 24 * 60 * 60 * 1000;
-  const currentStart = new Date(now.getTime() - 7 * dayMs).toISOString().slice(0, 10);
-  const previousStart = new Date(now.getTime() - 14 * dayMs).toISOString().slice(0, 10);
+  const { previousStart, currentStart, today } = wowWindow(now);
   const db = getDb();
   const sums = await db
     .select({
@@ -60,7 +88,7 @@ export async function topicWowForWorkspace(
     .where(and(
       eq(topicVolumeDaily.workspaceId, workspaceId),
       gte(topicVolumeDaily.day, previousStart),
-      lt(topicVolumeDaily.day, now.toISOString().slice(0, 10)),
+      lt(topicVolumeDaily.day, today),
       inArray(topicVolumeDaily.topic, [...topics]),
     ))
     .groupBy(topicVolumeDaily.topic);

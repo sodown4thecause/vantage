@@ -2,7 +2,7 @@ import { and, eq, gte, lt } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { topicVolumeDaily } from "@/lib/db/schema";
-import { wowChange, type WowChange } from "@/lib/trends/momentum";
+import { wowFromDailyCounts, type WowChange } from "@/lib/trends/momentum";
 
 export type TopicTrend = {
   topic: string;
@@ -58,9 +58,8 @@ export async function workspaceTrends(
       const day = new Date(now.getTime() - (WINDOW_DAYS - 1 - i) * dayMs).toISOString().slice(0, 10);
       return { day, mentions: days.get(day) ?? 0 };
     });
-    const sum = (from: number, to: number) =>
-      dayList.slice(from, to).reduce((a, d) => a + d.mentions, 0);
-    const wow = wowChange(sum(WINDOW_DAYS - 7, WINDOW_DAYS), sum(WINDOW_DAYS - 14, WINDOW_DAYS - 7));
+    // Same completed-day window the scorer reads (topicWowForWorkspace).
+    const wow = wowFromDailyCounts(dayList, now);
     return { topic, total, wow, days: dayList };
   });
 }
