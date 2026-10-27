@@ -86,6 +86,23 @@ describe("discovery server actions", () => {
     expect(state.queue).toHaveBeenCalledWith(WS, "syften");
   });
 
+  it("tell the owner to confirm the profile first, and queue nothing, when a term is accepted too early", async () => {
+    state.decideKeyword.mockResolvedValue({ ok: false, reason: "profile_required" });
+    state.decideCompetitor.mockResolvedValue({ ok: false, reason: "profile_required" });
+    const expected = { ok: false, message: "Confirm your profile first, then accept this suggestion." };
+    expect(await decideKeywordProposal(WS, ID, "accepted")).toEqual(expected);
+    expect(await decideCompetitorProposal(WS, ID, "accepted")).toEqual(expected);
+    expect(state.queue).not.toHaveBeenCalled();
+    expect(state.ingest).not.toHaveBeenCalled();
+  });
+
+  it("index the profile version an accepted term created, best effort", async () => {
+    state.decideKeyword.mockResolvedValue({ ok: true, value: "syften alternative", profileId: "pid2" });
+    state.index.mockRejectedValue(new Error("queue down"));
+    expect(await decideKeywordProposal(WS, ID, "accepted")).toEqual({ ok: true, message: "Keyword added." });
+    expect(state.index).toHaveBeenCalledWith(WS, "pid2");
+  });
+
   it("queue nothing when the owner rejects", async () => {
     await decideKeywordProposal(WS, ID, "rejected");
     await decideCompetitorProposal(WS, ID, "rejected");
@@ -104,7 +121,7 @@ describe("discovery server actions", () => {
   });
 
   it("pause a noisy source only on the owner's say-so", async () => {
-    expect(await decideSourceRemovalProposal(WS, ID, "accepted")).toEqual({ ok: true, message: "Source paused. You can turn it back on in Settings." });
+    expect(await decideSourceRemovalProposal(WS, ID, "accepted")).toEqual({ ok: true, message: "Source paused." });
     expect(state.decideRemoval).toHaveBeenCalledWith(WS, ID, "accepted");
   });
 });
