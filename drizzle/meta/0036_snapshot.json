@@ -1,5 +1,5 @@
 {
-  "id": "e27524e7-1f3d-486f-a752-bc4ef5dadc1e",
+  "id": "f526f86f-4701-447a-8b75-69b75779f6ce",
   "prevId": "1b4db5e6-62c9-4953-87c7-e32723986849",
   "version": "7",
   "dialect": "postgresql",
@@ -4430,6 +4430,21 @@
             },
             {
               "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "source_proposal_source_idx": {
+          "name": "source_proposal_source_idx",
+          "columns": [
+            {
+              "expression": "source_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

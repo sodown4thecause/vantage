@@ -1257,6 +1257,8 @@ export const sourceProposal = pgTable(
   (table) => [
     uniqueIndex("source_proposal_workspace_name_action_uidx").on(table.workspaceId, table.name, table.action),
     index("source_proposal_workspace_status_idx").on(table.workspaceId, table.status),
+    // The cascade foreign key on source_id would otherwise scan this table whenever a source is deleted.
+    index("source_proposal_source_idx").on(table.sourceId),
     check("source_proposal_action_check", sql`${table.action} in ('add', 'remove')`),
     check("source_proposal_status_check", sql`${table.status} in ('reviewed', 'rejected', 'ingested', 'removal_proposed', 'dismissed')`),
   ],

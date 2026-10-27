@@ -79,4 +79,5 @@ CREATE UNIQUE INDEX "competitor_workspace_domain_uidx" ON "competitor" USING btr
 CREATE UNIQUE INDEX "keyword_recommendation_workspace_keyword_uidx" ON "keyword_recommendation" USING btree ("workspace_id","keyword");--> statement-breakpoint
 CREATE INDEX "proposed_profile_workspace_status_idx" ON "proposed_profile" USING btree ("workspace_id","status");--> statement-breakpoint
 CREATE UNIQUE INDEX "source_proposal_workspace_name_action_uidx" ON "source_proposal" USING btree ("workspace_id","name","action");--> statement-breakpoint
-CREATE INDEX "source_proposal_workspace_status_idx" ON "source_proposal" USING btree ("workspace_id","status");
+CREATE INDEX "source_proposal_workspace_status_idx" ON "source_proposal" USING btree ("workspace_id","status");--> statement-breakpoint
+CREATE INDEX "source_proposal_source_idx" ON "source_proposal" USING btree ("source_id");
