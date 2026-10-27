@@ -33,7 +33,12 @@ export function fakeDb(selectResults: unknown[][] = [], writeResults: unknown[][
   const queue = [...selectResults];
   const writes = [...writeResults];
 
-  const chain = (op: Op, result: () => unknown): unknown => new Proxy({}, {
+  const opOf = new WeakMap<object, Op>();
+  /** Each `db.batch([...])` call, as the statements it carried. A statement only runs when it is part of a batch or awaited. */
+  const batches: Op[][] = [];
+
+  const chain = (op: Op, result: () => unknown): unknown => {
+    const proxy: unknown = new Proxy({}, {
     get: (_target, prop) => {
       if (prop === "then") {
         return (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) => {
@@ -50,7 +55,10 @@ export function fakeDb(selectResults: unknown[][] = [], writeResults: unknown[][
         return chain(op, result);
       };
     },
-  });
+    });
+    opOf.set(proxy as object, op);
+    return proxy;
+  };
 
   const start = (kind: Op["kind"], table: unknown, result: () => unknown) => {
     const op: Op = { kind, table, calls: [] };
@@ -63,6 +71,10 @@ export function fakeDb(selectResults: unknown[][] = [], writeResults: unknown[][
     insert: (table: unknown) => start("insert", table, () => writes.shift() ?? []),
     update: (table: unknown) => start("update", table, () => writes.shift() ?? []),
     delete: (table: unknown) => start("delete", table, () => writes.shift() ?? []),
+    batch: async (statements: unknown[]) => {
+      batches.push(statements.map((statement) => opOf.get(statement as object)!));
+      return Promise.all(statements);
+    },
   };
-  return { db: db as never, ops };
+  return { db: db as never, ops, batches };
 }

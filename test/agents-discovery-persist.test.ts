@@ -64,6 +64,17 @@ describe("saveDiscoveryProposals", () => {
     expect(update.where!.sql).toMatch(/workspace_id/);
   });
 
+  it("writes the supersede update and every insert in one db.batch, so a failed insert cannot leave the owner with no draft", async () => {
+    const { db, ops, batches } = fakeDb();
+    await saveDiscoveryProposals({ workspaceId: WS, productUrl: "https://contextfor.dev/", outcome }, db);
+    expect(batches).toHaveLength(1);
+    expect(batches[0]!.map((op) => [op.kind, op.table])).toEqual([
+      ["update", proposedProfile], ["insert", proposedProfile], ["insert", competitor], ["insert", keywordRecommendation], ["insert", sourceProposal],
+    ]);
+    // Nothing was submitted outside the batch: every recorded statement is inside it.
+    expect(ops).toHaveLength(batches[0]!.length);
+  });
+
   it("writes nothing for a run that proposed nothing", async () => {
     const { db, ops } = fakeDb();
     await saveDiscoveryProposals({ workspaceId: WS, productUrl: "https://contextfor.dev/", outcome: { ...outcome, profile: undefined, competitors: [], keywords: [], sources: [] } }, db);
