@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const limits = vi.hoisted(() => ({ assert: vi.fn(async () => undefined) }));
 vi.mock("@/lib/plans/limits", async (original) => ({ ...await original<typeof import("@/lib/plans/limits")>(), assertWithinCount: limits.assert }));
@@ -17,6 +17,8 @@ import { fakeDb } from "./helpers/fake-db";
 
 const WS = "11111111-1111-4111-8111-111111111111";
 const ID = "22222222-2222-4222-8222-222222222222";
+
+afterEach(() => { vi.unstubAllGlobals(); });
 
 beforeEach(() => {
   limits.assert.mockReset().mockResolvedValue(undefined);

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fakeDb } from "./helpers/fake-db";
 
@@ -30,6 +30,8 @@ const outcome = {
   status: "complete", competitors: [], keywords: [], sources: [], modelCostUsd: 0.012, toolSpendUsd: 0.004,
   results: [{ kind: "profile", status: "proposed", proposal: { productName: "Vantage" } }],
 };
+
+afterEach(() => { vi.unstubAllGlobals(); });
 
 beforeEach(() => {
   for (const mock of [state.authorize, state.run, state.save, state.ingest, state.capture]) mock.mockReset();
