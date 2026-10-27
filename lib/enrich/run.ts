@@ -46,9 +46,23 @@ export function enrichDailyMax(env: Record<string, string | undefined> = process
   return Math.max(0, Math.floor(raw));
 }
 
+/**
+ * The author's own text: contentMd minus the title the collectors copy into it
+ * (HN falls back to the title; Reddit prefixes "r/sub", "u/user" and "# title").
+ */
+function ownBodyLength(doc: Pick<DocumentRecord, "title" | "contentMd">): number {
+  let body = doc.contentMd ?? "";
+  const title = (doc.title ?? "").trim();
+  if (title) {
+    const at = body.indexOf(title);
+    if (at >= 0) body = body.slice(0, at) + body.slice(at + title.length);
+  }
+  return body.replace(/^\s*(?:r\/\S+|u\/\S+|#)\s*$/gm, "").trim().length;
+}
+
 function isLinkPost(doc: Pick<DocumentRecord, "title" | "contentMd">): boolean {
-  const body = [doc.title ?? "", doc.contentMd ?? ""].join(" ").trim();
-  return body.length > 0 && body.length < LINK_POST_MAX_CHARS;
+  const hasContent = (doc.title ?? "").trim().length > 0 || (doc.contentMd ?? "").trim().length > 0;
+  return hasContent && ownBodyLength(doc) < LINK_POST_MAX_CHARS;
 }
 
 /** Firecrawl charges per credit; the conversion env keeps the meter honest when it is set. */

@@ -158,4 +158,18 @@ describe("link post selection", () => {
     const at = firstEnrichableLink({ urlCanonical: "https://example.com/a", title: null, contentMd: "x".repeat(LINK_POST_MAX_CHARS) });
     expect(at).toBeNull();
   });
+
+  it("measures the body without counting the title the collectors already copy into it", () => {
+    const title = "A".repeat(60);
+    const link = "https://example.com/story";
+    // HN: an empty story_text falls back to the title, so contentMd === title.
+    expect(firstEnrichableLink({ urlCanonical: link, title, contentMd: title })?.url).toBe(link);
+    // Reddit: header lines and "# title" precede the selftext.
+    const reddit = (body: string) => `r/SaaS\nu/someone\n\n# ${title}\n\n${body}`;
+    expect(firstEnrichableLink({ urlCanonical: link, title, contentMd: reddit("") })?.url).toBe(link);
+    expect(firstEnrichableLink({ urlCanonical: link, title, contentMd: reddit("x".repeat(LINK_POST_MAX_CHARS - 1)) })?.url).toBe(link);
+    expect(firstEnrichableLink({ urlCanonical: link, title, contentMd: reddit("x".repeat(LINK_POST_MAX_CHARS)) })).toBeNull();
+    // A long selftext stays a discussion post whatever its title says.
+    expect(firstEnrichableLink({ urlCanonical: link, title, contentMd: "x".repeat(300) })).toBeNull();
+  });
 });
