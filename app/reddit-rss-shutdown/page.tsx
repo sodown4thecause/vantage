@@ -107,7 +107,10 @@ export default function RedditRssShutdownPage() {
       <section aria-labelledby="how-we-find" className="mt-12">
         <h2 id="how-we-find" className="text-2xl font-bold">How contextfor.dev finds Reddit threads</h2>
         <p className="mt-4">
-          We find threads through public web search and read the public page. There are no RSS URLs and no Reddit API keys to break. Every thread is scored for fit, intent, evidence, momentum and timing, and you get a short ranked list in your queue and a daily email.
+          We find threads through public web search and read the public page. There are no RSS URLs and no Reddit API keys to break. Every thread is scored for fit, intent, evidence, momentum and timing, and lands in a short ranked list in your queue.
+        </p>
+        <p className="mt-4">
+          Reddit sources refresh when you press <strong>Scan now</strong>, and on your first scan. Scheduled scans and the daily email cover your other sources, so press Scan now whenever you want fresh Reddit threads.
         </p>
         <p className="mt-4">
           Reddit is one source. The same list covers Hacker News, X, YouTube, Product Hunt, GitHub, Stack Overflow and your own non-Reddit RSS feeds, so you stop stitching together one alert per site.
@@ -120,7 +123,7 @@ export default function RedditRssShutdownPage() {
           <li>Write down the subreddits and keywords your feeds, zaps or GummySearch audiences watch.</li>
           <li><Link href="/auth/sign-up" className="underline">Create a free account</Link> and paste your product&apos;s URL. Onboarding suggests topics, competitors and communities.</li>
           <li>Add your subreddits and keywords as sources.</li>
-          <li>Read your first ranked conversations, and turn off the old flow once you&apos;re happy.</li>
+          <li>Read your first ranked conversations. Press Scan now when you want fresh Reddit threads, and turn off the old flow once you&apos;re happy.</li>
         </ol>
       </section>
 

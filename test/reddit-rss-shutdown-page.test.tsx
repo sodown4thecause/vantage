@@ -16,6 +16,13 @@ describe("/reddit-rss-shutdown", () => {
     expect(html).toContain("not RSS or the Reddit API");
   });
 
+  // Scheduled scans only run free-lane sources (lib/cron/scan.ts SCHEDULED_SOURCE_TYPES); Reddit runs on "Scan now".
+  it("says Reddit refreshes when you press Scan now, not on the schedule or in the daily email", () => {
+    expect(html).toContain("Scan now");
+    expect(html).toContain("Reddit sources refresh when you press");
+    expect(html).not.toContain("a short ranked list in your queue and a daily email");
+  });
+
   it("keeps the never-posts promise and a sign-up call to action", () => {
     expect(html).toContain("we never post for you");
     expect(html).toContain('href="/auth/sign-up"');
