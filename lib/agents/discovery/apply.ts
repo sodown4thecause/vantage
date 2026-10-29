@@ -27,26 +27,34 @@ export type Decision = { ok: true; value?: string; profileId?: string } | { ok: 
 
 /** Saves the confirmed proposal as the workspace's next monitoring profile version. */
 export async function confirmProfileProposal(workspaceId: string, proposalId: string, db: Db = getDb()): Promise<{ ok: true; version: number; profileId: string } | { ok: false }> {
-  const [proposal] = await db.select().from(proposedProfile)
-    .where(and(eq(proposedProfile.workspaceId, workspaceId), eq(proposedProfile.id, proposalId), eq(proposedProfile.status, "proposed"))).limit(1);
+  // Claim the proposal first, in one conditional statement, so two overlapping confirmations cannot both save a
+  // version: only the caller whose UPDATE flips proposed -> accepted goes on to insert.
+  const [proposal] = await db.update(proposedProfile).set({ status: "accepted", decidedAt: new Date() })
+    .where(and(eq(proposedProfile.workspaceId, workspaceId), eq(proposedProfile.id, proposalId), eq(proposedProfile.status, "proposed")))
+    .returning();
   if (!proposal) return { ok: false };
-  const [latest] = await db.select({ version: monitoringProfile.version, topics: monitoringProfile.topics, competitors: monitoringProfile.competitors, docsUrls: monitoringProfile.docsUrls })
-    .from(monitoringProfile).where(eq(monitoringProfile.workspaceId, workspaceId)).orderBy(desc(monitoringProfile.version)).limit(1);
-  const version = (latest?.version ?? 0) + 1;
-  const [saved] = await db.insert(monitoringProfile).values({
-    workspaceId, version, productUrl: proposal.productUrl, docsUrls: latest?.docsUrls ?? [],
-    productDescription: proposal.description, targetCustomer: proposal.audience,
-    competitors: latest?.competitors ?? [], topics: latest?.topics ?? [],
-    // The agent already read the site through Linkup, so the product text is stored as supplied material and the
-    // Worker does not fetch the site again.
-    productMaterialStatus: "manual",
-    productMaterialText: [proposal.productName, proposal.category, proposal.description, `Audience: ${proposal.audience}`, `Pricing: ${proposal.pricingTier}`, ...proposal.differentiators].join("\n"),
-    retrievalNotes: "Drafted by the discovery agent and confirmed by the owner.",
-  }).returning({ id: monitoringProfile.id });
-  if (!saved) throw new Error("failed to persist monitoring profile");
-  await db.update(proposedProfile).set({ status: "accepted", decidedAt: new Date() })
-    .where(and(eq(proposedProfile.workspaceId, workspaceId), eq(proposedProfile.id, proposalId)));
-  return { ok: true, version, profileId: saved.id };
+  try {
+    const [latest] = await db.select({ version: monitoringProfile.version, topics: monitoringProfile.topics, competitors: monitoringProfile.competitors, docsUrls: monitoringProfile.docsUrls })
+      .from(monitoringProfile).where(eq(monitoringProfile.workspaceId, workspaceId)).orderBy(desc(monitoringProfile.version)).limit(1);
+    const version = (latest?.version ?? 0) + 1;
+    const [saved] = await db.insert(monitoringProfile).values({
+      workspaceId, version, productUrl: proposal.productUrl, docsUrls: latest?.docsUrls ?? [],
+      productDescription: proposal.description, targetCustomer: proposal.audience,
+      competitors: latest?.competitors ?? [], topics: latest?.topics ?? [],
+      // The agent already read the site through Linkup, so the product text is stored as supplied material and the
+      // Worker does not fetch the site again.
+      productMaterialStatus: "manual",
+      productMaterialText: [proposal.productName, proposal.category, proposal.description, `Audience: ${proposal.audience}`, `Pricing: ${proposal.pricingTier}`, ...proposal.differentiators].join("\n"),
+      retrievalNotes: "Drafted by the discovery agent and confirmed by the owner.",
+    }).returning({ id: monitoringProfile.id });
+    if (!saved) throw new Error("failed to persist monitoring profile");
+    return { ok: true, version, profileId: saved.id };
+  } catch (error) {
+    // Nothing was saved, so hand the proposal back to the owner to confirm again.
+    await db.update(proposedProfile).set({ status: "proposed", decidedAt: null })
+      .where(and(eq(proposedProfile.workspaceId, workspaceId), eq(proposedProfile.id, proposalId), eq(proposedProfile.status, "accepted")));
+    throw error;
+  }
 }
 
 type SavedProfile = typeof monitoringProfile.$inferSelect;

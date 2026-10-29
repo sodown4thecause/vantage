@@ -13,7 +13,7 @@ import {
   ingestReviewedSources,
   queueTermSource,
 } from "@/lib/agents/discovery";
-import { monitoringProfile, source, sourceProposal } from "@/lib/db/schema";
+import { monitoringProfile, proposedProfile, source, sourceProposal } from "@/lib/db/schema";
 import { ScanLeaseBusyError } from "@/lib/cron/lease-error";
 import { PlanLimitError } from "@/lib/plans/types";
 import { fakeDb } from "./helpers/fake-db";
@@ -36,25 +36,47 @@ const proposal = {
 };
 
 describe("confirmProfileProposal", () => {
-  it("saves the next monitoring profile version from the proposal without fetching the site", async () => {
-    const { db, ops } = fakeDb([[proposal], [{ version: 2, topics: ["gtm"], competitors: ["syften.com"], docsUrls: [] }]], [[{ id: "new-profile-id" }]]);
+  it("claims the proposal first, then saves the next monitoring profile version from it without fetching the site", async () => {
+    const { db, ops } = fakeDb([[{ version: 2, topics: ["gtm"], competitors: ["syften.com"], docsUrls: [] }]], [[proposal], [{ id: "new-profile-id" }]]);
     expect(await confirmProfileProposal(WS, ID, db)).toEqual({ ok: true, version: 3, profileId: "new-profile-id" });
-    const insert = ops.find((op) => op.kind === "insert" && op.table === monitoringProfile)!;
+    const writes = ops.filter((op) => op.kind !== "select");
+    expect(writes.map((op) => op.kind)).toEqual(["update", "insert"]);
+    const [claim, insert] = writes as [typeof writes[number], typeof writes[number]];
+    expect(claim.table).toBe(proposedProfile);
+    expect(claim.set).toMatchObject({ status: "accepted" });
+    expect(claim.where!.params).toEqual(expect.arrayContaining([WS, ID, "proposed"]));
+    expect(insert.table).toBe(monitoringProfile);
     expect(insert.values).toMatchObject({
       workspaceId: WS, version: 3, productUrl: "https://contextfor.dev/", productDescription: "Finds conversations.",
       targetCustomer: "Founders of AI developer tools", topics: ["gtm"], competitors: ["syften.com"], productMaterialStatus: "manual",
     });
     expect(fetch).not.toHaveBeenCalled();
-    const lookup = ops[0]!;
-    expect(lookup.where!.params).toEqual(expect.arrayContaining([WS, ID]));
   });
 
   it("starts at version 1 for a new workspace and reports a proposal that is not the caller's as not found", async () => {
-    const first = fakeDb([[proposal], []], [[{ id: "p1" }]]);
+    const first = fakeDb([[]], [[proposal], [{ id: "p1" }]]);
     expect(await confirmProfileProposal(WS, ID, first.db)).toEqual({ ok: true, version: 1, profileId: "p1" });
-    const missing = fakeDb([[]]);
+    const missing = fakeDb([], [[]]);
     expect(await confirmProfileProposal(WS, ID, missing.db)).toEqual({ ok: false });
-    expect(missing.ops.filter((op) => op.kind !== "select")).toHaveLength(0);
+    expect(missing.ops.filter((op) => op.kind !== "update")).toHaveLength(0);
+  });
+
+  it("saves one profile version when two confirmations overlap: only the caller that claimed the proposal inserts", async () => {
+    const winner = fakeDb([[]], [[proposal], [{ id: "p1" }]]);
+    const loser = fakeDb([], [[]]);
+    const results = await Promise.all([confirmProfileProposal(WS, ID, winner.db), confirmProfileProposal(WS, ID, loser.db)]);
+    expect(results).toEqual([{ ok: true, version: 1, profileId: "p1" }, { ok: false }]);
+    expect(loser.ops.some((op) => op.kind === "insert")).toBe(false);
+  });
+
+  it("puts the claim back to proposed when the profile save fails, so the owner can confirm again", async () => {
+    const { db: inner, ops } = fakeDb([[]], [[proposal]]);
+    const db = { ...(inner as object), insert: () => ({ values: () => ({ returning: () => Promise.reject(new Error("db down")) }) }) } as never;
+    await expect(confirmProfileProposal(WS, ID, db)).rejects.toThrow("db down");
+    const updates = ops.filter((op) => op.kind === "update");
+    expect(updates).toHaveLength(2);
+    expect(updates[1]!.set).toMatchObject({ status: "proposed", decidedAt: null });
+    expect(updates[1]!.where!.params).toEqual(expect.arrayContaining([WS, ID, "accepted"]));
   });
 });
 
