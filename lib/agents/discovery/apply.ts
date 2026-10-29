@@ -180,9 +180,11 @@ type ReviewedRow = typeof sourceProposal.$inferSelect;
  * already required it before `accepted` was set.) Sources are added inside the workspace scan lease, like every other
  * source mutation, so concurrent ingests cannot both pass the plan's source count and a scan cannot interleave.
  */
+const reviewedRows = (workspaceId: string, db: Db) => db.select().from(sourceProposal)
+  .where(and(eq(sourceProposal.workspaceId, workspaceId), eq(sourceProposal.action, "add"), eq(sourceProposal.accepted, true), eq(sourceProposal.status, "reviewed"))).limit(50);
+
 export async function ingestReviewedSources(workspaceId: string, db: Db = getDb(), env: Env = process.env): Promise<{ ingested: string[]; waiting: string[] }> {
-  const rows = await db.select().from(sourceProposal)
-    .where(and(eq(sourceProposal.workspaceId, workspaceId), eq(sourceProposal.action, "add"), eq(sourceProposal.accepted, true), eq(sourceProposal.status, "reviewed"))).limit(50);
+  const rows = await reviewedRows(workspaceId, db);
   if (rows.length === 0) return { ingested: [], waiting: [] };
   try {
     return await withWorkspaceScanLease(workspaceId, (signal) => addReviewedSources(workspaceId, rows, db, env, signal));
@@ -191,6 +193,16 @@ export async function ingestReviewedSources(workspaceId: string, db: Db = getDb(
     if (error instanceof ScanLeaseBusyError) return { ingested: [], waiting: rows.map((row) => row.name) };
     throw error;
   }
+}
+
+/**
+ * The scan's review step calls this while the scan already holds the workspace lease, so sources left waiting by an
+ * ingest that found the lease busy are created on the next scan. Never call it without holding the lease.
+ */
+export async function ingestReviewedSourcesUnderScanLease(workspaceId: string, signal: AbortSignal, db: Db = getDb(), env: Env = process.env): Promise<{ ingested: string[]; waiting: string[] }> {
+  const rows = await reviewedRows(workspaceId, db);
+  if (rows.length === 0) return { ingested: [], waiting: [] };
+  return addReviewedSources(workspaceId, rows, db, env, signal);
 }
 
 async function addReviewedSources(workspaceId: string, rows: ReviewedRow[], db: Db, env: Env, signal: AbortSignal): Promise<{ ingested: string[]; waiting: string[] }> {
