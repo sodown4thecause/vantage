@@ -115,6 +115,15 @@ describe("gateSource", () => {
     expect(review.matchedTerms).toContain("syften");
   });
 
+  it("rejects a source when any one query does not fit, even if the others fit strongly", async () => {
+    const judge = vi.fn(async (_p: unknown, source: { queries: string[] }) => ({
+      judgements: source.queries.map((query, i) => ({ query, fit: i === 0 ? 0.95 : 0.1, rung: 4, situation: "other", why: "mock" })), costUsd: 0.004,
+    }));
+    const review = await gateSource(profile, hn(["syften alternative", "developer tool marketing"], 0.9, "HN: two"), { judge: judge as never });
+    expect(review.accepted).toBe(false);
+    expect(review.method).toBe("ai");
+  });
+
   it("rejects when fewer than half the queries fit, even if one fits strongly", async () => {
     const { judge } = judgeFor(modelReturning([
       { query: "syften alternative", fit: 1, rung: 4 },

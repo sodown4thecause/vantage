@@ -50,6 +50,12 @@ describe("source quality gate", () => {
     expect(review.reasons.join(" ")).toMatch(/model/i);
   });
 
+  it("rejects a source when any one query is generic, even if the others name the product and the model is confident", () => {
+    const review = reviewSourceProposal(profile, source({ queries: ["syften alternative", "ai"], relevanceScore: 0.9 }));
+    expect(review.accepted).toBe(false);
+    expect(review.reasons.join(" ")).toMatch(/"ai"/);
+  });
+
   it("treats a single query that matches as enough only if the others are not generic noise", () => {
     const review = reviewSourceProposal(profile, source({ queries: ["developer tool marketing", "ai", "startup", "tools"], relevanceScore: 0.9 }));
     expect(review.accepted).toBe(false);

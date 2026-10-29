@@ -22,7 +22,8 @@ import { costOfUsage } from "@/lib/seo-agent/models";
 export const RELEVANCE_ESTIMATE_USD = 0.01;
 /** A query fits when the model's fit clears the pipeline's own semantic-fit threshold. */
 const FIT_THRESHOLD = SEMANTIC_THRESHOLDS.fit;
-const MIN_FITTING_SHARE = 0.5;
+/** Share of a source's queries that must fit. Every query of a source runs, so by default every one must. */
+const DEFAULT_MIN_FITTING_SHARE = 1;
 const FIT_WEIGHT = 0.7;
 const INTENT_WEIGHT = 0.3;
 const MAX_RUNG = 4;
@@ -119,12 +120,12 @@ function withTermsOnly(term: SourceReview, why: string): SourceReview {
   return { ...term, method: "terms", reasons: [...term.reasons, why] };
 }
 
-function combine(term: SourceReview, judgements: QueryJudgement[]): SourceReview {
+function combine(term: SourceReview, judgements: QueryJudgement[], minFittingShare: number): SourceReview {
   const fitting = judgements.filter((item) => item.fit >= FIT_THRESHOLD);
   const share = judgements.length === 0 ? 0 : fitting.length / judgements.length;
   const mean = judgements.length === 0 ? 0 : judgements.reduce((sum, item) => sum + FIT_WEIGHT * item.fit + INTENT_WEIGHT * (item.rung / MAX_RUNG), 0) / judgements.length;
   const score = round2(mean);
-  const accepted = share >= MIN_FITTING_SHARE && score >= SOURCE_RELEVANCE_THRESHOLD;
+  const accepted = share >= minFittingShare && score >= SOURCE_RELEVANCE_THRESHOLD;
   const reasons = accepted
     ? [`The relevance review found ${fitting.length} of ${judgements.length} queries fit this product.`]
     : judgements.filter((item) => item.fit < FIT_THRESHOLD).slice(0, 3)
@@ -141,19 +142,20 @@ function combine(term: SourceReview, judgements: QueryJudgement[]): SourceReview
 export async function gateSource(
   profile: ReviewProfile,
   source: SourceProposal,
-  opts: { judge?: RelevanceJudge; canAfford?: () => boolean | Promise<boolean>; onCost?: (usd: number) => void; signal?: AbortSignal } = {},
+  opts: { judge?: RelevanceJudge; canAfford?: () => boolean | Promise<boolean>; onCost?: (usd: number) => void; signal?: AbortSignal; minQueryShare?: number } = {},
 ): Promise<SourceReview> {
   // The pre-filter looks at the queries only. The proposing model's own score is ignored when a review can run.
-  const pre = reviewSourceProposal(profile, { ...source, relevanceScore: 1 });
+  const minShare = opts.minQueryShare ?? DEFAULT_MIN_FITTING_SHARE;
+  const pre = reviewSourceProposal(profile, { ...source, relevanceScore: 1 }, minShare);
   if (!pre.accepted) return { ...pre, method: "terms" };
   // Without a review the term match decides alone, and then the proposer's own score still has to clear the threshold.
-  const term = reviewSourceProposal(profile, source);
+  const term = reviewSourceProposal(profile, source, minShare);
   if (!opts.judge) return withTermsOnly(term, "The AI relevance review is not available, so only the term match was applied.");
   if (opts.canAfford && !(await opts.canAfford())) return withTermsOnly(term, "The discovery budget is spent, so only the term match was applied.");
   try {
     const result = await opts.judge(profile, source, opts.signal);
     opts.onCost?.(result.costUsd);
-    return combine(pre, result.judgements);
+    return combine(pre, result.judgements, minShare);
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") throw error;
     return withTermsOnly(term, "The AI relevance review could not run, so only the term match was applied.");

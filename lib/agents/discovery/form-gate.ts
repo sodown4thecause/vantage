@@ -67,6 +67,8 @@ export async function gateProfileTopics(
   let started = false;
   try {
     return await gateSource(profile, source, {
+      // The owner's own topic list: at least half must fit, because the form builds default sources from the whole list.
+      minQueryShare: 0.5,
       judge: judge && (async (...args) => { started = true; return judge(...args); }),
       canAfford: async () => {
         try {
