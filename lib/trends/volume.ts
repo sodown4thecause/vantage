@@ -77,23 +77,45 @@ export async function recordWorkspaceTopicVolume(
   const lock = db.select({ id: workspace.id }).from(workspace)
     .where(eq(workspace.id, workspaceId)).for("update");
   const write = db.execute(sql`
-    with claimed as (
+    with wanted as (
+      select t.topic, t.pattern
+      from jsonb_to_recordset(${JSON.stringify(patterns)}::jsonb) as t(topic text, pattern text)
+    ),
+    -- Per document, the topics already counted for it (metadata.topicVolumeTopics). A document is
+    -- picked up again only for topics it has not been counted for, so a topic added later still
+    -- gets its stored history. A rebuild ignores the record and recounts every wanted topic.
+    target as (
+      select d.id, ${options.rebuild ? sql`'[]'::jsonb` : sql`coalesce(d.metadata->'topicVolumeTopics', '[]'::jsonb)`} as done
+      from ${document} d
+      where d.workspace_id = ${workspaceId}
+        and coalesce(d.posted_at, d.collected_at) >= ${since}::timestamptz
+        and coalesce(d.posted_at, d.collected_at) < ${until}::timestamptz
+        and ${options.rebuild ? sql`true` : sql`exists (
+          select 1 from wanted
+          where not (coalesce(d.metadata->'topicVolumeTopics', '[]'::jsonb) @> to_jsonb(wanted.topic))
+        )`}
+    ),
+    claimed as (
       update ${document}
-      set metadata = coalesce(${document.metadata}, '{}'::jsonb) || '{"topicVolumeRecorded":true}'::jsonb
-      where ${document.workspaceId} = ${workspaceId}
-        and coalesce(${document.postedAt}, ${document.collectedAt}) >= ${since}::timestamptz
-        and coalesce(${document.postedAt}, ${document.collectedAt}) < ${until}::timestamptz
-        and ${options.rebuild ? sql`true` : sql`${document.metadata}->>'topicVolumeRecorded' is distinct from 'true'`}
+      set metadata = coalesce(${document.metadata}, '{}'::jsonb) || jsonb_build_object(
+        'topicVolumeTopics',
+        target.done || (select coalesce(jsonb_agg(wanted.topic), '[]'::jsonb) from wanted
+          where not (target.done @> to_jsonb(wanted.topic)))
+      )
+      from target
+      where ${document.id} = target.id and ${document.workspaceId} = ${workspaceId}
       returning ${document.platform} as platform, ${document.postedAt} as posted_at,
-        ${document.collectedAt} as collected_at, ${document.title} as title, ${document.contentMd} as content_md
+        ${document.collectedAt} as collected_at, ${document.title} as title, ${document.contentMd} as content_md,
+        target.done as done
     )
     insert into ${topicVolumeDaily} (workspace_id, topic, source, day, mentions)
-    select ${workspaceId}::uuid, topics.topic, claimed.platform,
+    select ${workspaceId}::uuid, wanted.topic, claimed.platform,
       (coalesce(claimed.posted_at, claimed.collected_at) at time zone 'UTC')::date, count(*)::integer
     from claimed
-    cross join jsonb_to_recordset(${JSON.stringify(patterns)}::jsonb) as topics(topic text, pattern text)
-    where (coalesce(claimed.title, '') || ' ' || claimed.content_md) ~* topics.pattern
-    group by topics.topic, claimed.platform,
+    cross join wanted
+    where not (claimed.done @> to_jsonb(wanted.topic))
+      and (coalesce(claimed.title, '') || ' ' || claimed.content_md) ~* wanted.pattern
+    group by wanted.topic, claimed.platform,
       (coalesce(claimed.posted_at, claimed.collected_at) at time zone 'UTC')::date
     on conflict (workspace_id, topic, source, day)
     do update set mentions = ${topicVolumeDaily.mentions} + excluded.mentions
