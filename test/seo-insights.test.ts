@@ -89,7 +89,7 @@ describe("insights boundary", () => {
     };
     const context = ctx(reader);
     const tool = insightTools(context, reader).search_insights!;
-    const result = await tool.execute!({ query: "geo" }, { toolCallId: "t", messages: [] }) as { data?: { passages: Array<{ id: string }> } };
+    const result = await tool.execute!({ query: "geo" }, { toolCallId: "t", messages: [], context: undefined }) as { data?: { passages: Array<{ id: string }> } };
     expect(context.cards).toHaveLength(1);
     expect((context.cards[0]!.data as Array<{ id: string }>).map((item) => item.id)).toEqual(["p1"]);
     expect(JSON.stringify(result)).not.toContain("127.0.0.1");
