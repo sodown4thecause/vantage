@@ -110,31 +110,44 @@ export async function summarizeEvidence(args: {
       finishing.catch(() => undefined);
       const stream = result.toUIMessageStream();
       const reader = stream.getReader();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = value as UIMessageChunk;
-        if (chunk.type === "error") {
-          await reader.cancel().catch(() => undefined);
-          meter.erred = true;
-          return { kind: "error", flushed, text, spendUsd: meter.spendUsd, unpriced: meter.unpriced, erred: true };
-        }
-        if (chunk.type === "start-step") stepBreak = text !== "";
-        if (chunk.type === "text-delta") {
-          const delta = stepBreak ? `\n\n${chunk.delta}` : chunk.delta;
-          stepBreak = false;
-          text += delta;
-          if (!flushed) {
-            flushed = true;
-            for (const held of pending) args.writer.write(held);
-            pending.length = 0;
+      // Cancel on any early exit (error chunk, read or write failure) so the model stream stops, and always release the lock.
+      let drained = false;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) {
+            drained = true;
+            break;
           }
-          args.writer.write(delta === chunk.delta ? chunk : { type: "text-delta", id: chunk.id, delta });
-          continue;
+          const chunk = value as UIMessageChunk;
+          if (chunk.type === "error") {
+            meter.erred = true;
+            return { kind: "error", flushed, text, spendUsd: meter.spendUsd, unpriced: meter.unpriced, erred: true };
+          }
+          if (chunk.type === "start-step") stepBreak = text !== "";
+          if (chunk.type === "text-delta") {
+            const delta = stepBreak ? `\n\n${chunk.delta}` : chunk.delta;
+            stepBreak = false;
+            text += delta;
+            if (!flushed) {
+              flushed = true;
+              for (const held of pending) args.writer.write(held);
+              pending.length = 0;
+            }
+            args.writer.write(delta === chunk.delta ? chunk : { type: "text-delta", id: chunk.id, delta });
+            continue;
+          }
+          if (LIFECYCLE_CHUNKS.has(chunk.type)) continue;
+          if (!flushed) pending.push(chunk);
+          else args.writer.write(chunk);
         }
-        if (LIFECYCLE_CHUNKS.has(chunk.type)) continue;
-        if (!flushed) pending.push(chunk);
-        else args.writer.write(chunk);
+      } finally {
+        if (!drained) await reader.cancel().catch(() => undefined);
+        try {
+          reader.releaseLock();
+        } catch {
+          // Already released or still has a pending read; nothing more to do.
+        }
       }
       const finishReason = await finishing;
       if (finishReason === "content-filter" && text.trim() === "") {
