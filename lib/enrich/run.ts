@@ -9,7 +9,7 @@ import {
 import { getDb } from "@/lib/db/client";
 import { mapWithConcurrency } from "@/lib/async/map-with-concurrency";
 import { fetchLinkedPage, fetchYoutubeTranscript } from "@/lib/enrich/scrape";
-import { summariseLinkedPage } from "@/lib/enrich/summarise";
+import { summariserAvailable, summariseLinkedPage } from "@/lib/enrich/summarise";
 import {
   candidateLinkUrls,
   isSkippedHost,
@@ -150,15 +150,22 @@ export async function enrichLinkDocuments(
       if (decision.action === "use") return decision.row;
 
       const key = link.kind === "youtube" ? process.env.SUPADATA_API_KEY : process.env.FIRECRAWL_API_KEY;
-      if (!key?.trim() || budgetLeft <= 0) return null;
+      // Without a summariser the fetched text would be thrown away, so do not pay for it.
+      if (!key?.trim() || !summariserAvailable() || budgetLeft <= 0) return null;
       budgetLeft -= 1;
       let fetched = await fetchLink(link, opts);
       const attempts = decision.priorAttempts + 1;
       if (fetched.outcome === "ok") {
+        let budgetDenied = false;
         const summary = await summariseLinkedPage({
           url: link.url, title: fetched.value.title, text: fetched.value.text,
           workspaceId: opts.workspaceId, signal: opts.signal,
-        }).catch(() => null);
+        }).catch((err) => {
+          if (isPaidCallDenied(err)) budgetDenied = true;
+          return null;
+        });
+        // A budget denial is not the page's fault: leave the row alone so a later run retries.
+        if (budgetDenied) return null;
         if (summary) {
           await db
             .insert(linkEnrichment)

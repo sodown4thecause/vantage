@@ -4,12 +4,12 @@ import type { DocumentRecord } from "@/lib/db/schema";
 import { decideFromCache, enrichLinkDocuments } from "@/lib/enrich/run";
 
 const mocks = vi.hoisted(() => ({
-  getDb: vi.fn(), fetchPage: vi.fn(), fetchYoutube: vi.fn(), summarise: vi.fn(), paid: vi.fn(),
+  getDb: vi.fn(), fetchPage: vi.fn(), fetchYoutube: vi.fn(), summarise: vi.fn(), paid: vi.fn(), available: vi.fn(), denied: vi.fn(),
 }));
 vi.mock("@/lib/db/client", () => ({ getDb: mocks.getDb }));
 vi.mock("@/lib/enrich/scrape", () => ({ fetchLinkedPage: mocks.fetchPage, fetchYoutubeTranscript: mocks.fetchYoutube }));
-vi.mock("@/lib/enrich/summarise", () => ({ summariseLinkedPage: mocks.summarise }));
-vi.mock("@/lib/providers/paid-call", () => ({ runPaidCall: mocks.paid, isPaidCallDenied: () => false }));
+vi.mock("@/lib/enrich/summarise", () => ({ summariseLinkedPage: mocks.summarise, summariserAvailable: mocks.available }));
+vi.mock("@/lib/providers/paid-call", () => ({ runPaidCall: mocks.paid, isPaidCallDenied: mocks.denied }));
 
 type CacheRow = NonNullable<Parameters<typeof decideFromCache>[0]>;
 const fresh: CacheRow = { status: "ok", title: "Cached", summary: "Cached summary", fetchedAt: new Date(), attempts: 1, lastAttemptAt: new Date() };
@@ -41,6 +41,8 @@ beforeEach(() => {
   vi.stubEnv("SUPADATA_API_KEY", "test-key");
   mocks.fetchPage.mockResolvedValue({ outcome: "ok", value: { title: "Page", text: "Content" } });
   mocks.summarise.mockResolvedValue({ summary: "Summary", costUsd: 0.001 });
+  mocks.available.mockReturnValue(true);
+  mocks.denied.mockReturnValue(false);
   mocks.paid.mockImplementation(async (_meta, work) => (await work()).value);
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -102,6 +104,28 @@ describe("enrichment retries", () => {
     mocks.fetchYoutube.mockResolvedValue({ outcome: "ok", value: { title: null, text: "Transcript" } });
     await enrichLinkDocuments([candidate], { workspaceId: "ws" });
     expect(values).toHaveBeenCalledWith(expect.objectContaining({ status: "ok" }));
+  });
+});
+
+describe("summariser unavailable or denied", () => {
+  it("skips the paid page fetch when no summariser is configured, and records no attempt", async () => {
+    const values = mockDb();
+    mocks.available.mockReturnValue(false);
+    const result = await enrichLinkDocuments(docs.slice(0, 1), { workspaceId: "ws" });
+    expect(result.size).toBe(0);
+    expect(mocks.fetchPage).not.toHaveBeenCalled();
+    expect(mocks.paid).not.toHaveBeenCalled();
+    expect(values).not.toHaveBeenCalled();
+  });
+
+  it("does not count a budget-denied summary as an attempt", async () => {
+    const values = mockDb([{ ...fresh, status: "failed", fetchedAt: null, summary: null, attempts: 1, lastAttemptAt: new Date(Date.now() - 25 * 60 * 60 * 1000) }]);
+    const denial = new Error("Daily budget reached");
+    mocks.summarise.mockRejectedValue(denial);
+    mocks.denied.mockImplementation((err) => err === denial);
+    const result = await enrichLinkDocuments(docs.slice(0, 1), { workspaceId: "ws" });
+    expect(result.size).toBe(0);
+    expect(values).not.toHaveBeenCalled();
   });
 });
 

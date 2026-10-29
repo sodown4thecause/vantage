@@ -11,6 +11,11 @@ const INSTRUCTIONS = [
   "Write at most 120 words, in Australian English, in plain prose.",
 ].join("\n");
 
+/** True when the AI Gateway is configured, so a summary call can be made at all. */
+export function summariserAvailable(): boolean {
+  return seoModels() !== null;
+}
+
 /**
  * The page summary, 120 words at most, from the cheap model through the AI
  * Gateway. Null when the gateway is not configured or the call fails: the scan
