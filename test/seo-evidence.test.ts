@@ -99,4 +99,35 @@ describe("buildEvidencePacket", () => {
     }
     expect(JSON.stringify(packet.entries).length).toBeLessThanOrEqual(EVIDENCE_TOTAL_JSON_LIMIT);
   });
+
+  it("marks an entry truncated when bounding cut its data, and complete data as not truncated", () => {
+    const serp = (titleLength: number) => ({
+      organic: Array.from({ length: 10 }, (_, i) => ({
+        position: i + 1,
+        domain: `d${i}.com`,
+        title: "t".repeat(titleLength),
+        url: `https://d${i}.com/`,
+      })),
+      hasAiOverview: false,
+      peopleAlsoAsk: [],
+    });
+    const packet = buildEvidencePacket({
+      question: "q",
+      conversationContext: "",
+      profile: null,
+      // The data fits the model payload limit on its own, so the projection reports no truncation. The entry's
+      // lookup input then takes some of the per-item room, which is what cuts the data down.
+      results: [
+        { tool: "google_serp", source: "live", value: serp(1_100), input: { note: "n".repeat(800) } },
+        { tool: "google_serp", source: "live", value: serp(20) },
+      ],
+      notices: [],
+      pendingApprovals: [],
+    });
+
+    const [large, small] = packet.entries;
+    expect(JSON.stringify(large).length).toBeLessThanOrEqual(EVIDENCE_ITEM_JSON_LIMIT);
+    expect(large!.truncated).toBe(true);
+    expect(small!.truncated).toBe(false);
+  });
 });

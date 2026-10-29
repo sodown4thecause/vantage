@@ -66,17 +66,21 @@ export function buildEvidencePacket(input: {
     }
     if ("control" in projected) continue;
     const data = filterToolEvidence(result.tool, result.value);
-    const truncated = projected.truncated
+    const reported = projected.truncated
       || (data !== null && typeof data === "object" && !Array.isArray(data) && (data as { truncated?: boolean }).truncated === true);
     const input = result.input ? boundJsonSize(result.input, EVIDENCE_INPUT_JSON_LIMIT) : undefined;
-    const envelope = { tool: result.tool, source: result.source, ...(input === undefined ? {} : { input }), truncated };
-    // The whole entry, not just its data, stays inside the per-item limit.
+    // The whole entry, not just its data, stays inside the per-item limit. Size the room for `truncated: true`, the
+    // longer form, so marking the entry truncated below cannot push it over.
+    const envelope = { tool: result.tool, source: result.source, ...(input === undefined ? {} : { input }), truncated: true };
     const room = EVIDENCE_ITEM_JSON_LIMIT - JSON.stringify({ ...envelope, data: null }).length + 4;
+    const bounded = boundJsonSize(data, room);
+    // `boundJsonSize` returns its argument untouched when nothing was cut, so a different value means data was lost.
+    const truncated = reported || bounded !== data;
     entries.push({
       tool: result.tool,
       source: result.source,
       ...(input === undefined ? {} : { input }),
-      data: boundJsonSize(data, room),
+      data: bounded,
       truncated,
     });
   }
