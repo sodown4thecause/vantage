@@ -21,7 +21,7 @@ import { hasTinyFishApiKey } from "@/lib/tinyfish/client";
  */
 
 type Db = ReturnType<typeof getDb>;
-type Env = NodeJS.ProcessEnv;
+type Env = Record<string, string | undefined>;
 /** `profile_required`: a term cannot be accepted until the owner has confirmed a profile for it to join. */
 export type Decision = { ok: true; value?: string; profileId?: string } | { ok: false; reason?: "profile_required" };
 
@@ -133,7 +133,8 @@ export async function queueTermSource(workspaceId: string, term: string, db: Db 
 type SourceRow = Pick<NewSource, "type" | "lane" | "config">;
 
 /** The source row a reviewed proposal becomes, or null when it needs a provider the operator has not configured. */
-function toSourceRow(type: string, queries: string[], env: Env): SourceRow | null {
+function toSourceRow(type: string, queries: string[], providedEnv: Env): SourceRow | null {
+  const env = providedEnv as NodeJS.ProcessEnv;
   // The same provider checks the collectors make, so a source is not left waiting while the collector could run it.
   if (type === "hn") return { type: "hn", lane: "free", config: { queries, maxPages: 1, enrich: false } };
   if (type === "reddit") {
