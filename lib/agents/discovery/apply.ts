@@ -103,7 +103,14 @@ export async function decideCompetitor(workspaceId: string, id: string, decision
     .where(and(eq(competitor.workspaceId, workspaceId), eq(competitor.id, id), eq(competitor.status, "proposed")))
     .returning({ domain: competitor.domain });
   if (!rows[0]) return { ok: false };
-  const profileId = latest ? await addTermToProfile(workspaceId, "competitors", rows[0].domain, latest, db) : null;
+  let profileId: string | null = null;
+  try { profileId = latest ? await addTermToProfile(workspaceId, "competitors", rows[0].domain, latest, db) : null; }
+  catch (error) {
+    // Not saved, so hand the row back: otherwise a retry would be told it was already handled.
+    await db.update(competitor).set({ status: "proposed", decidedAt: null })
+      .where(and(eq(competitor.workspaceId, workspaceId), eq(competitor.id, id), eq(competitor.status, "accepted")));
+    throw error;
+  }
   return profileId ? { ok: true, value: rows[0].domain, profileId } : { ok: true, value: rows[0].domain };
 }
 
@@ -114,7 +121,14 @@ export async function decideKeyword(workspaceId: string, id: string, decision: "
     .where(and(eq(keywordRecommendation.workspaceId, workspaceId), eq(keywordRecommendation.id, id), eq(keywordRecommendation.status, "proposed")))
     .returning({ keyword: keywordRecommendation.keyword });
   if (!rows[0]) return { ok: false };
-  const profileId = latest ? await addTermToProfile(workspaceId, "topics", rows[0].keyword, latest, db) : null;
+  let profileId: string | null = null;
+  try { profileId = latest ? await addTermToProfile(workspaceId, "topics", rows[0].keyword, latest, db) : null; }
+  catch (error) {
+    // Not saved, so hand the row back: otherwise a retry would be told it was already handled.
+    await db.update(keywordRecommendation).set({ status: "proposed", decidedAt: null })
+      .where(and(eq(keywordRecommendation.workspaceId, workspaceId), eq(keywordRecommendation.id, id), eq(keywordRecommendation.status, "accepted")));
+    throw error;
+  }
   return profileId ? { ok: true, value: rows[0].keyword, profileId } : { ok: true, value: rows[0].keyword };
 }
 

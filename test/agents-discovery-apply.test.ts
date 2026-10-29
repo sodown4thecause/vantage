@@ -120,6 +120,22 @@ describe("accepted terms reach the profile that scoring reads", () => {
     expect(capped.ops.some((op) => op.kind === "insert" && op.table === monitoringProfile)).toBe(false);
   });
 
+  it("puts the competitor or keyword back to proposed when saving it to the profile fails, so a retry can still accept it", async () => {
+    const competitorRun = fakeDb([[savedProfile()]], [[{ domain: "syften.com" }]]);
+    const failingInsert = { ...(competitorRun.db as object), insert: () => ({ values: () => ({ onConflictDoNothing: () => ({ returning: () => Promise.reject(new Error("db down")) }) }) }) } as never;
+    await expect(decideCompetitor(WS, ID, "accepted", failingInsert)).rejects.toThrow("db down");
+    const revertCompetitor = competitorRun.ops.filter((op) => op.kind === "update")[1]!;
+    expect(revertCompetitor.set).toMatchObject({ status: "proposed", decidedAt: null });
+    expect(revertCompetitor.where!.params).toEqual(expect.arrayContaining([WS, ID, "accepted"]));
+
+    limits.assert.mockRejectedValueOnce(new Error("db down"));
+    const keywordRun = fakeDb([[savedProfile()]], [[{ keyword: "syften alternative" }]]);
+    await expect(decideKeyword(WS, ID, "accepted", keywordRun.db)).rejects.toThrow("db down");
+    const revertKeyword = keywordRun.ops.filter((op) => op.kind === "update")[1]!;
+    expect(revertKeyword.set).toMatchObject({ status: "proposed", decidedAt: null });
+    expect(revertKeyword.where!.params).toEqual(expect.arrayContaining([WS, ID, "accepted"]));
+  });
+
   it("writes nothing new when the term is already on the profile", async () => {
     const { db, ops } = fakeDb([[savedProfile({ competitors: ["Syften.com"] })]], [[{ domain: "syften.com" }]]);
     expect(await decideCompetitor(WS, ID, "accepted", db)).toEqual({ ok: true, value: "syften.com" });
