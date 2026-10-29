@@ -3,6 +3,8 @@
  * A real Neon KB reader lands with #103/#112. Until then no tool is advertised and live DataForSEO answers still work.
  */
 
+import { isPublicHttpUrl } from "@/lib/http/public-fetch";
+
 export const MAX_INSIGHT_PASSAGES = 5;
 export const INSIGHT_TEXT_LIMIT = 2_000;
 export const INSIGHTS_UNAVAILABLE_NOTICE = "Knowledge insights are not available yet.";
@@ -45,13 +47,13 @@ export function insightsAvailable(retriever?: InsightRetriever | null): boolean 
   return (retriever ?? createInsightRetriever()) !== null;
 }
 
-/** Bound and sanitize passages before they enter the evidence packet. */
+/** Bound and sanitize passages before they reach a card or the evidence packet. Non-public source URLs are dropped. */
 export function normalizeInsightPassages(passages: InsightPassage[], limit = MAX_INSIGHT_PASSAGES): InsightPassage[] {
   const out: InsightPassage[] = [];
   for (const passage of passages) {
     if (out.length >= limit) break;
     if (typeof passage.id !== "string" || passage.id.trim() === "") continue;
-    if (typeof passage.sourceUrl !== "string" || passage.sourceUrl.trim() === "") continue;
+    if (typeof passage.sourceUrl !== "string" || !isPublicHttpUrl(passage.sourceUrl.trim())) continue;
     if (typeof passage.text !== "string" || passage.text.trim() === "") continue;
     if (typeof passage.retrievedAt !== "string" || passage.retrievedAt.trim() === "") continue;
     out.push({

@@ -73,6 +73,28 @@ describe("insights boundary", () => {
     expect(normalized.map((item) => item.id)).toEqual(["1", "2", "3", "4", "5"]);
   });
 
+  it("drops passages whose source URL is not a public http(s) URL before they reach a card", () => {
+    const normalized = normalizeInsightPassages([
+      passage({ id: "ok" }),
+      passage({ id: "loopback", sourceUrl: "http://127.0.0.1/secret" }),
+      passage({ id: "script", sourceUrl: "javascript:alert(1)" }),
+      passage({ id: "internal", sourceUrl: "https://db.internal/x" }),
+    ]);
+    expect(normalized.map((item) => item.id)).toEqual(["ok"]);
+  });
+
+  it("shows the owner only public sources when the retriever returns a private one", async () => {
+    const reader: InsightRetriever = {
+      search: vi.fn(async () => [passage(), passage({ id: "private", sourceUrl: "http://127.0.0.1/secret" })]),
+    };
+    const context = ctx(reader);
+    const tool = insightTools(context, reader).search_insights!;
+    const result = await tool.execute!({ query: "geo" }, { toolCallId: "t", messages: [] }) as { data?: { passages: Array<{ id: string }> } };
+    expect(context.cards).toHaveLength(1);
+    expect((context.cards[0]!.data as Array<{ id: string }>).map((item) => item.id)).toEqual(["p1"]);
+    expect(JSON.stringify(result)).not.toContain("127.0.0.1");
+  });
+
   it("projects public insight passages into the evidence packet and rejects non-public URLs", async () => {
     const reader: InsightRetriever = {
       search: vi.fn(async () => [
