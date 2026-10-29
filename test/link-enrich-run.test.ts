@@ -104,3 +104,27 @@ describe("enrichment retries", () => {
     expect(values).toHaveBeenCalledWith(expect.objectContaining({ status: "ok" }));
   });
 });
+
+describe("documents sharing one uncached link", () => {
+  const shared = (id: string) => ({ ...docs[0], id, urlCanonical: "https://example.com/shared" }) as DocumentRecord;
+
+  it("fetches and summarises once and applies the result to every matching document", async () => {
+    const values = mockDb([], 0);
+    const result = await enrichLinkDocuments([shared("a"), shared("b"), shared("c")], { workspaceId: "ws" });
+    expect(mocks.fetchPage).toHaveBeenCalledTimes(1);
+    expect(mocks.summarise).toHaveBeenCalledTimes(1);
+    expect(values).toHaveBeenCalledTimes(1);
+    expect([...result.keys()].sort()).toEqual(["a", "b", "c"]);
+    expect(result.get("b")?.summary).toBe("Summary");
+  });
+
+  it("spends one daily slot and one attempt on a shared failing link", async () => {
+    const values = mockDb([], 1);
+    mocks.fetchPage.mockResolvedValue({ outcome: "failed", reason: "Unavailable" });
+    const result = await enrichLinkDocuments([shared("a"), shared("b"), { ...docs[1] }], { workspaceId: "ws" });
+    expect(result.size).toBe(0);
+    expect(mocks.fetchPage).toHaveBeenCalledTimes(1);
+    expect(values).toHaveBeenCalledTimes(1);
+    expect(values.mock.calls[0][0]).toMatchObject({ status: "failed", attempts: 1 });
+  });
+});

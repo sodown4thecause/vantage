@@ -134,24 +134,23 @@ export async function enrichLinkDocuments(
   }
   const db = getDb();
 
-  await mapWithConcurrency(candidates, ENRICH_CONCURRENCY, async (doc) => {
-    try {
-      const link = firstEnrichableLink(doc);
-      if (!link) return;
+  type Resolved = { title: string | null; summary: string } | null;
+  // Documents linking to the same URL share one pending resolution, so the paid
+  // fetch, the summary, the daily slot and the attempt are spent once per URL.
+  const pending = new Map<string, Promise<Resolved>>();
+
+  const resolveLink = async (link: { url: string; urlHash: string; kind: LinkedKind }): Promise<Resolved> => {
       const [row] = await db
         .select()
         .from(linkEnrichment)
         .where(eq(linkEnrichment.urlHash, link.urlHash))
         .limit(1);
       const decision = decideFromCache(row ?? null);
-      if (decision.action === "skip") return;
-      if (decision.action === "use") {
-        out.set(doc.id, { url: link.url, kind: link.kind, title: decision.row.title, summary: decision.row.summary });
-        return;
-      }
+      if (decision.action === "skip") return null;
+      if (decision.action === "use") return decision.row;
 
       const key = link.kind === "youtube" ? process.env.SUPADATA_API_KEY : process.env.FIRECRAWL_API_KEY;
-      if (!key?.trim() || budgetLeft <= 0) return;
+      if (!key?.trim() || budgetLeft <= 0) return null;
       budgetLeft -= 1;
       let fetched = await fetchLink(link, opts);
       const attempts = decision.priorAttempts + 1;
@@ -177,8 +176,7 @@ export async function enrichLinkDocuments(
                 costUsd: summary.costUsd !== undefined ? summary.costUsd.toFixed(6) : "0",
               },
             });
-          out.set(doc.id, { url: link.url, kind: link.kind, title: fetched.value.title, summary: summary.summary });
-          return;
+          return { title: fetched.value.title, summary: summary.summary };
         }
         fetched = { outcome: "failed", reason: "summary unavailable" };
       }
@@ -199,6 +197,20 @@ export async function enrichLinkDocuments(
           target: linkEnrichment.urlHash,
           set: { status, attempts, lastAttemptAt: new Date() },
         });
+      return null;
+  };
+
+  await mapWithConcurrency(candidates, ENRICH_CONCURRENCY, async (doc) => {
+    try {
+      const link = firstEnrichableLink(doc);
+      if (!link) return;
+      let work = pending.get(link.urlHash);
+      if (!work) {
+        work = resolveLink(link);
+        pending.set(link.urlHash, work);
+      }
+      const hit = await work;
+      if (hit) out.set(doc.id, { url: link.url, kind: link.kind, title: hit.title, summary: hit.summary });
     } catch (err) {
       // A cap hit or a provider error scores without enrichment; the scan never fails here.
       if (opts.signal?.aborted) return;
