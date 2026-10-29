@@ -255,18 +255,13 @@ export async function withCacheLabels(chips: Chip[], ctx: ProfileContext): Promi
 }
 
 
-/** Prefer GEO when the lane is GEO; otherwise fill the largest profile gap, then react to latest findings. */
+/** Prefer GEO when the lane is GEO; otherwise react to the latest findings, and start with SEO when there are none. */
 export function recommendCategory(input: JourneyContext): Category {
   if (input.focus === "geo") return "geo";
   const tools = input.latestTools ?? [];
   if (tools.some((tool) => tool === "llm_response" || tool === "ai_keyword_volume")) return "seo";
   if (tools.some((tool) => tool === "ranked_keywords" || tool === "google_serp" || tool === "keyword_ideas")) return "geo";
   if (tools.some((tool) => tool === "backlink_gap" || tool === "referring_domains")) return "content";
-  const { productDomain, competitor, topic } = input.profile;
-  if (!topic && (productDomain || competitor)) return "seo";
-  if (productDomain && !competitor) return "seo";
-  if (productDomain && competitor && !topic) return "seo";
-  if (productDomain && competitor && topic) return "seo";
   return "seo";
 }
 
@@ -308,28 +303,4 @@ export function annotateJourney(chips: Chip[], input: JourneyContext): Chip[] {
       reason: recommendationReason(pick, input),
     };
   });
-}
-
-/**
- * Build the three dock actions after an answer. Follow-ups never claim a free cost; recommendation uses lane + findings.
- */
-export function journeyActions(
-  followUps: Partial<Record<Category, string>> | null | undefined,
-  starters: Chip[],
-  input: JourneyContext,
-): Chip[] {
-  const order: Category[] = input.focus === "geo" ? ["geo", "seo", "content"] : ["seo", "geo", "content"];
-  const fallback: Record<Category, string> = {
-    seo: "Help me choose a focused search research question",
-    geo: "Help me plan research into AI answers about my product",
-    content: "Help me turn the research into a useful content brief",
-  };
-  const chips = order.map((category) => {
-    const fromFollowUp = followUps?.[category]?.trim();
-    if (fromFollowUp) return { category, text: fromFollowUp, costLabel: "" };
-    const starter = starters.find((chip) => chip.category === category);
-    if (starter) return { ...starter, costLabel: starter.costLabel };
-    return { category, text: fallback[category], costLabel: "" };
-  });
-  return annotateJourney(chips, input);
 }

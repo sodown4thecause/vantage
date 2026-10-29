@@ -34,5 +34,6 @@ export function isLiveResearchEndpoint(endpoint: string): boolean {
 /** Throws when a research gate path is not an allowlisted live endpoint. */
 export function assertLiveResearchEndpoint(endpoint: string): void {
   if (isLiveResearchEndpoint(endpoint)) return;
-  throw new Error("DataForSEO research requires an allowlisted live endpoint.");
+  // An invalid argument, not an upstream failure.
+  throw new RangeError("DataForSEO research requires an allowlisted live endpoint.");
 }
