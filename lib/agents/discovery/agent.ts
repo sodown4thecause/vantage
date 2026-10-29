@@ -28,6 +28,8 @@ const MAX_OUTPUT_TOKENS = 2048;
 const MAX_RESERVE_USD = 0.15;
 /** Charged for a model step when the model has no price in the table, so an unpriced model cannot run for free. */
 const UNPRICED_STEP_USD = 0.01;
+/** Input size assumed for the first model step: the instructions, the task and the tool definitions. */
+const FIRST_STEP_INPUT_TOKENS = 2500;
 
 export type DiscoveryStatus = "complete" | "budget_exhausted" | "not_configured";
 
@@ -77,6 +79,17 @@ function outOfBudget(ctx: DiscoveryContext): boolean {
   return ctx.stopped;
 }
 
+/**
+ * Ends the run when the allowance left cannot cover the next model step at its worst case: `inputTokens` in, and the
+ * full MAX_OUTPUT_TOKENS out, at the model's price. A step's cost is only known once it ends, so without this one step
+ * could overshoot the reservation. An unpriced model is held to UNPRICED_STEP_USD, as it is charged.
+ */
+function cannotAffordStep(ctx: DiscoveryContext, modelId: string | undefined, inputTokens: number): boolean {
+  const worstCase = (modelId && costOfUsage(modelId, { inputTokens, outputTokens: MAX_OUTPUT_TOKENS })) || UNPRICED_STEP_USD;
+  if (ctx.remainingUsd - ctx.spentUsd < worstCase) ctx.stopped = true;
+  return ctx.stopped;
+}
+
 export async function runDiscovery(
   input: { workspaceId: string; productUrl: string; kind?: DiscoveryKind; signal?: AbortSignal },
   deps: DiscoveryRunDeps = {},
@@ -123,7 +136,12 @@ export async function runDiscovery(
         model,
         instructions: INSTRUCTIONS,
         tools: discoveryTools(ctx),
-        stopWhen: [isStepCount(STEP_LIMIT), () => outOfBudget(ctx)],
+        stopWhen: [isStepCount(STEP_LIMIT), () => outOfBudget(ctx), ({ steps }) => {
+          // The next step re-reads the whole conversation: the last step's input and answer plus its tool results.
+          const last = steps[steps.length - 1];
+          const next = last ? (last.usage.inputTokens ?? 0) + (last.usage.outputTokens ?? 0) + Math.ceil(JSON.stringify(last.toolResults).length / 4) : 0;
+          return cannotAffordStep(ctx, modelId, next);
+        }],
         maxOutputTokens: MAX_OUTPUT_TOKENS,
         maxRetries: 0,
         onStepEnd: (stepResult) => {
@@ -136,6 +154,8 @@ export async function runDiscovery(
           ctx.spentUsd += cost;
         },
       });
+      // Nothing to run when even the first step could overshoot what is left.
+      if (cannotAffordStep(ctx, modelId, FIRST_STEP_INPUT_TOKENS)) return { value: true as const, costUsd: 0 };
       await agent.generate({ prompt: JSON.stringify({ task: kind === "initial" ? "initial workspace discovery" : "review the workspace's sources", productUrl: input.productUrl }), abortSignal: input.signal });
       return { value: true as const, costUsd: modelCostUsd };
     });

@@ -110,6 +110,23 @@ describe("runDiscovery", () => {
     expect(outcome.status).toBe("budget_exhausted");
   });
 
+  it("stops before a model step whose worst case (its input plus a full 2,048-token answer) the remaining budget cannot cover", async () => {
+    // $0.03 left. Step one costs $0.004 plus a $0.005 search, leaving $0.021: enough for another search, but a step can
+    // cost up to ~$0.023 (2,048 output tokens alone are $0.02), so the loop stops instead of risking an overshoot.
+    const script = Array.from({ length: 10 }, () => step(call("search_web", { query: "alternatives" })));
+    const { full, model } = deps({ script, store: memoryBudgetStore({ "ws|initial": 0.47 }).store });
+    const outcome = await runDiscovery({ workspaceId: "ws", productUrl: "https://contextfor.dev/" }, full);
+    expect(model.doGenerateCalls).toHaveLength(1);
+    expect(outcome.status).toBe("budget_exhausted");
+  });
+
+  it("does not start the first model step when the reservation cannot cover its worst case", async () => {
+    const { full, model } = deps({ store: memoryBudgetStore({ "ws|initial": 0.48 }).store });
+    const outcome = await runDiscovery({ workspaceId: "ws", productUrl: "https://contextfor.dev/" }, full);
+    expect(model.doGenerateCalls).toHaveLength(0);
+    expect(outcome.status).toBe("budget_exhausted");
+  });
+
   it("uses the review cap and the review source key for a review run", async () => {
     const { full, meta } = deps();
     await runDiscovery({ workspaceId: "ws", productUrl: "https://contextfor.dev/", kind: "review" }, full);
