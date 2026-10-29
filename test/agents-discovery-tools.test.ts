@@ -119,6 +119,55 @@ describe("discovery tools", () => {
     expect(ctx.sources.filter((s) => s.review.accepted)).toHaveLength(1);
   });
 
+  it("does not let an unrelated proposed keyword vouch for a source that queries it", async () => {
+    const { run, ctx } = setup();
+    await run("propose_profile", profile);
+    await run("propose_keyword", { keyword: "kubernetes", kind: "category", rationale: "r", evidenceUrl: "https://example.com/" });
+    const out = await run("propose_source", { sourceType: "hn", name: "HN: kubernetes", queries: ["kubernetes"], rationale: "r", relevanceScore: 0.9 });
+    expect(out).toMatchObject({ kind: "source", status: "rejected" });
+    expect(ctx.sources[0]!.review.accepted).toBe(false);
+  });
+
+  it("still counts a proposed keyword that names something from the product profile", async () => {
+    const { run } = setup();
+    await run("propose_profile", profile);
+    await run("propose_keyword", { keyword: "developer outreach", kind: "category", rationale: "r", evidenceUrl: "https://example.com/" });
+    expect(await run("propose_source", { sourceType: "hn", name: "HN: developer outreach", queries: ["developer outreach"], rationale: "r", relevanceScore: 0.9 }))
+      .toMatchObject({ status: "proposed" });
+  });
+
+  describe("the six-source limit", () => {
+    const good = (n: number) => ({ sourceType: "hn", name: `HN: vantage ${n}`, queries: [`vantage tours ${n}`], rationale: "r", relevanceScore: 0.9 });
+    const weak = (n: number) => ({ sourceType: "hn", name: `HN: weak ${n}`, queries: ["ai", "startup"], rationale: "r", relevanceScore: 0.9 });
+
+    it("counts only accepted sources, so rejected proposals leave room for a good one", async () => {
+      const { run } = setup();
+      await run("propose_profile", profile);
+      for (let n = 1; n <= 7; n++) expect(await run("propose_source", weak(n))).toMatchObject({ status: "rejected" });
+      expect(await run("propose_source", good(1))).toMatchObject({ status: "proposed" });
+    });
+
+    it("stops at six accepted sources", async () => {
+      const { run, ctx } = setup();
+      await run("propose_profile", profile);
+      for (let n = 1; n <= 6; n++) await run("propose_source", good(n));
+      expect(await run("propose_source", good(7))).toMatchObject({ status: "limit_reached" });
+      expect(ctx.sources.filter((s) => s.review.accepted)).toHaveLength(6);
+    });
+
+    it("reserves a slot before awaiting the review, so parallel proposals neither exceed six nor pay for extra reviews", async () => {
+      const judge = vi.fn(async (_p: unknown, source: { queries: string[] }) =>
+        ({ judgements: source.queries.map((query) => ({ query, fit: 0.9, rung: 3, situation: "other", why: "mock" })), costUsd: 0.001 }));
+      const { run, ctx } = setup({ judge });
+      await run("propose_profile", profile);
+      const outs = await Promise.all([1, 2, 3, 4, 5, 6, 7, 8].map((n) => run("propose_source", good(n)))) as Array<{ status: string }>;
+      expect(outs.filter((o) => o.status === "proposed")).toHaveLength(6);
+      expect(outs.filter((o) => o.status === "limit_reached")).toHaveLength(2);
+      expect(judge).toHaveBeenCalledTimes(6);
+      expect(ctx.sources.filter((s) => s.review.accepted)).toHaveLength(6);
+    });
+  });
+
   describe("AI relevance review", () => {
     const judgeResult = (fit: number, costUsd = 0.004) => vi.fn(async (_p: unknown, source: { queries: string[] }) =>
       ({ judgements: source.queries.map((query) => ({ query, fit, rung: 3, situation: "other", why: "mock verdict" })), costUsd }));

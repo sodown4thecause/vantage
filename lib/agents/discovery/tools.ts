@@ -12,7 +12,7 @@ import {
   type SourceProposal,
   type SourceReview,
 } from "@/lib/agents/discovery/proposals";
-import type { ReviewProfile } from "@/lib/agents/discovery/relevance";
+import { specificTerms, termsIn, type ReviewProfile } from "@/lib/agents/discovery/relevance";
 import { gateSource, RELEVANCE_ESTIMATE_USD, type RelevanceJudge } from "@/lib/agents/discovery/relevance-ai";
 import { sourceKeyFor, type DiscoveryKind } from "@/lib/agents/discovery/budget";
 import {
@@ -67,6 +67,8 @@ export type DiscoveryContext = {
   competitors: CompetitorProposal[];
   keywords: KeywordProposal[];
   sources: ReviewedSource[];
+  /** Source proposals whose review is still running. They hold a slot under MAX_SOURCES until the verdict is in. */
+  pendingSources: number;
   /** Every typed tool result in order, for the route to hand to a UI. */
   results: ProposalToolResult[];
 };
@@ -86,7 +88,7 @@ export function createDiscoveryContext(input: {
     signal: input.signal,
     judge: input.judge,
     deps: { fetchPage: fetchLinkupPage, search: searchLinkup, ...input.deps },
-    competitors: [], keywords: [], sources: [], results: [],
+    competitors: [], keywords: [], sources: [], pendingSources: 0, results: [],
   };
 }
 
@@ -122,15 +124,18 @@ async function metered<T>(ctx: DiscoveryContext, estimateUsd: number, call: () =
   }
 }
 
-/** The profile the quality gate judges sources against: the proposed profile plus every competitor and keyword so far. */
+/**
+ * The profile the quality gate judges sources against: the proposed profile plus every competitor so far, and the
+ * keywords that name something from the profile. A keyword the agent proposed that shares nothing with the product
+ * (a mistaken suggestion, or text planted in a page) must not vouch for a source that queries it.
+ */
 export function reviewProfileOf(ctx: DiscoveryContext): ReviewProfile | null {
   if (!ctx.profile) return null;
   const { productName, description, category, audience, differentiators } = ctx.profile;
-  return {
-    productName, description, category, audience, differentiators,
-    competitors: ctx.competitors.map((c) => c.domain),
-    keywords: ctx.keywords.map((k) => k.keyword),
-  };
+  const competitors = ctx.competitors.map((c) => c.domain);
+  const base: ReviewProfile = { productName, description, category, audience, differentiators, competitors, keywords: [] };
+  const vocabulary = specificTerms(base);
+  return { ...base, keywords: ctx.keywords.map((k) => k.keyword).filter((keyword) => termsIn(keyword).some((term) => vocabulary.has(term))) };
 }
 
 export function discoveryTools(ctx: DiscoveryContext) {
@@ -208,18 +213,27 @@ export function discoveryTools(ctx: DiscoveryContext) {
       execute: async (proposal) => {
         const profile = reviewProfileOf(ctx);
         if (!profile) return record(ctx, { kind: "source", status: "not_ready", reason: "Propose the profile first." });
-        if (ctx.sources.length >= MAX_SOURCES) return record(ctx, { kind: "source", status: "limit_reached", reason: `At most ${MAX_SOURCES} sources.` });
-        const review = await gateSource(profile, proposal, {
-          judge: ctx.judge,
-          signal: ctx.signal,
-          // The estimate is reserved before the call so parallel proposals cannot together overspend; the real cost replaces it after.
-          canAfford: () => {
-            if (ctx.remainingUsd - ctx.spentUsd < RELEVANCE_ESTIMATE_USD) return false;
-            ctx.spentUsd += RELEVANCE_ESTIMATE_USD;
-            return true;
-          },
-          onCost: (usd) => { ctx.spentUsd += usd - RELEVANCE_ESTIMATE_USD; },
-        });
+        // Only accepted sources count against the cap, so rejected proposals leave room for good ones. A proposal under
+        // review holds a slot too, so parallel proposals cannot all pass this check and then pay for reviews past the cap.
+        const taken = ctx.sources.filter((s) => s.review.accepted).length + ctx.pendingSources;
+        if (taken >= MAX_SOURCES) return record(ctx, { kind: "source", status: "limit_reached", reason: `At most ${MAX_SOURCES} sources.` });
+        ctx.pendingSources += 1;
+        let review: SourceReview;
+        try {
+          review = await gateSource(profile, proposal, {
+            judge: ctx.judge,
+            signal: ctx.signal,
+            // The estimate is reserved before the call so parallel proposals cannot together overspend; the real cost replaces it after.
+            canAfford: () => {
+              if (ctx.remainingUsd - ctx.spentUsd < RELEVANCE_ESTIMATE_USD) return false;
+              ctx.spentUsd += RELEVANCE_ESTIMATE_USD;
+              return true;
+            },
+            onCost: (usd) => { ctx.spentUsd += usd - RELEVANCE_ESTIMATE_USD; },
+          });
+        } finally {
+          ctx.pendingSources -= 1;
+        }
         ctx.sources.push({ proposal, review });
         return record(ctx, { kind: "source", status: review.accepted ? "proposed" : "rejected", proposal, review });
       },
