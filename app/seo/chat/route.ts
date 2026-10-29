@@ -148,6 +148,12 @@ async function approvePlan(
 
   // The claim is one conditional update, so a double click cannot run the plan twice.
   const claimed = await claimPlan(workspaceId, messageId);
+  if (claimed && "legacy" in claimed) {
+    return json({
+      error: "plan_outdated",
+      message: "This plan was saved before approvals were tracked, so it cannot be run. Ask the question again to get a fresh plan.",
+    }, 409);
+  }
   if (!claimed || claimed.plan.length === 0) return json({ error: "already_run" }, 409);
 
   try {

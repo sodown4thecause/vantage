@@ -430,6 +430,16 @@ describe("POST /seo/chat: approving a plan", () => {
     expect(mocks.runAgent).not.toHaveBeenCalled();
   });
 
+  it("tells the owner an outdated plan must be re-asked, not that it already ran", async () => {
+    mocks.getConversation.mockResolvedValue(conversation());
+    mocks.claimPlan.mockResolvedValue({ legacy: true });
+    const { res, data } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
+    expect(res.status).toBe(409);
+    expect(data).toMatchObject({ error: "plan_outdated" });
+    expect((data as { message: string }).message).toMatch(/ask (the|your) question again/i);
+    expect(mocks.runAgent).not.toHaveBeenCalled();
+  });
+
   it("answers 404 for a message that is not in the given conversation, before claiming it", async () => {
     mocks.getConversation.mockResolvedValue(conversation([]));
     const { res } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });

@@ -395,7 +395,7 @@ describe("claimPlan", () => {
       plan: [{ tool: "backlinks", input: { target: "example.com" }, credits: 2 }],
       execution: { rootMessageId: MSG_A, attemptedEndpoints: 1 },
     });
-    expect(callsOf("select")).toEqual([]);
+    expect(callsOf("select")).toHaveLength(1);
     const updates = callsOf("update", "seo_message");
     expect(updates).toHaveLength(1);
     expect(updates[0]!.values).toEqual({ status: "approved" });
@@ -416,14 +416,29 @@ describe("claimPlan", () => {
     expect(await claimPlan(WS_A, MSG_A)).toBeNull();
   });
 
-  it("returns null when the message carries no planned calls or execution metadata", async () => {
-    store.messages[0] = { ...store.messages[0], parts: {} };
+  it("returns null when the message carries no planned calls", async () => {
+    store.messages[0] = { ...store.messages[0], parts: { execution: { rootMessageId: MSG_A, attemptedEndpoints: 1 } } };
     expect(await claimPlan(WS_A, MSG_A)).toBeNull();
+  });
+
+  it("reports a legacy plan without execution metadata and keeps it in needs_approval", async () => {
     store.messages[0] = {
       ...store.messages[0],
       status: "needs_approval",
       parts: { plan: [{ tool: "backlinks", input: { target: "example.com" }, credits: 2 }] },
     };
+    store.calls.length = 0;
+
+    expect(await claimPlan(WS_A, MSG_A)).toEqual({ legacy: true });
+
+    expect(callsOf("update")).toEqual([]);
+    expect(store.messages[0]!.status).toBe("needs_approval");
+    // Still reported as legacy on a second try, not as already_run.
+    expect(await claimPlan(WS_A, MSG_A)).toEqual({ legacy: true });
+  });
+
+  it("does not report a plan that was already claimed as legacy", async () => {
+    expect(await claimPlan(WS_A, MSG_A)).not.toBeNull();
     expect(await claimPlan(WS_A, MSG_A)).toBeNull();
   });
 });

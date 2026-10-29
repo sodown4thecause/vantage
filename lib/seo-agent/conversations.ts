@@ -236,14 +236,33 @@ function parseExecution(value: unknown): ExecutionState | null {
   return { rootMessageId, attemptedEndpoints: attempted };
 }
 
+/** Returned by `claimPlan` for a plan saved before execution metadata existed. It is left in `needs_approval`. */
+export type LegacyPlan = { legacy: true };
+
 /**
  * Atomically moves a plan from `needs_approval` to `approved`. Returns the planned calls and server-owned execution
  * state when this call made the transition. Returns null when the message is missing, belongs to another workspace,
- * was already claimed, has no plan, or lacks execution metadata (legacy plans must be re-asked, not re-granted a full
- * attempt allowance). The single conditional UPDATE is what prevents a double charge.
+ * was already claimed, or has no plan. Returns `{ legacy: true }` for a plan saved before execution metadata existed:
+ * it must not be re-granted a full attempt allowance, so it stays in `needs_approval` (nothing is claimed) and the
+ * caller tells the owner to ask again. The conditional UPDATE is what prevents a double charge.
  */
-export async function claimPlan(workspaceId: string, messageId: string): Promise<ClaimedPlan | null> {
-  const [row] = await getDb()
+export async function claimPlan(workspaceId: string, messageId: string): Promise<ClaimedPlan | LegacyPlan | null> {
+  const db = getDb();
+  const [existing] = await db
+    .select({ parts: seoMessage.parts })
+    .from(seoMessage)
+    .where(
+      and(
+        eq(seoMessage.id, messageId),
+        eq(seoMessage.workspaceId, workspaceId),
+        eq(seoMessage.status, "needs_approval"),
+      ),
+    )
+    .limit(1);
+  if (existing && (existing.parts.plan ?? []).length > 0 && !parseExecution(existing.parts.execution)) {
+    return { legacy: true };
+  }
+  const [row] = await db
     .update(seoMessage)
     .set({ status: "approved" })
     .where(
@@ -257,10 +276,8 @@ export async function claimPlan(workspaceId: string, messageId: string): Promise
   if (!row) return null;
   const plan = row.parts.plan ?? [];
   const execution = parseExecution(row.parts.execution);
-  if (plan.length === 0 || !execution) {
-    // Leave the row approved without runnable work so a double-click still sees already_run, not a free retry.
-    return null;
-  }
+  // The row is approved here without runnable work (no plan), so a double-click still sees already_run.
+  if (plan.length === 0 || !execution) return null;
   return { plan, execution };
 }
 
