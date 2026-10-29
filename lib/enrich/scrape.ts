@@ -14,7 +14,10 @@ export type FetchOutcome =
   /** Transient failure: cache as `failed`, retried after 24 hours. */
   | { outcome: "failed"; reason: string };
 
+/** Cap on a provider response body, enforced while reading (see fetchPublicText). */
 const MAX_FETCH_BYTES = 1_000_000;
+/** Firecrawl can take a while to render a page; fetchPublicText's 4 s default is too short. */
+const PROVIDER_TIMEOUT_MS = 30_000;
 /** Cap on page/transcript text handed to the summariser. */
 const MAX_TEXT_CHARS = 24_000;
 /** Firecrawl's markdown cache lifetime, in milliseconds (7 days, per the plan). */
@@ -44,15 +47,15 @@ export async function fetchYoutubeTranscript(url: string, opts: {
   if (!key) return { outcome: "failed", reason: "SUPADATA_API_KEY is not set" };
   try {
     const impl = opts.fetchImpl ?? fetch;
-    const response = await impl(`https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(url)}&text=true`, {
-      headers: { "x-api-key": key, accept: "application/json" },
-      signal: opts.signal,
-      cache: "no-store",
-    });
+    const { response, text: body } = await fetchPublicText(
+      `https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(url)}&text=true`,
+      { headers: { "x-api-key": key, accept: "application/json" }, signal: opts.signal, cache: "no-store" },
+      MAX_FETCH_BYTES, impl, PROVIDER_TIMEOUT_MS,
+    );
     if (response.status === 202) return { outcome: "failed", reason: "transcript queued; retried later" };
     if (response.status === 403 || response.status === 451) return { outcome: "skipped", reason: `paywall (${response.status})` };
     if (!response.ok) return { outcome: "failed", reason: `supadata ${response.status}` };
-    const payload = (await response.json()) as unknown;
+    const payload = JSON.parse(body) as unknown;
     const content = (payload as Record<string, unknown> | null)?.content;
     if (typeof content !== "string" || !content.trim()) return { outcome: "failed", reason: "empty transcript" };
     return { outcome: "ok", value: { title: null, text: capTranscriptWords(content).slice(0, MAX_TEXT_CHARS) } };
@@ -82,16 +85,20 @@ export async function fetchLinkedPage(url: string, opts: {
       if (bytes !== null && bytes > 5_000_000) return { outcome: "skipped", reason: "pdf over 5 MB" };
     }
     const impl = opts.fetchImpl ?? fetch;
-    const response = await impl("https://api.firecrawl.dev/v2/scrape", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ url, formats: ["markdown"], onlyMainContent: true, maxAge: FIRECRAWL_MAX_AGE_MS }),
-      signal: opts.signal,
-      cache: "no-store",
-    });
+    const { response, text: body } = await fetchPublicText(
+      "https://api.firecrawl.dev/v2/scrape",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ url, formats: ["markdown"], onlyMainContent: true, maxAge: FIRECRAWL_MAX_AGE_MS }),
+        signal: opts.signal,
+        cache: "no-store",
+      },
+      MAX_FETCH_BYTES, impl, PROVIDER_TIMEOUT_MS,
+    );
     if (response.status === 403 || response.status === 451) return { outcome: "skipped", reason: `paywall (${response.status})` };
     if (!response.ok) return { outcome: "failed", reason: `firecrawl ${response.status}` };
-    const payload = (await response.json()) as unknown;
+    const payload = JSON.parse(body) as unknown;
     const data = (payload as Record<string, unknown> | null)?.data;
     if (typeof data !== "object" || data === null) return { outcome: "failed", reason: "invalid firecrawl response" };
     const record = data as Record<string, unknown>;

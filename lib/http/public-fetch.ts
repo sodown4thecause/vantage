@@ -25,6 +25,11 @@ export async function fetchPublicText(
     await response.body?.cancel();
     return { response, text: "" };
   }
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await response.body.cancel();
+    throw new Error("Response exceeds size limit.");
+  }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let bytes = 0;

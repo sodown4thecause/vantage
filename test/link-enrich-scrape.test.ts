@@ -35,6 +35,37 @@ describe("PDF size checks", () => {
   });
 });
 
+describe("response body cap", () => {
+  // Valid JSON in each provider's shape, so only the byte cap can make these fail.
+  const oversized = (key: "data" | "content") => new Response(
+    JSON.stringify(key === "data" ? { data: { markdown: "x".repeat(1_000_001) } } : { content: "word ".repeat(250_000) }),
+  );
+
+  it("treats an oversized Firecrawl body as a failed fetch", async () => {
+    const fetchImpl = vi.fn().mockImplementation(async () => oversized("data"));
+    expect(await fetchLinkedPage("https://example.com/page", { fetchImpl })).toMatchObject({ outcome: "failed" });
+  });
+
+  it("treats an oversized Supadata body as a failed fetch", async () => {
+    vi.stubEnv("SUPADATA_API_KEY", "test-key");
+    const fetchImpl = vi.fn().mockImplementation(async () => oversized("content"));
+    expect(await fetchYoutubeTranscript("https://youtu.be/abc", { fetchImpl })).toMatchObject({ outcome: "failed" });
+  });
+
+  it("rejects a declared content-length over the cap without reading the body", async () => {
+    const response = new Response(JSON.stringify({ data: { markdown: "Page" } }), { headers: { "content-length": "2000000" } });
+    const getReader = vi.spyOn(response.body!, "getReader");
+    const fetchImpl = vi.fn().mockResolvedValue(response);
+    expect(await fetchLinkedPage("https://example.com/page", { fetchImpl })).toMatchObject({ outcome: "failed" });
+    expect(getReader).not.toHaveBeenCalled();
+  });
+
+  it("still parses a body under the cap", async () => {
+    const fetchImpl = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ data: { markdown: "Page content" } })));
+    expect(await fetchLinkedPage("https://example.com/page", { fetchImpl })).toMatchObject({ outcome: "ok", value: { text: "Page content" } });
+  });
+});
+
 it("treats missing provider credentials as transient, never a permanent skip", async () => {
   vi.stubEnv("FIRECRAWL_API_KEY", "");
   vi.stubEnv("SUPADATA_API_KEY", "");
