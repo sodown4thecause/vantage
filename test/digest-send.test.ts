@@ -147,10 +147,16 @@ describe("sendDigestEmail", () => {
   });
 
   it("aborts a stalled provider call within the configured timeout without logging credentials", async () => {
+    // The send's tracing span loads this with a real dynamic import before it creates the
+    // timeout. Load it now, under real timers, so a busy machine can't delay it past the clock.
+    await import("@opennextjs/cloudflare");
     vi.useFakeTimers();
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let providerCalled!: () => void;
+    const providerCall = new Promise<void>((resolve) => { providerCalled = resolve; });
     state.fetchImpl = async (_url, init) => new Promise<Response>((_resolve, reject) => {
       init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      providerCalled();
     });
     // Use a timer-backed signal so fake timers exercise the same abort contract.
     vi.spyOn(AbortSignal, "timeout").mockImplementation((timeout) => {
@@ -160,6 +166,8 @@ describe("sendDigestEmail", () => {
     });
     try {
       const sending = sendDigestEmail({ ...base, opportunities, apiKey: "re_test_key" });
+      // Advance only once the timeout exists: it is created with the provider request.
+      await providerCall;
       await vi.advanceTimersByTimeAsync(10_000);
       expect((await sending).ok).toBe(false);
       expect(JSON.stringify(errorSpy.mock.calls)).not.toMatch(/re_test_key|founder@example\.com/);
