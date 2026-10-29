@@ -123,6 +123,23 @@ describe("runDiscovery", () => {
     expect(outcome.status).toBe("not_configured");
   });
 
+  it("keeps the model call's estimate charged against the workspace when the model fails after the call started", async () => {
+    const memory = memoryBudgetStore();
+    const failing = new MockLanguageModelV4({ doGenerate: () => { throw new Error("gateway down"); } });
+    const { full } = deps({ model: failing, store: memory.store });
+    await expect(runDiscovery({ workspaceId: "ws", productUrl: "https://contextfor.dev/" }, full)).rejects.toThrow("gateway down");
+    // runPaidCall charges its estimate (the run's reservation, at most $0.15) for a call that started and failed.
+    expect(memory.get("ws", "initial")).toBeCloseTo(0.15, 6);
+  });
+
+  it("refunds the whole reservation when the call is denied before it starts", async () => {
+    const memory = memoryBudgetStore();
+    const { full, model } = deps({ store: memory.store, runPaidCall: (async () => { throw new PaidCallDeniedError("provider_disabled", "off"); }) as never });
+    await expect(runDiscovery({ workspaceId: "ws", productUrl: "https://contextfor.dev/" }, full)).rejects.toBeInstanceOf(PaidCallDeniedError);
+    expect(model.doGenerateCalls).toHaveLength(0);
+    expect(memory.get("ws", "initial")).toBe(0);
+  });
+
   it("surfaces a paid-call denial from the provider as a denial, not a crash", async () => {
     const { full } = deps({ runPaidCall: (async () => { throw new PaidCallDeniedError("provider_disabled", "off"); }) as never });
     await expect(runDiscovery({ workspaceId: "ws", productUrl: "https://contextfor.dev/" }, full))

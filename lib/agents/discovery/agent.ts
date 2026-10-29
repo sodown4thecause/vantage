@@ -106,15 +106,19 @@ export async function runDiscovery(
   const sourceKey = sourceKeyFor(kind);
   const paid = deps.runPaidCall ?? realRunPaidCall;
   let modelCostUsd = 0;
+  const modelEstimateUsd = Math.min(MAX_RESERVE_USD, remaining);
+  let started = false;
+  let failed = false;
 
   try {
     await paid<true>({
       context: { workspaceId: input.workspaceId, sourceKey },
       provider: "gateway",
       action: `discovery_${kind}`,
-      estimateUsd: Math.min(MAX_RESERVE_USD, remaining),
+      estimateUsd: modelEstimateUsd,
       signal: input.signal,
     }, async () => {
+      started = true;
       const agent = new ToolLoopAgent({
         model,
         instructions: INSTRUCTIONS,
@@ -135,9 +139,16 @@ export async function runDiscovery(
       await agent.generate({ prompt: JSON.stringify({ task: kind === "initial" ? "initial workspace discovery" : "review the workspace's sources", productUrl: input.productUrl }), abortSignal: input.signal });
       return { value: true as const, costUsd: modelCostUsd };
     });
+  } catch (error) {
+    failed = true;
+    throw error;
   } finally {
     // Settle what the run really spent, even when it failed, so unused budget goes back and nothing is double counted.
-    await reservation.settle(ctx.spentUsd);
+    // runPaidCall charges its estimate for a model call that started and failed, so that charge is kept: only a call
+    // denied before it started (nothing was sent to the provider) gives the model's share back.
+    const toolUsd = ctx.spentUsd - modelCostUsd;
+    const spent = failed && started ? toolUsd + Math.max(modelCostUsd, modelEstimateUsd) : ctx.spentUsd;
+    await reservation.settle(Math.min(spent, remaining));
   }
 
   return {
