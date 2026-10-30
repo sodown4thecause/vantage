@@ -123,6 +123,7 @@ export async function embedWorkspace(workspaceId: string, signal: AbortSignal): 
 }
 
 export async function buildWorkspace(workspaceId: string, signal: AbortSignal) {
+  // Topic volume is recorded inside buildOpportunities, shared by every scan path.
   if (!(await getLatestMonitoringProfile(workspaceId))) return { skipped: true, reason: "monitoring profile required" };
   return buildOpportunities({ workspaceId, limitDocs: OPPORTUNITY_DOC_LIMIT, signal });
 }

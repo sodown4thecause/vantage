@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { firecrawl, linkup, search, paidCall, redditPost, redditComments, reserve } = vi.hoisted(() => ({
+const { firecrawl, linkup, search, paidCall, redditPost, redditComments, redditSearch, reserve } = vi.hoisted(() => ({
   firecrawl: vi.fn(), linkup: vi.fn(), search: vi.fn(), paidCall: vi.fn(),
-  redditPost: vi.fn(), redditComments: vi.fn(), reserve: vi.fn(),
+  redditPost: vi.fn(), redditComments: vi.fn(), redditSearch: vi.fn(), reserve: vi.fn(),
 }));
 vi.mock("@/lib/firecrawl/search", async (original) => ({
   ...await original<typeof import("@/lib/firecrawl/search")>(), firecrawlSearch: firecrawl,
@@ -14,7 +14,7 @@ vi.mock("@/lib/costs/ledger", async (original) => ({
   ...await original<typeof import("@/lib/costs/ledger")>(), reserveCostAttemptToday: reserve,
 }));
 vi.mock("scavio", () => ({ Scavio: class {
-  reddit = { search: vi.fn(), post: redditPost, postComments: redditComments };
+  reddit = { search: redditSearch, post: redditPost, postComments: redditComments };
 } }));
 vi.mock("@/lib/tinyfish/search-fetch", () => ({ tinyFishSearch: search, tinyFishFetchMarkdown: vi.fn() }));
 vi.mock("@/lib/tinyfish/client", () => ({
@@ -81,6 +81,25 @@ describe("bot filter", () => {
 });
 
 describe("hydration eligibility", () => {
+  it.each(["https://example.com/article", "https://youtu.be/abc"])("preserves hydrated outbound links in collector metadata: %s", async url => {
+    vi.stubEnv("FIRECRAWL_API_KEY", "fc-test");
+    vi.stubEnv("SCAVIO_API_KEY", "test-key");
+    firecrawl.mockResolvedValue([hit("r1", "")]);
+    redditPost.mockResolvedValue({ data: { post_id: "t3_r1", selftext: "", url } });
+    redditComments.mockResolvedValue({ data: { comments: [] } });
+    const result = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: {} });
+    expect(result.documents[0]).toMatchObject({ urlCanonical: thread("r1"), metadata: { outboundUrl: url } });
+  });
+
+  it("preserves outbound links from Scavio search separately from the thread URL", async () => {
+    vi.stubEnv("SCAVIO_API_KEY", "test-key");
+    redditSearch.mockResolvedValue({ data: { posts: [{
+      id: "r1", title: "News", permalink: thread("r1"), url: "https://example.com/article",
+    }] } });
+    const result = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: {} });
+    expect(result.documents[0]).toMatchObject({ urlCanonical: thread("r1"), metadata: { outboundUrl: "https://example.com/article" } });
+  });
+
   const preview = (body: string): RedditPost =>
     ({ id: "x", title: "t", body, url: thread("x"), score: null, numComments: null, createdAt: "", contentKind: "preview" });
 
