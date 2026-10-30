@@ -91,10 +91,23 @@ export function normalizeTakoSearchOutput(output: unknown): TakoResearchData {
   return { web_results, cards };
 }
 
+/**
+ * Vercel AI Gateway Tako Search list prices from 28 Oct 2026 (the free promo ended 27 Oct, 12:00 PT):
+ * US$7 per 1,000 fast searches and US$12 per 1,000 deep searches. takoSearchTool() pins effort to "fast".
+ */
+export const TAKO_FAST_SEARCH_USD = 0.007;
+export const TAKO_DEEP_SEARCH_USD = 0.012;
+
+/**
+ * Per-call Tako price for the ledger and budget reservation. Defaults to the fast list price so every call
+ * goes through runPaidCall and its provider cap. TAKO_SEARCH_USD overrides it; an invalid value falls back
+ * to the list price rather than to free.
+ */
 export function takoSearchUsd(): number {
-  const rawPrice = optionalEnv("TAKO_SEARCH_USD");
-  const parsedPrice = rawPrice ? Number(rawPrice) : 0;
-  return Number.isFinite(parsedPrice) && parsedPrice >= 0 ? parsedPrice : 0;
+  const rawPrice = optionalEnv("TAKO_SEARCH_USD")?.trim();
+  if (!rawPrice) return TAKO_FAST_SEARCH_USD;
+  const parsedPrice = Number(rawPrice);
+  return Number.isFinite(parsedPrice) && parsedPrice >= 0 ? parsedPrice : TAKO_FAST_SEARCH_USD;
 }
 
 type TakoCostOutcome = { costUsd: number; error?: Error };

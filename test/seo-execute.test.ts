@@ -166,7 +166,7 @@ beforeEach(() => {
   mocks.peekKeywordIdeas.mockResolvedValue(null);
   mocks.fetchKeywordIdeas.mockClear();
   mocks.recordCost.mockReset().mockResolvedValue(true);
-  vi.stubEnv("TAKO_SEARCH_USD", "");
+  vi.stubEnv("TAKO_SEARCH_USD", "0");
   vi.stubEnv("AI_GATEWAY_API_KEY", "gateway-test-key");
   vi.stubEnv("SEO_AGENT_MODEL", "");
   vi.stubEnv("SEO_CLASSIFIER_MODEL", "");
