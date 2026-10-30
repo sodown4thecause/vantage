@@ -58,6 +58,25 @@ describe("Content library sources and filters", () => {
     ]);
   });
 
+  it("strips emphasis that wraps trailing punctuation from bare URLs", () => {
+    expect(contentDraftSourceLinks("See **https://example.com/guide**. Also _https://a.com/y_, and ~~https://b.com/z~~!"))
+      .toEqual(["https://example.com/guide", "https://a.com/y", "https://b.com/z"]);
+  });
+
+  it("reads adjacent Markdown links as separate sources", () => {
+    expect(contentDraftSourceLinks("[a](https://a.com/1)[b](https://b.com/2)"))
+      .toEqual(["https://a.com/1", "https://b.com/2"]);
+  });
+
+  it("keeps the second of two adjacent links in the source filter", () => {
+    const drafts = [draft({ body: "[a](https://a.com/1)[b](https://b.com/2)" })];
+    expect(contentDraftsForLibrary(drafts, { status: "all", format: "all", source: "b.com" })).toEqual(drafts);
+  });
+
+  it("reads Markdown links that carry a title", () => {
+    expect(contentDraftSourceLinks('[guide](https://example.com/guide "The guide")')).toEqual(["https://example.com/guide"]);
+  });
+
   it("exports complete parenthesized and emphasized source URLs", () => {
     const output = contentDraftsAsMarkdown(draft({
       body: "[wiki](https://en.wikipedia.org/wiki/Foo_(bar)) and **https://a.com/x**",

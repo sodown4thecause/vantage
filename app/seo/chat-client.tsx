@@ -21,13 +21,20 @@ import {
   type PlannedCall,
   type View,
 } from "./chat-wire";
+import { journeyActionsFromClient } from "./journey";
 
 /*
  * The SEO chat. Client-safe: it imports no server modules. Message shapes and the wire contract live in chat-wire.ts;
  * the server page passes stored messages in as plain data.
  */
 
-export type Chip = { category: Category; text: string; costLabel: string };
+export type Chip = {
+  category: Category;
+  text: string;
+  costLabel: string;
+  recommended?: boolean;
+  reason?: string;
+};
 export type { HistoryMessage };
 
 const CATEGORY_LABEL: Record<Category, string> = { seo: "SEO", geo: "GEO", content: "Content" };
@@ -57,6 +64,8 @@ function ChipButton({
   category,
   text,
   costLabel,
+  recommended,
+  reason,
   disabled,
   onSend,
   index,
@@ -64,23 +73,33 @@ function ChipButton({
   category: Category;
   text: string;
   costLabel?: string;
+  recommended?: boolean;
+  reason?: string;
   disabled: boolean;
   onSend: (text: string) => void;
   index: number;
 }) {
-  // The cost is described by the button, so screen readers announce it after the question.
+  // The cost and recommendation reason are described by the button for screen readers.
   const costId = useId();
+  const reasonId = useId();
+  const describedBy = [costLabel ? costId : null, recommended && reason ? reasonId : null].filter(Boolean).join(" ") || undefined;
   return (
     <button
       type="button"
       aria-label={`${CATEGORY_LABEL[category]} question: ${text}`}
-      aria-describedby={costLabel ? costId : undefined}
+      aria-describedby={describedBy}
       disabled={disabled}
       onClick={() => onSend(text)}
       className={s.action}
     >
       <span className={s.actionNumber}>0{index + 1}</span>
-      <span><strong>{text}</strong>{index === 0 && <span className={s.recommended}>Recommended</span>}<small>{CATEGORY_LABEL[category]}</small>{costLabel && <span id={costId} className="text-xs text-ridge">{costLabel}</span>}</span>
+      <span>
+        <strong>{text}</strong>
+        {recommended && <span className={s.recommended}>Recommended</span>}
+        {recommended && reason && <small id={reasonId} className="block text-ridge">{reason}</small>}
+        <small>{CATEGORY_LABEL[category]}</small>
+        {costLabel ? <span id={costId} className="text-xs text-ridge">{costLabel}</span> : null}
+      </span>
       <span aria-hidden="true">↗</span>
     </button>
   );
@@ -353,15 +372,12 @@ export function ChatClient({
   const empty = messages.length === 0;
   const latest = messages.findLast((message) => message.role === "assistant");
   const latestView = latest ? viewOf(latest) : null;
-  const categories: Category[] = focus === "geo" ? ["geo", "seo", "content"] : ["seo", "geo", "content"];
-  const fallback: Record<Category, string> = {
-    seo: "Help me choose a focused search research question",
-    geo: "Help me plan research into AI answers about my product",
-    content: "Help me turn the research into a useful content brief",
-  };
-  const actions = categories.map((category) => latestView?.followUps
-    ? { category, text: latestView.followUps[category], costLabel: undefined }
-    : starters.find((chip) => chip.category === category) ?? { category, text: fallback[category], costLabel: undefined });
+  const actions = journeyActionsFromClient({
+    focus,
+    starters,
+    followUps: latestView?.followUps,
+    latestTools: latestView?.cards.map((card) => card.tool) ?? [],
+  });
   const evidence = <>
     <div className={s.evidenceHead}><h2>Behind the answer</h2><span>{latestView?.cards.length ?? 0}</span></div>
     <p className={s.evidenceIntro}>{sandbox ? "Sandbox data: not real figures." : "Research results from this conversation. Check the source and capture date before making a decision."}</p>
@@ -417,7 +433,7 @@ export function ChatClient({
       </div>
       <div className={s.dock}>
       <div className={s.nextLabel}><span>Your next move</span><span>Three ways forward</span></div>
-      <div className={s.actions} role="group" aria-label="Recommended next actions">{actions.map((chip, index) => <ChipButton key={chip.category} category={chip.category} text={chip.text} costLabel={chip.costLabel} disabled={busy} onSend={send} index={index} />)}</div>
+      <div className={s.actions} role="group" aria-label="Recommended next actions">{actions.map((chip, index) => <ChipButton key={chip.category} category={chip.category} text={chip.text} costLabel={chip.costLabel || undefined} recommended={chip.recommended} reason={chip.reason} disabled={busy} onSend={send} index={index} />)}</div>
       {error && (
         <p role="alert" className={s.error}>
           That did not work. Try again.

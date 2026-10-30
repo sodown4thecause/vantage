@@ -15,6 +15,7 @@ vi.mock("ai", async (importOriginal) => ({
 }));
 vi.mock("@/lib/providers/paid-call", () => ({ runPaidCall: mocks.paidCall }));
 
+import { contentDraftInputSchema } from "@/lib/content-agent/contracts";
 import { humaniseContentDraft } from "@/lib/content-agent/humaniser";
 
 const profile = {
@@ -85,6 +86,22 @@ describe("Content brand-voice humaniser", () => {
       error: expect.objectContaining({ message: "The Content humaniser output was truncated." }),
       costUsd: 0.0502,
     });
+  });
+
+  it("allows enough output for the longest draft the schema accepts", async () => {
+    const body = "Dense, link-heavy Markdown: https://example.com/a?b=c. ".repeat(500).slice(0, 24_000);
+    const draft = contentDraftInputSchema.parse({ title: "T".repeat(120), body, format: "blog_post" });
+
+    await humaniseContentDraft({
+      workspaceId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a11",
+      draft,
+      profile,
+      models: { apiKey: "test-key", model: "anthropic/claude-sonnet-5.5" },
+    });
+
+    // Returned unchanged, a 24,120-character draft needs about 12,000 tokens at a dense 2 characters per token.
+    const { maxOutputTokens } = mocks.generateText.mock.calls[0][0] as { maxOutputTokens: number };
+    expect(maxOutputTokens).toBeGreaterThanOrEqual(Math.ceil((draft.title.length + draft.body.length) / 2));
   });
 
   it("rewrites every supplied draft under its saved voice and a separate Gateway reservation", async () => {

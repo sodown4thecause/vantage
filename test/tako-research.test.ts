@@ -7,10 +7,10 @@ vi.mock("@/lib/providers/paid-call", () => ({
   isPaidCallDenied: (error: unknown) => error instanceof Error && error.name === "PaidCallDeniedError",
 }));
 
-import { isTakoFilterRequest, normalizeTakoSearchOutput, TakoSearchMeter, takoWebResultCount } from "@/lib/research/tako";
+import { isTakoFilterRequest, normalizeTakoSearchOutput, TAKO_FAST_SEARCH_USD, TakoSearchMeter, takoSearchUsd, takoWebResultCount } from "@/lib/research/tako";
 
 beforeEach(() => {
-  vi.stubEnv("TAKO_SEARCH_USD", "");
+  vi.stubEnv("TAKO_SEARCH_USD", "0");
   mocks.recordCost.mockReset().mockResolvedValue(true);
   mocks.runPaidCall.mockReset().mockImplementation(async (_meta: unknown, work: () => Promise<{ value?: unknown; error?: Error }>) => {
     const outcome = await work();
@@ -70,6 +70,25 @@ describe("Tako Search results", () => {
     }), expect.any(Function));
     await paidMeter.complete("paid-call", { web_results: [] });
     expect(mocks.recordCost).toHaveBeenCalledOnce();
+  });
+
+  it("defaults to the fast list price and meters through runPaidCall when no price is configured", async () => {
+    vi.stubEnv("TAKO_SEARCH_USD", "");
+    expect(TAKO_FAST_SEARCH_USD).toBe(0.007);
+    expect(takoSearchUsd()).toBe(0.007);
+    vi.stubEnv("TAKO_SEARCH_USD", "not-a-number");
+    expect(takoSearchUsd()).toBe(0.007);
+    vi.stubEnv("TAKO_SEARCH_USD", "-1");
+    expect(takoSearchUsd()).toBe(0.007);
+
+    vi.stubEnv("TAKO_SEARCH_USD", "");
+    const meter = new TakoSearchMeter("workspace-1", "seo");
+    await expect(meter.approve("default-call")).resolves.toBe("approved");
+    expect(mocks.runPaidCall).toHaveBeenCalledWith(expect.objectContaining({
+      provider: "gateway", action: "tako_search", estimateUsd: 0.007,
+    }), expect.any(Function));
+    await meter.complete("default-call", { web_results: [] });
+    expect(mocks.recordCost).not.toHaveBeenCalled();
   });
 
   it("denies a priced Tako call when the provider budget cannot be reserved", async () => {

@@ -61,13 +61,15 @@ import { POST } from "@/app/seo/chat/route";
 import { FAILURE_COPY as FAILURE, REFUSAL_COPY as REFUSAL } from "@/lib/seo-agent/execute";
 
 const PLAN = [{ tool: "keyword_ideas", input: { keywords: ["ci caching"] }, credits: 1 }];
+const EXECUTION = { rootMessageId: MSG_PLAN, attemptedEndpoints: 1 };
+const CLAIMED = { plan: PLAN, execution: EXECUTION };
 const CLASSIFICATION = { intent: "keywords", domains: [], keywords: [], engines: [] };
 
 const storedMessage = (overrides: Record<string, unknown> = {}) => ({
   id: MSG_PLAN,
   role: "assistant",
   content: "Plan ready.",
-  parts: { plan: PLAN },
+  parts: { plan: PLAN, execution: EXECUTION },
   status: "needs_approval",
   creditsUsed: 0,
   createdAt: "2026-10-19T12:00:00.000Z",
@@ -96,6 +98,7 @@ function fakeRun(outcome: Record<string, unknown> = {}, answer = "Answer.") {
         plan: [],
         notices: [],
         creditsUsed: 1,
+        execution: { rootMessageId: RUN_MESSAGE, attemptedEndpoints: 0 },
         ...outcome,
       };
     }),
@@ -251,7 +254,13 @@ describe("POST /seo/chat: asking a question", () => {
       id: RUN_MESSAGE,
       role: "assistant",
       content: "Use these keywords.",
-      parts: { cards, followUps: FOLLOW_UPS, plan: [], notices: ["SEO data is not set up yet."] },
+      parts: {
+        cards,
+        followUps: FOLLOW_UPS,
+        plan: [],
+        notices: ["SEO data is not set up yet."],
+        execution: { rootMessageId: RUN_MESSAGE, attemptedEndpoints: 0 },
+      },
       status: "complete",
       creditsUsed: 2,
     });
@@ -374,7 +383,7 @@ describe("POST /seo/chat: asking a question", () => {
 describe("POST /seo/chat: approving a plan", () => {
   it("approves research whose user-derived title matches the interview title", async () => {
     mocks.getConversation.mockResolvedValue({ ...conversation(), title: "Product setup interview" });
-    mocks.claimPlan.mockResolvedValueOnce(PLAN);
+    mocks.claimPlan.mockResolvedValueOnce(CLAIMED);
     const { res } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
     expect(res.status).toBe(200);
     expect(mocks.claimPlan).toHaveBeenCalledWith(WS, MSG_PLAN);
@@ -389,18 +398,22 @@ describe("POST /seo/chat: approving a plan", () => {
   });
   it("runs the approved plan once with no new question charge", async () => {
     mocks.getConversation.mockResolvedValue(conversation());
-    mocks.claimPlan.mockResolvedValueOnce(PLAN);
+    mocks.claimPlan.mockResolvedValueOnce(CLAIMED);
     const { res } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
     expect(res.status).toBe(200);
     expect(mocks.claimPlan).toHaveBeenCalledWith(WS, MSG_PLAN);
     expect(mocks.consume).not.toHaveBeenCalled();
     expect(mocks.classifyQuestion).not.toHaveBeenCalled();
-    expect(mocks.runAgent.mock.calls[0]![0]).toMatchObject({ conversationId: CONV, approved: PLAN });
+    expect(mocks.runAgent.mock.calls[0]![0]).toMatchObject({
+      conversationId: CONV,
+      approved: PLAN,
+      execution: EXECUTION,
+    });
   });
 
   it("answers 409 already_run on the second approval and runs the agent only once", async () => {
     mocks.getConversation.mockResolvedValue(conversation());
-    mocks.claimPlan.mockResolvedValueOnce(PLAN).mockResolvedValueOnce(null);
+    mocks.claimPlan.mockResolvedValueOnce(CLAIMED).mockResolvedValueOnce(null);
     expect((await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN })).res.status).toBe(200);
     const second = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
     expect(second.res.status).toBe(409);
@@ -410,10 +423,20 @@ describe("POST /seo/chat: approving a plan", () => {
 
   it("treats an empty plan as nothing to run", async () => {
     mocks.getConversation.mockResolvedValue(conversation());
-    mocks.claimPlan.mockResolvedValue([]);
+    mocks.claimPlan.mockResolvedValue({ plan: [], execution: EXECUTION });
     const { res, data } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
     expect(res.status).toBe(409);
     expect(data).toEqual({ error: "already_run" });
+    expect(mocks.runAgent).not.toHaveBeenCalled();
+  });
+
+  it("tells the owner an outdated plan must be re-asked, not that it already ran", async () => {
+    mocks.getConversation.mockResolvedValue(conversation());
+    mocks.claimPlan.mockResolvedValue({ legacy: true });
+    const { res, data } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
+    expect(res.status).toBe(409);
+    expect(data).toMatchObject({ error: "plan_outdated" });
+    expect((data as { message: string }).message).toMatch(/ask (the|your) question again/i);
     expect(mocks.runAgent).not.toHaveBeenCalled();
   });
 
@@ -433,20 +456,39 @@ describe("POST /seo/chat: approving a plan", () => {
 
   it("returns the plan without charging or releasing a question when the approved run fails before any text", async () => {
     mocks.getConversation.mockResolvedValue(conversation());
-    mocks.claimPlan.mockResolvedValue(PLAN);
+    mocks.claimPlan.mockResolvedValue(CLAIMED);
     mocks.runAgent.mockResolvedValue(fakeRun({ status: "failed", content: "", creditsUsed: 0 }, ERROR_COPY));
     const { text } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
     expect(text).toContain(ERROR_COPY);
-    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN);
+    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN, expect.anything());
     expect(mocks.consume).not.toHaveBeenCalled();
     expect(mocks.release).not.toHaveBeenCalled();
     expect(mocks.appendMessage).not.toHaveBeenCalled();
     expect(text).toContain('"planReturned":true');
   });
 
+  it("hands the attempts the failed run spent to unclaimPlan so a retry cannot regain them", async () => {
+    mocks.getConversation.mockResolvedValue(conversation());
+    mocks.claimPlan.mockResolvedValue(CLAIMED);
+    const spent = { rootMessageId: MSG_PLAN, attemptedEndpoints: 4 };
+    mocks.runAgent.mockResolvedValue(fakeRun({ status: "failed", content: "", creditsUsed: 0, execution: spent }, ERROR_COPY));
+    await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
+    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN, spent);
+  });
+
+  it("keeps the claimed attempt count when the approved run's stream throws", async () => {
+    mocks.getConversation.mockResolvedValue(conversation());
+    mocks.claimPlan.mockResolvedValue(CLAIMED);
+    const run = fakeRun();
+    run.write.mockRejectedValue(new Error("stream broke"));
+    mocks.runAgent.mockResolvedValue(run);
+    await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
+    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN, EXECUTION);
+  });
+
   it("does not say the plan went back when it was no longer claimed", async () => {
     mocks.getConversation.mockResolvedValue(conversation());
-    mocks.claimPlan.mockResolvedValue(PLAN);
+    mocks.claimPlan.mockResolvedValue(CLAIMED);
     mocks.unclaimPlan.mockResolvedValue(false);
     mocks.runAgent.mockResolvedValue(fakeRun({ status: "failed", content: "", creditsUsed: 0 }, ERROR_COPY));
     const { text } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
@@ -455,40 +497,40 @@ describe("POST /seo/chat: approving a plan", () => {
 
   it("returns the plan when the approved run is refused", async () => {
     mocks.getConversation.mockResolvedValue(conversation());
-    mocks.claimPlan.mockResolvedValue(PLAN);
+    mocks.claimPlan.mockResolvedValue(CLAIMED);
     mocks.runAgent.mockResolvedValue(fakeRun({ status: "refused", content: "" }, REFUSAL));
     await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
-    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN);
+    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN, expect.anything());
     expect(mocks.release).not.toHaveBeenCalled();
   });
 
   it("returns the plan when the approved run's stream throws", async () => {
     mocks.getConversation.mockResolvedValue(conversation());
-    mocks.claimPlan.mockResolvedValue(PLAN);
+    mocks.claimPlan.mockResolvedValue(CLAIMED);
     const run = fakeRun();
     run.write.mockRejectedValue(new Error("stream broke"));
     mocks.runAgent.mockResolvedValue(run);
     const { text } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
     expect(text).toContain(ERROR_COPY);
-    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN);
+    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN, expect.anything());
     expect(mocks.release).not.toHaveBeenCalled();
   });
 
   it("returns the plan, without charging, when the approved run throws before streaming", async () => {
     mocks.getConversation.mockResolvedValue(conversation());
-    mocks.claimPlan.mockResolvedValue(PLAN);
+    mocks.claimPlan.mockResolvedValue(CLAIMED);
     mocks.runAgent.mockRejectedValue(new Error("gateway key missing"));
     const { res, text } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
     expect(res.status).toBe(200);
     expect(text).toContain(ERROR_COPY);
-    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN);
+    expect(mocks.unclaimPlan).toHaveBeenCalledWith(WS, MSG_PLAN, expect.anything());
     expect(mocks.release).not.toHaveBeenCalled();
     expect(text).toContain('"planReturned":true');
   });
 
   it("keeps the plan claimed when the approved run produced a partial answer", async () => {
     mocks.getConversation.mockResolvedValue(conversation());
-    mocks.claimPlan.mockResolvedValue(PLAN);
+    mocks.claimPlan.mockResolvedValue(CLAIMED);
     mocks.runAgent.mockResolvedValue(fakeRun({ status: "incomplete", content: "Partial" }, "Partial"));
     const { text } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
     expect(mocks.unclaimPlan).not.toHaveBeenCalled();
@@ -498,7 +540,7 @@ describe("POST /seo/chat: approving a plan", () => {
 
   it("keeps the plan claimed after a successful approved run", async () => {
     mocks.getConversation.mockResolvedValue(conversation());
-    mocks.claimPlan.mockResolvedValue(PLAN);
+    mocks.claimPlan.mockResolvedValue(CLAIMED);
     mocks.runAgent.mockResolvedValue(fakeRun({ status: "complete", creditsUsed: 1 }, "Done."));
     await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
     expect(mocks.unclaimPlan).not.toHaveBeenCalled();
@@ -537,7 +579,7 @@ describe("POST /seo/chat: settlement outlives the client", () => {
 
   it("registers approved-plan settlement with after() too", async () => {
     mocks.getConversation.mockResolvedValue(conversation());
-    mocks.claimPlan.mockResolvedValue(PLAN);
+    mocks.claimPlan.mockResolvedValue(CLAIMED);
     const { res } = await postAndRead({ workspaceId: WS, conversationId: CONV, approvePlan: MSG_PLAN });
     expect(res.status).toBe(200);
     expect(mocks.after).toHaveBeenCalledTimes(1);

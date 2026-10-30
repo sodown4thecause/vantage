@@ -96,10 +96,24 @@ const STEP_FINISH = { type: "finish-step" } as UIMessageChunk;
 const ERROR = { type: "error", errorText: "boom" } as UIMessageChunk;
 
 function fakeGenerateText(impl?: (options: FakeOptions) => Promise<unknown>) {
-  const answer: (options: FakeOptions) => Promise<unknown> = async () => ({
-    output: { seo: "Which keywords hold rank?", geo: "Does ChatGPT cite docs?", content: "Outline a comparison post." },
-    usage: { inputTokens: 500, outputTokens: 50, inputTokenDetails: { cacheReadTokens: 0 } },
-  });
+  const answer: (options: FakeOptions) => Promise<unknown> = async (options) => {
+    // Collector calls pass tools and no structured output schema.
+    if (options?.tools && !options?.output) {
+      if (typeof options.onStepFinish === "function") {
+        await options.onStepFinish({ toolResults: [] });
+      }
+      return {
+        text: "",
+        finishReason: "stop",
+        usage: { inputTokens: 200, outputTokens: 20, inputTokenDetails: { cacheReadTokens: 0 } },
+        steps: [],
+      };
+    }
+    return {
+      output: { seo: "Which keywords hold rank?", geo: "Does ChatGPT cite docs?", content: "Outline a comparison post." },
+      usage: { inputTokens: 500, outputTokens: 50, inputTokenDetails: { cacheReadTokens: 0 } },
+    };
+  };
   return vi.fn(impl ?? answer);
 }
 
@@ -152,7 +166,7 @@ beforeEach(() => {
   mocks.peekKeywordIdeas.mockResolvedValue(null);
   mocks.fetchKeywordIdeas.mockClear();
   mocks.recordCost.mockReset().mockResolvedValue(true);
-  vi.stubEnv("TAKO_SEARCH_USD", "");
+  vi.stubEnv("TAKO_SEARCH_USD", "0");
   vi.stubEnv("AI_GATEWAY_API_KEY", "gateway-test-key");
   vi.stubEnv("SEO_AGENT_MODEL", "");
   vi.stubEnv("SEO_CLASSIFIER_MODEL", "");
@@ -208,44 +222,53 @@ describe("systemPrompt", () => {
 });
 
 describe("runAgent: tool path", () => {
-  it("streams with the executor, a six-step cap, no SDK retries and the cached system prompt", async () => {
+  it("collects with the executor then summarizes with follow-ups only", async () => {
     vi.stubEnv("SEO_AGENT_FALLBACK_MODEL", FALLBACK);
     const streamText = fakeStreamText([{ chunks: text("Done."), finishReason: "stop" }]);
-    const run = await runAgent(input(), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } });
+    const generateText = fakeGenerateText();
+    const run = await runAgent(input(), { deps: { streamText: streamText as never, generateText: generateText as never } });
     await drain(run);
 
-    const options = streamText.mock.calls[0]![0] as FakeOptions;
-    expect(options.model.modelId).toBe(EXECUTOR);
-    expect(options.maxRetries).toBe(0);
-    expect(options.providerOptions).toEqual({ gateway: { models: [FALLBACK] }, anthropic: { effort: "medium" } });
-    expect(options.maxOutputTokens).toBe(4096);
-    expect(options.system).toMatchObject({
-      role: "system",
-      providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } },
-    });
-    expect(options.system.content).toContain("untrusted");
-    expect(options.stopWhen({ steps: Array(5).fill({}) })).toBe(false);
-    expect(options.stopWhen({ steps: Array(6).fill({}) })).toBe(true);
+    const collect = generateText.mock.calls.find((call) => (call[0] as FakeOptions).tools && !(call[0] as FakeOptions).output)?.[0] as FakeOptions;
+    expect(collect.model.modelId).toBe(EXECUTOR);
+    expect(collect.maxRetries).toBe(0);
+    expect(collect.maxOutputTokens).toBe(1024);
+    expect(collect.system.content).toContain("gather live SEO/GEO evidence");
+    expect(collect.stopWhen({ steps: Array(5).fill({}) })).toBe(false);
+    expect(collect.stopWhen({ steps: Array(6).fill({}) })).toBe(true);
+    expect(Object.keys(collect.tools)).not.toContain("suggest_follow_ups");
+
+    const summary = streamText.mock.calls[0]![0] as FakeOptions;
+    expect(summary.model.modelId).toBe(EXECUTOR);
+    expect(summary.maxRetries).toBe(0);
+    expect(summary.maxOutputTokens).toBe(4096);
+    expect(summary.system.content).toContain("evidence packet");
+    expect(Object.keys(summary.tools)).toEqual(["suggest_follow_ups"]);
     expect(stepCountIs(6)({ steps: Array(6).fill({}) })).toBe(true);
   });
 
-  it("passes the classifier's domains, keywords and engines to the executor as a data hint line", async () => {
+  it("passes the classifier's domains, keywords and engines to the collector as a data hint line", async () => {
     const streamText = fakeStreamText([{ chunks: text("Done."), finishReason: "stop" }]);
+    const generateText = fakeGenerateText();
     const classification = { intent: "geo_visibility" as const, domains: ["rival.io"], keywords: ["vector db"], engines: ["claude" as const] };
-    const run = await runAgent(input({ classification }), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } });
+    const run = await runAgent(input({ classification }), { deps: { streamText: streamText as never, generateText: generateText as never } });
     await drain(run);
-    const last = (streamText.mock.calls[0]![0] as FakeOptions).messages.at(-1);
+    const collect = generateText.mock.calls.find((call) => (call[0] as FakeOptions).tools)?.[0] as FakeOptions;
+    const last = collect.messages.at(-1);
     expect(last.content).toContain('Classifier hints (data): {"domains":["rival.io"],"keywords":["vector db"],"engines":["claude"]}');
   });
 
-  it("gives an intent 'all' classification every data tool plus suggest_follow_ups", async () => {
+
+  it("gives an intent 'all' classification every data tool on collect and follow-ups on summarize", async () => {
     const streamText = fakeStreamText([{ chunks: text("Done."), finishReason: "stop" }]);
+    const generateText = fakeGenerateText();
     const run = await runAgent(input({ classification: { intent: "all", domains: [], keywords: [], engines: [] } }), {
-      deps: { streamText: streamText as never, generateText: fakeGenerateText() as never },
+      deps: { streamText: streamText as never, generateText: generateText as never },
     });
     await drain(run);
-    const names = Object.keys((streamText.mock.calls[0]![0] as FakeOptions).tools).sort();
-    expect(names).toEqual([...DATA_TOOLS, "suggest_follow_ups"].sort());
+    const collect = generateText.mock.calls.find((call) => (call[0] as FakeOptions).tools)?.[0] as FakeOptions;
+    expect(Object.keys(collect.tools).sort()).toEqual([...DATA_TOOLS].sort());
+    expect(Object.keys((streamText.mock.calls[0]![0] as FakeOptions).tools)).toEqual(["suggest_follow_ups"]);
   });
 
   it("stores Tako citations and data cards, and forces Linkup after fewer than three web results", async () => {
@@ -253,15 +276,25 @@ describe("runAgent: tool path", () => {
       web_results: [{ title: "Source", url: "https://example.com/source", snippet: "A current fact." }],
       cards: [{ title: "Market value", webpage_url: "https://example.com/market", content: { card_data: { value: 42, unit: "USD" } } }],
     };
-    const streamText = fakeStreamText([{
-      chunks: async (options) => {
+    const streamText = fakeStreamText([{ chunks: text("The result is supported by the sources.") }]);
+    const generateText = fakeGenerateText(async (options) => {
+      if (options?.tools && !options?.output) {
         await options.onStepFinish({ toolResults: [{ toolName: "tako_search", toolCallId: "t1", output }] });
-        return text("The result is supported by the sources.");
-      },
-    }]);
-    const run = await runAgent(input(), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } });
+        return {
+          text: "",
+          finishReason: "stop",
+          usage: { inputTokens: 200, outputTokens: 20, inputTokenDetails: { cacheReadTokens: 0 } },
+          steps: [],
+        };
+      }
+      return {
+        output: { seo: "Which keywords hold rank?", geo: "Does ChatGPT cite docs?", content: "Outline a comparison post." },
+        usage: { inputTokens: 500, outputTokens: 50, inputTokenDetails: { cacheReadTokens: 0 } },
+      };
+    });
+    const run = await runAgent(input(), { deps: { streamText: streamText as never, generateText: generateText as never } });
     const { outcome } = await drain(run);
-    const options = streamText.mock.calls[0]![0] as FakeOptions;
+    const options = generateText.mock.calls.find((call) => (call[0] as FakeOptions).tools)?.[0] as FakeOptions;
     const lowResultStep = {
       toolCalls: [{ toolName: "tako_search", toolCallId: "t1", input: { query: "current fact" } }],
       toolResults: [{ toolName: "tako_search", toolCallId: "t1", output }],
@@ -284,14 +317,24 @@ describe("runAgent: tool path", () => {
   it("reserves a configured Tako price through runPaidCall before the provider tool executes", async () => {
     vi.stubEnv("TAKO_SEARCH_USD", "0.007");
     const output = { web_results: [{ title: "Source", url: "https://example.com", snippet: "Evidence" }] };
-    const streamText = fakeStreamText([{
-      chunks: async (options) => {
+    const streamText = fakeStreamText([{ chunks: text("Cited answer.") }]);
+    const generateText = fakeGenerateText(async (options) => {
+      if (options?.tools && !options?.output) {
         await options.toolApproval.tako_search({ query: "current facts" }, { toolCallId: "priced-tako", messages: [] });
         await options.onStepFinish({ toolResults: [{ toolName: "tako_search", toolCallId: "priced-tako", output }] });
-        return text("Cited answer.");
-      },
-    }]);
-    const run = await runAgent(input(), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } });
+        return {
+          text: "",
+          finishReason: "stop",
+          usage: { inputTokens: 200, outputTokens: 20, inputTokenDetails: { cacheReadTokens: 0 } },
+          steps: [],
+        };
+      }
+      return {
+        output: { seo: "Which keywords hold rank?", geo: "Does ChatGPT cite docs?", content: "Outline a comparison post." },
+        usage: { inputTokens: 500, outputTokens: 50, inputTokenDetails: { cacheReadTokens: 0 } },
+      };
+    });
+    const run = await runAgent(input(), { deps: { streamText: streamText as never, generateText: generateText as never } });
     await drain(run);
     expect(mocks.paid).toHaveBeenCalledWith(expect.objectContaining({
       context: { workspaceId: WS, sourceKey: "seo" }, provider: "gateway", action: "tako_search", estimateUsd: 0.007,
@@ -301,9 +344,10 @@ describe("runAgent: tool path", () => {
 
   it("forces Linkup when the Tako call asks for domain or date filters", async () => {
     const streamText = fakeStreamText([{ chunks: text("Done."), finishReason: "stop" }]);
-    const run = await runAgent(input(), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } });
+    const generateText = fakeGenerateText();
+    const run = await runAgent(input(), { deps: { streamText: streamText as never, generateText: generateText as never } });
     await drain(run);
-    const prepareStep = (streamText.mock.calls[0]![0] as FakeOptions).prepareStep;
+    const prepareStep = (generateText.mock.calls.find((call) => (call[0] as FakeOptions).tools)?.[0] as FakeOptions).prepareStep;
     expect(prepareStep({ steps: [{
       toolCalls: [{ toolName: "tako_search", toolCallId: "t2", input: { query: "recent", sources: { web: { include_domains: ["example.com"] } } } }],
       toolResults: [{ toolName: "tako_search", toolCallId: "t2", output: { web_results: [{ title: "A", url: "https://example.com" }, { title: "B", url: "https://example.org" }, { title: "C", url: "https://example.net" }] } }],
@@ -313,11 +357,14 @@ describe("runAgent: tool path", () => {
   it("keeps web research available with a notice when DataForSEO is not set up", async () => {
     mocks.dataForSeo.mockReturnValue(false);
     const streamText = fakeStreamText([{ chunks: text("From general knowledge."), finishReason: "stop" }]);
+    const generateText = fakeGenerateText();
     const run = await runAgent(input({ classification: { intent: "backlinks", domains: ["rival.io"], keywords: [], engines: [] } }), {
-      deps: { streamText: streamText as never, generateText: fakeGenerateText() as never },
+      deps: { streamText: streamText as never, generateText: generateText as never },
     });
     const { outcome } = await drain(run);
-    expect(Object.keys((streamText.mock.calls[0]![0] as FakeOptions).tools).sort()).toEqual(["linkup_fetch", "suggest_follow_ups", "tako_search", "web_research"]);
+    const collect = generateText.mock.calls.find((call) => (call[0] as FakeOptions).tools)?.[0] as FakeOptions;
+    expect(Object.keys(collect.tools).sort()).toEqual(["linkup_fetch", "tako_search", "web_research"]);
+    expect(Object.keys((streamText.mock.calls[0]![0] as FakeOptions).tools)).toEqual(["suggest_follow_ups"]);
     expect(outcome.notices).toEqual(["SEO data is not set up yet."]);
     expect(outcome.plan).toEqual([]);
   });
@@ -360,20 +407,29 @@ describe("runAgent: tool path", () => {
 
   it("turns a call that needs approval into a plan and status-bearing outcome", async () => {
     vi.stubEnv("SEO_AGENT_AUTO_CREDITS", "0");
-    const streamText = fakeStreamText([{
-      chunks: async (options) => {
+    const streamText = fakeStreamText([{ chunks: text("I need approval to run that."), finishReason: "stop" }]);
+    const generateText = fakeGenerateText(async (options) => {
+      if (options?.tools && !options?.output) {
         await options.tools.keyword_ideas.execute({ keywords: ["ci caching"] }, { toolCallId: "k1", messages: [] });
-        return text("I need approval to run that.");
-      },
-      finishReason: "stop",
-    }]);
-    const run = await runAgent(input(), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } });
+        return {
+          text: "",
+          finishReason: "stop",
+          usage: { inputTokens: 200, outputTokens: 20, inputTokenDetails: { cacheReadTokens: 0 } },
+          steps: [],
+        };
+      }
+      return {
+        output: { seo: "Which keywords hold rank?", geo: "Does ChatGPT cite docs?", content: "Outline a comparison post." },
+        usage: { inputTokens: 500, outputTokens: 50, inputTokenDetails: { cacheReadTokens: 0 } },
+      };
+    });
+    const run = await runAgent(input(), { deps: { streamText: streamText as never, generateText: generateText as never } });
     const { outcome } = await drain(run);
     expect(outcome.plan).toEqual([{ tool: "keyword_ideas", input: { keywords: ["ci caching"] }, credits: 1 }]);
     expect(outcome.status).toBe("complete");
   });
 
-  it("records the model cost through one gateway reservation for seo_execute", async () => {
+  it("records collector and summarizer gateway reservations separately", async () => {
     const streamText = fakeStreamText([{
       chunks: text("Done."),
       finishReason: "stop",
@@ -381,21 +437,29 @@ describe("runAgent: tool path", () => {
     }]);
     const run = await runAgent(input(), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } });
     await drain(run);
-    expect(mocks.paid).toHaveBeenCalledTimes(1);
+    const actions = mocks.paid.mock.calls.map((call) => (call[0] as { action: string }).action);
+    expect(actions).toEqual(["seo_execute", "seo_summarize"]);
     expect(mocks.paid.mock.calls[0]![0]).toMatchObject({
       context: { workspaceId: WS, sourceKey: "seo" },
       provider: "gateway",
       action: "seo_execute",
-      estimateUsd: 0.15,
     });
-    expect(mocks.charged).toEqual([costOfUsage(EXECUTOR, { inputTokens: 1000, outputTokens: 100, cachedInputTokens: 0 })]);
+    expect(mocks.paid.mock.calls[1]![0]).toMatchObject({
+      action: "seo_summarize",
+      estimateUsd: 0.1,
+    });
+    expect(mocks.charged).toEqual([
+      costOfUsage(EXECUTOR, { inputTokens: 200, outputTokens: 20, cachedInputTokens: 0 }),
+      costOfUsage(EXECUTOR, { inputTokens: 1000, outputTokens: 100, cachedInputTokens: 0 }),
+    ]);
   });
 
-  it("rejects before any model call when the paid reservation is denied", async () => {
+  it("fails the answer when the collector paid reservation is denied", async () => {
     mocks.paid.mockRejectedValueOnce(new PaidCallDeniedError("budget_exhausted", "Daily provider budget exhausted."));
     const streamText = fakeStreamText([{ chunks: text("Never sent."), finishReason: "stop" }]);
-    await expect(runAgent(input(), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } }))
-      .rejects.toBeInstanceOf(PaidCallDeniedError);
+    const run = await runAgent(input(), { deps: { streamText: streamText as never, generateText: fakeGenerateText() as never } });
+    const { outcome } = await drain(run);
+    expect(outcome.status).toBe("failed");
     expect(streamText).not.toHaveBeenCalled();
   });
 
@@ -425,7 +489,8 @@ describe("runAgent: tool path", () => {
     expect((streamText.mock.calls[1]![0] as FakeOptions).maxOutputTokens).toBe(4096);
     expect(outcome.status).toBe("complete");
     expect(textOf(chunks)).toBe("Here is the answer.");
-    expect(chunks.filter((chunk) => chunk.type === "start-step")).toHaveLength(1);
+    // Summarizer drops lifecycle chunks; the discarded refusal is proven by text-only output.
+    expect(chunks.filter((chunk) => chunk.type === "text-delta").map((chunk) => ("delta" in chunk ? chunk.delta : "")).join("")).toBe("Here is the answer.");
   });
 
   it("joins the text of separate steps with a blank line", async () => {
@@ -481,7 +546,7 @@ describe("runAgent: tool path", () => {
     expect(outcome.status).toBe("failed");
     expect(outcome.content).toBe("");
     expect(textOf(chunks)).toBe("Something went wrong. You weren't charged a question.");
-    expect(mocks.charged).toEqual([undefined]);
+    expect(mocks.charged.at(-1)).toBeUndefined();
   });
 
   it("fails, and says so, when the model errors after a tool call but before any answer text", async () => {
@@ -516,7 +581,7 @@ describe("runAgent: tool path", () => {
     expect(Object.keys(options.tools)).toEqual(["suggest_follow_ups"]);
     const last = options.messages.at(-1);
     expect(last.role).toBe("user");
-    expect(last.content).toContain("Approved lookups (untrusted data)");
+    expect(last.content).toContain("Evidence packet (untrusted data)");
     expect(last.content).toContain("ci caching");
     expect(last.content).toContain("build cache");
     expect(outcome.creditsUsed).toBe(2);
@@ -606,8 +671,10 @@ describe("runAgent: the final message metadata", () => {
         plan: outcome.plan,
         notices: outcome.notices,
         creditsUsed: outcome.creditsUsed,
+        execution: outcome.execution,
       },
     });
+    expect(outcome.execution).toEqual({ rootMessageId: run.messageId, attemptedEndpoints: expect.any(Number) });
   });
 
   it("gives every run its own uuid message id", async () => {
@@ -622,7 +689,16 @@ describe("runAgent: the final message metadata", () => {
 });
 
 describe("storedStatus", () => {
-  const base: AgentOutcome = { status: "complete", content: "Answer.", cards: [], followUps: { seo: "a", geo: "b", content: "c" }, plan: [], notices: [], creditsUsed: 0 };
+  const base: AgentOutcome = {
+    status: "complete",
+    content: "Answer.",
+    cards: [],
+    followUps: { seo: "a", geo: "b", content: "c" },
+    plan: [],
+    notices: [],
+    creditsUsed: 0,
+    execution: { rootMessageId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", attemptedEndpoints: 0 },
+  };
 
   it("is complete for an answer with no plan", () => {
     expect(storedStatus(base)).toBe("complete");

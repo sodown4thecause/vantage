@@ -10,41 +10,54 @@ export type ContentLibraryFilters = {
   source: string;
 };
 
-const markdownLinkPattern = /https?:\/\/[^\s<>"'`]+/gi;
+// Markdown links first: [label](url) or [label](url "title"). The URL may hold
+// balanced parentheses, e.g. Wikipedia links, but never whitespace.
+const markdownLinkPattern = /\[[^\]]*\]\(\s*<?(https?:\/\/(?:[^\s()<>]|\([^\s()<>]*\))+)>?(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/gi;
+const bareUrlPattern = /https?:\/\/[^\s<>"'`]+/gi;
 
-function cleanMarkdownUrl(match: string, markdown: string, index: number): string {
+function cleanBareUrl(match: string): string {
   let candidate = match;
-  const beforeLink = markdown.slice(0, index);
-  const emphasisMarker = /(\*{1,3}|_{1,3})\[[^\]]*\]\($/.exec(beforeLink)?.[1]
-    ?? /(\*{1,3}|_{1,3})$/.exec(beforeLink)?.[1];
-  if (emphasisMarker && candidate.endsWith(emphasisMarker)) {
-    candidate = candidate.slice(0, -emphasisMarker.length);
-  }
-
-  candidate = candidate.replace(/[.,!?;:]+$/, "");
-  for (const [opening, closing] of [["(", ")"], ["[", "]"], ["{", "}"]] as const) {
-    while (candidate.endsWith(closing)) {
-      const openings = candidate.split(opening).length - 1;
-      const closings = candidate.split(closing).length - 1;
-      if (closings <= openings) break;
-      candidate = candidate.slice(0, -1);
+  // Strip trailing punctuation and Markdown emphasis in any order until stable,
+  // so "**https://a.com/x**." and "_https://a.com/x_," both end at the URL.
+  for (;;) {
+    const before = candidate;
+    candidate = candidate.replace(/[.,!?;:*_~]+$/, "");
+    for (const [opening, closing] of [["(", ")"], ["[", "]"], ["{", "}"]] as const) {
+      while (candidate.endsWith(closing)) {
+        const openings = candidate.split(opening).length - 1;
+        const closings = candidate.split(closing).length - 1;
+        if (closings <= openings) break;
+        candidate = candidate.slice(0, -1);
+      }
     }
+    if (candidate === before) return candidate;
   }
-  return candidate;
+}
+
+function httpLink(candidate: string): string | null {
+  try {
+    const url = new URL(candidate);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    // Ignore malformed links instead of making a broken source filter or export.
+    return null;
+  }
 }
 
 export function contentDraftSourceLinks(markdown: string): string[] {
-  const links = new Set<string>();
-  for (const match of markdown.matchAll(markdownLinkPattern)) {
-    const candidate = cleanMarkdownUrl(match[0], markdown, match.index ?? 0);
-    try {
-      const url = new URL(candidate);
-      if (url.protocol === "http:" || url.protocol === "https:") links.add(url.toString());
-    } catch {
-      // Ignore malformed links instead of making a broken source filter or export.
-    }
+  const found: { index: number; link: string | null }[] = [];
+  // Blank out each Markdown link once it is read, so the bare-URL pass cannot
+  // see its brackets and glue two adjacent links into one URL.
+  const remaining = markdown.replace(markdownLinkPattern, (whole: string, url: string, index: number) => {
+    found.push({ index, link: httpLink(url) });
+    return " ".repeat(whole.length);
+  });
+  for (const match of remaining.matchAll(bareUrlPattern)) {
+    found.push({ index: match.index ?? 0, link: httpLink(cleanBareUrl(match[0])) });
   }
-  return [...links];
+  // Keep document order so source chips and exports list links as written.
+  found.sort((left, right) => left.index - right.index);
+  return [...new Set(found.map((entry) => entry.link).filter((link): link is string => Boolean(link)))];
 }
 
 function sourceDomain(link: string): string | null {

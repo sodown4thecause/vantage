@@ -65,8 +65,10 @@ const request = (overrides: Partial<GateRequest<Row, Trimmed[]>> = {}): GateRequ
   trim,
   ...overrides,
 });
-const run = (overrides?: Partial<GateRequest<Row, Trimmed[]>>, opts: { signal?: AbortSignal; fetchImpl?: typeof fetch; now?: Date } = {}) =>
-  runDataForSeo<Row, Trimmed[]>(request(overrides), { now, ...opts });
+const run = (
+  overrides?: Partial<GateRequest<Row, Trimmed[]>>,
+  opts: { signal?: AbortSignal; fetchImpl?: typeof fetch; now?: Date; reserveEndpointAttempt?: (count?: number) => boolean } = {},
+) => runDataForSeo<Row, Trimmed[]>(request(overrides), { now, ...opts });
 
 function configure(mode: "live" | "sandbox" | "unconfigured") {
   vi.stubEnv("DATAFORSEO_USERNAME", "");
@@ -125,6 +127,58 @@ describe("DataForSEO spend gate", () => {
     });
   });
   afterEach(() => vi.unstubAllEnvs());
+  describe("live-only research endpoints", () => {
+    const forbidden = [
+      "/v3/serp/google/organic/task_post",
+      "/v3/serp/google/organic/task_get/advanced/task-id",
+      "/v3/backlinks/summary/not_live",
+      "/v3/backlinks/summary/live?mode=standard",
+      "/v3/appendix/user_data",
+      "/v3/ai_optimization/chat_gpt/llm_responses/models",
+      "https://api.dataforseo.com/v3/backlinks/summary/live",
+    ];
+
+    it.each(forbidden)("rejects %s before any side effect, even with cached data", async (endpoint) => {
+      configure("live");
+      mocks.read.mockResolvedValue([{ rank: 7 }]);
+      const fetchImpl = makeFetch();
+
+      await expect(run({ endpoint }, { fetchImpl: asFetch(fetchImpl) })).rejects.toThrow(
+        "DataForSEO research requires an allowlisted live endpoint.",
+      );
+      expect(mocks.read).not.toHaveBeenCalled();
+      expect(mocks.write).not.toHaveBeenCalled();
+      expect(mocks.consume).not.toHaveBeenCalled();
+      expect(mocks.release).not.toHaveBeenCalled();
+      expect(mocks.execute).not.toHaveBeenCalled();
+      expect(mocks.runPaidCall).not.toHaveBeenCalled();
+      expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it.each(forbidden)("rejects cache-only reads for %s before reading snapshots", async (endpoint) => {
+      configure("live");
+      mocks.read.mockResolvedValue([{ rank: 7 }]);
+
+      await expect(peekDataForSeo(endpoint, TASK, FRESHNESS)).rejects.toThrow(
+        "DataForSEO research requires an allowlisted live endpoint.",
+      );
+      expect(mocks.read).not.toHaveBeenCalled();
+      expect(mocks.consume).not.toHaveBeenCalled();
+      expect(mocks.execute).not.toHaveBeenCalled();
+      expect(mocks.runPaidCall).not.toHaveBeenCalled();
+    });
+
+    it("validates endpoints even when credentials are missing", async () => {
+      configure("unconfigured");
+      const endpoint = "/v3/serp/google/organic/task_post";
+      await expect(run({ endpoint })).rejects.toThrow("DataForSEO research requires an allowlisted live endpoint.");
+      await expect(peekDataForSeo(endpoint, TASK, FRESHNESS)).rejects.toThrow(
+        "DataForSEO research requires an allowlisted live endpoint.",
+      );
+      expect(mocks.read).not.toHaveBeenCalled();
+      expect(mocks.consume).not.toHaveBeenCalled();
+    });
+  });
 
   describe("runDataForSeo", () => {
     it("denies as not_configured before any cache read, credit or fetch", async () => {
@@ -365,6 +419,30 @@ describe("DataForSEO spend gate", () => {
       expect(mocks.release).toHaveBeenCalledExactlyOnceWith("ws-1", CREDIT, 1, now);
       expect(callsTo(fetchImpl, "/v3/backlinks")).toHaveLength(0);
       expect(mocks.write).not.toHaveBeenCalled();
+    });
+
+    it("refuses over the endpoint attempt ceiling after preflight and before dispatch", async () => {
+      configure("live");
+      const fetchImpl = makeFetch({ balance: 100 });
+      const reserveEndpointAttempt = vi.fn(() => false);
+      await expect(run({}, { fetchImpl: asFetch(fetchImpl), reserveEndpointAttempt })).rejects.toMatchObject({
+        name: "DataForSeoDeniedError",
+        code: "attempt_limit",
+      });
+      expect(reserveEndpointAttempt).toHaveBeenCalledExactlyOnceWith(1);
+      expect(mocks.consume).toHaveBeenCalled();
+      expect(mocks.release).toHaveBeenCalledExactlyOnceWith("ws-1", CREDIT, 1, now);
+      expect(mocks.runPaidCall).not.toHaveBeenCalled();
+      expect(callsTo(fetchImpl, "/v3/backlinks")).toHaveLength(0);
+    });
+
+    it("does not consume an attempt slot on a cache hit", async () => {
+      configure("live");
+      mocks.read.mockResolvedValue([{ rank: 7 }]);
+      const reserveEndpointAttempt = vi.fn(() => true);
+      await expect(run({}, { reserveEndpointAttempt })).resolves.toMatchObject({ cached: true });
+      expect(reserveEndpointAttempt).not.toHaveBeenCalled();
+      expect(mocks.consume).not.toHaveBeenCalled();
     });
   });
 
