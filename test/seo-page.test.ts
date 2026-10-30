@@ -28,7 +28,7 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-const CLIENT_FILES = ["app/seo/chat-client.tsx", "app/seo/cards.tsx"];
+const CLIENT_FILES = ["app/seo/chat-client.tsx", "app/seo/cards.tsx", "app/seo/journey.ts"];
 const SPEND_FUNCTIONS = ["fetchBacklinkSummary", "fetchReferringDomains", "fetchAnchors", "runDataForSeo", "runAgent"];
 
 describe("SEO page source contracts", () => {
@@ -227,7 +227,8 @@ describe("chat client", () => {
     expect(content).toBeGreaterThan(geo);
     expect(html).toMatch(/<button[^>]*aria-label="SEO question: /);
     for (const label of ["~1 credit", "Needs approval", "Free"]) expect(html).toContain(label);
-  });
+    expect(html.match(/>Recommended<\/span>/g)).toHaveLength(1);
+  }, 15_000);
 
   it("renders a saved answer from its stored parts, with follow-up chips and no cost labels on them", async () => {
     const html = await renderChat({

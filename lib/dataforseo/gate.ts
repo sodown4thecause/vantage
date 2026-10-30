@@ -7,11 +7,18 @@ import { dataForSeoCacheKey, readDataForSeoCache, writeDataForSeoCache } from "@
 import type { LlmEngine } from "@/lib/dataforseo/ai-optimization";
 import { DataForSeoApiError, dataForSeoGet, dataForSeoPost, getDataForSeoBalance } from "@/lib/dataforseo/client";
 import { type DataForSeoConfig, usableDataForSeoConfig } from "@/lib/dataforseo/config";
+import { assertLiveResearchEndpoint } from "@/lib/dataforseo/endpoints";
 import { isRecord } from "@/lib/dataforseo/shared";
 import { consume, release } from "@/lib/plans/limits";
 import { runPaidCall } from "@/lib/providers/paid-call";
 
-export type DataForSeoDenial = "not_configured" | "credits_exhausted" | "reserve_floor" | "balance_unknown" | "daily_cap";
+export type DataForSeoDenial =
+  | "not_configured"
+  | "credits_exhausted"
+  | "reserve_floor"
+  | "balance_unknown"
+  | "daily_cap"
+  | "attempt_limit";
 
 // Messages are fixed copy: the UI maps `code` to its own wording, and nothing here may carry balances or credentials.
 const DENIAL_MESSAGES: Record<DataForSeoDenial, string> = {
@@ -20,6 +27,7 @@ const DENIAL_MESSAGES: Record<DataForSeoDenial, string> = {
   reserve_floor: "The DataForSEO balance is below the reserve floor.",
   balance_unknown: "The DataForSEO balance could not be checked.",
   daily_cap: "The daily DataForSEO budget is used up.",
+  attempt_limit: "This question has used its live lookup limit.",
 };
 
 export class DataForSeoDeniedError extends Error {
@@ -42,7 +50,16 @@ export type GateRequest<R, T> = {
   trim: (result: R[]) => T;
 };
 
-type GateOptions = { signal?: AbortSignal; fetchImpl?: typeof fetch; now?: Date };
+export type GateOptions = {
+  signal?: AbortSignal;
+  fetchImpl?: typeof fetch;
+  now?: Date;
+  /**
+   * Synchronous reservation for one uncached research dispatch. Invoked after cache/credit/balance/daily preflight and
+   * immediately before the paid upstream call. Return false to refuse without dispatching.
+   */
+  reserveEndpointAttempt?: (count?: number) => boolean;
+};
 
 const CREDIT_KEY = "seo_credits_per_month";
 const BALANCE_TTL_MS = 5 * 60_000;
@@ -96,20 +113,23 @@ async function assertDailyCap(config: DataForSeoConfig, estimateUsd: number, now
 
 /**
  * Order (each step decides; the first refusal stops the call):
- *   1. config missing, or sandbox in production without ALLOW_FIXTURES -> not_configured
- *   2. cache hit -> return it (no credit, no fetch)
- *   3. consume the call's SEO credits; refused -> credits_exhausted
- *   4. from here, any throw releases those credits exactly once and rethrows
- *      5. live only: balance floor and alert threshold
- *      6. today's DataForSEO spend plus the estimate must fit the daily cap
- *      7. the paid call, through runPaidCall
- *   8. append the trimmed value as a dated snapshot (a failed write never releases the credit)
+ *   1. endpoint is not an allowlisted live research path -> throw
+ *   2. config missing, or sandbox in production without ALLOW_FIXTURES -> not_configured
+ *   3. cache hit -> return it (no credit, no fetch)
+ *   4. consume the call's SEO credits; refused -> credits_exhausted
+ *   5. from here, any throw releases those credits exactly once and rethrows
+ *      6. live only: balance floor and alert threshold
+ *      7. today's DataForSEO spend plus the estimate must fit the daily cap
+ *      8. per-question endpoint attempt ceiling (optional callback)
+ *      9. the paid call, through runPaidCall
+ *   10. append the trimmed value as a dated snapshot (a failed write never releases the credit)
  * runPaidCall charges its estimate for any throw that is not a DataForSeoApiError with a known cost.
  */
 export async function runDataForSeo<R, T>(
   req: GateRequest<R, T>,
   opts: GateOptions = {},
 ): Promise<{ value: T; cached: boolean }> {
+  assertLiveResearchEndpoint(req.endpoint);
   const config = usableDataForSeoConfig();
   if (!config) throw deny("not_configured");
   const credits = req.credits ?? 1;
@@ -127,6 +147,7 @@ export async function runDataForSeo<R, T>(
   try {
     if (config.env === "live") await assertBalance(config, opts, now);
     await assertDailyCap(config, req.estimateUsd, now);
+    if (opts.reserveEndpointAttempt && !opts.reserveEndpointAttempt(1)) throw deny("attempt_limit");
     value = await runPaidCall<T>({
       context: { workspaceId: req.workspaceId, sourceKey: "seo" },
       provider: "dataforseo",
@@ -168,6 +189,7 @@ export async function peekDataForSeo<T>(
   task: Record<string, unknown>,
   freshnessSeconds: number,
 ): Promise<T | null> {
+  assertLiveResearchEndpoint(endpoint);
   const config = usableDataForSeoConfig();
   if (!config) return null;
   return readDataForSeoCache<T>(dataForSeoCacheKey(config.env, endpoint, task), freshnessSeconds);

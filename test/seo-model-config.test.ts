@@ -25,7 +25,14 @@ describe("model-config", () => {
     vi.stubEnv("SEO_AGENT_MODEL", "");
     vi.stubEnv("SEO_CLASSIFIER_MODEL", "");
     vi.stubEnv("SEO_AGENT_FALLBACK_MODEL", "");
-    expect(fromConfig()).toEqual({ executor: "anthropic/claude-sonnet-5.5", classifier: "reflection/beam", fallback: null });
+    expect(fromConfig()).toEqual({
+      executor: "anthropic/claude-sonnet-5.5",
+      classifier: "reflection/beam",
+      summarizer: "anthropic/claude-sonnet-5.5",
+      fallback: null,
+    });
+    vi.stubEnv("SEO_SUMMARIZER_MODEL", "anthropic/claude-opus-test");
+    expect(fromConfig()?.summarizer).toBe("anthropic/claude-opus-test");
     vi.stubEnv("AI_GATEWAY_API_KEY", "");
     expect(fromConfig()).toBeNull();
     vi.unstubAllEnvs();
