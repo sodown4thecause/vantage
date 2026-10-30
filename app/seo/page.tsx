@@ -67,7 +67,7 @@ export default async function SeoPage({
   const selected = candidate && isResearchConversation(candidate) ? candidate : null;
 
   const context = profileContext(profile);
-  const starters = await withCacheLabels(starterChips(context), context);
+  const starters = await withCacheLabels(starterChips(context, new Date(), undefined, focus), context);
   const sandbox = dataForSeoConfig()?.env !== "live";
 
   return (

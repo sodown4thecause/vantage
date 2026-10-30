@@ -111,7 +111,16 @@ vi.mock("@/lib/db/client", async () => {
         const apply = () => {
           store.calls.push({ op: "update", table: nameOf(table), where, values, returning } satisfies Call);
           const matched = tableRows(table).filter((row) => matches(row, where));
-          for (const row of matched) Object.assign(row, values);
+          for (const row of matched) {
+            for (const [key, value] of Object.entries(values)) {
+              const node = value as { queryChunks?: unknown };
+              if (key === "parts" && node && typeof node === "object" && node.queryChunks) {
+                // jsonb_set(parts, '{execution}', $n::jsonb): merge the bound JSON under `execution`.
+                const execution = dialect.sqlToQuery(value as SQL).params.find((p) => typeof p === "string");
+                row.parts = { ...(row.parts as object), execution: JSON.parse(execution as string) };
+              } else row[key] = value;
+            }
+          }
           return matched.map(copy);
         };
         const builder = {
@@ -172,7 +181,10 @@ beforeEach(() => {
       workspaceId: WS_A,
       role: "assistant",
       content: "Here is the plan",
-      parts: { plan: [{ tool: "backlinks", input: { target: "example.com" }, credits: 2 }] },
+      parts: {
+        plan: [{ tool: "backlinks", input: { target: "example.com" }, credits: 2 }],
+        execution: { rootMessageId: MSG_A, attemptedEndpoints: 1 },
+      },
       status: "needs_approval",
       creditsUsed: 0,
       createdAt: NOW,
@@ -183,7 +195,10 @@ beforeEach(() => {
       workspaceId: WS_B,
       role: "assistant",
       content: "Other plan",
-      parts: { plan: [{ tool: "serp", input: {}, credits: 1 }] },
+      parts: {
+        plan: [{ tool: "serp", input: {}, credits: 1 }],
+        execution: { rootMessageId: MSG_B, attemptedEndpoints: 0 },
+      },
       status: "needs_approval",
       creditsUsed: 0,
       createdAt: NOW,
@@ -248,10 +263,13 @@ describe("getConversation", () => {
           id: MSG_A,
           role: "assistant",
           content: "Here is the plan",
-          parts: { plan: [{ tool: "backlinks", input: { target: "example.com" }, credits: 2 }] },
-          status: "needs_approval",
-          creditsUsed: 0,
-          createdAt: NOW.toISOString(),
+        parts: {
+          plan: [{ tool: "backlinks", input: { target: "example.com" }, credits: 2 }],
+          execution: { rootMessageId: MSG_A, attemptedEndpoints: 1 },
+        },
+        status: "needs_approval",
+        creditsUsed: 0,
+        createdAt: NOW.toISOString(),
         },
       ],
     });
@@ -333,10 +351,30 @@ describe("unclaimPlan", () => {
     expect(store.messages[0]!.status).toBe("needs_approval");
   });
 
+  it("saves the attempts the failed run spent in the same UPDATE, so the next claim sees them", async () => {
+    await claimPlan(WS_A, MSG_A);
+    store.calls.length = 0;
+
+    const spent = { rootMessageId: MSG_A, attemptedEndpoints: 4 };
+    expect(await unclaimPlan(WS_A, MSG_A, spent)).toBe(true);
+
+    const updates = callsOf("update", "seo_message");
+    expect(updates).toHaveLength(1);
+    expect(updates[0]!.values).toEqual({ status: "needs_approval", parts: expect.anything() });
+    expect(sqlOf(updates[0]!.values!.parts as SQL).params).toContain(JSON.stringify(spent));
+    expect(await claimPlan(WS_A, MSG_A)).toEqual({
+      plan: [{ tool: "backlinks", input: { target: "example.com" }, credits: 2 }],
+      execution: spent,
+    });
+  });
+
   it("lets the owner claim the plan again after it was returned", async () => {
     await claimPlan(WS_A, MSG_A);
     await unclaimPlan(WS_A, MSG_A);
-    expect(await claimPlan(WS_A, MSG_A)).toHaveLength(1);
+    expect(await claimPlan(WS_A, MSG_A)).toEqual({
+      plan: [{ tool: "backlinks", input: { target: "example.com" }, credits: 2 }],
+      execution: { rootMessageId: MSG_A, attemptedEndpoints: 1 },
+    });
   });
 
   it("does nothing to a plan that is not approved, or that belongs to another workspace", async () => {
@@ -353,8 +391,11 @@ describe("claimPlan", () => {
   it("approves the plan with one conditional UPDATE and returns the planned calls", async () => {
     const plan = await claimPlan(WS_A, MSG_A);
 
-    expect(plan).toEqual([{ tool: "backlinks", input: { target: "example.com" }, credits: 2 }]);
-    expect(callsOf("select")).toEqual([]);
+    expect(plan).toEqual({
+      plan: [{ tool: "backlinks", input: { target: "example.com" }, credits: 2 }],
+      execution: { rootMessageId: MSG_A, attemptedEndpoints: 1 },
+    });
+    expect(callsOf("select")).toHaveLength(1);
     const updates = callsOf("update", "seo_message");
     expect(updates).toHaveLength(1);
     expect(updates[0]!.values).toEqual({ status: "approved" });
@@ -371,12 +412,33 @@ describe("claimPlan", () => {
   });
 
   it("returns null when the plan was already claimed", async () => {
-    expect(await claimPlan(WS_A, MSG_A)).toHaveLength(1);
+    expect(await claimPlan(WS_A, MSG_A)).not.toBeNull();
     expect(await claimPlan(WS_A, MSG_A)).toBeNull();
   });
 
-  it("returns an empty plan when the message carries no planned calls", async () => {
-    store.messages[0] = { ...store.messages[0], parts: {} };
-    expect(await claimPlan(WS_A, MSG_A)).toEqual([]);
+  it("returns null when the message carries no planned calls", async () => {
+    store.messages[0] = { ...store.messages[0], parts: { execution: { rootMessageId: MSG_A, attemptedEndpoints: 1 } } };
+    expect(await claimPlan(WS_A, MSG_A)).toBeNull();
+  });
+
+  it("reports a legacy plan without execution metadata and keeps it in needs_approval", async () => {
+    store.messages[0] = {
+      ...store.messages[0],
+      status: "needs_approval",
+      parts: { plan: [{ tool: "backlinks", input: { target: "example.com" }, credits: 2 }] },
+    };
+    store.calls.length = 0;
+
+    expect(await claimPlan(WS_A, MSG_A)).toEqual({ legacy: true });
+
+    expect(callsOf("update")).toEqual([]);
+    expect(store.messages[0]!.status).toBe("needs_approval");
+    // Still reported as legacy on a second try, not as already_run.
+    expect(await claimPlan(WS_A, MSG_A)).toEqual({ legacy: true });
+  });
+
+  it("does not report a plan that was already claimed as legacy", async () => {
+    expect(await claimPlan(WS_A, MSG_A)).not.toBeNull();
+    expect(await claimPlan(WS_A, MSG_A)).toBeNull();
   });
 });

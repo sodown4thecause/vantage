@@ -27,6 +27,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${base}/launch`, changeFrequency: "weekly" },
     { url: `${base}/pricing`, changeFrequency: "monthly", priority: 0.8 },
     { url: `${base}/tour`, changeFrequency: "monthly", priority: 0.7 },
+    { url: `${base}/reddit-rss-shutdown`, changeFrequency: "monthly", priority: 0.7 },
   ];
   try {
     for (const row of await listDestinations()) {

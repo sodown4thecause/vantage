@@ -43,11 +43,25 @@ export type PlannedCall = {
   credits: number;
 };
 
+/** Server-owned attempt accounting for a question root and its approval continuations. */
+export type ExecutionState = {
+  /** Assistant message id that opened this question's attempt ledger. */
+  rootMessageId: string;
+  /** Uncached DataForSEO endpoint attempts already consumed on this root. */
+  attemptedEndpoints: number;
+};
+
 export type SeoMessageParts = {
   cards?: ResultCard[];
   followUps?: FollowUps;
   plan?: PlannedCall[];
   notices?: string[];
+  execution?: ExecutionState;
+};
+
+export type ClaimedPlan = {
+  plan: PlannedCall[];
+  execution: ExecutionState;
 };
 
 /** A stored message as the agent and the chat page read it. Dates are ISO strings. */
@@ -212,13 +226,43 @@ export async function appendTurn(
   return { id: conversationId };
 }
 
+function parseExecution(value: unknown): ExecutionState | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const rootMessageId = typeof record.rootMessageId === "string" ? record.rootMessageId.trim() : "";
+  const attempted = record.attemptedEndpoints;
+  if (!rootMessageId) return null;
+  if (typeof attempted !== "number" || !Number.isFinite(attempted) || attempted < 0 || !Number.isInteger(attempted)) return null;
+  return { rootMessageId, attemptedEndpoints: attempted };
+}
+
+/** Returned by `claimPlan` for a plan saved before execution metadata existed. It is left in `needs_approval`. */
+export type LegacyPlan = { legacy: true };
+
 /**
- * Atomically moves a plan from `needs_approval` to `approved`. Returns the planned calls when this
- * call made the transition, or null when the message is missing, belongs to another workspace, or
- * was already claimed. The single conditional UPDATE is what prevents a double charge.
+ * Atomically moves a plan from `needs_approval` to `approved`. Returns the planned calls and server-owned execution
+ * state when this call made the transition. Returns null when the message is missing, belongs to another workspace,
+ * was already claimed, or has no plan. Returns `{ legacy: true }` for a plan saved before execution metadata existed:
+ * it must not be re-granted a full attempt allowance, so it stays in `needs_approval` (nothing is claimed) and the
+ * caller tells the owner to ask again. The conditional UPDATE is what prevents a double charge.
  */
-export async function claimPlan(workspaceId: string, messageId: string): Promise<PlannedCall[] | null> {
-  const [row] = await getDb()
+export async function claimPlan(workspaceId: string, messageId: string): Promise<ClaimedPlan | LegacyPlan | null> {
+  const db = getDb();
+  const [existing] = await db
+    .select({ parts: seoMessage.parts })
+    .from(seoMessage)
+    .where(
+      and(
+        eq(seoMessage.id, messageId),
+        eq(seoMessage.workspaceId, workspaceId),
+        eq(seoMessage.status, "needs_approval"),
+      ),
+    )
+    .limit(1);
+  if (existing && (existing.parts.plan ?? []).length > 0 && !parseExecution(existing.parts.execution)) {
+    return { legacy: true };
+  }
+  const [row] = await db
     .update(seoMessage)
     .set({ status: "approved" })
     .where(
@@ -230,17 +274,29 @@ export async function claimPlan(workspaceId: string, messageId: string): Promise
     )
     .returning({ parts: seoMessage.parts });
   if (!row) return null;
-  return row.parts.plan ?? [];
+  const plan = row.parts.plan ?? [];
+  const execution = parseExecution(row.parts.execution);
+  // The row is approved here without runnable work (no plan), so a double-click still sees already_run.
+  if (plan.length === 0 || !execution) return null;
+  return { plan, execution };
 }
 
 /**
  * Returns an approved plan to `needs_approval` when its run produced no answer, so the owner can run it again. One
  * conditional UPDATE: only a message that is still `approved` in this workspace changes. Returns whether it did.
+ *
+ * `execution` is the attempt ledger the failed run ended with. It is written in the same UPDATE, so a retry reads the
+ * attempts this run already spent instead of the count the plan was approved with.
  */
-export async function unclaimPlan(workspaceId: string, messageId: string): Promise<boolean> {
+export async function unclaimPlan(workspaceId: string, messageId: string, execution?: ExecutionState): Promise<boolean> {
   const rows = await getDb()
     .update(seoMessage)
-    .set({ status: "needs_approval" })
+    .set({
+      status: "needs_approval",
+      ...(execution
+        ? { parts: sql`jsonb_set(${seoMessage.parts}, '{execution}', ${JSON.stringify(execution)}::jsonb, true)` }
+        : {}),
+    })
     .where(
       and(
         eq(seoMessage.id, messageId),

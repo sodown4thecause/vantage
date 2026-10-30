@@ -48,7 +48,7 @@ const request = (body: object = {}) => new Request("https://contextfor.dev/api/g
 
 beforeEach(() => {
   vi.resetAllMocks();
-  vi.stubEnv("TAKO_SEARCH_USD", "");
+  vi.stubEnv("TAKO_SEARCH_USD", "0");
   mocks.authorize.mockResolvedValue({ ok: true });
   mocks.consume.mockResolvedValue({ allowed: true });
   mocks.profile.mockResolvedValue(null);

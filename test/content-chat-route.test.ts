@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   models: vi.fn(),
   createThread: vi.fn(),
   getThread: vi.fn(),
+  getBrandProfile: vi.fn(),
   appendMessage: vi.fn(),
   createAgent: vi.fn(),
   createResponse: vi.fn(),
@@ -14,6 +15,7 @@ vi.mock("@/lib/content-agent/models", () => ({ contentAgentModels: mocks.models 
 vi.mock("@/lib/content-agent/repository", () => ({
   createContentThread: mocks.createThread,
   getContentThreadContext: mocks.getThread,
+  getContentBrandVoiceProfile: mocks.getBrandProfile,
   appendContentMessage: mocks.appendMessage,
 }));
 vi.mock("@/lib/content-agent/agent", () => ({ createContentAgent: mocks.createAgent }));
@@ -34,6 +36,7 @@ beforeEach(() => {
   mocks.models.mockReset().mockReturnValue({ model: "anthropic/claude-sonnet-5.5" });
   mocks.createThread.mockReset().mockResolvedValue({ id: threadId, workspaceId, title: "Write a post" });
   mocks.getThread.mockReset().mockResolvedValue({ thread: { id: threadId }, messages: [] });
+  mocks.getBrandProfile.mockReset().mockResolvedValue(null);
   mocks.appendMessage.mockReset().mockImplementation(async (args) => ({
     id: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a13",
     ...args,
@@ -63,6 +66,18 @@ describe("POST /api/content/chat", () => {
   });
 
   it("stores a workspace-scoped user turn and streams it through the Content agent", async () => {
+    const brandVoiceProfile = {
+      workspaceId,
+      audience: "Founder-led teams",
+      purpose: "Help readers make practical decisions.",
+      voice: "Warm and direct.",
+      structure: "Short sections.",
+      avoid: ["hype"],
+      sampleText: null,
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+      updatedAt: new Date("2026-01-01T00:00:00Z"),
+    };
+    mocks.getBrandProfile.mockResolvedValue(brandVoiceProfile);
     const response = await POST(request({ workspaceId, message: "  Write a useful post  " }));
     expect(response.status).toBe(200);
     expect(mocks.createThread).toHaveBeenCalledWith(workspaceId, "Write a useful post");
@@ -72,12 +87,36 @@ describe("POST /api/content/chat", () => {
       role: "user",
       content: "Write a useful post",
     }));
-    expect(mocks.createAgent).toHaveBeenCalledWith({ workspaceId, threadId, models: { model: "anthropic/claude-sonnet-5.5" } });
+    expect(mocks.getBrandProfile).toHaveBeenCalledWith(workspaceId);
+    expect(mocks.createAgent).toHaveBeenCalledWith({ workspaceId, threadId, models: { model: "anthropic/claude-sonnet-5.5" }, brandVoiceProfile });
     expect(mocks.createResponse).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId,
       threadId,
       abortSignal: expect.any(AbortSignal),
     }));
+  });
+
+  it("preserves exact text and passes structured draft edits separately from the prompt", async () => {
+    const message = "Save these edits.\n\nExact body:\n  Edited copy.  ";
+    const draftUpdate = { draftId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a13", title: "Exact title", body: "  Edited copy.  " };
+    const response = await POST(request({ workspaceId, message, preserveText: true, draftUpdate }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.createThread).toHaveBeenCalledWith(workspaceId, message);
+    expect(mocks.appendMessage).toHaveBeenCalledWith(expect.objectContaining({ workspaceId, threadId, role: "user", content: message }));
+    expect(mocks.createAgent).toHaveBeenCalledWith(expect.objectContaining({ workspaceId, threadId, draftUpdate }));
+  });
+
+  it("rejects structured draft edits when the request does not preserve exact text", async () => {
+    const response = await POST(request({
+      workspaceId,
+      message: "Save these edits.",
+      draftUpdate: { draftId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a13", title: "Exact title", body: "Exact body." },
+    }));
+
+    expect(response.status).toBe(400);
+    expect(mocks.createAgent).not.toHaveBeenCalled();
+    expect(mocks.appendMessage).not.toHaveBeenCalled();
   });
 
   it("reuses the saved user turn when retrying and excludes the failed assistant response", async () => {
@@ -98,9 +137,26 @@ describe("POST /api/content/chat", () => {
     }));
   });
 
+  it("returns not found when retrying a thread that does not exist", async () => {
+    mocks.getThread.mockResolvedValue(null);
+    const response = await POST(request({ workspaceId, threadId, message: "Write a useful post", retry: true }));
+    expect(response.status).toBe(404);
+    expect(mocks.createThread).not.toHaveBeenCalled();
+    expect(mocks.appendMessage).not.toHaveBeenCalled();
+    expect(mocks.createResponse).not.toHaveBeenCalled();
+  });
+
   it("rejects retry requests without a thread id", async () => {
     const response = await POST(request({ workspaceId, message: "Write a useful post", retry: true }));
     expect(response.status).toBe(400);
+  });
+
+  it("returns a generic service error when the brand voice profile lookup fails", async () => {
+    mocks.getBrandProfile.mockRejectedValueOnce(new Error("database unavailable"));
+    const response = await POST(request({ workspaceId, message: "Write a useful post" }));
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({ error: "agent_unavailable" });
+    expect(mocks.createThread).not.toHaveBeenCalled();
   });
 
   it("returns the created thread id if streaming fails so a retry can resume it", async () => {

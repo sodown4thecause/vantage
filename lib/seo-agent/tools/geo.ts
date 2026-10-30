@@ -13,6 +13,7 @@ import {
   resolveLlmModel,
 } from "@/lib/dataforseo/ai-optimization";
 import { geoAlwaysAsk } from "@/lib/seo-agent/budget";
+import { filterToolEvidence } from "@/lib/dataforseo/field-filter";
 import {
   type ToolContext,
   addCard,
@@ -77,16 +78,25 @@ async function askEngines(ctx: ToolContext, rawPrompt: string, requested: LlmEng
     if (hit) {
       const short = shortAnswer(hit);
       answers.set(item.engine, { answer: short, source: "cached" });
-      addCard(ctx, { tool: "llm_response", title: `AI answer — ${ENGINE_LABELS[item.engine]}`, cached: true, data: short });
+      addCard(ctx, { tool: "llm_response", title: `AI answer — ${ENGINE_LABELS[item.engine]}`, cached: true, data: short, input });
     } else {
       misses.push(item);
     }
   });
-  const inOrder = () => available.flatMap(({ engine }) => {
-    const found = answers.get(engine);
-    return found ? [{ ...found.answer, source: found.source }] : [];
-  });
-  if (misses.length === 0) return { answers: inOrder() };
+  const modelAnswers = (): { answers: unknown[] } => {
+    const ordered = available.flatMap(({ engine }) => {
+      const found = answers.get(engine);
+      return found ? [{ ...found.answer, source: found.source }] : [];
+    });
+    const filtered = filterToolEvidence("llm_response", { answers: ordered });
+    if (filtered !== null && typeof filtered === "object" && !Array.isArray(filtered)) {
+      const answersField = (filtered as { answers?: unknown }).answers;
+      if (Array.isArray(answersField)) return filtered as { answers: unknown[] };
+    }
+    // Fail closed: never return unprojected provider text to the model.
+    return { answers: [] };
+  };
+  if (misses.length === 0) return modelAnswers();
 
   const credits = misses.length * LLM_CREDITS;
   if (ctx.budget.tryReserve({ tool: "llm_response", input, credits }, geoAlwaysAsk()) === "ask") {
@@ -111,10 +121,12 @@ async function askEngines(ctx: ToolContext, rawPrompt: string, requested: LlmEng
       title: `AI answer — ${ENGINE_LABELS[result.item.engine]}`,
       cached: result.value.cached,
       data: short,
+      input,
     });
   }
   ctx.budget.refund(refund);
-  return failed === null ? { answers: inOrder() } : { answers: inOrder(), error: failed };
+  const payload = modelAnswers();
+  return failed === null ? payload : { ...payload, error: failed };
 }
 
 export function geoTools(ctx: ToolContext) {

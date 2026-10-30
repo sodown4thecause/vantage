@@ -67,6 +67,7 @@ describe("seoModels", () => {
       executor: "anthropic/claude-sonnet-5.5",
       classifier: "reflection/beam",
       fallback: null,
+      summarizer: "anthropic/claude-sonnet-5.5",
     });
   });
 
@@ -76,7 +77,12 @@ describe("seoModels", () => {
       SEO_AGENT_MODEL: " anthropic/claude-x ",
       SEO_CLASSIFIER_MODEL: "reflection/other",
       SEO_AGENT_FALLBACK_MODEL: "anthropic/claude-y",
-    })).toEqual({ executor: "anthropic/claude-x", classifier: "reflection/other", fallback: "anthropic/claude-y" });
+    })).toEqual({
+      executor: "anthropic/claude-x",
+      classifier: "reflection/other",
+      fallback: "anthropic/claude-y",
+      summarizer: "anthropic/claude-x",
+    });
   });
 });
 

@@ -152,13 +152,19 @@ const worker = {
 
 		// Rollout switch: with the Workflow binding present, the tick path is not used.
 		if (env.SCAN) {
-			// Best-effort side effects still run when starting scans fails.
+			let scanError;
 			try {
 				await startScanInstances(controller, env);
-			} finally {
-				await triggerCostRollup(env);
-				await triggerDigests(env);
+			} catch (error) {
+				scanError = error;
 			}
+			// Best-effort side effects always run, even when scan starts fail.
+			// These self-fetches are awaited directly in the handler body so the
+			// Workers runtime tracks them as part of the invocation rather than
+			// cancelling them as orphaned subrequests from a finally block.
+			await triggerCostRollup(env);
+			await triggerDigests(env);
+			if (scanError) throw scanError;
 			return;
 		}
 

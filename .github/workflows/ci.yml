@@ -76,6 +76,8 @@ jobs:
           fi
       - name: Build Cloudflare Worker bundle
         run: pnpm cf:build
+      - name: Test blog routes in Cloudflare Worker runtime
+        run: pnpm test:blog-worker
       - name: Smoke test built Worker (wrangler dev)
         run: pnpm cf:smoke
       - name: Validate complete Worker upload (dry run)

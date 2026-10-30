@@ -4,7 +4,8 @@ import { z } from "zod";
 
 import { PageHead, Shell } from "@/components/shell";
 import { authorizeWorkspace, getCurrentWorkspace } from "@/lib/auth/workspace";
-import { getContentThread, listContentDrafts, listContentThreads } from "@/lib/content-agent/repository";
+import { getContentBrandVoiceProfile, getContentThread, listContentDrafts, listContentDraftsForThread, listContentThreads } from "@/lib/content-agent/repository";
+import { getContentSuggestedPrompts } from "@/lib/content-agent/suggested-prompts";
 
 import { ContentWorkspaceClient } from "./content-workspace-client";
 
@@ -20,9 +21,12 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
 
   const requestedThreadId = z.uuid().safeParse(params.threadId?.trim());
   const selected = requestedThreadId.success ? await getContentThread(workspaceId, requestedThreadId.data) : null;
-  const [threads, drafts] = await Promise.all([
+  const [threads, drafts, threadDrafts, brandVoiceProfile, suggestedPrompts] = await Promise.all([
     listContentThreads(workspaceId),
     listContentDrafts(workspaceId, 6),
+    selected ? listContentDraftsForThread(workspaceId, selected.thread.id) : Promise.resolve([]),
+    getContentBrandVoiceProfile(workspaceId),
+    getContentSuggestedPrompts(workspaceId),
   ]);
 
   return <Shell workspaceId={workspaceId} active="content" wide>
@@ -37,6 +41,9 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
       initialMessages={selected?.messages ?? []}
       threads={threads}
       drafts={drafts}
+      threadDrafts={threadDrafts}
+      brandVoiceProfile={brandVoiceProfile}
+      suggestedPrompts={suggestedPrompts}
     />
   </Shell>;
 }

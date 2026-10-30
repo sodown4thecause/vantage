@@ -50,6 +50,12 @@
 .assistantLabel .mark { width: 24px; height: 24px; border-radius: 7px; font-size: 12px; }
 .assistantMessage p { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-newsreader), Georgia, serif; font-size: 17px; line-height: 1.75; }
 
+.suggestions { display: grid; gap: 8px; margin: 0 clamp(16px, 4vw, 48px) 9px; }
+.suggestionLabel { color: var(--ridge); font-size: 10px; letter-spacing: .03em; }
+.suggestionList { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.suggestion { min-width: 0; padding: 9px 10px; border: 1px solid var(--contour); border-radius: 8px; background: var(--sheet); color: var(--ridge); font-size: 10px; line-height: 1.5; text-align: left; }
+.suggestion:hover, .suggestion:focus-visible { border-color: var(--signal); color: var(--ink); outline: none; }
+
 .composer { margin: auto clamp(16px, 4vw, 48px) 20px; padding: 13px 14px 12px; border: 1px solid var(--contour); border-radius: 10px; background: var(--sheet); }
 .composer:focus-within { border-color: var(--signal); }
 .composer textarea { display: block; width: 100%; min-height: 62px; max-height: 180px; resize: vertical; border: 0; background: transparent; outline: none; color: var(--ink); font: inherit; font-size: 13px; }
@@ -81,6 +87,8 @@
   .intro { padding-top: 12px; }
   .intro h2 { font-size: 32px; }
   .userMessage { max-width: 90%; }
+  .suggestions { margin-right: 12px; margin-left: 12px; }
+  .suggestionList { grid-template-columns: 1fr; }
   .composer { margin: auto 12px 12px; }
   .composerFooter { align-items: flex-end; }
   .error, .liveStatus { margin-right: 16px; margin-left: 16px; }

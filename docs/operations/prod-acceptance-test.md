@@ -71,7 +71,7 @@ Table legend:
 | `VANTAGE_PAID_PROVIDERS_ENABLED` | `lib/providers/paid-call.ts` | Unconfirmed | Unconfirmed | Every paid provider call is refused unless exactly `"true"` — keys alone are not enough. |
 | `VANTAGE_PAID_DAILY_BUDGET_USD` | `lib/providers/paid-call.ts` | Unconfirmed | Unconfirmed | No global daily USD cap: paid calls are refused unless the provider has its own positive cap. |
 | `VANTAGE_PAID_DAILY_BUDGET_<PROVIDER>_USD` | Per-provider overrides (Firecrawl, TinyFish, Scavio, Gateway, AI Gateway, Inco, DataForSEO, Linkup, Tako) | Unconfirmed | Unconfirmed | Each provider falls back to the global cap; without either, that provider's paid calls are refused. |
-| `TAKO_SEARCH_USD` | `lib/research/tako.ts` | Unconfirmed | Unconfirmed | Defaults to `0` (Tako treated as free); ledger pricing only. |
+| `TAKO_SEARCH_USD` | `lib/research/tako.ts` | Unconfirmed | Unconfirmed | Defaults to `0.007` (fast search, $7 per 1,000 since 28 Oct 2026). Every call reserves through `runPaidCall` under the Gateway budget. Do not set `0` in staging or production: that skips the cap. |
 | `REDDIT_HYDRATE_DAILY_MAX` | `lib/reddit/client.ts` | Unconfirmed | Unconfirmed | Defaults to 5 hydrations per workspace per UTC day. |
 | `REDDIT_LINKUP_LANE` / `REDDIT_LINKUP_DAILY_MAX` | `lib/reddit/client.ts` | Unconfirmed | Unconfirmed | Second Reddit lane stays off (default) / 20 searches per workspace per day. |
 | `SCAVIO_GOOGLE_COST_USD` | `lib/collectors/linkedin.ts` | Unconfirmed | Unconfirmed | Indexed LinkedIn discovery refuses to run without a positive unit cost. |
