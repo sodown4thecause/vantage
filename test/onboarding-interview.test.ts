@@ -28,6 +28,7 @@ const state = vi.hoisted(() => ({
   failFirstTurn: false,
   profiles: {} as Record<string, { id: string }>,
   derived: null as Record<string, unknown> | null,
+  skipped: null as { topics: string[]; reasons: string[]; message: string } | null,
 }));
 
 vi.mock("@/lib/auth/workspace", () => ({ authorizeWorkspace: vi.fn(async () => state.auth) }));
@@ -41,7 +42,7 @@ vi.mock("@/lib/profile/repository", () => ({
     if (state.profiles[key]) return state.profiles[key];
     if (state.saveError) throw state.saveError;
     state.saved.push(args);
-    return state.profiles[key] = { id: "profile-1" };
+    return state.profiles[key] = { id: "profile-1", ...(state.skipped ? { skippedSources: state.skipped } : {}) };
   }),
 }));
 vi.mock("@/lib/seo-agent/conversations", () => {
@@ -109,6 +110,7 @@ beforeEach(() => {
   state.failFirstTurn = false;
   state.profiles = {};
   state.derived = null;
+  state.skipped = null;
   vi.mocked(saveMonitoringProfile).mockClear();
 });
 
@@ -372,6 +374,15 @@ describe("interview route", () => {
     expect(state.saved).toHaveLength(1);
     expect(saveMonitoringProfile).toHaveBeenLastCalledWith(expect.objectContaining({ workspaceId: WS, profileId: conversationId }));
     expect((await turn("again", conversationId)).status).toBe(409);
+  });
+
+  it("tells the owner in the final message which topics were skipped and why", async () => {
+    state.skipped = { topics: ["ai", "tools"], reasons: ["Every query is generic."], message: 'We didn\u2019t set up default sources from these topics: "ai", "tools". Every query is generic.' };
+    let conversationId: string | undefined;
+    let last = { body: {} as Record<string, unknown>, status: 0 };
+    for (const answer of ANSWERS) { last = await turn(answer, conversationId); conversationId = last.body.conversationId as string; }
+    expect(last.body.complete).toBe(true);
+    expect(String(last.body.message)).toContain('from these topics: "ai", "tools"');
   });
 
   it("keeps every answer when the save fails, so the next message retries", async () => {
