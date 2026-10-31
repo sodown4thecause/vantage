@@ -1,4 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 const state = vi.hoisted(() => ({ auth: { ok: false, status: 401 } as { ok: boolean; status?: number }, retry: vi.fn(), db: vi.fn() }));
 vi.mock("@/lib/auth/workspace", () => ({ authorizeWorkspace: vi.fn(async () => state.auth) }));
@@ -44,4 +45,34 @@ it.each([{ read: 49, sourceIds: ["one", "two"] }, { read: 50, sourceIds: ["one"]
   const response = await GET(new Request(`https://test/api/workspace/first-scan?workspaceId=${WS}`));
   expect(response.status).toBe(200);
   expect((await response.json()).reason).toContain(run.read < 50 ? "Few sources are configured" : "topics may be too narrow");
+});
+
+it("exposes current-run safe health without borrowing older or foreign source receipts", async () => {
+  state.auth = { ok: true };
+  const startedAt = new Date("2026-10-26T00:00:00Z");
+  const finishedAt = new Date("2026-10-26T00:05:00Z");
+  vi.mocked(firstScan).mockResolvedValue({ status: "partial", read: 5, sourceIds: ["reddit-1", "reddit-2"], startedAt, finishedAt } as Awaited<ReturnType<typeof firstScan>>);
+  const scopes: unknown[] = [];
+  const health = { state: "partial", discovered: 1, verified: 0,
+    issues: [{ stage: "hydration", kind: "upstream_failed", provider: "tinyfish_search_fetch", retryable: true, message: "private provider detail" }] };
+  state.db.mockReturnValue({
+    select: () => ({ from: () => ({ where: (scope: unknown) => {
+      scopes.push(scope);
+      const rows = scopes.length === 1 ? [{ timeZone: "UTC", stale: false, now: finishedAt }]
+        : scopes.length === 2 ? [{ last: finishedAt }]
+          : [
+            { id: "reddit-1", config: { lastRun: { coverage: "degraded", ranAt: "2026-10-26T00:01:00Z", scanHealth: health } } },
+            { id: "reddit-2", config: { lastRun: { coverage: "healthy", ranAt: "2026-10-25T00:01:00Z", scanHealth: { ...health, discovered: 99, verified: 99 } } } },
+          ];
+      return Object.assign(Promise.resolve(rows), { limit: async () => rows });
+    } }) }),
+  });
+  const response = await GET(new Request(`https://test/api/workspace/first-scan?workspaceId=${WS}`));
+  const body = await response.json();
+  expect(body.scanHealth).toMatchObject({ state: "partial", discovered: 1, verified: 0 });
+  expect(body.scanHealth.issues).toContainEqual({ stage: "hydration", kind: "upstream_failed", provider: "tinyfish_search_fetch", retryable: true });
+  expect(JSON.stringify(body)).not.toContain("private provider detail");
+  const query = new PgDialect().sqlToQuery(scopes[2] as Parameters<PgDialect["sqlToQuery"]>[0]);
+  expect(query.sql).toContain('"source"."workspace_id" =');
+  expect(query.params).toEqual(expect.arrayContaining([WS, "reddit-1", "reddit-2"]));
 });

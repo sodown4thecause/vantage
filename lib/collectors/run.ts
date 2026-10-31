@@ -15,6 +15,7 @@ import type {
 import { getDb } from "@/lib/db/client";
 import { document, source } from "@/lib/db/schema";
 import { getSourceSwitch } from "@/lib/sources/switch";
+import { scanIssuesFromError, summariseScanHealth, type ScanHealth, type ScanIssue } from "@/lib/scan/health";
 
 export type RunCollectorInput = {
   collector: Collector;
@@ -31,6 +32,7 @@ export type RunCollectorOutput = {
   nextState?: CollectorResult["nextState"];
   receipt?: SourceRunReceipt;
   error?: string;
+  scanHealth?: ScanHealth;
   /** Set when a global source switch stopped the run; nothing was fetched. */
   switchedOff?: { state: string; reason: string };
 };
@@ -66,7 +68,9 @@ export async function runCollector(
   }
 
   if (row.health === "paused") {
-    return { sourceId: row.id, collector: input.collector.name, inserted: 0, skipped: 0 };
+    return { sourceId: row.id, collector: input.collector.name, inserted: 0, skipped: 0,
+      scanHealth: summariseScanHealth({ discovered: 0, verified: 0, completed: false, cancelled: false,
+        issues: [{ stage: "dispatch", kind: "provider_disabled", provider: input.collector.name, retryable: false }] }) };
   }
 
   const switchDecision = await getSourceSwitch(row.type);
@@ -77,11 +81,15 @@ export async function runCollector(
       inserted: 0,
       skipped: 0,
       switchedOff: { state: switchDecision.state, reason: switchDecision.reason },
+      scanHealth: summariseScanHealth({ discovered: 0, verified: 0, completed: false, cancelled: false,
+        issues: [{ stage: "dispatch", kind: "provider_disabled", provider: input.collector.name, retryable: false }] }),
     };
   }
 
   let inserted = 0;
   let skipped = 0;
+  let scanHealth: ScanHealth | undefined;
+  let stage: ScanIssue["stage"] = "dispatch";
   try {
     input.signal?.throwIfAborted();
     if (process.env.NODE_ENV === "production" && ["producthunt", "youtube"].includes(row.type)) {
@@ -94,6 +102,7 @@ export async function runCollector(
         !(process.env.VANTAGE_PAID_PROVIDERS_ENABLED === "true" && ["reddit", "x", "web_search", "linkedin"].includes(row.type))) {
       throw new Error("Budget limited: this provider requires an explicit paid-provider opt-in.");
     }
+    stage = "discovery";
     const result: CollectorResult = await input.collector.run({
       workspaceId: input.workspaceId,
       sourceId: input.sourceId,
@@ -107,6 +116,11 @@ export async function runCollector(
         result.documents.some((doc) => documentsAreFixtureOnly([doc]))) {
       throw new Error("Access pending: synthetic provider output rejected; configure live access.");
     }
+    scanHealth = result.scanHealth ?? summariseScanHealth({ discovered: result.documents.length,
+      verified: result.documents.filter(doc => doc.metadata?.partial !== true && doc.metadata?.discoveryOnly !== true && doc.metadata?.contentKind !== "preview" && doc.metadata?.contentKind !== "page_excerpt" &&
+        doc.metadata?.mocked !== true && doc.metadata?.provider !== "fixture" && Boolean(doc.contentMd?.trim())).length,
+      completed: !result.partial && !result.documents.some(doc => doc.metadata?.partial === true), cancelled: false, issues: [] });
+    stage = "persist";
     if (result.documents.length) {
       input.signal?.throwIfAborted();
       const rows = await db.insert(document).values(result.documents.map((doc) => ({
@@ -118,7 +132,7 @@ export async function runCollector(
 
     const classified = classifyCollectorCoverage({
       documents: result.documents,
-      partial: result.partial,
+      partial: result.partial || scanHealth.state !== "complete",
       coverageReason: result.coverageReason,
       inserted,
       skipped,
@@ -126,6 +140,7 @@ export async function runCollector(
     const receipt: SourceRunReceipt = {
       ...classified,
       ranAt: new Date().toISOString(),
+      scanHealth,
     };
 
     const next = result.nextState ?? {};
@@ -150,8 +165,12 @@ export async function runCollector(
       skipped,
       nextState: result.nextState,
       receipt,
+      scanHealth,
     };
   } catch (err) {
+    const issues = [...scanHealth?.issues ?? [], ...scanIssuesFromError(err, stage, input.collector.name)];
+    scanHealth = summariseScanHealth({ discovered: scanHealth?.discovered ?? 0, verified: scanHealth?.verified ?? 0,
+      completed: false, cancelled: input.signal?.aborted === true || issues.some(issue => issue.kind === "aborted"), issues });
     const message = err instanceof Error ? err.message : String(err);
     console.error("[collector] run failed", {
       collector: input.collector.name,
@@ -168,6 +187,7 @@ export async function runCollector(
     const receipt: SourceRunReceipt = {
       ...classified,
       ranAt: new Date().toISOString(),
+      scanHealth,
     };
     try {
       const now = new Date();
@@ -193,6 +213,7 @@ export async function runCollector(
       inserted,
       skipped,
       receipt,
+      scanHealth,
       error: message,
     };
   }

@@ -138,7 +138,7 @@ function call(handler: (req: Request) => Promise<Response>, body?: unknown, head
   return handler(new Request("https://example.com/api/internal/scan/step", init));
 }
 
-const doc = (hash: string) => ({ contentHash: hash, title: `doc ${hash}`, url: `https://example.com/${hash}`, body: "text", platform: "hn" });
+const doc = (hash: string) => ({ contentHash: hash, title: `doc ${hash}`, urlCanonical: `https://example.com/${hash}`, contentMd: "text", platform: "hn" });
 
 beforeEach(() => {
   vi.stubEnv("CRON_SECRET", "secret");
@@ -265,13 +265,13 @@ describe("collect", () => {
   it("returns inserted and skipped counts", async () => {
     const response = await call(collectRoute, { workspaceId: WS, sourceId: SRC });
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ inserted: 2, skipped: 0 });
+    expect(await response.json()).toMatchObject({ inserted: 2, skipped: 0, scanHealth: { state: "complete", discovered: 2, verified: 2, issues: [] } });
   });
 
   it("inserts no duplicate documents when the same source is collected twice", async () => {
     await call(collectRoute, { workspaceId: WS, sourceId: SRC });
     const second = await call(collectRoute, { workspaceId: WS, sourceId: SRC });
-    expect(await second.json()).toEqual({ inserted: 0, skipped: 2 });
+    expect(await second.json()).toMatchObject({ inserted: 0, skipped: 2, scanHealth: { state: "complete", discovered: 2, verified: 2, issues: [] } });
   });
 
   it("returns 502 without leaking the collector error when the collector fails", async () => {
