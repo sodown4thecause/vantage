@@ -1,4 +1,5 @@
 import type { NewDocument } from "@/lib/db/schema";
+import type { ScanHealth } from "@/lib/scan/health";
 
 /**
  * Shared contract for free-lane collectors (HN, RSS, Substack, …).
@@ -20,6 +21,7 @@ export type CollectorContext = {
 
 export type CollectorResult = {
   documents: NewDocument[];
+  scanHealth?: ScanHealth;
   /** Incomplete upstream coverage, including a deferred scan with no matches. */
   partial?: boolean;
   coverageReason?: string;

@@ -153,12 +153,99 @@ describe("provider order", () => {
       .toEqual([...[firecrawl, search, agentRun, redditSearch].map(fn => fn.mock.invocationCallOrder[0])].sort((a, b) => a - b));
   });
 
+  it("keeps a TinyFish Agent thread that follows the requested schema as a full thread", async () => {
+    vi.stubEnv("TINYFISH_API_KEY", "test-key");
+    search.mockRejectedValue(new Error("down"));
+    agentRun.mockResolvedValue({ status: "COMPLETED", num_of_steps: 1,
+      result: { posts: [{ id: "a1", title: "Agent hit", body: "Full text", url: thread("a1") }] } });
+    const result = await fetchRedditPostsWithMeta({ ctx: context });
+    expect(agentRun.mock.calls[0]![0].output_schema.properties.posts.items.required).toContain("id");
+    expect(result).toMatchObject({ meta: { provider: "tinyfish_agent" }, posts: [{ id: "a1", contentKind: "thread" }] });
+  });
+
   it("stops on cancellation instead of falling back", async () => {
     vi.stubEnv("FIRECRAWL_API_KEY", "fc-test"); vi.stubEnv("TINYFISH_API_KEY", "test-key");
     const abort = new AbortController();
     firecrawl.mockImplementation(async () => { abort.abort(); throw abort.signal.reason; });
     await expect(fetchRedditPostsWithMeta({ ctx: context, signal: abort.signal })).rejects.toMatchObject({ name: "AbortError" });
     expect(search).not.toHaveBeenCalled();
+  });
+
+  it("retains discovered TinyFish previews when fetching the Reddit pages fails", async () => {
+    vi.stubEnv("TINYFISH_API_KEY", "test-key");
+    search.mockResolvedValue([{ url: thread("t1"), title: "Synthetic question", snippet: "Literal synthetic excerpt", position: 1 }]);
+    fetchPages.mockRejectedValue(new Error("TinyFish fetch failed (503)"));
+    const result = await fetchRedditPostsWithMeta({ ctx: context });
+    expect(result).toMatchObject({ meta: { provider: "tinyfish_search_fetch" },
+      posts: [{ id: "t1", body: "Literal synthetic excerpt", contentKind: "preview" }] });
+    expect(result.meta.issues).toContainEqual({ stage: "hydration", kind: "upstream_failed", provider: "tinyfish_search_fetch", retryable: true });
+    const collected = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: { query: "synthetic" } });
+    expect(collected.scanHealth).toEqual({ state: "partial", discovered: 1, verified: 0, issues: result.meta.issues });
+    expect(agentRun).not.toHaveBeenCalled();
+  });
+
+  it("reports safe malformed-envelope metadata instead of a completed empty search", async () => {
+    vi.stubEnv("SCAVIO_API_KEY", "test-key");
+    redditSearch.mockResolvedValue({ data: { unexpected: "private provider text" } });
+    await expect(fetchRedditPostsWithMeta({ ctx: context })).rejects.toMatchObject({
+      issues: [{ stage: "discovery", kind: "invalid_payload", provider: "scavio", retryable: false }],
+    });
+  });
+
+  it.each([
+    new DOMException("Cancelled", "AbortError"),
+    new PaidCallDeniedError("budget_exhausted", "Budget denied"),
+  ])("propagates a TinyFish page-fetch %s instead of falling back", async (failure) => {
+    vi.stubEnv("TINYFISH_API_KEY", "test-key");
+    search.mockResolvedValue([{ url: thread("t1"), title: "Synthetic question", snippet: "Literal synthetic excerpt", position: 1 }]);
+    fetchPages.mockRejectedValue(failure);
+    await expect(fetchRedditPostsWithMeta({ ctx: context })).rejects.toBe(failure);
+    expect(failure).toMatchObject({ issues: [{ stage: "hydration", kind: failure.name === "AbortError" ? "aborted" : "budget_exhausted",
+      provider: "tinyfish_search_fetch", retryable: false }] });
+    expect(agentRun).not.toHaveBeenCalled();
+  });
+});
+
+describe("Scavio search context", () => {
+  it.each([
+    { name: "a URL-identified search snippet", fields: { snippet: "Literal synthetic excerpt" }, kind: "preview", verified: 0, state: "partial" },
+    { name: "an ID-identified search snippet", fields: { id: "t3_s1", snippet: "Literal synthetic excerpt" }, kind: "preview", verified: 0, state: "partial" },
+    { name: "body context without supplied identity", fields: { body: "Literal synthetic full body" }, kind: "preview", verified: 0, state: "partial" },
+    { name: "a validated full thread", fields: { id: "t3_s1", body: "Literal synthetic full body" }, kind: "thread", verified: 1, state: "complete" },
+  ])("counts $name truthfully when hydration is disabled", async ({ fields, kind, verified, state }) => {
+    vi.stubEnv("SCAVIO_API_KEY", "test-key"); vi.stubEnv("REDDIT_HYDRATE_DAILY_MAX", "0");
+    redditSearch.mockResolvedValue({ data: { results: [{ title: "Synthetic question", url: thread("s1"), createdAt: "2026-10-25T00:00:00Z", ...fields }] } });
+    const collected = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: { query: "synthetic" } });
+    expect(collected.documents).toHaveLength(1);
+    expect(collected.documents[0].contentMd).toContain("Literal synthetic");
+    expect(collected.documents[0].metadata).toMatchObject({ contentKind: kind, discoveryOnly: kind === "preview" });
+    expect(collected.scanHealth).toMatchObject({ state, discovered: 1, verified });
+  });
+
+  it("upgrades a search snippet only after metered hydration supplies matching identity and full text", async () => {
+    vi.stubEnv("SCAVIO_API_KEY", "test-key");
+    redditSearch.mockResolvedValue({ data: { results: [{ title: "Synthetic question", url: thread("s1"), snippet: "Short excerpt", createdAt: "2026-10-25T00:00:00Z" }] } });
+    redditPost.mockResolvedValue({ data: { post_id: "t3_s1", text: "Synthetic full thread context" } });
+    redditComments.mockResolvedValue({ data: { comments: [] } });
+    const collected = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: { query: "synthetic" } });
+    expect(collected.documents[0].contentMd).toContain("Synthetic full thread context");
+    expect(collected.scanHealth).toEqual({ state: "complete", discovered: 1, verified: 1, issues: [] });
+    expect(paidCall).toHaveBeenCalledWith(expect.objectContaining({ provider: "scavio", action: "reddit_hydrate", estimateUsd: 0.008, context }), expect.any(Function));
+  });
+
+  it("keeps newly eligible Scavio snippets unverified and stops hydration on budget denial", async () => {
+    vi.stubEnv("SCAVIO_API_KEY", "test-key");
+    redditSearch.mockResolvedValue({ data: { results: ["s1", "s2"].map(id => ({ title: "Synthetic question", url: thread(id), snippet: "Short excerpt", createdAt: "2026-10-25T00:00:00Z" })) } });
+    paidCall.mockImplementation(async (options, work) => {
+      if (options.action === "reddit_hydrate") throw new PaidCallDeniedError("budget_exhausted", "Synthetic denied budget");
+      return (await work()).value;
+    });
+    const collected = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: { query: "synthetic" } });
+    expect(collected.documents).toHaveLength(2);
+    expect(collected.scanHealth).toEqual({ state: "partial", discovered: 2, verified: 0,
+      issues: [{ stage: "hydration", kind: "budget_exhausted", provider: "scavio", retryable: false }] });
+    expect(paidCall.mock.calls.filter(([options]) => options.action === "reddit_hydrate")).toHaveLength(1);
+    expect(redditPost).not.toHaveBeenCalled();
   });
 });
 
@@ -205,6 +292,7 @@ describe("Scavio hydration", () => {
     expect(result.meta.provider).toBe("firecrawl_search");
     expect(result.posts[0]).toMatchObject({ id: "h1", contentKind: "preview", body: "2 days ago ... any recommendations?", score: null });
     expect(result.posts[1]).toMatchObject({ id: "h2", contentKind: "thread" });
+    expect(result.meta.issues).toContainEqual({ stage: "hydration", kind: "upstream_failed", provider: "scavio", retryable: true });
   });
 
   it("keeps the post text when only the comments request fails", async () => {
@@ -213,9 +301,75 @@ describe("Scavio hydration", () => {
     expect(posts[0]).toMatchObject({ contentKind: "thread", body: "Full text h1", topComments: undefined });
   });
 
+  it.each([
+    { name: "explicit failure", response: { success: false, error: "private provider detail", data: { comments: [] } }, kind: "upstream_failed", retryable: true },
+    { name: "error envelope", response: { error: "private provider detail" }, kind: "upstream_failed", retryable: true },
+    { name: "malformed envelope", response: { data: { unexpected: "private provider detail" } }, kind: "invalid_payload", retryable: false },
+    { name: "non-array comments", response: { data: { comments: "private provider detail" } }, kind: "invalid_payload", retryable: false },
+    { name: "non-record comments", response: { data: { comments: ["private provider detail"] } }, kind: "invalid_payload", retryable: false },
+    { name: "mixed malformed comments", response: { comments: [{ body: "Valid reply" }, null] }, kind: "invalid_payload", retryable: false },
+  ])("keeps full post and safe partial health for comments $name", async ({ response, kind, retryable }) => {
+    firecrawl.mockResolvedValue([hit("h1")]);
+    redditComments.mockResolvedValue(response);
+    const collected = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: { query: "synthetic" } });
+    expect(collected.documents[0].contentMd).toContain("Full text h1");
+    expect(collected.documents[0].metadata).toMatchObject({ contentKind: "thread", topComments: undefined });
+    expect(collected.scanHealth).toEqual({ state: "partial", discovered: 1, verified: 1,
+      issues: [{ stage: "hydration", kind, provider: "scavio", retryable }] });
+    expect(JSON.stringify(collected)).not.toContain("private provider detail");
+    expect(paidCall).toHaveBeenCalledWith(expect.objectContaining({ provider: "scavio", action: "reddit_hydrate",
+      estimateUsd: 0.008, context }), expect.any(Function));
+    expect(redditPost).toHaveBeenCalledOnce();
+    expect(redditComments).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    [], { comments: [] }, { results: [] }, { items: [] }, { data: [] },
+    { data: { comments: [] } }, { data: { results: [] } }, { data: { items: [] } }, { data: { data: [] } },
+  ].map(response => ({ response })))("accepts a recognized empty comments envelope $response", async ({ response }) => {
+    firecrawl.mockResolvedValue([hit("h1")]);
+    redditComments.mockResolvedValue(response);
+    const collected = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: { query: "synthetic" } });
+    expect(collected.documents[0].contentMd).toContain("Full text h1");
+    expect(collected.scanHealth).toEqual({ state: "complete", discovered: 1, verified: 1, issues: [] });
+  });
+
+  it("preserves literal deleted replies while omitting empty comment records", async () => {
+    firecrawl.mockResolvedValue([hit("h1")]);
+    redditComments.mockResolvedValue({ data: { comments: [{}, { body: "" }, { body: "[deleted]" }] } });
+    const collected = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: { query: "synthetic" } });
+    expect(collected.documents[0].metadata?.topComments).toEqual([{ text: "[deleted]" }]);
+    expect(collected.scanHealth).toEqual({ state: "complete", discovered: 1, verified: 1, issues: [] });
+  });
+
+  it("preserves cancellation identity during the comments request and stops further hydration", async () => {
+    const controller = new AbortController();
+    const failure = new DOMException("Cancelled", "AbortError");
+    redditComments.mockImplementation(async () => { controller.abort(failure); throw failure; });
+    await expect(fetchRedditPostsWithMeta({ ctx: context, signal: controller.signal })).rejects.toBe(failure);
+    expect(redditPost).toHaveBeenCalledOnce();
+    expect(redditComments).toHaveBeenCalledOnce();
+  });
+
   it("rejects a Scavio post that is not the requested thread", async () => {
     redditPost.mockResolvedValue(scavioPost("someoneelse"));
     expect((await fetchRedditPostsWithMeta({ ctx: context })).posts.every(post => post.contentKind === "preview")).toBe(true);
+  });
+
+  it("keeps previews unverified when Scavio does not supply the requested identity", async () => {
+    redditPost.mockResolvedValue({ data: { text: "Unattributed text", score: 12 } });
+    const collected = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: { query: "synthetic" } });
+    expect(collected.scanHealth).toMatchObject({ state: "partial", discovered: 3, verified: 0 });
+    expect(collected.scanHealth?.issues).toContainEqual({ stage: "hydration", kind: "invalid_payload", provider: "scavio", retryable: false });
+  });
+
+  it("does not count fetched page excerpts as verified thread context", async () => {
+    vi.stubEnv("FIRECRAWL_API_KEY", ""); vi.stubEnv("SCAVIO_API_KEY", ""); vi.stubEnv("TINYFISH_API_KEY", "test-key");
+    search.mockResolvedValue([{ url: thread("t1"), title: "Synthetic question", snippet: "Synthetic snippet", position: 1 }]);
+    fetchPages.mockResolvedValue([{ url: thread("t1"), text: "Synthetic page excerpt without validated thread fields", highlights: [] }]);
+    const collected = await redditCollector.run({ workspaceId: "ws-1", sourceId: "src-1", config: { query: "synthetic" } });
+    expect(collected.documents[0].metadata?.contentKind).toBe("page_excerpt");
+    expect(collected.scanHealth).toMatchObject({ state: "partial", discovered: 1, verified: 0 });
   });
 
   it("stops hydrating on a budget denial or when today's count is unavailable, without failing", async () => {

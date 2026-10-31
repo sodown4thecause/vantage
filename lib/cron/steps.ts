@@ -99,13 +99,14 @@ export async function collectSource(input: { workspaceId: string; sourceId: stri
   const collector = collectorsByType[row.type];
   if (!collector) return { kind: "ok", body: { inserted: 0, skipped: 0, reason: "no collector registered" } };
   const result = await runCollector({ collector, workspaceId: input.workspaceId, sourceId: input.sourceId, signal: input.signal });
-  if (result.switchedOff) return { kind: "ok", body: { inserted: 0, skipped: 0, switchedOff: result.switchedOff } };
+  if (result.switchedOff) return { kind: "ok", body: { inserted: 0, skipped: 0, switchedOff: result.switchedOff, partial: true, scanHealth: result.scanHealth } };
   // Collector errors are retryable by the Workflow step; the message is not returned or logged.
   if (result.error) {
     await captureServerException(new Error("collector failed"), { workspaceId: input.workspaceId, sourceId: input.sourceId, area: "collect" });
     return { kind: "failed" };
   }
-  return { kind: "ok", body: { inserted: result.inserted, skipped: result.skipped, ...(result.receipt?.health === "degraded" ? { partial: true } : {}) } };
+  return { kind: "ok", body: { inserted: result.inserted, skipped: result.skipped, scanHealth: result.scanHealth,
+    ...(result.receipt?.health === "degraded" || (result.scanHealth && result.scanHealth.state !== "complete") ? { partial: true } : {}) } };
 }
 
 /** Semantic indexing is best effort: any failure is reported as zero embedded, never as a scan failure. */

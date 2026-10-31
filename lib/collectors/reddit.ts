@@ -8,6 +8,7 @@ import type {
 import type { NewDocument } from "@/lib/db/schema";
 import { assertRealProvider } from "@/lib/collectors/provenance";
 import { fetchRedditPostsWithMeta, type RedditFetchMeta, type RedditPost } from "@/lib/reddit/client";
+import { scanIssuesFromError, summariseScanHealth, type ScanIssue } from "@/lib/scan/health";
 
 export const redditCollector: Collector = {
   name: "reddit",
@@ -22,6 +23,7 @@ export const redditCollector: Collector = {
     let meta: RedditFetchMeta | undefined;
     let cursor: string | null | undefined;
     let coveragePartial = false;
+    const issues: ScanIssue[] = [];
     // Share the limit so one busy topic cannot crowd out the others.
     const perQuery = queries.length > 1 && Number.isInteger(limit) ? Math.max(1, Math.ceil(limit / queries.length)) : limit;
     for (const query of queries.length ? queries : [undefined]) {
@@ -39,10 +41,12 @@ export const redditCollector: Collector = {
       } catch (error) {
         ctx.signal?.throwIfAborted();
         if (!posts.length) throw error;
+        issues.push(...scanIssuesFromError(error, "discovery"));
         coveragePartial = true;
         break;
       }
       meta ??= result.meta;
+      issues.push(...result.meta.issues ?? []);
       cursor = queries.length > 1 ? null : result.cursor;
       for (const post of result.posts) {
         if (posts.length < limit && !posts.some(existing => existing.id === post.id)) posts.push(post);
@@ -94,14 +98,18 @@ export const redditCollector: Collector = {
     });
 
     const missingPublicationDates = documents.filter(document => document.postedAt === null).length;
+    const scanHealth = summariseScanHealth({ discovered: posts.length,
+      verified: posts.filter(post => post.contentKind === "thread" && post.body.trim().length > 0 && meta.provider !== "fixture").length,
+      completed: !coveragePartial && missingPublicationDates === 0, cancelled: false, issues });
     return {
       documents,
-      partial: coveragePartial || missingPublicationDates > 0,
+      scanHealth,
+      partial: scanHealth.state !== "complete",
       coverageReason: coveragePartial ? "Some topic searches were deferred; retaining the conversations already found." : missingPublicationDates
         ? `${missingPublicationDates} Reddit post(s) have no supplied publication date; recency is unverified.`
         : undefined,
       nextState: {
-        cursor: cursor === undefined ? new Date().toISOString() : cursor,
+        cursor: coveragePartial ? ctx.cursor : cursor === undefined ? new Date().toISOString() : cursor,
       },
     };
   },

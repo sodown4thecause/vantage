@@ -13,14 +13,14 @@ export async function GET(req: Request) {
   if (!parsed.success || !(await authorizeWorkspace(parsed.data)).ok) return Response.json({ error: "not found" }, { status: 404 });
   const workspaceId = parsed.data;
   try {
-    const { run, timeZone, lastPolledAt } = await getFirstScanStatus(workspaceId, await firstScan(workspaceId));
+    const { run, timeZone, lastPolledAt, scanHealth } = await getFirstScanStatus(workspaceId, await firstScan(workspaceId));
     const limits = await getLimits(await getWorkspacePlan(workspaceId));
     const last = lastPolledAt ? new Date(lastPolledAt).getTime() : Date.now();
     const nextScanAt = new Date(Math.max(Date.now(), last + limits.scan_interval_hours * 3600_000)).toISOString();
     return Response.json({
       run: run ? { status: run.status, read: run.read, relevant: run.relevant, picked: run.picked,
         costUsd: run.costUsd, capped: run.capped, startedAt: run.startedAt, finishedAt: run.finishedAt } : null,
-      nextScanAt, timeZone,
+      nextScanAt, timeZone, scanHealth,
       reason: nothingStrongReason(run?.read ?? 0) === "few_sources" ? "Few sources are configured. Check your sources or add one." : "Your topics may be too narrow. Try broader wording in your profile.",
     }, { headers: { "cache-control": "no-store" } });
   } catch (error) {
