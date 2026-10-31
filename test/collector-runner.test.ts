@@ -148,7 +148,8 @@ describe("runCollector", () => {
     expect(run).not.toHaveBeenCalled();
     expect(result.switchedOff).toEqual({ state: "paused", reason: "Reddit paused" });
     expect(result.error).toBeUndefined();
-    expect(state.updates).toHaveLength(0);
+    // The skip is remembered for scan status, but no poll state moves.
+    expect(state.updates.map((update) => Object.keys(update))).toEqual([["config"]]);
   });
   it("does not invoke a paused source", async () => {
     state.row = { ...sourceRow, health: "paused" };
@@ -156,6 +157,17 @@ describe("runCollector", () => {
     const result = await runCollector({ collector: { name: "hn", run }, workspaceId: "workspace-1", sourceId: "source-1" });
     expect(run).not.toHaveBeenCalled();
     expect(result.inserted).toBe(0);
+    expect(state.updates.map((update) => Object.keys(update))).toEqual([["config"]]);
+  });
+  it("still skips when the skip cannot be recorded", async () => {
+    state.row = { ...sourceRow, health: "paused" };
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(state.updates, "push").mockImplementationOnce(() => { throw new Error("db down"); });
+    const run = vi.fn(async () => ({ documents: [document] }));
+    const result = await runCollector({ collector: { name: "hn", run }, workspaceId: "workspace-1", sourceId: "source-1" });
+    expect(run).not.toHaveBeenCalled();
+    expect(result.scanHealth?.issues).toEqual([{ stage: "dispatch", kind: "provider_disabled", provider: "hn", retryable: false }]);
+    log.mockRestore();
   });
 
   it("rejects synthetic evidence before persistence in production", async () => {

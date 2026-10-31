@@ -153,6 +153,16 @@ describe("provider order", () => {
       .toEqual([...[firecrawl, search, agentRun, redditSearch].map(fn => fn.mock.invocationCallOrder[0])].sort((a, b) => a - b));
   });
 
+  it("keeps a TinyFish Agent thread that follows the requested schema as a full thread", async () => {
+    vi.stubEnv("TINYFISH_API_KEY", "test-key");
+    search.mockRejectedValue(new Error("down"));
+    agentRun.mockResolvedValue({ status: "COMPLETED", num_of_steps: 1,
+      result: { posts: [{ id: "a1", title: "Agent hit", body: "Full text", url: thread("a1") }] } });
+    const result = await fetchRedditPostsWithMeta({ ctx: context });
+    expect(agentRun.mock.calls[0]![0].output_schema.properties.posts.items.required).toContain("id");
+    expect(result).toMatchObject({ meta: { provider: "tinyfish_agent" }, posts: [{ id: "a1", contentKind: "thread" }] });
+  });
+
   it("stops on cancellation instead of falling back", async () => {
     vi.stubEnv("FIRECRAWL_API_KEY", "fc-test"); vi.stubEnv("TINYFISH_API_KEY", "test-key");
     const abort = new AbortController();

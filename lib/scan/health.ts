@@ -48,6 +48,16 @@ export function scanIssuesFromError(error: unknown, stage: ScanIssue["stage"], p
   return [{ stage, kind, ...(provider ? { provider } : {}), retryable: kind === "upstream_failed" || kind === "rate_limited" }];
 }
 
+/** A source skipped before collection: kept apart from `lastRun`, whose receipt describes a real poll. */
+export function readSkippedScan(config: unknown): { ranAt: string; scanHealth: ScanHealth } | undefined {
+  if (!config || typeof config !== "object" || Array.isArray(config)) return;
+  const skip = (config as Record<string, unknown>).lastSkip;
+  if (!skip || typeof skip !== "object" || Array.isArray(skip)) return;
+  const { ranAt, scanHealth } = skip as Record<string, unknown>;
+  const health = readScanHealth(scanHealth);
+  return typeof ranAt === "string" && health ? { ranAt, scanHealth: health } : undefined;
+}
+
 /** Stored JSON is untrusted; return only the bounded public health contract. */
 export function readScanHealth(value: unknown): ScanHealth | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return;

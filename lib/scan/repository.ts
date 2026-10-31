@@ -4,7 +4,7 @@ import { eligibleSourceCondition } from "@/lib/cron/scan";
 import { getDb } from "@/lib/db/client";
 import { scanRun, source, workspace } from "@/lib/db/schema";
 import { readLastRunReceipt } from "@/lib/collectors/coverage";
-import { summariseScanHealth, type ScanHealth, type ScanIssue } from "@/lib/scan/health";
+import { readSkippedScan, summariseScanHealth, type ScanHealth, type ScanIssue } from "@/lib/scan/health";
 
 export const firstScanId = (workspaceId: string) => `first-${workspaceId}`;
 
@@ -45,8 +45,10 @@ export async function getFirstScanStatus(workspaceId: string, storedRun: typeof 
     const end = run.finishedAt?.getTime() ?? new Date(ws?.now ?? Date.now()).getTime();
     const receipts = rows.flatMap(row => {
       const receipt = readLastRunReceipt(row.config);
-      const time = receipt ? Date.parse(receipt.ranAt) : NaN;
-      return receipt?.scanHealth && time >= start && time <= end ? [receipt.scanHealth] : [];
+      const inRun = [receipt?.scanHealth ? { ranAt: receipt.ranAt, scanHealth: receipt.scanHealth } : undefined, readSkippedScan(row.config)]
+        .flatMap(entry => entry && Date.parse(entry.ranAt) >= start && Date.parse(entry.ranAt) <= end ? [entry] : [])
+        .sort((a, b) => Date.parse(a.ranAt) - Date.parse(b.ranAt));
+      return inRun.slice(-1).map(entry => entry.scanHealth);
     });
     const issues: ScanIssue[] = receipts.flatMap(receipt => receipt.issues);
     const missing = receipts.length < (run.sourceIds?.length ?? 0);

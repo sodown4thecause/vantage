@@ -42,6 +42,25 @@ export type RunCollectorOutput = {
  * and persist etag/cursor + a coverage receipt back onto the source.
  * Failures are isolated per source — callers may continue other sources.
  */
+/**
+ * Records why a source was skipped so scan status can report the real cause. Best effort, and deliberately leaves
+ * `lastPolledAt` and the `lastRun` receipt alone: nothing was polled.
+ */
+async function recordSkippedScan(workspaceId: string, sourceId: string, scanHealth: ScanHealth): Promise<void> {
+  try {
+    const lastSkip = { ranAt: new Date().toISOString(), scanHealth };
+    await getDb().update(source).set({ config: sql`${source.config} || ${JSON.stringify({ lastSkip })}::jsonb` })
+      .where(and(eq(source.id, sourceId), eq(source.workspaceId, workspaceId)));
+  } catch {
+    console.error("[collector] could not record skipped scan", { sourceId });
+  }
+}
+
+function skippedHealth(provider: string): ScanHealth {
+  return summariseScanHealth({ discovered: 0, verified: 0, completed: false, cancelled: false,
+    issues: [{ stage: "dispatch", kind: "provider_disabled", provider, retryable: false }] });
+}
+
 export async function runCollector(
   input: RunCollectorInput,
 ): Promise<RunCollectorOutput> {
@@ -68,21 +87,22 @@ export async function runCollector(
   }
 
   if (row.health === "paused") {
-    return { sourceId: row.id, collector: input.collector.name, inserted: 0, skipped: 0,
-      scanHealth: summariseScanHealth({ discovered: 0, verified: 0, completed: false, cancelled: false,
-        issues: [{ stage: "dispatch", kind: "provider_disabled", provider: input.collector.name, retryable: false }] }) };
+    const scanHealth = skippedHealth(input.collector.name);
+    await recordSkippedScan(input.workspaceId, row.id, scanHealth);
+    return { sourceId: row.id, collector: input.collector.name, inserted: 0, skipped: 0, scanHealth };
   }
 
   const switchDecision = await getSourceSwitch(row.type);
   if (!switchDecision.enabled) {
+    const scanHealth = skippedHealth(input.collector.name);
+    await recordSkippedScan(input.workspaceId, row.id, scanHealth);
     return {
       sourceId: row.id,
       collector: input.collector.name,
       inserted: 0,
       skipped: 0,
       switchedOff: { state: switchDecision.state, reason: switchDecision.reason },
-      scanHealth: summariseScanHealth({ discovered: 0, verified: 0, completed: false, cancelled: false,
-        issues: [{ stage: "dispatch", kind: "provider_disabled", provider: input.collector.name, retryable: false }] }),
+      scanHealth,
     };
   }
 

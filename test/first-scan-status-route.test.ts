@@ -76,3 +76,23 @@ it("exposes current-run safe health without borrowing older or foreign source re
   expect(query.sql).toContain('"source"."workspace_id" =');
   expect(query.params).toEqual(expect.arrayContaining([WS, "reddit-1", "reddit-2"]));
 });
+
+it("reports a skipped provider as disabled, not as a retryable failure", async () => {
+  state.auth = { ok: true };
+  const startedAt = new Date("2026-10-26T00:00:00Z");
+  const finishedAt = new Date("2026-10-26T00:05:00Z");
+  vi.mocked(firstScan).mockResolvedValue({ status: "partial", read: 0, sourceIds: ["reddit-1"], startedAt, finishedAt } as Awaited<ReturnType<typeof firstScan>>);
+  const skipped = { state: "failed", discovered: 0, verified: 0, issues: [{ stage: "dispatch", kind: "provider_disabled", provider: "reddit", retryable: false }] };
+  let calls = 0;
+  state.db.mockReturnValue({
+    select: () => ({ from: () => ({ where: () => {
+      calls += 1;
+      const rows = calls === 1 ? [{ timeZone: "UTC", stale: false, now: finishedAt }]
+        : calls === 2 ? [{ last: finishedAt }]
+          : [{ id: "reddit-1", config: { lastSkip: { ranAt: "2026-10-26T00:01:00Z", scanHealth: skipped } } }];
+      return Object.assign(Promise.resolve(rows), { limit: async () => rows });
+    } }) }),
+  });
+  const body = await (await GET(new Request(`https://test/api/workspace/first-scan?workspaceId=${WS}`))).json();
+  expect(body.scanHealth.issues).toEqual([{ stage: "dispatch", kind: "provider_disabled", provider: "reddit", retryable: false }]);
+});
