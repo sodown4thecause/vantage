@@ -6,6 +6,7 @@ import {
   decideStatus,
   featuresFromRecord,
   recommendedAction,
+  trendMomentumEnabled,
 } from "@/lib/opportunities/features";
 import { parseContentKind } from "@/lib/opportunities/content-kind";
 import type {
@@ -17,6 +18,9 @@ import type {
 } from "@/lib/opportunities/types";
 import { getDb } from "@/lib/db/client";
 import { documentsAreFixtureOnly } from "@/lib/collectors/coverage";
+import { attachLinkedContext, enrichLinkDocuments } from "@/lib/enrich/run";
+import { topicWowForWorkspace, wowToMomentum, type WowChange } from "@/lib/trends/momentum";
+import { docMatchesTopic, recordWorkspaceTopicVolume } from "@/lib/trends/volume";
 import { getLatestMonitoringProfile } from "@/lib/profile/repository";
 import {
   document,
@@ -178,6 +182,14 @@ export async function buildOpportunities(opts: {
   const profile = await getLatestMonitoringProfile(opts.workspaceId);
   if (!profile) throw new Error("Monitoring profile required before opportunity generation.");
 
+  // Every build path (cron, manual scan, source scan, fallback tick) counts topic mentions here,
+  // so charts and trend-based scores never lag the queue. A failure never blocks the build.
+  try {
+    await recordWorkspaceTopicVolume(opts.workspaceId, profile.topics ?? []);
+  } catch (err) {
+    console.error("[opportunities] topic volume recording skipped:", err instanceof Error ? err.message : "unknown error");
+  }
+
   const rows = await db
     .select()
     .from(document)
@@ -185,7 +197,21 @@ export async function buildOpportunities(opts: {
     .orderBy(desc(document.collectedAt))
     .limit(limitDocs);
 
-  const normalized = normalizeDocuments(rows.filter(isLiveEvidence));
+  const live = rows.filter(isLiveEvidence);
+  // Link posts get their linked page summarised (cached in link_enrichments) so
+  // fit and intent score the page too. Best effort: any failure scores unenriched.
+  try {
+    const linked = await enrichLinkDocuments(live, { workspaceId: opts.workspaceId, signal: opts.signal });
+    for (const row of live) {
+      const context = linked.get(row.id);
+      if (context) row.metadata = { ...row.metadata, linkedContext: context };
+    }
+    await attachLinkedContext(live.map((row) => row.id), linked, opts.workspaceId);
+  } catch {
+    console.error("[opportunities] link enrichment skipped; scoring without it");
+  }
+
+  const normalized = normalizeDocuments(live);
   // Semantic scoring never throws. Its signals reach scoring only in "on" mode; in "off"
   // and "shadow" they are recorded for comparison and scoring stays keyword-only.
   const semantic = await runSemanticStageDetailed(opts.workspaceId, normalized, opts.signal);
@@ -200,6 +226,14 @@ export async function buildOpportunities(opts: {
     config: learningConfig,
   });
   const sourceIdByDocId = new Map(rows.map((r) => [r.id, r.sourceId]));
+  let wowByTopic: Map<string, WowChange> = new Map();
+  if (trendMomentumEnabled()) {
+    try {
+      wowByTopic = await topicWowForWorkspace(opts.workspaceId, profile.topics ?? []);
+    } catch {
+      // No trend data (or the table is unreachable): the keyword momentum stays.
+    }
+  }
 
   // Keys come from the full document set, so a cluster keeps its identity when near-duplicates are absorbed.
   // Only representatives feed scoring; evidence still lists every absorbed duplicate.
@@ -229,7 +263,19 @@ export async function buildOpportunities(opts: {
     opts.signal?.throwIfAborted();
     const docs = representativeIds ? clusterDocs.filter((doc) => representativeIds.has(doc.id)) : clusterDocs;
     if (docs.length === 0) continue;
-    const features = { ...computeFeatures(docs, profile, semanticForScoring), profileVersion: profile.version };
+    // TREND_MOMENTUM=on: the matched topic's week-over-week change drives momentum.
+    let trendMomentum: number | null = null;
+    if (trendMomentumEnabled()) {
+      for (const topic of profile.topics ?? []) {
+        const wow = wowByTopic.get(topic);
+        const momentumForTopic = wow ? wowToMomentum(wow) : null;
+        if (momentumForTopic !== null && docs.some((doc) => docMatchesTopic({ title: doc.title, contentMd: doc.text }, topic))) {
+          trendMomentum = momentumForTopic;
+          break;
+        }
+      }
+    }
+    const features = { ...computeFeatures(docs, profile, semanticForScoring, trendMomentum), profileVersion: profile.version };
     const status = decideStatus(features);
     const ranking = rankWithPreferences({
       features,

@@ -12,6 +12,7 @@ import { tinyFishFetchMarkdown, tinyFishSearch } from "@/lib/tinyfish/search-fet
 
 export type RedditPost = {
   id: string; title: string; body: string; url: string; author?: string;
+  outboundUrl?: string;
   /** Null when unknown, as for search previews: never read a missing count as zero. */
   subreddit?: string; score: number | null; createdAt: string; numComments: number | null;
   topComments?: Array<{ text: string; url?: string }>;
@@ -51,6 +52,18 @@ function threadLink(value: unknown): { url: string; id: string; subreddit?: stri
     return { id: match[2], subreddit: match[1],
       url: `https://www.reddit.com${match[1] ? `/r/${match[1]}` : ""}/comments/${match[2]}${match[3] ? `/${match[3]}` : ""}/` };
   } catch { return; }
+}
+
+function outboundUrl(row: Record<string, unknown>): string | undefined {
+  for (const value of [row.outboundUrl, row.url_overridden_by_dest, row.url, row.link]) {
+    if (typeof value !== "string") continue;
+    try {
+      const url = new URL(value);
+      if (!/^https?:$/.test(url.protocol) || url.username || url.password ||
+        url.hostname === "reddit.com" || url.hostname.endsWith(".reddit.com")) continue;
+      return url.href;
+    } catch {}
+  }
 }
 
 function publicationDate(row: Record<string, unknown>): string {
@@ -108,6 +121,7 @@ function mapPosts(rows: Array<Record<string, unknown>>, limit: number, subreddit
     const suppliedComments = row.topComments ?? row.top_comments ?? row.comments;
     const topComments = Array.isArray(suppliedComments) ? literalComments(suppliedComments, link.id) : undefined;
     posts.push({ id: link.id, title, url: link.url,
+      outboundUrl: outboundUrl(row),
       body: stringField(row, "body", "selftext", "text", "content", "snippet")?.slice(0, 20_000) ?? "",
       author: stringField(row, "author", "author_name", "username"),
       subreddit: link.subreddit ?? stringField(row, "subreddit", "subreddit_name"),
@@ -170,6 +184,7 @@ async function hydratePost(post: RedditPost, ctx: CostContext, signal?: AbortSig
     }
     const text = stringField(data, "text", "selftext", "body");
     return { value: { ...post,
+      outboundUrl: outboundUrl(data) ?? post.outboundUrl,
       body: text ? text.slice(0, 20_000) : post.body,
       author: post.author ?? stringField(data, "author", "author_name", "username"),
       score: numberField(data, "score", "ups", "upvotes") ?? post.score,

@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { ProfileDraftCard } from "@/components/profile-draft-card";
 import { SafeLink } from "@/components/safe-link";
+import { TopicTrends } from "@/components/topic-trends";
 import { BlockList, SaveButton, type SavedArtifactSummary } from "@/components/workspace-blocks";
 import { WorkspaceFrame } from "@/components/workspace-frame";
 import { gtmResponseSchema } from "@/lib/gtm/schema";
@@ -309,6 +310,7 @@ export function WorkspaceClient({ workspaceId, productName: initialProductName, 
       <div className={s.body}>
         <section className={s.conversation} aria-label="GTM assistant">
           <div className={s.scroll}>
+            <TopicTrends workspaceId={workspaceId} />
             {setupOpen ? <div className={s.setupIntro}>
               <div className={s.eyebrow}><span className={s.spark} aria-hidden="true">✳</span> Set up your product{setupPrompt ? ` · Question ${setupPrompt.position} of ${setupPrompt.total}` : ""}</div>
               <p>A few quick questions so I can find conversations worth joining. You write every reply; nothing is posted on your behalf.</p>

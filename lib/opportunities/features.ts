@@ -12,6 +12,11 @@ export function clamp01(n: number): number {
   return Math.max(0, Math.min(1, n));
 }
 
+/** TREND_MOMENTUM=on switches momentum to the week-over-week topic trend. */
+export function trendMomentumEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return env.TREND_MOMENTUM === "on";
+}
+
 export function tokenize(text: string): string[] {
   return text
     .toLowerCase()
@@ -22,12 +27,12 @@ export function tokenize(text: string): string[] {
 
 /** Stable cluster key from shared tokens across evidence. */
 export function clusterKeyForDocuments(
-  docs: Array<Pick<NormalizedDocument, "title" | "text" | "platform">>,
+  docs: Array<Pick<NormalizedDocument, "title" | "text" | "platform" | "groupText">>,
 ): string {
   const counts = new Map<string, number>();
   for (const doc of docs) {
     const tokens = new Set(
-      tokenize(`${doc.title ?? ""} ${doc.text}`).slice(0, 40),
+      tokenize(`${doc.title ?? ""} ${doc.groupText ?? doc.text}`).slice(0, 40),
     );
     for (const t of tokens) {
       counts.set(t, (counts.get(t) ?? 0) + 1);
@@ -40,7 +45,7 @@ export function clusterKeyForDocuments(
     .map(([t]) => t);
   const platform = docs[0]?.platform ?? "unknown";
   if (!shared.length) {
-    const fallback = tokenize(`${docs[0]?.title ?? ""} ${docs[0]?.text ?? ""}`)
+    const fallback = tokenize(`${docs[0]?.title ?? ""} ${docs[0]?.groupText ?? docs[0]?.text ?? ""}`)
       .slice(0, 3)
       .join("-");
     return `${platform}:${fallback || "singleton"}`;
@@ -52,11 +57,16 @@ export function clusterKeyForDocuments(
  * Keyword features for a cluster. `semantic` is keyed by document id; with it, a
  * document's semantic rung can raise intent and its semantic fit can raise fit.
  * Omitted or null keeps the keyword-only result unchanged.
+ *
+ * `trendMomentum` is the week-over-week topic momentum (issue #99). It replaces
+ * the evidence-based momentum only when TREND_MOMENTUM=on and the topic has
+ * enough data; otherwise the keyword momentum above stays the fallback.
  */
 export function computeFeatures(
   docs: NormalizedDocument[],
   profile?: Pick<MonitoringProfileInput, "productDescription" | "topics" | "competitors"> | null,
   semantic?: Map<string, SemanticSignal> | null,
+  trendMomentum?: number | null,
 ): OpportunityFeatures {
   const intents = docs.map((d) => classifyIntent(d, semantic?.get(d.id) ?? null));
   const maxIntent = intents.reduce((m, i) => Math.max(m, i.intentRung), 0);
@@ -93,11 +103,16 @@ export function computeFeatures(
   const modelConfidence = clamp01(avgConfidence);
   const lowConfidence = modelConfidence < 0.45 || maxIntent < 2;
 
+  const resolvedMomentum =
+    trendMomentumEnabled() && typeof trendMomentum === "number" && Number.isFinite(trendMomentum)
+      ? clamp01(trendMomentum)
+      : momentum;
+
   return {
     fit,
     intent,
     evidence,
-    momentum,
+    momentum: resolvedMomentum,
     timing,
     modelConfidence,
     lowConfidence,
