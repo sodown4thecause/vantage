@@ -9,7 +9,7 @@ import { DEFAULT_LIMITS } from "@/lib/plans/types";
 
 export const metadata: Metadata = {
   title: "Pricing",
-  description: "Start free. Upgrade to Pro for more sources, more keywords and scans every three hours.",
+  description: "Start free. Pro is for capped research and drafting, not more daily picks. Research is coming soon.",
   alternates: { canonical: "/pricing" },
 };
 
@@ -21,12 +21,8 @@ function features(plan: "free" | "pro"): string[] {
     `${l.sources} sources`,
     `${l.keywords} keywords`,
     `${l.projects} ${l.projects === 1 ? "project" : "projects"}`,
-    `Up to ${l.scored_leads_per_day} scored conversations a day`,
     l.scan_interval_hours === 24 ? "Daily scans" : `Scans every ${l.scan_interval_hours} hours`,
-    ...(l.reply_briefs ? ["Reply briefs"] : []),
-    ...(l.deep_searches_per_month ? [`${l.deep_searches_per_month} deep searches a month`] : []),
-    ...(l.seo_questions_per_month ? [`${l.seo_questions_per_month} SEO agent questions a month`] : []),
-    ...(l.seo_credits_per_month ? [`${l.seo_credits_per_month} SEO data credits a month`] : []),
+    ...(l.reply_briefs ? ["Capped drafting with Reply Briefs", "Research — Coming soon", "Expanded reports — Coming soon"] : []),
   ];
 }
 
@@ -37,7 +33,7 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
 
   return (
     <Shell wide section="pricing">
-      <PageHead title="Pricing" lede="Start free. Upgrade when you want more sources, more keywords and fresher scans." />
+      <PageHead title="Pricing" lede="Start free. Pro is for capped research and drafting, not more daily picks. Research is coming soon." />
       {message && <p role="alert" className="mb-8 rounded border border-contour bg-sheet p-4 text-sm">{message}</p>}
       <div className="grid gap-6 md:grid-cols-3">
         <section aria-labelledby="plan-free" className="flex flex-col rounded-lg border border-contour p-6">
