@@ -39,30 +39,38 @@ saying "it works" is not evidence.
 Claude Code: these skills live in `.agents/skills/`. Read the SKILL.md named
 above directly; don't wait for it to be auto-discovered.
 
-## The workflow: Superpowers spine, one loop for everything
+## The workflow: HumanLayer only, one loop for everything
 
 Every task, whether code, docs, research or ops, runs **Clarify → Define done
-→ Plan → Do → Prove → Review → Compound**.
-[Superpowers](https://github.com/obra/superpowers) owns Clarify, Plan and Do for
-code (brainstorming, writing-plans, using-git-worktrees,
-subagent-driven-development, test-driven-development, systematic-debugging).
-Install it in each harness: Claude Code `/plugin install
-superpowers@claude-plugins-official`, Codex `/plugins`. **Do not install a
-second workflow framework** (compound-engineering, gstack, spec-kit, BMAD) next
-to it: their skills overlap and fight over the same stages.
+→ Plan → Do → Prove → Review → Compound** inside a
+[HumanLayer](https://docs.humanlayer.com/guide/skills-workflows) task.
+HumanLayer's `/rpi:*` skills own Clarify, Plan and Do. Pick the shortest
+workflow that gives the task the review points it needs:
+
+| Task | Workflow |
+|------|----------|
+| Small change with a clear result | Oneshot |
+| Needs research and one design discussion | RPI |
+| Needs separate product and technical designs | PRD-Oriented |
+| No fixed phases, such as ops or a one-off question | Freeform |
+
+HumanLayer is the only workflow framework in this repo. **Do not install a
+second one** (compound-engineering, gstack, spec-kit, BMAD or similar): their
+skills overlap and fight over the same stages.
 
 What we add on top:
 - **Define done + Prove**: the section above, with verify-ui and verify-dataflow.
-- **Review**: adversarial-review with a *different* model, not only
-  Superpowers' same-model code review.
+- **Review**: adversarial-review with a *different* model, not only a
+  same-model code review.
 - **Compound**: after each task, write the one lesson worth keeping into this
   file or a skill in `.agents/skills/`, and delete rules that proved wrong. A
   repeated mistake means a missing rule.
 - Skipping a stage needs a named reason and Liam's OK. "It's small", "tests
   pass" and "I'm confident" are not reasons.
 
-Plans, subagent handoffs and checklists are part of the work, not decoration.
-Plans live in `docs/superpowers/`.
+Task artifacts, plans and subagent handoffs are part of the work, not
+decoration. They live in `.humanlayer/tasks/<task-slug>/`. Older specs and
+plans remain under `docs/`.
 
 ## MCP servers available to agents
 

@@ -265,7 +265,7 @@ Worker script limits are 3 MB (Free) and 10 MB (Paid). CI measures
 
 ## Contributing
 
-See [AGENTS.md](AGENTS.md) for the standard loop, the Superpowers workflow,
+See [AGENTS.md](AGENTS.md) for the standard loop, the HumanLayer workflow,
 available MCP servers (agent-browser, Supermemory, Greptile), Cloudflare and
 Neon operating rules, security invariants, migration conventions and how
 Greptile reviews PRs.
