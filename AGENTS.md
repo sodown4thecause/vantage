@@ -20,7 +20,7 @@ saying "it works" is not evidence.
 
 1. **Before writing code**, write 2–5 checkable lines: what a user can do
    afterwards, what data must exist or change, and what must not change. If
-   the task didn't come with one, propose it and get Liam's yes first.
+   the task didn't come with one, write it yourself and carry on.
 2. **Prove each line** with the matching project skill:
    - UI change → `.agents/skills/verify-ui/SKILL.md`: drive the real app as a
      user with Playwright CLI, screenshots per step, video for journeys.
@@ -33,8 +33,9 @@ saying "it works" is not evidence.
    definition of done, the diff and the evidence. Answer every finding.
 4. **Report done** only with a table: each definition-of-done line, pass/fail,
    and the evidence for it. Put the same table and attachments in the PR.
-5. **UX is Liam's call.** Function is proven by evidence; look and feel is done
-   when Liam has seen the screenshots and says he likes it.
+5. **UX gets Liam's feedback after the fact.** Function is proven by evidence.
+   Attach screenshots to the PR and merge without waiting. Liam can ask for
+   look-and-feel changes later, and those become new work.
 
 Claude Code: these skills live in `.agents/skills/`. Read the SKILL.md named
 above directly; don't wait for it to be auto-discovered.
@@ -65,8 +66,8 @@ What we add on top:
 - **Compound**: after each task, write the one lesson worth keeping into this
   file or a skill in `.agents/skills/`, and delete rules that proved wrong. A
   repeated mistake means a missing rule.
-- Skipping a stage needs a named reason and Liam's OK. "It's small", "tests
-  pass" and "I'm confident" are not reasons.
+- Skipping a stage needs a named reason, written in the PR. "It's small",
+  "tests pass" and "I'm confident" are not reasons.
 
 Task artifacts, plans and subagent handoffs are part of the work, not
 decoration. They live in `.humanlayer/tasks/<task-slug>/`. Older specs and
@@ -97,7 +98,30 @@ plans remain under `docs/`.
    node tests), migration drift, build, and the Cloudflare worker bundle job.
 5. Greptile reviews the PR automatically once it is marked ready (drafts are
    skipped). Fix what is real; a push re-reviews automatically.
-6. Merge once CI is green and CODEOWNERS have approved the paths they own.
+6. Merge it yourself with `gh pr merge --squash`. Agents own merging, and no
+   work waits for Liam. Follow the merge rule below.
+
+### Merge rule
+
+Merge when `CI` is green and `Greptile Review` passes, which means a confidence
+score of at least 4/5.
+
+- **Greptile fails:** read its findings, fix what is real, push, and let it
+  review again. Fix the code; do not lower the threshold or edit the config to
+  get a pass.
+- **Still failing after three fix rounds:** answer each remaining finding in the
+  PR, saying why it is wrong or safe. Get a different-model review of those
+  answers, then merge.
+- **No Greptile result:** this happens on docs-only PRs (it ignores `*.md`),
+  when credits run out, or when the check is still pending after 30 minutes.
+  Run the different-model review instead, then merge. A docs-only PR with no
+  code changes needs green CI only.
+- **Never merge** with failing `CI`, a broken security invariant, or an unresolved
+  finding about workspace isolation, authorization or secrets.
+
+Merging deploys to staging only. It does not cover production deploys, applying
+migrations to production, secrets, or turning on paid providers. Those stay with
+Liam, but they never block a merge.
 
 ## Greptile
 
@@ -106,22 +130,24 @@ Configuration lives in `.greptile/config.json` and is read from the PR's
 push (`autoReview: ["open", "push"]`), skips drafts, and posts a summary
 comment, inline comments with P0–P2 severity, and a status check.
 
-Keep the status check **advisory**: the free Starter plan allows 50 credits
-per month for one active developer, and when credits run out Greptile posts no
-check run at all — which would block every merge if the check were required.
-Revisit only once credit headroom is confirmed and the exact check-run name is
-verified in this repo's Checks list.
+The check run is named `Greptile Review`. It fails when the confidence score is
+below 4/5, even though the review itself ran successfully.
+
+Keep it out of branch protection's required checks: the free Starter plan allows
+50 credits per month for one active developer, and when credits run out Greptile
+posts no check run at all — which would block every merge if the check were
+required. Agents enforce it through the merge rule above instead. Revisit only
+once credit headroom is confirmed.
 
 ## Branch protection (GitHub → Settings → Rules)
 
-- `main` requires the `CI` checks (verify + worker bundle), one approval,
-  dismiss stale reviews, no force-push, linear history.
-- CODEOWNERS approval required for `lib/db/**`, `lib/auth/**`, `lib/outcomes/**`,
-  `drizzle/**`, `lib/collectors/**`, `lib/http/**`, `.github/workflows/**`,
-  `.greptile/**`, `worker-entry.mjs`, `wrangler.jsonc`.
-- Greptile's status check stays advisory (see above).
-- Self-approval is allowed by default; do not add restrictions that would lock
-  the sole founder out of their own repo.
+- `main` requires the `CI` checks (`Lint, typecheck, test, build` and
+  `Cloudflare Worker bundle (no secrets)`), linear history, and no force-push
+  or deletion. These rules also apply to admins.
+- No human approval is required, because agents merge their own PRs and GitHub
+  does not let an author approve their own PR. There is no CODEOWNERS file.
+- Greptile's status check is not a required check (see above).
+- Do not add restrictions that would lock the sole founder out of their own repo.
 
 ## Cloudflare Workers
 
