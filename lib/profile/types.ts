@@ -43,6 +43,9 @@ export type ProductMaterialResult = {
   notes: string;
 };
 
+/** Present on a saved profile only when the relevance gate refused to create its default sources. */
+export type SkippedSources = { topics: string[]; reasons: string[]; message: string };
+
 export type MonitoringProfileView = {
   id: string;
   workspaceId: string;
@@ -57,4 +60,5 @@ export type MonitoringProfileView = {
   productMaterialText: string;
   retrievalNotes: string;
   createdAt: string;
+  skippedSources?: SkippedSources;
 };
