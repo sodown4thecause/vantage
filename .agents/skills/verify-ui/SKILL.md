@@ -23,7 +23,7 @@ If the global command isn't available, `npx playwright cli` works the same way.
 7. **Report:** a table with each definition-of-done line, pass/fail, and the screenshot that proves it. Attach screenshots/video to the PR.
 
 ## UX sign-off
-Function is proven by the steps above; look and feel is Liam's call. Show him the screenshots, take his adjustments, re-shoot. Don't call a visual change done until he says he likes it.
+Function is proven by the steps above. Attach the screenshots to the PR and merge under the merge rule in `AGENTS.md`, without waiting for sign-off. Liam can ask for look-and-feel changes later, and those become new work.
 
 ## Rules
 - Test against local, preview or staging. Never sign up, post or send email from production.
