@@ -9,6 +9,7 @@ import { useCallback, useMemo, useReducer, useRef, useState, type FormEvent } fr
 import type { ContentBrandVoiceProfileRow, ContentDraftRow, ContentMessageRow, ContentThreadRow } from "@/lib/content-agent/repository";
 
 import { buildContentDraftUpdatePrompt, buildContentRepurposePrompt, buildContentSectionRegenerationPrompt, contentDraftSaveReducer, contentDraftSections, contentDraftUpdateSucceeded, contentDraftsNeedingRestore, ContentToolCard, type ContentCardDraft, type ContentDraftSaveResult, type ContentSectionProposal, type ContentToolPart } from "./content-workspace-cards";
+import { SuggestedPrompts } from "./suggested-prompts";
 import s from "./content-workspace.module.css";
 
 type ContentMetadata = { threadId?: string };
@@ -57,6 +58,7 @@ export function ContentWorkspaceClient({
   drafts,
   threadDrafts,
   brandVoiceProfile,
+  suggestedPrompts,
 }: {
   workspaceId: string;
   selectedThreadId: string | null;
@@ -65,6 +67,7 @@ export function ContentWorkspaceClient({
   drafts: ContentDraftRow[];
   threadDrafts: ContentDraftRow[];
   brandVoiceProfile: ContentBrandVoiceProfileRow | null;
+  suggestedPrompts: string[];
 }) {
   const router = useRouter();
   const [threadId, setThreadId] = useState<string | null>(selectedThreadId);
@@ -302,6 +305,7 @@ export function ContentWorkspaceClient({
       {busy && <div className={s.liveStatus} role="status">
         <span>Writing in progress</span><button type="button" className={s.stop} onClick={stopWriting}>Stop</button>
       </div>}
+      <SuggestedPrompts prompts={suggestedPrompts} onSelect={setInput} />
       <form className={s.composer} onSubmit={onSubmit}>
         <label className={s.visuallyHidden} htmlFor="content-prompt">What would you like to write?</label>
         <textarea

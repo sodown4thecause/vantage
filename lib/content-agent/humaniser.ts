@@ -5,6 +5,8 @@ import type { ContentBrandVoiceProfile, ContentDraftInput } from "./contracts";
 import { createContentGatewayModel, contentUsageCost, type ContentAgentModels } from "./models";
 
 const HUMANISER_ESTIMATE_USD = 0.05;
+// Enough to return the longest accepted draft (24,120 characters) unchanged, even at a dense 2 characters per token.
+const HUMANISER_MAX_OUTPUT_TOKENS = 16_000;
 
 export async function humaniseContentDraft(args: {
   workspaceId: string;
@@ -34,7 +36,7 @@ export async function humaniseContentDraft(args: {
         profile: args.profile,
         draft: args.draft,
       }),
-      maxOutputTokens: 5000,
+      maxOutputTokens: HUMANISER_MAX_OUTPUT_TOKENS,
       maxRetries: 0,
       abortSignal: args.signal,
     });

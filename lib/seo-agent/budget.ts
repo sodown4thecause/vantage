@@ -1,6 +1,8 @@
 import type { PlannedCall } from "@/lib/seo-agent/conversations";
 
 const DEFAULT_AUTO_CREDITS = 3;
+/** Uncached DataForSEO research endpoint attempts allowed per question root (including approval continuations). */
+export const DEFAULT_ENDPOINT_ATTEMPT_LIMIT = 4;
 
 /** Credits one question may spend before it asks. Blank, malformed or negative values use the default. */
 export function autoCreditsFromEnv(env: Record<string, string | undefined> = process.env): number {
@@ -61,5 +63,33 @@ export class QuestionBudget {
 
   refund(credits: number): void {
     this.spent = Math.max(0, this.spent - credits);
+  }
+}
+
+/**
+ * Synchronous per-question ceiling on uncached DataForSEO research dispatches. Cache hits and approval requests do not
+ * consume slots. Credit refunds never restore attempts. Parallel tool fan-out is safe because reservation is sync.
+ */
+export class EndpointAttemptBudget {
+  attempted: number;
+
+  constructor(
+    readonly limit: number = DEFAULT_ENDPOINT_ATTEMPT_LIMIT,
+    alreadyAttempted = 0,
+  ) {
+    const prior = Number.isFinite(alreadyAttempted) && alreadyAttempted > 0 ? Math.floor(alreadyAttempted) : 0;
+    this.attempted = Math.min(Math.max(0, prior), Math.max(0, Math.floor(limit)));
+  }
+
+  remaining(): number {
+    return Math.max(0, this.limit - this.attempted);
+  }
+
+  /** Reserves `count` slots. Returns false without changing state when the ceiling would be exceeded. */
+  tryReserve(count = 1): boolean {
+    if (!Number.isInteger(count) || count < 1) return false;
+    if (this.attempted + count > this.limit) return false;
+    this.attempted += count;
+    return true;
   }
 }

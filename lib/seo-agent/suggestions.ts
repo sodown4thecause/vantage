@@ -14,7 +14,23 @@ import { geoAlwaysAsk } from "@/lib/seo-agent/budget";
  */
 
 export type ProfileContext = { productDomain: string | null; productName: string | null; competitor: string | null; topic: string | null };
-export type Chip = { category: "seo" | "geo" | "content"; text: string; costLabel: string };
+export type Chip = {
+  category: "seo" | "geo" | "content";
+  text: string;
+  costLabel: string;
+  /** Exactly one chip in a journey set is recommended. */
+  recommended?: boolean;
+  /** Short plain-language reason shown with the recommended chip. */
+  reason?: string;
+};
+
+export type JourneyFocus = "seo" | "geo";
+export type JourneyContext = {
+  profile: ProfileContext;
+  focus?: JourneyFocus;
+  /** Tools used in the latest answer, when known. */
+  latestTools?: string[];
+};
 
 type Category = Chip["category"];
 const CATEGORIES: readonly Category[] = ["seo", "geo", "content"];
@@ -26,30 +42,33 @@ type Template = { id: string; text: string };
 // Profile templates, three per category. Index N rotates in on days where dayOfYear % 3 === N.
 const PROFILE_TEMPLATES: Record<Category, Template[]> = {
   seo: [
-    { id: "seo-0", text: "Which keywords does {competitor} rank for that {productName} doesn't?" },
-    { id: "seo-1", text: "Who links to {competitor} but not to {productDomain}?" },
-    { id: "seo-2", text: "What are the top Google results for '{topic}' right now?" },
+    { id: "seo-0", text: "Which search phrases does {competitor} win that {productName} does not?" },
+    { id: "seo-1", text: "Which sites recommend {competitor} but not {productDomain}?" },
+    { id: "seo-2", text: "Who appears on Google for '{topic}' right now?" },
   ],
   geo: [
-    { id: "geo-0", text: "Does ChatGPT mention {productName} when people ask about {topic}?" },
-    { id: "geo-1", text: "Which sites do AI answers cite for '{topic}'?" },
-    { id: "geo-2", text: "How much AI search volume does '{topic}' get?" },
+    { id: "geo-0", text: "Do AI assistants mention {productName} when people ask about {topic}?" },
+    { id: "geo-1", text: "Which websites do AI answers recommend for '{topic}'?" },
+    { id: "geo-2", text: "How often do people ask AI tools about '{topic}'?" },
   ],
   content: [
-    { id: "content-0", text: "What should our next blog post target to win '{topic}' searches?" },
-    { id: "content-1", text: "Which '{topic}' questions are people asking that we haven't covered?" },
-    { id: "content-2", text: "Plan a comparison post: {productName} vs {competitor}" },
+    { id: "content-0", text: "What should we research next to compete on '{topic}'?" },
+    { id: "content-1", text: "Which '{topic}' questions still need a clear answer from us?" },
+    { id: "content-2", text: "What would a fair {productName} vs {competitor} comparison cover?" },
   ],
 };
 
 // Generic templates, one per category, used when a profile template needs a field the profile does not have.
 const GENERIC_TEMPLATES: Record<Category, Template> = {
-  seo: { id: "seo-generic", text: "What keywords should a new developer tool target first?" },
-  geo: { id: "geo-generic", text: "How do AI assistants decide which tools to recommend?" },
-  content: { id: "content-generic", text: "What blog topics bring developer tools signups?" },
+  seo: { id: "seo-generic", text: "Who appears on Google for developer-tool searches?" },
+  geo: { id: "geo-generic", text: "Do AI assistants mention tools like ours?" },
+  content: { id: "content-generic", text: "What research would shape our next comparison brief?" },
 };
 
-/** Template id to the data tool its chip would run. Generic templates run no tool. */
+/**
+ * Template id to the data tool its chip would run. The generic SEO and GEO chips ask for Google results and AI answers,
+ * so they carry those tools (and an estimate, not "Free"); only the generic research chip runs no tool.
+ */
 export const STARTER_TOOLS: Readonly<Record<string, string | null>> = {
   "seo-0": "ranked_keywords",
   "seo-1": "backlink_gap",
@@ -60,8 +79,8 @@ export const STARTER_TOOLS: Readonly<Record<string, string | null>> = {
   "content-0": "keyword_ideas",
   "content-1": "keyword_ideas",
   "content-2": "keyword_gap",
-  "seo-generic": null,
-  "geo-generic": null,
+  "seo-generic": "google_serp",
+  "geo-generic": "llm_response",
   "content-generic": null,
 };
 
@@ -102,10 +121,11 @@ function utcDayOfYear(now: Date): number {
 }
 
 export function costLabel(tool: string | null, cached: boolean, geoAsk: boolean): string {
-  if (!tool || cached) return "Free";
-  if (tool === "llm_response") return geoAsk ? "Needs approval" : "~2 credits";
-  if (tool === "backlink_gap") return "~2 credits";
-  return "~1 credit";
+  if (!tool) return "Free";
+  if (cached) return "Free (cached)";
+  if (tool === "llm_response") return geoAsk ? "Needs approval" : "Est. ~2 credits";
+  if (tool === "backlink_gap") return "Est. ~2 credits";
+  return "Est. ~1 credit";
 }
 
 type Rendered = { text: string; tool: string | null };
@@ -129,16 +149,23 @@ function pick(category: Category, index: number, ctx: ProfileContext): Rendered 
   const template = PROFILE_TEMPLATES[category][index]!;
   const text = fill(template.text, ctx);
   if (text !== null) return { text, tool: STARTER_TOOLS[template.id] ?? null };
-  return { text: GENERIC_TEMPLATES[category].text, tool: null };
+  const generic = GENERIC_TEMPLATES[category];
+  return { text: generic.text, tool: STARTER_TOOLS[generic.id] ?? null };
 }
 
 /** Three starter chips in seo, geo, content order. Cost labels are the uncached default; see withCacheLabels. */
-export function starterChips(ctx: ProfileContext, now: Date = new Date(), geoAsk: boolean = geoAlwaysAsk()): Chip[] {
+export function starterChips(
+  ctx: ProfileContext,
+  now: Date = new Date(),
+  geoAsk: boolean = geoAlwaysAsk(),
+  focus: JourneyFocus = "seo",
+): Chip[] {
   const index = utcDayOfYear(now) % ROTATION_SIZE;
-  return CATEGORIES.map((category) => {
+  const chips = CATEGORIES.map((category) => {
     const { text, tool } = pick(category, index, ctx);
     return { category, text, costLabel: costLabel(tool, false, geoAsk) };
   });
+  return annotateJourney(chips, { profile: ctx, focus });
 }
 
 /**
@@ -219,10 +246,61 @@ export async function withCacheLabels(chips: Chip[], ctx: ProfileContext): Promi
       if (!probe) return chip;
       try {
         const hit = await probe();
-        return hit ? { ...chip, costLabel: "Free" } : chip;
+        return hit ? { ...chip, costLabel: costLabel(tool, true, false) } : chip;
       } catch {
         return chip;
       }
     }),
   );
+}
+
+
+/** Prefer GEO when the lane is GEO; otherwise react to the latest findings, and start with SEO when there are none. */
+export function recommendCategory(input: JourneyContext): Category {
+  if (input.focus === "geo") return "geo";
+  const tools = input.latestTools ?? [];
+  if (tools.some((tool) => tool === "llm_response" || tool === "ai_keyword_volume")) return "seo";
+  if (tools.some((tool) => tool === "ranked_keywords" || tool === "google_serp" || tool === "keyword_ideas")) return "geo";
+  if (tools.some((tool) => tool === "backlink_gap" || tool === "referring_domains")) return "content";
+  return "seo";
+}
+
+export function recommendationReason(category: Category, input: JourneyContext): string {
+  const { productName, competitor, topic, productDomain } = input.profile;
+  if (input.focus === "geo" && category === "geo") {
+    return "You are in GEO research — start with whether AI answers mention you.";
+  }
+  if (category === "seo") {
+    if (competitor && productName) return `Uses ${competitor} to find search gaps versus ${productName}.`;
+    if (topic) return `Shows who currently appears on Google for ${topic}.`;
+    if (productDomain) return `Grounds the next step in ${productDomain} without needing a full profile.`;
+    return "A simple Google visibility check — no profile setup required.";
+  }
+  if (category === "geo") {
+    if (productName && topic) return `Checks whether assistants mention ${productName} for ${topic}.`;
+    if (topic) return `Shows which sites AI answers recommend for ${topic}.`;
+    return "Checks whether AI assistants mention tools like yours.";
+  }
+  if (competitor && productName) return `Turns rival and product context into a fair comparison brief.`;
+  if (topic) return `Builds the next research step around ${topic}.`;
+  return "Shapes a comparison brief from general developer-tool research.";
+}
+
+/** Mark exactly one chip recommended with a reason. Older chip arrays without metadata stay compatible. */
+export function annotateJourney(chips: Chip[], input: JourneyContext): Chip[] {
+  if (chips.length === 0) return chips;
+  const recommended = recommendCategory(input);
+  const hasCategory = chips.some((chip) => chip.category === recommended);
+  const pick = hasCategory ? recommended : chips[0]!.category;
+  return chips.map((chip) => {
+    if (chip.category !== pick) {
+      const { recommended: _r, reason: _reason, ...rest } = chip;
+      return rest;
+    }
+    return {
+      ...chip,
+      recommended: true,
+      reason: recommendationReason(pick, input),
+    };
+  });
 }

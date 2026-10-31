@@ -1,20 +1,39 @@
 import { z } from "zod";
 
 import { dataForSeoConfig } from "@/lib/dataforseo/config";
+import { filterToolEvidence } from "@/lib/dataforseo/field-filter";
 import { DataForSeoDeniedError } from "@/lib/dataforseo/gate";
 import { PaidCallDeniedError } from "@/lib/providers/paid-call";
-import type { QuestionBudget } from "@/lib/seo-agent/budget";
+import type { EndpointAttemptBudget, QuestionBudget } from "@/lib/seo-agent/budget";
 import type { FollowUps, PlannedCall, ResultCard } from "@/lib/seo-agent/conversations";
+import type { InsightRetriever } from "@/lib/seo-agent/insights";
 
 /** Per-request state shared by the tools. The route reads cards, notices and followUps after the stream ends. */
+export type ModelEvidence = {
+  tool: string;
+  source: DataSource;
+  value: unknown;
+  /** The normalised lookup input, so results of the same tool for different questions stay distinguishable. */
+  input?: Record<string, unknown>;
+};
+
 export type ToolContext = {
   workspaceId: string;
   budget: QuestionBudget;
+  /** Per-question uncached DataForSEO endpoint attempt ceiling. */
+  attempts: EndpointAttemptBudget;
   brandDomains: string[];
   cards: ResultCard[];
+  /**
+   * What the summarizer reads, kept apart from `cards`: a card is cut to CARD_ROW_LIMIT rows for storage, evidence keeps
+   * the whole value (so list totals stay true) and the normalised input that produced it.
+   */
+  evidence?: ModelEvidence[];
   notices: string[];
   followUps?: FollowUps;
   signal?: AbortSignal;
+  /** Optional knowledge-base reader. Absent or null means search_insights is not offered. */
+  insightRetriever?: InsightRetriever | null;
 };
 
 export const MAX_KEYWORDS = 20;
@@ -26,6 +45,7 @@ const CREDITS_EXHAUSTED = "You have used this month's SEO credits. They reset on
 const DENIAL_NOTICES: Record<string, string> = {
   not_configured: "SEO data is not set up yet.",
   credits_exhausted: CREDITS_EXHAUSTED,
+  attempt_limit: "This question has used its live lookup limit.",
 };
 
 /** Input fields shared by the tool definitions. Trimming here keeps the schema and the normalised input in step. */
@@ -71,33 +91,56 @@ export function failureCode(ctx: ToolContext, err: unknown): string {
 export const MODEL_ROW_LIMIT = 25;
 /** Rows a card keeps for the owner's view. */
 export const CARD_ROW_LIMIT = 100;
+const CARD_STRING_LIMIT = 8_000;
 
 /**
  * What the model sees. A list becomes its first rows plus the full count, so a 1000-row result cannot flood the
- * context. Objects (summaries, SERP and LLM answers) pass through unchanged.
+ * context. Prefer filterToolEvidence via forModelData when the tool name is known.
  */
 export function forModel(value: unknown): unknown {
   if (!Array.isArray(value)) return value;
   return { rows: value.slice(0, MODEL_ROW_LIMIT), total: value.length };
 }
 
-/** What a card keeps: a list is cut to CARD_ROW_LIMIT rows, anything else is stored unchanged. */
+function boundCardValue(value: unknown, depth = 0): unknown {
+  if (typeof value === "string") return value.length <= CARD_STRING_LIMIT ? value : value.slice(0, CARD_STRING_LIMIT);
+  if (Array.isArray(value)) return value.slice(0, CARD_ROW_LIMIT).map((item) => boundCardValue(item, depth + 1));
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+      out[key] = boundCardValue(nested, depth + 1);
+    }
+    return out;
+  }
+  return value;
+}
+
+/** What a card keeps: lists are cut to CARD_ROW_LIMIT rows and nested strings are bounded. */
 export function forCard(value: unknown): unknown {
-  return Array.isArray(value) ? value.slice(0, CARD_ROW_LIMIT) : value;
+  return boundCardValue(value);
 }
 
 /** Where a data result came from. "cached" results may be up to the cache window old; "live" results were just fetched. */
 export type DataSource = "live" | "cached";
 
 /**
- * What the model sees of a data result: its source and the value, shaped by forModel. The source lets the model call
- * the figures live or cached without inventing a date. Errors and approval requests are control results, not data.
+ * What the model sees of a data result: its source and the value, projected and bounded for the tool. The source lets
+ * the model call the figures live or cached without inventing a date. Errors and approval requests are control results.
  */
-export function forModelData(source: DataSource, value: unknown): { source: DataSource; data: unknown } {
-  return { source, data: forModel(value) };
+export function forModelData(source: DataSource, value: unknown, tool: string): { source: DataSource; data: unknown } {
+  return { source, data: filterToolEvidence(tool, value) };
 }
 
-export function addCard(ctx: ToolContext, card: { tool: string; title: string; cached: boolean; data: unknown; sandbox?: boolean }): void {
+export function addCard(
+  ctx: ToolContext,
+  card: { tool: string; title: string; cached: boolean; data: unknown; sandbox?: boolean; input?: Record<string, unknown> },
+): void {
+  ctx.evidence?.push({
+    tool: card.tool,
+    source: card.cached ? "cached" : "live",
+    value: card.data,
+    ...(card.input ? { input: card.input } : {}),
+  });
   ctx.cards.push({
     tool: card.tool,
     title: card.title,
@@ -128,8 +171,8 @@ export async function runGated<T>(ctx: ToolContext, call: GatedCall<T>): Promise
   try {
     const hit = await call.peek();
     if (hit !== null) {
-      addCard(ctx, { tool: call.tool, title: call.title, cached: true, data: hit });
-      return forModelData("cached", hit);
+      addCard(ctx, { tool: call.tool, title: call.title, cached: true, data: hit, input: call.input });
+      return forModelData("cached", hit, call.tool);
     }
   } catch {
     return { error: "failed" };
@@ -143,8 +186,8 @@ export async function runGated<T>(ctx: ToolContext, call: GatedCall<T>): Promise
   try {
     const { value, cached } = await call.fetch();
     if (cached) ctx.budget.refund(call.credits);
-    addCard(ctx, { tool: call.tool, title: call.title, cached, data: value });
-    return forModelData(cached ? "cached" : "live", value);
+    addCard(ctx, { tool: call.tool, title: call.title, cached, data: value, input: call.input });
+    return forModelData(cached ? "cached" : "live", value, call.tool);
   } catch (err) {
     ctx.budget.refund(call.credits);
     return { error: failureCode(ctx, err) };
@@ -166,4 +209,7 @@ export async function settleAll<I, T>(items: I[], run: (item: I) => Promise<T>):
   );
 }
 
-export const gateOptions = (ctx: ToolContext) => ({ signal: ctx.signal });
+export const gateOptions = (ctx: ToolContext) => ({
+  signal: ctx.signal,
+  reserveEndpointAttempt: (count = 1) => ctx.attempts.tryReserve(count),
+});

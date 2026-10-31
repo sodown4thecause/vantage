@@ -12,6 +12,7 @@ import {
   appendMessage,
   claimPlan,
   ConversationNotFoundError,
+  type ExecutionState,
   createConversation,
   getConversation,
   type SeoMessageRow,
@@ -146,8 +147,14 @@ async function approvePlan(
   if (!conversation.messages.some((message) => message.id === messageId)) return json({ error: "not_found" }, 404);
 
   // The claim is one conditional update, so a double click cannot run the plan twice.
-  const plan = await claimPlan(workspaceId, messageId);
-  if (!plan || plan.length === 0) return json({ error: "already_run" }, 409);
+  const claimed = await claimPlan(workspaceId, messageId);
+  if (claimed && "legacy" in claimed) {
+    return json({
+      error: "plan_outdated",
+      message: "This plan was saved before approvals were tracked, so it cannot be run. Ask the question again to get a fresh plan.",
+    }, 409);
+  }
+  if (!claimed || claimed.plan.length === 0) return json({ error: "already_run" }, 409);
 
   try {
     const profile = toAgentProfile(await getLatestMonitoringProfile(workspaceId));
@@ -159,12 +166,13 @@ async function approvePlan(
       history: historyOf(conversation.messages),
       classification: APPROVAL_CLASSIFICATION,
       profile,
-      approved: plan,
+      approved: claimed.plan,
+      execution: claimed.execution,
     }, { signal: req.signal });
-    return answerResponse({ workspaceId, conversationId, run, approvedMessageId: messageId });
+    return answerResponse({ workspaceId, conversationId, run, approvedMessageId: messageId, execution: claimed.execution });
   } catch (err) {
     console.error("[seo-agent] approved plan failed", { error: err instanceof Error ? err.name : "unknown" });
-    const returned = await returnPlan(workspaceId, messageId);
+    const returned = await returnPlan(workspaceId, messageId, claimed.execution);
     return textResponse(FAILURE_COPY, conversationId, returned);
   }
 }
@@ -212,6 +220,8 @@ function answerResponse(args: {
   run: AgentRun;
   /** Set for an approved plan: the message whose plan this run belongs to. Its run is not a charged question. */
   approvedMessageId?: string;
+  /** Set with `approvedMessageId`: the attempt ledger the plan was approved with. */
+  execution?: ExecutionState;
 }): Response {
   // The turn's work is registered with the platform, so a client that disconnects does not cancel its settlement
   // (the ledger, in-flight lookup costs, the saved answer and the released charge). The stream streams unchanged.
@@ -230,7 +240,7 @@ function answerResponse(args: {
 }
 
 async function runTurn(
-  args: { workspaceId: string; conversationId: string; run: AgentRun; approvedMessageId?: string },
+  args: { workspaceId: string; conversationId: string; run: AgentRun; approvedMessageId?: string; execution?: ExecutionState },
   writer: Parameters<AgentRun["write"]>[0],
 ): Promise<void> {
   writer.write({ type: "message-metadata", messageMetadata: { conversationId: args.conversationId } });
@@ -245,7 +255,14 @@ async function runTurn(
     writer.write({ type: "text-delta", id, delta: FAILURE_COPY });
     writer.write({ type: "text-end", id });
     outcome = {
-      status: "failed", content: "", cards: [], followUps: { seo: "", geo: "", content: "" }, plan: [], notices: [], creditsUsed: 0,
+      status: "failed",
+      content: "",
+      cards: [],
+      followUps: { seo: "", geo: "", content: "" },
+      plan: [],
+      notices: [],
+      creditsUsed: 0,
+      execution: args.execution ?? { rootMessageId: args.run.messageId, attemptedEndpoints: 0 },
     };
   }
   const returned = await settleTurn({ ...args, messageId: args.run.messageId }, outcome);
@@ -271,7 +288,7 @@ async function settleTurn(
 ): Promise<boolean> {
   try {
     if (outcome.status === "failed" || outcome.status === "refused") {
-      if (args.approvedMessageId) return await returnPlan(args.workspaceId, args.approvedMessageId);
+      if (args.approvedMessageId) return await returnPlan(args.workspaceId, args.approvedMessageId, outcome.execution);
       await release(args.workspaceId, QUESTION_LIMIT);
       await saveFailure(
         args.workspaceId,
@@ -285,7 +302,13 @@ async function settleTurn(
       id: args.messageId,
       role: "assistant",
       content: outcome.content,
-      parts: { cards: outcome.cards, followUps: outcome.followUps, plan: outcome.plan, notices: outcome.notices },
+      parts: {
+        cards: outcome.cards,
+        followUps: outcome.followUps,
+        plan: outcome.plan,
+        notices: outcome.notices,
+        execution: outcome.execution,
+      },
       status: storedStatus(outcome),
       creditsUsed: outcome.creditsUsed,
     });
@@ -312,10 +335,13 @@ async function saveFailure(workspaceId: string, conversationId: string, copy: st
   }
 }
 
-/** Returns an approved plan to needs_approval after a run that produced no answer. Best effort; true when it went back. */
-async function returnPlan(workspaceId: string, messageId: string): Promise<boolean> {
+/**
+ * Returns an approved plan to needs_approval after a run that produced no answer, saving the attempts the run spent so
+ * a retry cannot regain them. Best effort; true when it went back.
+ */
+async function returnPlan(workspaceId: string, messageId: string, execution: ExecutionState): Promise<boolean> {
   try {
-    return await unclaimPlan(workspaceId, messageId);
+    return await unclaimPlan(workspaceId, messageId, execution);
   } catch (err) {
     console.error("[seo-agent] returning the plan failed", { error: err instanceof Error ? err.name : "unknown" });
     return false;
