@@ -30,7 +30,7 @@ vi.mock("@/lib/content-agent/repository", () => ({
 import { createContentAgent } from "@/lib/content-agent/agent";
 
 type DraftTool = {
-  execute: (input: { title: string; body: string; format: "blog_post"; sourceBacked: boolean }, options: { abortSignal?: AbortSignal }) => Promise<unknown>;
+  execute: (input: { title: string; body: string; format: "blog_post" | "linkedin_post"; sourceBacked: boolean }, options: { abortSignal?: AbortSignal }) => Promise<unknown>;
 };
 type DraftUpdateTool = {
   execute: (input: { draftId: string; title: string; body: string }) => Promise<unknown>;
@@ -59,12 +59,16 @@ const profile = {
   createdAt: new Date("2026-10-01T00:00:00.000Z"),
   updatedAt: new Date("2026-10-01T00:00:00.000Z"),
 };
-const createAgent = (draftUpdate?: { draftId: string; title: string; body: string }) => createContentAgent({
+const createAgent = (
+  draftUpdate?: { draftId: string; title: string; body: string },
+  repurposeCitations?: Array<{ title: string; url: string }>,
+) => createContentAgent({
   workspaceId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a11",
   threadId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a12",
   models: { apiKey: "test-key", model: "anthropic/claude-sonnet-5.5" },
   brandVoiceProfile: profile,
   ...(draftUpdate ? { draftUpdate } : {}),
+  ...(repurposeCitations ? { repurposeCitations } : {}),
 });
 
 beforeEach(() => {
@@ -191,6 +195,31 @@ describe("Content draft tool output", () => {
     expect(mocks.appendSourceCitations).toHaveBeenCalledWith("A grounded article.", citations);
     expect(mocks.createDraft).toHaveBeenCalledWith(expect.objectContaining({
       draft: { title: "A useful post", body: "A grounded article.\n\nSources:\n- https://community.example/thread/1", format: "blog_post" },
+    }));
+  });
+
+  it("preserves only citations reloaded from the original draft when saving a repurposed version", async () => {
+    const citation = { title: "Saved source", url: "https://community.example/thread/1" };
+    const input = {
+      title: "Repurposed post",
+      body: `A revised post based on ${citation.url}`,
+      format: "linkedin_post" as const,
+      sourceBacked: true,
+    };
+    mocks.createDraft.mockResolvedValue({ id: "draft-repurpose", ...input });
+    createAgent(undefined, [citation]);
+
+    const tool = (mocks.agentOptions as AgentOptions).tools.save_content_draft;
+    await tool.execute(input, {});
+
+    expect(mocks.appendSourceCitations).toHaveBeenCalledWith(input.body, [citation]);
+    expect(mocks.createDraft).toHaveBeenCalledWith(expect.objectContaining({
+      draft: {
+        title: input.title,
+        body: input.body,
+        format: input.format,
+      },
+      finalizeBody: expect.any(Function),
     }));
   });
 

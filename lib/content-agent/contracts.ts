@@ -18,16 +18,26 @@ export const contentDraftUpdateInputSchema = z.object({
 }).strict();
 export type ContentDraftUpdateInput = z.infer<typeof contentDraftUpdateInputSchema>;
 
+export const contentDraftRepurposeInputSchema = z.object({
+  draftId: z.uuid(),
+  format: z.enum(contentFormatValues),
+}).strict();
+export type ContentDraftRepurposeInput = z.infer<typeof contentDraftRepurposeInputSchema>;
+
 export const contentChatRequestSchema = z.object({
   workspaceId: z.uuid(),
   threadId: z.uuid().optional(),
   message: z.string().min(1).max(32_000).refine((value) => value.trim().length > 0),
   preserveText: z.boolean().optional(),
   draftUpdate: contentDraftUpdateInputSchema.optional(),
+  repurposeDraft: contentDraftRepurposeInputSchema.optional(),
   retry: z.boolean().optional(),
-}).superRefine(({ draftUpdate, preserveText }, context) => {
+}).superRefine(({ draftUpdate, repurposeDraft, preserveText }, context) => {
   if (draftUpdate && preserveText !== true) {
     context.addIssue({ code: "custom", path: ["draftUpdate"], message: "Exact draft edits must preserve text." });
+  }
+  if (draftUpdate && repurposeDraft) {
+    context.addIssue({ code: "custom", path: ["repurposeDraft"], message: "A draft cannot be saved and repurposed in the same request." });
   }
 });
 export type ContentChatRequest = z.infer<typeof contentChatRequestSchema>;
