@@ -7,7 +7,6 @@
 	"compatibility_date": "2026-10-05",
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 	"keep_names": false,
-	// Deploys must not delete variables set in the Cloudflare dashboard. A deploy on 31 Oct 2026 removed TURNSTILE_SECRET_KEY.
 	"keep_vars": true,
 	"assets": {
 		"directory": ".open-next/assets",
