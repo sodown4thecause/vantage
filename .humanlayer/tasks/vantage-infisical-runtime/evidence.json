@@ -1,0 +1,48 @@
+{
+  "status": "BLOCKED: no identity securely provisioned",
+  "testsPassed": 20,
+  "vaultSecretReads": 0,
+  "vaultLoginAttempts": 0,
+  "applicationChanges": false,
+  "cliVersion": "0.44.11",
+  "linuxArchiveSha256": "d5f7ea6b9e9238e150695dafe6f06c0baa06a6e1dd942d12896c797c386a8092",
+  "helperSha256": "b51fbef264a36e5dd8136cf4a57064104ba8422bf8ed4a265b66f15496cfd107",
+  "sources": [
+    "https://github.com/Infisical/cli/releases/tag/v0.44.11",
+    "https://raw.githubusercontent.com/Infisical/cli/v0.44.11/packages/cmd/login.go",
+    "https://raw.githubusercontent.com/Infisical/cli/v0.44.11/packages/util/auth.go",
+    "https://infisical.com/docs/documentation/platform/identities/universal-auth.md",
+    "https://infisical.com/docs/api-reference/endpoints/secrets/read.md"
+  ],
+  "evidence": [
+    {
+      "file": ".evidence/chore-infisical-agent-runtime/vantage-vault-safety-tests-final.log",
+      "sha256": "a11c08f25cd2e235533107b9f182e0e0354066b40259cc3c8dd6efdca6cc753f"
+    },
+    {
+      "file": ".evidence/chore-infisical-agent-runtime/vantage-vault-setup-check.log",
+      "sha256": "445fbc2d32f15e1ce4aa8af9f326d1b61949be82674de23d56a6ab68acfead70"
+    },
+    {
+      "file": ".evidence/chore-infisical-agent-runtime/vantage-infisical-login-source.go",
+      "sha256": "cd5ac4513a18c9024620b4c811dea91ee71deae3dcb1810f1aa3d91b09cbf484"
+    },
+    {
+      "file": ".evidence/chore-infisical-agent-runtime/vantage-infisical-auth-source.go",
+      "sha256": "16da479bf4a9e4d2b95ff5ffd057f5a7b58918752866bada68e45f6d903b8f37"
+    },
+    {
+      "file": ".evidence/chore-infisical-agent-runtime/vantage-infisical-universal-auth.md",
+      "sha256": "071004480a9d748622db1c6f07e3906c6db1a4842602a870d00fd651815949bf"
+    },
+    {
+      "file": ".evidence/chore-infisical-agent-runtime/vantage-infisical-read-secret.md",
+      "sha256": "241df909b629096d58838e152b911d3275eda3f3f22abfe793788c1052ab2ee1"
+    },
+    {
+      "file": ".evidence/chore-infisical-agent-runtime/vantage-infisical-linux-checksums.txt",
+      "sha256": "818aa21d458e7f20dc6dd4c2e94da10caeabcf1cf367800dcbbdc221dd407f5e"
+    }
+  ],
+  "review": "No new attempt through the previously stalled Claude path; different-model review not claimed; no app merge/deploy"
+}
