@@ -50,7 +50,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@opennextjs/cloudflare": "1.20.13",
+    "@opennextjs/cloudflare": "1.20.14",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -65,6 +65,6 @@
     "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^5.0.5",
-    "wrangler": "4.152.0"
+    "wrangler": "4.156.0"
   }
 }
