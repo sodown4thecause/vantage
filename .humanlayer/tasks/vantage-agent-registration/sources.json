@@ -1,0 +1,96 @@
+{
+  "observedDateUTC": "2026-11-01",
+  "timestampPrecision": "day; source requests were not individually timestamped",
+  "mainCommit": "84fe2c98c29e5133d76a39e7cce50f027146e8bd",
+  "referenceCommit": "b53c9edfbfeea679b617727ebca9ba436bade794",
+  "issue": "https://github.com/sodown4thecause/vantage/issues/178",
+  "sources": [
+    {
+      "url": "https://auth-md.com/specification",
+      "snapshot": "/tmp/vantage-authmd-spec.html",
+      "sha256": "02c3ef9b5507ffcd6e489c0d9c47135ba0154ff4a1a917f73c7ec788e6bc971b"
+    },
+    {
+      "url": "https://workos.com/auth-md/docs/auth-md",
+      "snapshot": "/tmp/vantage-authmd-workos.html",
+      "sha256": "6fb0a457c160a65dd654bc5b6376bb86b0e0077f4d519b77f4e97368c78abde0"
+    },
+    {
+      "url": "https://workos.com/blog/neon-claimable-postgres-auth-md-case-study",
+      "snapshot": "/tmp/vantage-authmd-neon-case.html",
+      "sha256": "fc3764aaf18338f78eb359eb7eedb0fe66cc6c02452113e0c4d57260c1273e8d"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/workos/auth.md/main/agent-services/README.md",
+      "snapshot": "/tmp/vantage-authmd-reference-service.md",
+      "sha256": "9076374896f0f7f7bba17e512f869dc99dfb914ac9907a1d403f0670a8ec0755",
+      "observedMainCommit": "b53c9edfbfeea679b617727ebca9ba436bade794"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/workos/auth.md/b53c9edfbfeea679b617727ebca9ba436bade794/LICENSE",
+      "snapshot": "/tmp/vantage-authmd-reference-license.txt",
+      "sha256": "b35325a747c44632d20af6dd31068f9c01a8f616d8170b1f8aa2a1b1f7b43aea"
+    },
+    {
+      "url": "https://neon.com/docs/auth/guides/plugins/oauth-provider.md",
+      "snapshot": "/tmp/vantage-authmd-neon-provider.md",
+      "sha256": "f444207f2bf1b270df0e9f466de44535c5aebd3dee7139cb0e5304e553eea40a"
+    },
+    {
+      "url": "https://ts.sdk.modelcontextprotocol.io/v2/serving/web-standard.md",
+      "snapshot": "/tmp/vantage-authmd-mcp-native.md",
+      "sha256": "bab5d59c0cad9244e94945776c0ab65e45f13565a49163557469fbfda6865361"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/cloudflare/workers-oauth-provider/main/README.md",
+      "snapshot": "/tmp/vantage-authmd-cloudflare-oauth.md",
+      "sha256": "7990cb5368714c8f6ad9223c48b66f38634e8d35fae3a0218156c5214d69918b"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/cloudflare/workers-oauth-provider/main/docs/advanced-configuration.md",
+      "snapshot": "/tmp/vantage-authmd-cloudflare-advanced.md",
+      "sha256": "e3d09e8328e72a39fc3736eaeedff0e40c74807b4e3144481b538eb3d5614be4"
+    },
+    {
+      "url": "https://code.claude.com/docs/en/plugins-reference.md",
+      "snapshot": "/tmp/vantage-authmd-claude-plugins.md",
+      "sha256": "a10a371d18d571e769f99720d4402f3ec13ceb668561266f57145cfa940fa4ed"
+    },
+    {
+      "url": "https://developers.openai.com/codex/mcp/",
+      "snapshot": "/tmp/vantage-authmd-codex-mcp.html",
+      "sha256": "c89fa3176898821caaa0b7bf278ae419ffbdd0387fe673e46168ac0b7dc05086"
+    },
+    {
+      "url": "https://exe.dev/docs/integrations-github.md",
+      "snapshot": "/tmp/vantage-authmd-github-integration.md",
+      "sha256": "2eb31d57f0487fbfc1b03cc73f966c8736cf3fcca6a00096c1b278fb093c672e"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/workos/auth.md/b53c9edfbfeea679b617727ebca9ba436bade794/agent-services/src/routes/agent-auth.ts",
+      "snapshot": "/tmp/vantage-authmd-reference-agent-auth.ts",
+      "sha256": "85a80c542e88a8c90c93592a6c534423a57deb36844a22773c15418976be320b"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/workos/auth.md/b53c9edfbfeea679b617727ebca9ba436bade794/agent-services/src/routes/claim.ts",
+      "snapshot": "/tmp/vantage-authmd-reference-claim.ts",
+      "sha256": "06d7f8ad28e0a1906ec65b5e4ceb28470ffa99999e805b49b1214471c8442a06"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/workos/auth.md/b53c9edfbfeea679b617727ebca9ba436bade794/agent-services/src/routes/token.ts",
+      "snapshot": "/tmp/vantage-authmd-reference-token.ts",
+      "sha256": "ac65f57e816cce4f9d950b61f8819391ef0a81de12525e8623f3487a4df48960"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/workos/auth.md/b53c9edfbfeea679b617727ebca9ba436bade794/agent-services/src/store.ts",
+      "snapshot": "/tmp/vantage-authmd-reference-store.ts",
+      "sha256": "c7707903f61cea97de4b0b9badad1e0f306180ecb3e4ef6f84faaf46bd9e80f8"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/workos/auth.md/b53c9edfbfeea679b617727ebca9ba436bade794/agent-services/src/verify.ts",
+      "snapshot": "/tmp/vantage-authmd-reference-verify.ts",
+      "sha256": "833f5629add08151837ab0999cae469e64d90de15c39e1b2cdc4b05b3be44ae3"
+    }
+  ],
+  "boundaries": "Planning only. No new secrets, dependencies, application code, migrations, deployment or paid calls."
+}
