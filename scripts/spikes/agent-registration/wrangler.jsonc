@@ -1,0 +1,9 @@
+{
+  "name": "vantage-ar00-local-only",
+  "main": "worker.ts",
+  "compatibility_date": "2026-10-05",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "workers_dev": false,
+  "routes": [],
+  "send_metrics": false
+}

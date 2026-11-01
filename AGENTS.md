@@ -229,6 +229,9 @@ once credit headroom is confirmed.
 
 ## Verification
 
+- Protocol compatibility evidence must name the pinned SDK/client versions and
+  wire revision actually exercised. Mock authentication is not proof of live
+  Neon login, signup, consent or claim; document those remaining checks.
 - Unit and contract tests: `pnpm test` (Vitest) plus the `node --test` Worker
   entry tests.
 - Type check: `pnpm typecheck`. Lint: `pnpm lint`.

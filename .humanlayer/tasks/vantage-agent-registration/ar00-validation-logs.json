@@ -1,0 +1,117 @@
+{
+  "scope": "AR00 local-only proof; review blocked; no live auth or deployment",
+  "protocol": "2025-11-25",
+  "versions": {
+    "mcpServer": "2.4.0",
+    "mcpClient": "2.4.0",
+    "jose": "6.2.14",
+    "wrangler": "4.152.0",
+    "claudeObserved": "2.1.316",
+    "codexObserved": "0.165.0"
+  },
+  "tests": {
+    "targeted": 17,
+    "vitest": 2207,
+    "vitestSkipped": 1,
+    "node": 44
+  },
+  "reviewAttempts": [
+    {
+      "deadlineSeconds": 120,
+      "exitCode": 124,
+      "findingsReturned": false
+    },
+    {
+      "deadlineSeconds": 60,
+      "exitCode": 124,
+      "findingsReturned": false
+    }
+  ],
+  "logs": [
+    {
+      "file": ".evidence/test-agent-registration-compat/ar00/vantage-ar00-targeted-1.log",
+      "sha256": "6f7d3a6a8fce0b2c44d366e03d4a30755b0bbacabd8f302abce6a2843115d71c",
+      "bytes": 7364
+    },
+    {
+      "file": ".evidence/test-agent-registration-compat/ar00/vantage-ar00-targeted-2.log",
+      "sha256": "ebd355028de0e13281fc18912ef3a234f8ed26f374b47e3e30a83995bc0f178f",
+      "bytes": 6335
+    },
+    {
+      "file": ".evidence/test-agent-registration-compat/ar00/vantage-ar00-legacy-baseline.log",
+      "sha256": "dbe82d9d6fe3cae9c8239be33908fdfb00f7f950a83e6eaef01f6e1f5e490998",
+      "bytes": 1025
+    },
+    {
+      "file": ".evidence/test-agent-registration-compat/ar00/vantage-ar00-lint.log",
+      "sha256": "40605543e51d9070ef0a33f0641e80831a2018bb78543b49345b814c3e19d796",
+      "bytes": 4121
+    },
+    {
+      "file": ".evidence/test-agent-registration-compat/ar00/vantage-ar00-typecheck.log",
+      "sha256": "8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92",
+      "bytes": 15
+    },
+    {
+      "file": ".evidence/test-agent-registration-compat/ar00/vantage-ar00-test.log",
+      "sha256": "ad062e9ede8f165dd8c27b3f8437943283871a0d4a9cb036e1db74a1bf68fd13",
+      "bytes": 44876
+    },
+    {
+      "file": ".evidence/test-agent-registration-compat/ar00/vantage-ar00-build.log",
+      "sha256": "75a9da40dbb9dcac499aa5f3fb88e0b846b3a7a0a687bcd545d034d74e038cfc",
+      "bytes": 2484
+    },
+    {
+      "file": ".evidence/test-agent-registration-compat/ar00/vantage-ar00-node.log",
+      "sha256": "48d08abf4f0da357efdab5a24f0244fae91f40f65b41b1a55146474dad5f230c",
+      "bytes": 11374
+    },
+    {
+      "file": ".evidence/test-agent-registration-compat/ar00/vantage-ar00-worker-build.log",
+      "sha256": "0e79a8977b64ca1601a77c254425ccfcdf9f1d8430e26d8853955aa7800e109a",
+      "bytes": 9882
+    },
+    {
+      "file": ".evidence/test-agent-registration-compat/ar00/vantage-ar00-final-lint.log",
+      "sha256": "941fd626dc4a3b2abb6b8fd70bc353e9f473a0fc64a784726729f50a4813e36d",
+      "bytes": 3904
+    },
+    {
+      "file": ".evidence/test-agent-registration-compat/ar00/vantage-ar00-final-typecheck.log",
+      "sha256": "8366207267355d3e3d5bf3bf6e8c94c5f93f6078c34f08973fa2b38cdda6cc92",
+      "bytes": 15
+    },
+    {
+      "file": ".evidence/test-agent-registration-compat/ar00/vantage-ar00-final-test.log",
+      "sha256": "5245dc1be39f023c8fcd9eb0448e644ee9dca2b2f2d6f50cd42f037ac41fbe2c",
+      "bytes": 44872
+    },
+    {
+      "file": ".evidence/test-agent-registration-compat/ar00/vantage-ar00-final-targeted.log",
+      "sha256": "af7dd91a6b3dc63b05ff40587829d3ef2236b4211c084c5371509d108b610320",
+      "bytes": 4217
+    },
+    {
+      "file": ".evidence/test-agent-registration-compat/ar00/vantage-ar00-review-result.json",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "file": ".evidence/test-agent-registration-compat/ar00/vantage-ar00-review-result-2.json",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "file": ".evidence/test-agent-registration-compat/ar00/vantage-ar00-review-stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "file": ".evidence/test-agent-registration-compat/ar00/vantage-ar00-review-stderr-2.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    }
+  ]
+}
