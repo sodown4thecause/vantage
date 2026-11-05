@@ -1,6 +1,6 @@
 #!/bin/bash
 # Installs dependencies in Claude Code cloud sessions so agents can run
-# `pnpm lint && pnpm typecheck && pnpm test` (AGENTS.md "The standard loop") immediately.
+# `pnpm lint && pnpm typecheck && pnpm test` (AGENTS.md "Checks before a PR") immediately.
 set -euo pipefail
 
 if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
