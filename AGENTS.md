@@ -34,8 +34,9 @@ writes and posts the reply. Marketing site and app: contextfor.dev.
   task's budget.
 - Destructive data: production database writes, deleting anything you did not
   create in this task.
-- Anything public: posts, real-user emails, publishing skills, docs or
-  directory listings.
+- Anything public outside this repo: posts, real-user emails, publishing skills,
+  docs sites or directory listings. PRs to this repo, docs included, are
+  routine.
 
 Merging to `main` is not on this list. It deploys to staging automatically,
 which is allowed.
@@ -160,17 +161,20 @@ PR.
    Re-request once and wait 30 minutes. Still missing: label the PR `blocked`
    and report. Exception: Greptile ignores `*.md`, so a docs-only PR needs green
    CI and Cubic only.
-6. **Caps:** at most 3 fix rounds per reviewer per PR. Rerun a failed CI job
+6. **One push per review round:** wait for every reviewer to finish, fix all
+   findings together, then push once. Each push cancels the running CI and
+   restarts every reviewer.
+7. **Caps:** at most 3 fix rounds per reviewer per PR. Rerun a failed CI job
    once; a second failure is real. Past a cap, label `blocked`, summarise the
    open findings in the PR and report. Never open a new PR to reset a count.
-7. **Never** bypass protections (`--admin`), weaken or skip checks, edit
+8. **Never** bypass protections (`--admin`), weaken or skip checks, edit
    reviewer config to get a pass, or claim an approval you haven't seen.
-8. **Merge** with `gh pr merge --squash --delete-branch` after rebasing ordinary
+9. **Merge** with `gh pr merge --squash --delete-branch` after rebasing ordinary
    conflicts and re-running checks. Then confirm it merged, and watch `main` CI
    and the staging deploy. A broken staging deploy is yours to fix next.
-9. **While waiting**, schedule a check-in with your harness. Never leave an open
-   PR without a next check.
-10. **Finish:** report the PR link and evidence to Liam, remove your worktree
+10. **While waiting**, schedule a check-in with your harness. Never leave an
+    open PR without a next check.
+11. **Finish:** report the PR link and evidence to Liam, remove your worktree
     and branch, stop your servers, and put a three-line handoff (what changed,
     evidence, lesson) in the PR.
 
@@ -183,13 +187,17 @@ PR.
   upstream fetch in API routes and server actions. Refusals return a generic
   message.
 - User-supplied URLs go through `fetchPublicText` (`lib/http/public-fetch.ts`).
-- Every paid or metered call goes through `runPaidCall`
-  (`lib/providers/paid-call.ts`) so it hits the cost ledger and the budget caps
-  (`docs/costs.md`).
+- Every call with a positive cost estimate goes through `runPaidCall`
+  (`lib/providers/paid-call.ts`) so it reserves budget and hits the cost ledger
+  (`docs/costs.md`). `runPaidCall` rejects a zero estimate: record a free call
+  with `recordCost` (`lib/costs/ledger.ts`) instead, as `lib/research/tako.ts`
+  does.
 - Model calls reuse the existing gateway helper; never add a new direct
-  provider call. For a fixed-choice decision (route, filter, classify, allow/deny), use a
-  decision model (Clef) with typed questions instead of parsing prose. Switching
-  a scorer needs an eval-set result, not a hunch.
+  provider call. For a fixed-choice decision (route, filter, classify,
+  allow/deny), use a decision model through the gateway, such as Cloudflare's
+  `@cf/cloudflare/clef`, with typed questions instead of parsing prose. The SEO
+  agent reads its model ID from `SEO_DECISION_MODEL`. Switching a scorer needs
+  an eval-set result, not a hunch.
 - Fixture data fails closed in production unless `ALLOW_FIXTURES` is set, and
   every persisted fixture document carries `metadata.provider` and
   `metadata.mocked` so the UI labels it as sample data, never as a live lead.
@@ -206,8 +214,9 @@ PR.
 - Neon: runtime uses the pooled `DATABASE_URL` over `neon-http` (no interactive
   transactions; use single atomic statements or `db.batch()`). Test on a Neon
   branch you create, and delete it when done.
-- Neon Auth is built lazily (`lib/auth/server.ts`). Don't move `requiredEnv`
-  back to module scope; the build must not need `NEON_AUTH_*`.
+- Neon Auth is built lazily (`lib/auth/server.ts`), and the auth route calls
+  `auth.handler()` inside each request. Don't call `auth.handler()` or
+  `requiredEnv` at module scope; the build must not need `NEON_AUTH_*`.
 - Migrations: `pnpm db:generate`, commit the SQL and the snapshot, never
   hand-edit generated files. Additive only (expand now, contract in a later
   release).

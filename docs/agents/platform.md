@@ -47,24 +47,29 @@ BMAD or similar): their skills overlap and fight over the same stages.
 
 - **Plan and limits**: Workers Paid (US$5/month floor). 30 s CPU per HTTP
   request, configurable; 15 min CPU and wall time for Cron Triggers on
-  intervals of 1 h or more (30 s CPU below that); 10 MB script limit (CI
-  measures it); 128 MB per isolate; 10,000 subrequests by default. Waiting on
-  `fetch` or database calls doesn't count as CPU.
+  intervals of 1 h or more (30 s CPU below that); Worker size 64 MiB
+  uncompressed, with no compressed limit; 128 MB per isolate; 10,000
+  subrequests by default. Waiting on `fetch` or database calls doesn't count as
+  CPU. The CI size gate (10 MB compressed) is this repo's own guardrail, stricter
+  than the platform limit.
 - **Config**: `wrangler.jsonc`. Worker `dontkillmyvibe`, custom entry
   `worker-entry.mjs`, `compatibility_date` plus `nodejs_compat` and
   `global_fetch_strictly_public` (Cloudflare refuses outbound fetches that
   resolve to private networks, part of the SSRF defence). Bindings: `ASSETS`
   (static assets), `WORKER_SELF_REFERENCE`, `BROWSER`, `AI`, `VECTORIZE`,
-  `ARTIFACTS` (R2), `SCAN` (Workflows), `RADAR_LIMITER` (rate limiting).
+  `ARTIFACTS` (R2), `SCAN` (Workflows), `RADAR_LIMITER` (rate limiting),
+  `EMBED_QUEUE` (Queues producer; the Worker also consumes the queue, with a
+  dead-letter queue, in each environment).
 - **Routes**: `contextfor.dev` and `www.contextfor.dev` as custom domains;
   `workers_dev` is false. Staging is a separate environment and Worker
   (`vantage-staging`) and must not inherit production custom domains.
 - **Cron**: `worker-entry.mjs` adds the scheduled handler. With `SCAN`, it
   starts scan Workflows, rolls up costs, then calls `/api/cron/digest`; without
   `SCAN`, `/api/cron/tick` handles the sweep. Self-fetches use
-  `WORKER_SELF_REFERENCE` and `Authorization: Bearer ${CRON_SECRET}`. Staging
-  runs `0 */3 * * *`; production cron lists stay empty until the sweep is
-  sized.
+  `WORKER_SELF_REFERENCE` and `Authorization: Bearer ${CRON_SECRET}`.
+  Production runs hourly (`0 * * * *`, set at the top level and under
+  `env.production`); staging runs every three hours (`0 */3 * * *`). Changing
+  the production schedule needs Liam.
 - **Runtime rules**: fetch-only database access; no Node-only APIs beyond what
   `nodejs_compat` provides (`node:crypto` and `Buffer` are fine); no long-lived
   connections or in-process timers; global scope under the 1 s startup CPU
@@ -81,15 +86,25 @@ BMAD or similar): their skills overlap and fight over the same stages.
   interactive transactions. Use atomic statements or `db.batch()` when several
   statements must go together.
 - **Migrations** run against the **direct** (non-pooler) endpoint, because
-  transaction-mode pooling doesn't support session-level features. CI applies
-  migrations to a Postgres service container before tests.
-- **Hyperdrive seam**: the client exposes `getReadDb()`, `getFreshDb()` and
-  `withTransaction()`. Prefer `getReadDb()` for read-only paths where staleness
-  is acceptable.
+  transaction-mode pooling doesn't support session-level features. CI only
+  checks for migration drift (`pnpm db:generate`, then
+  `git diff --exit-code -- drizzle`); it doesn't apply migrations to a
+  database. Prove a migration on a Neon branch.
+- **Hyperdrive seam** (`lib/db/client.ts`, only when
+  `VANTAGE_DB_DRIVER=hyperdrive`; otherwise everything uses neon-http):
+  - Use the scoped helpers `withReadDb()` (cached reads, for public read pages)
+    and `withFreshDb()` (leases, budgets, switches, read-after-write). They
+    close the Hyperdrive pool when the callback settles. `getReadDb()` and
+    `getFreshDb()` leave a `postgres-js` pool open under Hyperdrive.
+  - `withTransaction()` throws on the default neon-http driver. It needs the
+    Hyperdrive driver and the `HYPERDRIVE_FRESH` binding.
 - **Neon Auth** (Managed Better Auth) is constructed lazily: `lib/auth/server.ts`
-  uses a Proxy so `app/api/auth/[...path]/route.ts` can destructure `auth`
-  without building it at import time. Don't move `requiredEnv` back to module
-  scope; the build must not need `NEON_AUTH_*`.
+  wraps `auth` in a Proxy, and `app/api/auth/[...path]/route.ts` calls
+  `auth.handler()` inside its `GET` and `POST`, at request time. The Proxy
+  alone doesn't make `export const { GET, POST } = auth.handler()` safe: that
+  builds the client at module scope and fails any build without
+  `NEON_AUTH_BASE_URL`. Don't move `requiredEnv` or `auth.handler()` to module
+  scope.
 - **Operations**: enable autoscaling and PITR, keep `max_connections` in mind
   when sizing any future pool, and rehearse a restore before relying on it.
   Retention and deletion of customer data is a launch requirement.
