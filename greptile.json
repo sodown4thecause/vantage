@@ -1,0 +1,6 @@
+{
+  "excludeAuthors": [
+    "dependabot[bot]"
+  ],
+  "ignorePatterns": "AGENTS.md\n**/*.md\ndocs/**\ngreptile.json\ncubic.yaml\npnpm-lock.yaml"
+}
