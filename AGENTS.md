@@ -190,7 +190,9 @@ PR.
   provider call. For a fixed-choice decision (route, filter, classify, allow/deny), use a
   decision model (Clef) with typed questions instead of parsing prose. Switching
   a scorer needs an eval-set result, not a hunch.
-- Fixture data fails closed in production unless `ALLOW_FIXTURES` is set.
+- Fixture data fails closed in production unless `ALLOW_FIXTURES` is set, and
+  every persisted fixture document carries `metadata.provider` and
+  `metadata.mocked` so the UI labels it as sample data, never as a live lead.
 - No secrets or customer data in source, tests, fixtures or logs.
 
 ## Cloudflare Workers and Neon
