@@ -124,10 +124,11 @@ act from the summary.
 
 - Secrets live in the Proton Pass vault named `agent api's` (the apostrophe is
   part of the name). Liam gives you secret NAMES, never values.
-- Load them with the authenticated Proton Pass CLI or the `env-from-proton`
-  helper, straight into a gitignored `.env` or the child process environment.
-  Read the CLI's `--help` first; never invent syntax. If the helper is missing,
-  report it rather than writing your own.
+- Load them straight into a gitignored `.env` or the child process
+  environment, with the `env-from-proton` helper where the agent machine has it
+  (it is not in this repo), otherwise the authenticated Proton Pass CLI
+  directly. Read the CLI's `--help` first; never invent syntax. If neither is
+  available, report it and block; don't write your own loader.
 - Never expose a value in chat, model context, logs, commits, PRs, memory or
   evidence. Disable shell tracing (`set +x`). Check presence only:
   `[ -n "$NAME" ] && echo "NAME set"`.
@@ -175,8 +176,9 @@ PR.
 
 ## Product code rules
 
-- Every query and mutation is scoped by `workspaceId`; the authorisation and
-  query-boundary tests keep passing.
+- Every query and mutation is scoped by `workspaceId`. A new query or mutation
+  adds a boundary test (for example in `test/workspace-authorization.test.ts`
+  or `test/queue-visibility.test.ts`), and the existing ones keep passing.
 - `authorizeWorkspace` (`lib/auth/workspace.ts`) runs before any write or
   upstream fetch in API routes and server actions. Refusals return a generic
   message.
