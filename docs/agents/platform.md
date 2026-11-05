@@ -75,9 +75,11 @@ BMAD or similar): their skills overlap and fight over the same stages.
   connections or in-process timers; global scope under the 1 s startup CPU
   budget.
 - **Builds**: `pnpm cf:build` and `pnpm cf:preview` run the real Worker
-  runtime; `pnpm dev` runs Next on Node. On native Windows, OpenNext needs
-  symlinks: the repo pins `nodeLinker: hoisted` in `pnpm-workspace.yaml` so the
-  build works without Developer Mode. Otherwise build on Linux, WSL or CI.
+  runtime; `pnpm dev` runs Next on Node. On native Windows, pnpm's default
+  linked `node_modules` layout makes the OpenNext build fail with `EPERM`,
+  because creating symlinks needs Developer Mode or admin rights. The repo pins
+  `nodeLinker: hoisted` in `pnpm-workspace.yaml`, a flat layout that avoids
+  them. If the build still fails, build on Linux, WSL or CI.
 
 ## Neon Postgres
 

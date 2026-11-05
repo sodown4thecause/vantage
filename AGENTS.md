@@ -149,8 +149,9 @@ PR.
 
 1. **Open a ready PR** (not draft) without asking: definition-of-done table,
    evidence, anything not run and why.
-2. **Reviewers:** Greptile (`Greptile Review` check, passes at ≥ 4/5) and Cubic.
-   Watch CI and every review comment.
+2. **Reviewers:** Greptile (`Greptile Review` check, passes at ≥ 4/5) and Cubic
+   gate the merge. Any other review bot is advisory: answer its comments, but
+   it doesn't block a merge. Watch CI and every review comment.
 3. **Answer every comment**, blocking or not: fixed (with the commit), or a false
    positive explained with evidence. A bot's finding is cleared when its next
    review of the new head doesn't repeat it. Resolve a thread only after that.
