@@ -18,8 +18,38 @@ env:
   NEXT_TELEMETRY_DISABLED: "1"
 
 jobs:
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      # True when every changed file is a doc or an AI-reviewer config file.
+      # The heavy jobs below skip their expensive steps but still run under
+      # the same job names, so the required status checks on main stay green.
+      docs-only: ${{ steps.filter.outputs.docs == 'true' && steps.filter.outputs.code == 'false' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            docs:
+              - '**/*.md'
+              - 'docs/**'
+              - '.greptile/**'
+              - 'greptile.json'
+              - 'cubic.yaml'
+            code:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!.greptile/**'
+              - '!greptile.json'
+              - '!cubic.yaml'
+
   verify:
     name: Lint, typecheck, test, build
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -29,58 +59,81 @@ jobs:
       NEON_AUTH_COOKIE_SECRET: 0123456789abcdef0123456789abcdef
     steps:
       - uses: actions/checkout@v7
+      - name: No code changes detected; skipping lint, typecheck, test, and build
+        if: needs.changes.outputs.docs-only == 'true'
+        run: echo "Docs-only PR; heavy steps skipped to keep PR turnaround fast."
       - uses: pnpm/action-setup@v6
+        if: needs.changes.outputs.docs-only != 'true'
         with:
           version: 11.5.0
       - uses: actions/setup-node@v7
+        if: needs.changes.outputs.docs-only != 'true'
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        if: needs.changes.outputs.docs-only != 'true'
       - name: Lint
+        if: needs.changes.outputs.docs-only != 'true'
         run: pnpm lint
       - name: Typecheck
+        if: needs.changes.outputs.docs-only != 'true'
         run: pnpm typecheck
       - name: Test
+        if: needs.changes.outputs.docs-only != 'true'
         run: |
           pnpm test
           node --test test/worker-entry.test.mjs test/scan-run.test.mjs test/queue-consumer.test.mjs
       - name: Check migration drift
+        if: needs.changes.outputs.docs-only != 'true'
         run: |
           pnpm db:generate
           git diff --exit-code -- drizzle
       - name: Build
+        if: needs.changes.outputs.docs-only != 'true'
         run: pnpm build
 
   workers-build:
     # No secrets or placeholder env on purpose: this job fails if the Worker
     # build ever starts needing DATABASE_URL or NEON_AUTH_* again.
     name: Cloudflare Worker bundle (no secrets)
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+      - name: No code changes detected; skipping Worker bundle steps
+        if: needs.changes.outputs.docs-only == 'true'
+        run: echo "Docs-only PR; Worker bundle steps skipped to keep PR turnaround fast."
       - uses: pnpm/action-setup@v6
+        if: needs.changes.outputs.docs-only != 'true'
         with:
           version: 11.5.0
       - uses: actions/setup-node@v7
+        if: needs.changes.outputs.docs-only != 'true'
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        if: needs.changes.outputs.docs-only != 'true'
       - name: Verify no secrets are present
+        if: needs.changes.outputs.docs-only != 'true'
         run: |
           if [ -n "${NEON_AUTH_BASE_URL:-}" ] || [ -n "${NEON_AUTH_COOKIE_SECRET:-}" ] || [ -n "${DATABASE_URL:-}" ]; then
             echo "This job must run without database or auth secrets."
             exit 1
           fi
       - name: Build Cloudflare Worker bundle
+        if: needs.changes.outputs.docs-only != 'true'
         run: pnpm cf:build
       - name: Test blog routes in Cloudflare Worker runtime
+        if: needs.changes.outputs.docs-only != 'true'
         run: pnpm test:blog-worker
       - name: Smoke test built Worker (wrangler dev)
+        if: needs.changes.outputs.docs-only != 'true'
         run: pnpm cf:smoke
       - name: Validate complete Worker upload (dry run)
+        if: needs.changes.outputs.docs-only != 'true'
         run: pnpm exec wrangler deploy --dry-run --env staging --outdir .wrangler/audit-bundle
       # .open-next/worker.js is only the ~2 KB entry shim; wrangler bundles it
       # into the modules under .wrangler/audit-bundle, which are what uploads.
@@ -89,6 +142,7 @@ jobs:
       # grow past the limit unnoticed. Cloudflare counts the compressed script
       # size against the 10 MB paid limit.
       - name: Check Worker size (10 MB compressed paid-plan limit)
+        if: needs.changes.outputs.docs-only != 'true'
         run: |
           dir=.wrangler/audit-bundle
           raw=0
@@ -109,6 +163,7 @@ jobs:
             exit 1
           fi
       - uses: actions/upload-artifact@v7
+        if: needs.changes.outputs.docs-only != 'true'
         with:
           name: worker-bundle
           path: .wrangler/audit-bundle
