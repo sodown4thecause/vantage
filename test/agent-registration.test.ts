@@ -31,34 +31,42 @@ function createFakeRegistrationStore() {
   const registrations = new Map<string, FakeRegistration>();
   const attempts: Array<{ id: string; registrationId: string; userCodeHash: string; email: string | null; expiresAt: Date }> = [];
   const workspaces: string[] = [];
+  const slots = new Map<string, number>();
   let sequence = 0;
 
   const store: RegistrationStore & {
     registrations: typeof registrations;
     attempts: typeof attempts;
     workspaces: typeof workspaces;
+    slots: typeof slots;
   } = {
     registrations,
     attempts,
     workspaces,
-    async countRegistrationsSince(since, ipHash) {
-      return [...registrations.values()].filter(
-        (row) => row.createdAt >= since && (ipHash === null || (row as unknown as { ipHash: string | null }).ipHash === ipHash),
-      ).length;
+    slots,
+    async reserveRegistrationSlot(input) {
+      // Mirrors the SQL: each cap increments only while under its limit.
+      const ipKey = input.ipHash ? `${input.day}:ip:${input.ipHash}` : null;
+      const globalKey = `${input.day}:global`;
+      if (ipKey && (slots.get(ipKey) ?? 0) >= input.maxPerIp) {
+        return { ok: false, reason: "rate_limited" };
+      }
+      if ((slots.get(globalKey) ?? 0) >= input.maxPerDay) {
+        return { ok: false, reason: "quota_exceeded" };
+      }
+      if (ipKey) slots.set(ipKey, (slots.get(ipKey) ?? 0) + 1);
+      slots.set(globalKey, (slots.get(globalKey) ?? 0) + 1);
+      return { ok: true };
     },
-    async createTrialWorkspace() {
-      sequence += 1;
-      const id = `ws_${sequence}`;
-      workspaces.push(id);
-      return id;
-    },
-    async createRegistration(input) {
+    async createTrialRegistration(input) {
       sequence += 1;
       const id = `reg_${sequence}`;
+      const workspaceId = `ws_${sequence}`;
+      workspaces.push(workspaceId);
       registrations.set(id, {
         id,
         status: "active",
-        workspaceId: input.workspaceId,
+        workspaceId,
         expiresAt: input.expiresAt,
         claimTokenExpiresAt: input.claimTokenExpiresAt,
         claimTokenHash: input.claimTokenHash,
@@ -67,7 +75,7 @@ function createFakeRegistrationStore() {
         draftAttempts: 0,
         ...({ ipHash: input.ipHash } as object),
       } as FakeRegistration);
-      return { id };
+      return { id, workspaceId };
     },
     async findRegistration(id) {
       return registrations.get(id) ?? null;
@@ -83,25 +91,36 @@ function createFakeRegistrationStore() {
     },
     async expireRegistrations(now) {
       let expired = 0;
-      const doomed: string[] = [];
       for (const row of registrations.values()) {
         if (row.status === "active" && row.expiresAt <= now) {
           row.status = "expired";
           expired += 1;
-          if (row.workspaceId) doomed.push(row.workspaceId);
         }
       }
-      return { expired, workspacesDeleted: doomed.length };
+      // Mirrors the SQL: delete by status, so a delete that failed on an
+      // earlier run is retried rather than leaking the workspace.
+      const doomed = new Set(
+        [...registrations.values()]
+          .filter((row) => row.status === "expired" && row.workspaceId)
+          .map((row) => row.workspaceId!),
+      );
+      for (const workspaceId of doomed) {
+        const index = workspaces.indexOf(workspaceId);
+        if (index >= 0) workspaces.splice(index, 1);
+      }
+      return { expired, workspacesDeleted: doomed.size };
     },
-    async consumeToolCall(id, limit, now) {
+    async consumeToolCall(id, workspaceId, limit, now) {
       const row = registrations.get(id);
-      if (!row || row.status !== "active" || row.expiresAt <= now || row.toolCalls >= limit) return false;
+      if (!row || row.workspaceId !== workspaceId) return false;
+      if (row.status !== "active" || row.expiresAt <= now || row.toolCalls >= limit) return false;
       row.toolCalls += 1;
       return true;
     },
-    async consumeDraftAttempt(id, limit, now) {
+    async consumeDraftAttempt(id, workspaceId, limit, now) {
       const row = registrations.get(id);
-      if (!row || row.status !== "active" || row.expiresAt <= now || row.draftAttempts >= limit) return false;
+      if (!row || row.workspaceId !== workspaceId) return false;
+      if (row.status !== "active" || row.expiresAt <= now || row.draftAttempts >= limit) return false;
       row.draftAttempts += 1;
       return true;
     },
@@ -248,6 +267,48 @@ describe("anonymous registration", () => {
     expect(other.ok).toBe(true);
     expect(AGENT_TRIAL_MAX_PER_DAY).toBeGreaterThan(AGENT_TRIAL_MAX_PER_IP_PER_DAY);
   });
+
+  it("reserves slots atomically, so concurrent requests cannot overspend", async () => {
+    const store = createFakeRegistrationStore();
+    const register = () =>
+      createAnonymousRegistration({
+        store,
+        origin: ORIGIN,
+        signingKey: KEY,
+        keyId: "vantage-agent-1",
+        pepper: PEPPER,
+        ipHash: "ip_hash_1",
+        now: NOW,
+      });
+
+    // Ten concurrent requests against a cap of three: exactly three succeed.
+    const results = await Promise.all(Array.from({ length: 10 }, register));
+    expect(results.filter((result) => result.ok)).toHaveLength(AGENT_TRIAL_MAX_PER_IP_PER_DAY);
+    expect(results.filter((result) => !result.ok && result.error === "rate_limited")).toHaveLength(
+      10 - AGENT_TRIAL_MAX_PER_IP_PER_DAY,
+    );
+    // And only three trial workspaces exist.
+    expect(store.workspaces).toHaveLength(AGENT_TRIAL_MAX_PER_IP_PER_DAY);
+  });
+
+  it("creates the workspace and the registration together", async () => {
+    const store = createFakeRegistrationStore();
+    const result = await createAnonymousRegistration({
+      store,
+      origin: ORIGIN,
+      signingKey: KEY,
+      keyId: "vantage-agent-1",
+      pepper: PEPPER,
+      ipHash: "ip_hash_1",
+      now: NOW,
+    });
+    if (!result.ok) throw new Error("registration failed");
+    // Every workspace has a registration pointing at it, so cleanup can find it.
+    const registered = new Set(
+      [...store.registrations.values()].map((row) => row.workspaceId),
+    );
+    for (const workspaceId of store.workspaces) expect(registered.has(workspaceId)).toBe(true);
+  });
 });
 
 describe("claim initiation", () => {
@@ -385,11 +446,30 @@ describe("trial quotas", () => {
     });
     if (!result.ok) throw new Error("registration failed");
 
-    expect(await store.consumeToolCall(result.registrationId, 2, NOW)).toBe(true);
-    expect(await store.consumeToolCall(result.registrationId, 2, NOW)).toBe(true);
-    expect(await store.consumeToolCall(result.registrationId, 2, NOW)).toBe(false);
-    expect(await store.consumeDraftAttempt(result.registrationId, 1, NOW)).toBe(true);
-    expect(await store.consumeDraftAttempt(result.registrationId, 1, NOW)).toBe(false);
+    const workspaceId = store.registrations.get(result.registrationId)!.workspaceId!;
+    expect(await store.consumeToolCall(result.registrationId, workspaceId, 2, NOW)).toBe(true);
+    expect(await store.consumeToolCall(result.registrationId, workspaceId, 2, NOW)).toBe(true);
+    expect(await store.consumeToolCall(result.registrationId, workspaceId, 2, NOW)).toBe(false);
+    expect(await store.consumeDraftAttempt(result.registrationId, workspaceId, 1, NOW)).toBe(true);
+    expect(await store.consumeDraftAttempt(result.registrationId, workspaceId, 1, NOW)).toBe(false);
+  });
+
+  it("refuses a quota write for a different workspace", async () => {
+    const store = createFakeRegistrationStore();
+    const result = await createAnonymousRegistration({
+      store,
+      origin: ORIGIN,
+      signingKey: KEY,
+      keyId: "vantage-agent-1",
+      pepper: PEPPER,
+      ipHash: "ip_hash_1",
+      now: NOW,
+    });
+    if (!result.ok) throw new Error("registration failed");
+
+    // The counter is scoped by workspace, so a mismatched id changes nothing.
+    expect(await store.consumeToolCall(result.registrationId, "ws_other", 100, NOW)).toBe(false);
+    expect(await store.consumeDraftAttempt(result.registrationId, "ws_other", 100, NOW)).toBe(false);
   });
 
   it("expires a trial and reports the workspace it removed", async () => {
@@ -408,6 +488,29 @@ describe("trial quotas", () => {
     const cleanup = await store.expireRegistrations(new Date("2026-11-20T00:00:00Z"));
     expect(cleanup).toEqual({ expired: 1, workspacesDeleted: 1 });
     expect(store.registrations.get(result.registrationId)?.status).toBe("expired");
+  });
+
+  it("retries a workspace whose delete failed on an earlier run", async () => {
+    const store = createFakeRegistrationStore();
+    const result = await createAnonymousRegistration({
+      store,
+      origin: ORIGIN,
+      signingKey: KEY,
+      keyId: "vantage-agent-1",
+      pepper: PEPPER,
+      ipHash: "ip_hash_1",
+      now: NOW,
+    });
+    if (!result.ok) throw new Error("registration failed");
+
+    // Simulate the earlier run: the registration is already expired but its
+    // workspace survived, because the delete failed after the status update.
+    store.registrations.get(result.registrationId)!.status = "expired";
+    expect(store.workspaces).toHaveLength(1);
+
+    const cleanup = await store.expireRegistrations(new Date("2026-11-20T00:00:00Z"));
+    // Nothing new expired, but the leaked workspace is still found and removed.
+    expect(cleanup).toEqual({ expired: 0, workspacesDeleted: 1 });
   });
 });
 

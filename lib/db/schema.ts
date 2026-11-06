@@ -1303,6 +1303,21 @@ export const agentClaimAttempt = pgTable(
 );
 
 /**
+ * Daily registration counters, one row per day and scope (`global` or
+ * `ip:<hash>`). A conditional upsert reserves a slot atomically, so concurrent
+ * registrations cannot both read a count below the cap and both proceed.
+ */
+export const agentRegistrationDay = pgTable(
+  "agent_registration_day",
+  {
+    day: date("day", { mode: "string" }).notNull(),
+    scope: text("scope").notNull(),
+    count: integer("count").notNull().default(0),
+  },
+  (table) => [primaryKey({ columns: [table.day, table.scope] })],
+);
+
+/**
  * Single-use authorization codes. Only the SHA-256 hash is stored; the raw code
  * is returned to the client once. `consumedAt` makes replay detectable rather
  * than merely rejected.

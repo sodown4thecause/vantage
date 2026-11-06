@@ -1,4 +1,4 @@
-import { and, eq, gt, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, eq, gt, lte, sql } from "drizzle-orm";
 
 import { signAssertion, verifyAssertion } from "@/lib/agent/assertion";
 import {
@@ -15,7 +15,13 @@ import { hashSecret, randomToken, randomUserCode } from "@/lib/agent/crypto";
 import { issueTokensFor, type TokenResult } from "@/lib/agent/oauth/flow";
 import type { AgentStore } from "@/lib/agent/oauth/store";
 import { getDb } from "@/lib/db/client";
-import { agentClaimAttempt, agentRegistration, workspace } from "@/lib/db/schema";
+import { rowsOf } from "@/lib/db/rows";
+import {
+  agentClaimAttempt,
+  agentRegistration,
+  agentRegistrationDay,
+  workspace,
+} from "@/lib/db/schema";
 
 export type RegistrationRecord = {
   id: string;
@@ -26,16 +32,26 @@ export type RegistrationRecord = {
 };
 
 export type RegistrationStore = {
-  countRegistrationsSince(since: Date, ipHash: string | null): Promise<number>;
-  createTrialWorkspace(name: string): Promise<string>;
-  createRegistration(input: {
-    workspaceId: string;
+  /**
+   * Reserves one registration slot for the day, atomically. The per-address and
+   * global caps are enforced by conditional upserts, so two concurrent requests
+   * cannot both read a count below the cap and both proceed.
+   */
+  reserveRegistrationSlot(input: {
+    day: string;
+    ipHash: string | null;
+    maxPerIp: number;
+    maxPerDay: number;
+  }): Promise<{ ok: true } | { ok: false; reason: "rate_limited" | "quota_exceeded" }>;
+  /** Creates the trial workspace and its registration together, or neither. */
+  createTrialRegistration(input: {
+    name: string;
     claimTokenHash: string;
     claimTokenExpiresAt: Date;
     assertionKeyId: string;
     expiresAt: Date;
     ipHash: string | null;
-  }): Promise<{ id: string }>;
+  }): Promise<{ id: string; workspaceId: string }>;
   findRegistration(id: string): Promise<RegistrationRecord | null>;
   findRegistrationByClaimTokenHash(hash: string): Promise<RegistrationRecord | null>;
   createClaimAttempt(input: {
@@ -47,8 +63,18 @@ export type RegistrationStore = {
   /** Marks expired trials and deletes their workspaces. Returns what it touched. */
   expireRegistrations(now: Date): Promise<{ expired: number; workspacesDeleted: number }>;
   /** Atomic quota check: increments only while under the limit and still active. */
-  consumeToolCall(registrationId: string, limit: number, now: Date): Promise<boolean>;
-  consumeDraftAttempt(registrationId: string, limit: number, now: Date): Promise<boolean>;
+  consumeToolCall(
+    registrationId: string,
+    workspaceId: string,
+    limit: number,
+    now: Date,
+  ): Promise<boolean>;
+  consumeDraftAttempt(
+    registrationId: string,
+    workspaceId: string,
+    limit: number,
+    now: Date,
+  ): Promise<boolean>;
 };
 
 function toRecord(row: typeof agentRegistration.$inferSelect): RegistrationRecord {
@@ -63,42 +89,65 @@ function toRecord(row: typeof agentRegistration.$inferSelect): RegistrationRecor
 
 export function drizzleRegistrationStore(): RegistrationStore {
   return {
-    async countRegistrationsSince(since, ipHash) {
-      const [row] = await getDb()
-        .select({ count: sql<number>`count(*)::int` })
-        .from(agentRegistration)
-        .where(
-          and(
-            gte(agentRegistration.createdAt, since),
-            ipHash ? eq(agentRegistration.ipHash, ipHash) : undefined,
-          ),
-        );
-      return row?.count ?? 0;
+    async reserveRegistrationSlot(input) {
+      // One statement. Each upsert increments only while under its cap, so the
+      // read and the write cannot be split by a concurrent request.
+      const ipScope = input.ipHash ? `ip:${input.ipHash}` : null;
+      const result = await getDb().execute(sql`
+        with ip_slot as (
+          insert into ${agentRegistrationDay} (day, scope, count)
+          select ${input.day}::date, ${ipScope}, 1
+          where ${ipScope}::text is not null
+          on conflict (day, scope) do update
+            set count = ${agentRegistrationDay}.count + 1
+            where ${agentRegistrationDay}.count < ${input.maxPerIp}
+          returning count
+        ), ip_ok as (
+          select 1 where ${ipScope}::text is null or exists (select 1 from ip_slot)
+        ), global_slot as (
+          insert into ${agentRegistrationDay} (day, scope, count)
+          select ${input.day}::date, 'global', 1
+          where exists (select 1 from ip_ok)
+          on conflict (day, scope) do update
+            set count = ${agentRegistrationDay}.count + 1
+            where ${agentRegistrationDay}.count < ${input.maxPerDay}
+          returning count
+        )
+        select
+          exists (select 1 from ip_ok) as ip_allowed,
+          exists (select 1 from global_slot) as global_allowed
+      `);
+      const row = rowsOf(result)[0] as { ip_allowed?: boolean; global_allowed?: boolean } | undefined;
+      if (!row?.ip_allowed) return { ok: false, reason: "rate_limited" };
+      if (!row.global_allowed) return { ok: false, reason: "quota_exceeded" };
+      return { ok: true };
     },
 
-    async createTrialWorkspace(name) {
-      const [row] = await getDb()
-        .insert(workspace)
-        .values({ name, plan: "agent_trial", ownerUserId: null })
-        .returning({ id: workspace.id });
-      return row!.id;
-    },
-
-    async createRegistration(input) {
-      const [row] = await getDb()
-        .insert(agentRegistration)
-        .values({
-          type: "anonymous",
-          status: "active",
-          workspaceId: input.workspaceId,
-          claimTokenHash: input.claimTokenHash,
-          claimTokenExpiresAt: input.claimTokenExpiresAt,
-          assertionKeyId: input.assertionKeyId,
-          expiresAt: input.expiresAt,
-          ipHash: input.ipHash,
-        })
-        .returning({ id: agentRegistration.id });
-      return { id: row!.id };
+    async createTrialRegistration(input) {
+      // One statement, so a failure cannot leave a workspace with no
+      // registration for cleanup to find.
+      const result = await getDb().execute(sql`
+        with new_workspace as (
+          insert into ${workspace} (name, plan)
+          values (${input.name}, 'agent_trial')
+          returning id
+        ), new_registration as (
+          insert into ${agentRegistration}
+            (type, status, workspace_id, claim_token_hash, claim_token_expires_at,
+             assertion_key_id, expires_at, ip_hash)
+          select 'anonymous', 'active', id, ${input.claimTokenHash},
+                 ${input.claimTokenExpiresAt.toISOString()}::timestamptz,
+                 ${input.assertionKeyId},
+                 ${input.expiresAt.toISOString()}::timestamptz,
+                 ${input.ipHash}
+          from new_workspace
+          returning id, workspace_id
+        )
+        select id, workspace_id from new_registration
+      `);
+      const row = rowsOf(result)[0] as { id?: string; workspace_id?: string } | undefined;
+      if (!row?.id || !row.workspace_id) throw new Error("failed to create trial registration");
+      return { id: row.id, workspaceId: row.workspace_id };
     },
 
     async findRegistration(id) {
@@ -138,26 +187,33 @@ export function drizzleRegistrationStore(): RegistrationStore {
         .set({ status: "expired" })
         .where(and(eq(agentRegistration.status, "active"), lte(agentRegistration.expiresAt, now)))
         .returning({ workspaceId: agentRegistration.workspaceId });
-      const workspaceIds = expired
-        .map((row) => row.workspaceId)
-        .filter((id): id is string => typeof id === "string");
-      if (workspaceIds.length > 0) {
-        await getDb().delete(workspace).where(inArray(workspace.id, workspaceIds));
-      }
+
+      // Delete by status, not by the rows just marked, so a delete that failed
+      // on an earlier run is retried instead of leaking the workspace forever.
+      const deleted = await getDb().execute(sql`
+        delete from ${workspace}
+        where ${workspace.id} in (
+          select ${agentRegistration.workspaceId} from ${agentRegistration}
+          where ${agentRegistration.status} = 'expired'
+            and ${agentRegistration.workspaceId} is not null
+        )
+        returning ${workspace.id}
+      `);
       await getDb()
         .update(agentClaimAttempt)
         .set({ status: "expired" })
         .where(and(eq(agentClaimAttempt.status, "pending"), lte(agentClaimAttempt.expiresAt, now)));
-      return { expired: expired.length, workspacesDeleted: workspaceIds.length };
+      return { expired: expired.length, workspacesDeleted: rowsOf(deleted).length };
     },
 
-    async consumeToolCall(registrationId, limit, now) {
+    async consumeToolCall(registrationId, workspaceId, limit, now) {
       const rows = await getDb()
         .update(agentRegistration)
         .set({ toolCalls: sql`${agentRegistration.toolCalls} + 1` })
         .where(
           and(
             eq(agentRegistration.id, registrationId),
+            eq(agentRegistration.workspaceId, workspaceId),
             eq(agentRegistration.status, "active"),
             gt(agentRegistration.expiresAt, now),
             sql`${agentRegistration.toolCalls} < ${limit}`,
@@ -167,13 +223,14 @@ export function drizzleRegistrationStore(): RegistrationStore {
       return rows.length > 0;
     },
 
-    async consumeDraftAttempt(registrationId, limit, now) {
+    async consumeDraftAttempt(registrationId, workspaceId, limit, now) {
       const rows = await getDb()
         .update(agentRegistration)
         .set({ draftAttempts: sql`${agentRegistration.draftAttempts} + 1` })
         .where(
           and(
             eq(agentRegistration.id, registrationId),
+            eq(agentRegistration.workspaceId, workspaceId),
             eq(agentRegistration.status, "active"),
             gt(agentRegistration.expiresAt, now),
             sql`${agentRegistration.draftAttempts} < ${limit}`,
@@ -210,21 +267,19 @@ export async function createAnonymousRegistration(opts: {
   ipHash: string | null;
   now: Date;
 }): Promise<AnonymousRegistration> {
-  const dayStart = new Date(
-    Date.UTC(opts.now.getUTCFullYear(), opts.now.getUTCMonth(), opts.now.getUTCDate()),
-  );
-  if (opts.ipHash) {
-    const perIp = await opts.store.countRegistrationsSince(dayStart, opts.ipHash);
-    if (perIp >= AGENT_TRIAL_MAX_PER_IP_PER_DAY) return { ok: false, error: "rate_limited" };
-  }
-  const overall = await opts.store.countRegistrationsSince(dayStart, null);
-  if (overall >= AGENT_TRIAL_MAX_PER_DAY) return { ok: false, error: "quota_exceeded" };
+  const day = opts.now.toISOString().slice(0, 10);
+  const slot = await opts.store.reserveRegistrationSlot({
+    day,
+    ipHash: opts.ipHash,
+    maxPerIp: AGENT_TRIAL_MAX_PER_IP_PER_DAY,
+    maxPerDay: AGENT_TRIAL_MAX_PER_DAY,
+  });
+  if (!slot.ok) return { ok: false, error: slot.reason };
 
-  const workspaceId = await opts.store.createTrialWorkspace("Agent trial");
   const claimToken = randomToken("clm");
   const expiresAt = new Date(opts.now.getTime() + AGENT_TRIAL_DAYS * 86_400_000);
-  const { id } = await opts.store.createRegistration({
-    workspaceId,
+  const { id } = await opts.store.createTrialRegistration({
+    name: "Agent trial",
     claimTokenHash: await hashSecret(claimToken, opts.pepper),
     claimTokenExpiresAt: expiresAt,
     assertionKeyId: opts.keyId,

@@ -68,27 +68,46 @@ export async function POST(req: Request) {
   }
 
   // Trial quotas are durable counters, checked before any tool runs.
-  if (auth.token.registrationId) {
+  if (auth.token.registrationId && auth.token.workspaceId) {
     const registrations = drizzleRegistrationStore();
     const now = new Date();
+    const deny = async (quota: "draft_attempts" | "tool_calls", message: string) => {
+      // Every denial is recorded, so an operator can see when and why a trial
+      // was blocked. No token, code or content is stored.
+      await store.audit({
+        event: "quota_denied",
+        registrationId: auth.token.registrationId,
+        workspaceId: auth.token.workspaceId,
+        detail: { quota },
+      });
+      return quotaExceeded(message);
+    };
     if (
       isDraftCall(body) &&
       !(await registrations.consumeDraftAttempt(
         auth.token.registrationId,
+        auth.token.workspaceId,
         AGENT_TRIAL_DRAFT_ATTEMPTS,
         now,
       ))
     ) {
-      return quotaExceeded("The trial's draft quota is spent. Claim the workspace to continue.");
+      return deny(
+        "draft_attempts",
+        "The trial's draft quota is spent. Claim the workspace to continue.",
+      );
     }
     if (
       !(await registrations.consumeToolCall(
         auth.token.registrationId,
+        auth.token.workspaceId,
         AGENT_TRIAL_TOOL_CALLS,
         now,
       ))
     ) {
-      return quotaExceeded("The trial's tool-call quota is spent. Claim the workspace to continue.");
+      return deny(
+        "tool_calls",
+        "The trial's tool-call quota is spent. Claim the workspace to continue.",
+      );
     }
   }
 

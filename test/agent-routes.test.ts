@@ -119,28 +119,24 @@ function createFakeRegistrationStore() {
   const store: RegistrationStore & { registrations: typeof registrations; attempts: typeof attempts } = {
     registrations,
     attempts,
-    async countRegistrationsSince() {
-      return 0;
+    async reserveRegistrationSlot() {
+      return { ok: true };
     },
-    async createTrialWorkspace() {
-      sequence += 1;
-      const id = `ws_${sequence}`;
-      workspaces.push(id);
-      return id;
-    },
-    async createRegistration(input) {
+    async createTrialRegistration(input) {
       sequence += 1;
       const id = `reg_${sequence}`;
+      const workspaceId = `ws_${sequence}`;
+      workspaces.push(workspaceId);
       registrations.set(id, {
         id,
         status: "active",
-        workspaceId: input.workspaceId,
+        workspaceId,
         expiresAt: input.expiresAt,
         claimTokenExpiresAt: input.claimTokenExpiresAt,
         claimTokenHash: input.claimTokenHash,
         createdAt: new Date(),
       });
-      return { id };
+      return { id, workspaceId };
     },
     async findRegistration(id) {
       return registrations.get(id) ?? null;
@@ -581,7 +577,7 @@ describe("trial quota at the MCP boundary", () => {
       kind: "access",
       clientId: null,
       userId: null,
-      workspaceId: null,
+      workspaceId: "ws_1",
       registrationId: "reg_1",
       scopes: ["vantage.read"],
       expiresAt: new Date(Date.now() + 60_000),
@@ -592,5 +588,7 @@ describe("trial quota at the MCP boundary", () => {
     const response = await mcpPost(mcpRequest({ jsonrpc: "2.0", id: 1, method: "tools/list" }, raw));
     expect(response.status).toBe(429);
     expect((await response.json()).error.message).toContain("quota");
+    // The denial is recorded, so an operator can see why the trial was blocked.
+    expect(store.audits.map((entry) => entry.event)).toContain("quota_denied");
   });
 });

@@ -67,6 +67,13 @@ export async function POST(req: Request) {
     now: new Date(),
   });
   if (!result.ok) {
+    // A cap denial is recorded, so an operator can see when and why
+    // registration was blocked. Only the hashed address and the reason.
+    await drizzleAgentStore().audit({
+      event: "registration_denied",
+      ipHash,
+      detail: { reason: result.error },
+    });
     return json(
       {
         error: result.error,
