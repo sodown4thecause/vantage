@@ -39,6 +39,11 @@ export async function decideAuthorization(formData: FormData) {
   if (!validation.ok) redirect(validation.redirectTo ?? "/auth-agents");
 
   if (field("decision") !== "approve") {
+    await store.audit({
+      event: "authorization_denied",
+      clientId: validation.client.id,
+      detail: { scopes: validation.scopes },
+    });
     redirect(
       buildErrorRedirect(
         request.redirectUri,
@@ -57,10 +62,14 @@ export async function decideAuthorization(formData: FormData) {
   if (!pepper) redirect("/auth-agents");
 
   const workspace = await getCurrentWorkspace();
+  // A token with no workspace would connect to nothing, so send the user to
+  // create one rather than issuing a permanently empty credential.
+  if (!workspace) redirect("/onboarding");
+
   const code = await issueAuthorizationCode(store, {
     clientId: validation.client.id,
     userId: String(userId),
-    workspaceId: workspace?.id ?? null,
+    workspaceId: workspace.id,
     scopes: validation.scopes,
     redirectUri: request.redirectUri,
     codeChallenge: request.codeChallenge,
@@ -71,7 +80,7 @@ export async function decideAuthorization(formData: FormData) {
     event: "authorization_granted",
     clientId: validation.client.id,
     userId: String(userId),
-    workspaceId: workspace?.id ?? null,
+    workspaceId: workspace.id,
     detail: { scopes: validation.scopes },
   });
 

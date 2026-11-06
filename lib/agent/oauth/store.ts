@@ -79,6 +79,15 @@ export type AgentStore = {
   findToken(tokenHash: string): Promise<TokenRecord | null>;
   /** Atomically revokes. False means it was already revoked or unknown. */
   revokeToken(tokenHash: string, now: Date): Promise<boolean>;
+  /**
+   * Revokes every live token for one client and subject. Used when a rotated
+   * refresh token is replayed: the whole session family is compromised, so the
+   * thief's tokens must die with the victim's.
+   */
+  revokeTokensForSubject(
+    input: { clientId: string; userId: string | null; workspaceId: string | null },
+    now: Date,
+  ): Promise<number>;
   audit(entry: AuditEntry): Promise<void>;
 };
 
@@ -175,6 +184,24 @@ export function drizzleAgentStore(): AgentStore {
         .where(and(eq(oauthToken.tokenHash, tokenHash), isNull(oauthToken.revokedAt)))
         .returning({ id: oauthToken.id });
       return rows.length > 0;
+    },
+
+    async revokeTokensForSubject(input, now) {
+      const rows = await getDb()
+        .update(oauthToken)
+        .set({ revokedAt: now })
+        .where(
+          and(
+            eq(oauthToken.clientId, input.clientId),
+            input.userId === null ? isNull(oauthToken.userId) : eq(oauthToken.userId, input.userId),
+            input.workspaceId === null
+              ? isNull(oauthToken.workspaceId)
+              : eq(oauthToken.workspaceId, input.workspaceId),
+            isNull(oauthToken.revokedAt),
+          ),
+        )
+        .returning({ id: oauthToken.id });
+      return rows.length;
     },
 
     async audit(entry) {

@@ -1,4 +1,5 @@
 import { AuthView } from "@neondatabase/auth-ui";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { PageHead, Shell } from "@/components/shell";
@@ -18,6 +19,16 @@ const SCOPE_COPY: Record<string, string> = {
   "vantage.draft": "Draft a reply as text. Nothing is saved, sent or posted.",
 };
 
+/** The consent URL, so signing in returns here instead of the home page. */
+function consentUrl(params: Record<string, string | string[] | undefined>): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    const first = Array.isArray(value) ? value[0] : value;
+    if (typeof first === "string") query.set(key, first);
+  }
+  return `/auth-agents?${query.toString()}`;
+}
+
 // Human-facing entry for agent connections: the OAuth consent screen, and the
 // sign-in form when the visitor is signed out. Signing in refreshes this route,
 // so the consent form appears without losing the authorization request.
@@ -28,7 +39,8 @@ export default async function AuthAgentsPage({
 }) {
   if (!agentRegistrationEnabled()) notFound();
 
-  const request = readAuthorizeRequest(await searchParams);
+  const params = await searchParams;
+  const request = readAuthorizeRequest(params);
   if (!request) {
     return (
       <Shell wide>
@@ -58,13 +70,26 @@ export default async function AuthAgentsPage({
           lede={`${validation.client.name} wants to read your Vantage workspace. Sign in or create an account to continue.`}
         />
         <div className="max-w-md">
-          <AuthView path="sign-in" />
+          <AuthView path="sign-in" redirectTo={consentUrl(params)} />
         </div>
       </Shell>
     );
   }
 
   const workspace = await getCurrentWorkspace();
+  if (!workspace) {
+    return (
+      <Shell wide>
+        <PageHead
+          title="Create a workspace first"
+          lede="An agent can only connect to a workspace that exists. Create one, then open this link again."
+        />
+        <Link href="/onboarding" className="btn">
+          Create a workspace
+        </Link>
+      </Shell>
+    );
+  }
 
   return (
     <Shell wide>
@@ -84,13 +109,7 @@ export default async function AuthAgentsPage({
           Vantage never posts, replies or messages anyone. This agent can read and draft only.
         </p>
         <p className="text-ridge">
-          {workspace ? (
-            <>
-              Workspace: <strong className="text-ink">{workspace.name}</strong>
-            </>
-          ) : (
-            "You have no workspace yet. The agent will see an empty workspace until you create one."
-          )}
+          Workspace: <strong className="text-ink">{workspace.name}</strong>
         </p>
         <form action={decideAuthorization} className="flex flex-wrap gap-3">
           <input type="hidden" name="response_type" value={request.responseType} />

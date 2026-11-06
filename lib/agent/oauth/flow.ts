@@ -245,7 +245,17 @@ export async function refreshAccessToken(
   const record = await store.findToken(tokenHash);
   if (!record || record.kind !== "refresh") return invalidGrant("Unknown refresh token.");
   if (record.clientId !== input.clientId) return invalidGrant("The token was issued to another client.");
-  if (record.revokedAt || record.expiresAt.getTime() <= input.now.getTime()) {
+  if (record.revokedAt) {
+    // A rotated token was replayed. Either the client raced itself or a thief is
+    // holding a copy, so revoke the whole family: the next legitimate refresh
+    // fails and the user re-authorizes, which is the safe outcome.
+    await store.revokeTokensForSubject(
+      { clientId: record.clientId, userId: record.userId, workspaceId: record.workspaceId },
+      input.now,
+    );
+    return invalidGrant("The refresh token was already used; the session was revoked.");
+  }
+  if (record.expiresAt.getTime() <= input.now.getTime()) {
     return invalidGrant("The refresh token is expired or revoked.");
   }
   // Revoke first: the conditional update is what makes rotation single-use under
@@ -267,12 +277,12 @@ export async function refreshAccessToken(
   };
 }
 
-/** RFC 7009. Always succeeds, so a caller cannot probe which tokens exist. */
+/** RFC 7009. Returns whether a live token was actually revoked. */
 export async function revokeToken(
   store: AgentStore,
   input: { token: string; pepper: string; now: Date },
-): Promise<void> {
-  await store.revokeToken(await hashSecret(input.token, input.pepper), input.now);
+): Promise<boolean> {
+  return store.revokeToken(await hashSecret(input.token, input.pepper), input.now);
 }
 
 /** Default scope set for a client that registers without asking for one. */

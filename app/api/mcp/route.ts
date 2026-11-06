@@ -56,9 +56,11 @@ export async function POST(req: Request) {
 }
 
 export async function GET() {
+  if (!agentRegistrationEnabled()) return NOT_FOUND();
   return new Response("Method not allowed", { status: 405, headers: { allow: "POST" } });
 }
 
 export async function DELETE() {
+  if (!agentRegistrationEnabled()) return NOT_FOUND();
   return new Response("Method not allowed", { status: 405, headers: { allow: "POST" } });
 }

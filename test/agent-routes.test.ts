@@ -70,6 +70,21 @@ function createFakeStore() {
       row.revokedAt = now;
       return true;
     },
+    async revokeTokensForSubject(input, now) {
+      let revoked = 0;
+      for (const row of tokens.values()) {
+        if (
+          row.clientId === input.clientId &&
+          row.userId === input.userId &&
+          row.workspaceId === input.workspaceId &&
+          !row.revokedAt
+        ) {
+          row.revokedAt = now;
+          revoked += 1;
+        }
+      }
+      return revoked;
+    },
     async audit(entry) {
       audits.push(entry);
     },
@@ -137,6 +152,7 @@ describe("flag off", () => {
       tokenRoute(form({ grant_type: "authorization_code", client_id: "x" })),
       revokeRoute(form({ token: "x" })),
       mcpPost(mcpRequest({ jsonrpc: "2.0", id: 1, method: "initialize" })),
+      mcpGet(),
     ]);
     for (const response of responses) expect(response.status).toBe(404);
   });
@@ -261,6 +277,9 @@ describe("token route", () => {
     enable();
     const response = await revokeRoute(form({ token: "vat_unknown" }));
     expect(response.status).toBe(200);
+    // An unknown token must not grow the audit table.
+    const store = state.store as ReturnType<typeof createFakeStore>;
+    expect(store.audits.map((entry) => entry.event)).not.toContain("token_revoked");
   });
 });
 

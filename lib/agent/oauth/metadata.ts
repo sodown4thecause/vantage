@@ -12,7 +12,8 @@ export function protectedResourceMetadata(origin: string) {
     resource: `${origin}/`,
     resource_name: AGENT_RESOURCE_NAME,
     resource_documentation: `${origin}/auth.md`,
-    authorization_servers: [`${origin}/`],
+    // Must match the authorization server's `issuer` exactly (RFC 8414 §3.3).
+    authorization_servers: [origin],
     scopes_supported: [...AGENT_SCOPES],
     bearer_methods_supported: ["header"],
   };

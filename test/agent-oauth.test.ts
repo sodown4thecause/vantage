@@ -114,6 +114,21 @@ function createFakeStore() {
       row.revokedAt = now;
       return true;
     },
+    async revokeTokensForSubject(input, now) {
+      let revoked = 0;
+      for (const row of tokens.values()) {
+        if (
+          row.clientId === input.clientId &&
+          row.userId === input.userId &&
+          row.workspaceId === input.workspaceId &&
+          !row.revokedAt
+        ) {
+          row.revokedAt = now;
+          revoked += 1;
+        }
+      }
+      return revoked;
+    },
     async audit(entry) {
       audits.push(entry);
     },
@@ -403,7 +418,7 @@ describe("token exchange", () => {
     expect(outcome.ok).toBe(false);
   });
 
-  it("rotates refresh tokens and refuses reuse", async () => {
+  it("rotates refresh tokens and revokes the family when one is replayed", async () => {
     const store = state.store as ReturnType<typeof createFakeStore>;
     await seedClient(store);
     const { code, verifier } = await issueCode(store);
@@ -434,6 +449,16 @@ describe("token exchange", () => {
       now,
     });
     expect(reuse.ok).toBe(false);
+
+    // The replacement token dies too: a thief holding a copy must not outlive
+    // the detection.
+    const afterDetection = await refreshAccessToken(store, {
+      clientId: "vcl_test",
+      refreshToken: rotated.ok ? rotated.body.refresh_token : "",
+      pepper: PEPPER,
+      now,
+    });
+    expect(afterDetection.ok).toBe(false);
   });
 
   it("revokes idempotently", async () => {
@@ -659,7 +684,9 @@ describe("discovery documents", () => {
   it("advertises the resource, scopes and endpoints", () => {
     const prm = protectedResourceMetadata(ORIGIN);
     expect(prm.resource).toBe(`${ORIGIN}/`);
-    expect(prm.authorization_servers).toEqual([`${ORIGIN}/`]);
+    // Must equal the authorization server's issuer exactly.
+    expect(prm.authorization_servers).toEqual([ORIGIN]);
+    expect(authorizationServerMetadata(ORIGIN).issuer).toBe(prm.authorization_servers[0]);
     expect(prm.scopes_supported).toEqual(["vantage.read", "vantage.draft"]);
 
     const as = authorizationServerMetadata(ORIGIN);
