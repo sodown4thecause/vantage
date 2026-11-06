@@ -26,6 +26,34 @@ it("checks venue restrictions and rules before any model call", async () => {
   expect((await generateContribution(input, { workspaceId: "ws" })).quality?.kind).toBe("brief");
   expect(mocks.http).not.toHaveBeenCalled();
 });
+it("draftForReview reaches the model but leaves the draft marked unreviewed", async () => {
+  const result = await generateContribution(input, { workspaceId: "ws", draftForReview: true });
+  // The bypass is what lets an agent produce text for a human to read.
+  expect(mocks.http).toHaveBeenCalledTimes(1);
+  expect(result.quality).toMatchObject({ kind: "draft", rulesReviewed: false });
+  expect(result.originalText).toBe(candidate.text);
+});
+it("draftForReview never claims the rules were reviewed", async () => {
+  // Even when the caller also passes rulesReviewed, the flag is what decides.
+  const reviewed = await generateContribution(input, { workspaceId: "ws", rulesReviewed: true });
+  expect(reviewed.quality?.rulesReviewed).toBe(true);
+  const preview = await generateContribution(input, { workspaceId: "ws", draftForReview: true });
+  expect(preview.quality?.rulesReviewed).toBe(false);
+});
+it("draftForReview still refuses a venue that prohibits AI-written contributions", async () => {
+  const hn = { ...input, evidence: [{ ...input.evidence[0], platform: "hn" }] };
+  const result = await generateContribution(hn, { workspaceId: "ws", draftForReview: true });
+  expect(result.quality?.kind).toBe("brief");
+  expect(result.originalText).toContain("prohibits AI-written contributions");
+  expect(mocks.http).not.toHaveBeenCalled();
+});
+it("draftForReview still refuses discovery-only evidence", async () => {
+  const snippet = { ...input, evidence: [{ ...input.evidence[0], discoveryOnly: true }] };
+  const result = await generateContribution(snippet, { workspaceId: "ws", draftForReview: true });
+  expect(result.quality?.kind).toBe("brief");
+  expect(result.originalText).toContain("discovery passage");
+  expect(mocks.http).not.toHaveBeenCalled();
+});
 it("keeps indexed discovery snippets as research briefs", async () => {
   expect((await generateContribution({ ...input, evidence: [{ ...input.evidence[0], discoveryOnly: true }] }, { workspaceId: "ws", rulesReviewed: true })).quality?.kind).toBe("brief");
   expect(mocks.http).not.toHaveBeenCalled();
