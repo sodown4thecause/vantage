@@ -17,6 +17,11 @@ export const dynamic = "force-dynamic";
  * Run collectors, then refresh the profile-based opportunity queue, then
  * dispatch due daily digests.
  * Failures on one source or workspace are logged; the rest continue.
+ *
+ * Authorization: `isCronAuthorized` below is the gate, and it refuses before any
+ * write. `authorizeWorkspace` cannot apply to a cron sweep, which has no session
+ * and no single workspace; the agent cleanup is scoped by construction to agent
+ * registrations and the unowned workspaces they created.
  */
 export async function GET(req: Request) {
   if (!isCronAuthorized(req)) {
