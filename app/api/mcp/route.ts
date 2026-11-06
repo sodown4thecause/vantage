@@ -13,6 +13,7 @@ import {
 import { agentTools } from "@/lib/agent/mcp/tools";
 import { drizzleAgentStore } from "@/lib/agent/oauth/store";
 import { drizzleRegistrationStore } from "@/lib/agent/registration";
+import { authorizeWorkspace } from "@/lib/auth/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,6 +81,20 @@ export async function POST(req: Request) {
 
   // Trial quotas are durable counters, checked before any tool runs.
   if (auth.token.registrationId && auth.token.workspaceId) {
+    // The canonical workspace check, before any write. An agent has no session,
+    // so it passes its verified registration instead; the function confirms the
+    // registration is still active and bound to this workspace.
+    const authorization = await authorizeWorkspace(auth.token.workspaceId, {
+      registrationId: auth.token.registrationId,
+      workspaceId: auth.token.workspaceId,
+    });
+    if (!authorization.ok) {
+      return Response.json(
+        { jsonrpc: "2.0", id: null, error: { code: -32000, message: "Not authorized for this workspace." } },
+        { status: authorization.status, headers: { "cache-control": "no-store" } },
+      );
+    }
+
     const registrations = drizzleRegistrationStore();
     const now = new Date();
     const deny = async (quota: "draft_attempts" | "tool_calls", message: string) => {

@@ -9,6 +9,12 @@ vi.mock("@/lib/agent/registration", async (original) => {
   const actual = await original<typeof import("@/lib/agent/registration")>();
   return { ...actual, drizzleRegistrationStore: () => state.registrationStore };
 });
+// The MCP route authorizes through authorizeWorkspace, which reaches Neon Auth.
+// The agent path never reads a session, so a stub is enough here; the session
+// path has its own tests in test/workspace-authorization.test.ts.
+vi.mock("@/lib/auth/server", () => ({
+  auth: { getSession: async () => ({ data: null }) },
+}));
 
 import { GET as authMarkdownRoute } from "@/app/auth.md/route";
 import { POST as identityRoute } from "@/app/agent/identity/route";
@@ -584,6 +590,16 @@ describe("trial quota at the MCP boundary", () => {
     enable();
     const store = state.store as ReturnType<typeof createFakeStore>;
     const registrations = state.registrationStore as ReturnType<typeof createFakeRegistrationStore>;
+    // authorizeWorkspace checks the registration is live before any write.
+    registrations.registrations.set("reg_1", {
+      id: "reg_1",
+      status: "active",
+      workspaceId: "ws_1",
+      expiresAt: new Date(Date.now() + 86_400_000),
+      claimTokenExpiresAt: new Date(Date.now() + 86_400_000),
+      claimTokenHash: "hash",
+      createdAt: new Date(),
+    });
     const raw = "vat_trial_token";
     await store.createToken({
       tokenHash: await hashSecret(raw, PEPPER),
@@ -651,5 +667,42 @@ describe("trial quota at the MCP boundary", () => {
       ),
     );
     expect(seen).toEqual([{ registrationId: "reg_1", workspaceId: "ws_1" }]);
+  });
+
+  it("refuses the write when the registration is no longer active", async () => {
+    enable();
+    const store = state.store as ReturnType<typeof createFakeStore>;
+    const registrations = state.registrationStore as ReturnType<typeof createFakeRegistrationStore>;
+    registrations.registrations.set("reg_1", {
+      id: "reg_1",
+      status: "expired",
+      workspaceId: "ws_1",
+      expiresAt: new Date(Date.now() + 86_400_000),
+      claimTokenExpiresAt: new Date(Date.now() + 86_400_000),
+      claimTokenHash: "hash",
+      createdAt: new Date(),
+    });
+    const raw = "vat_expired_registration";
+    await store.createToken({
+      tokenHash: await hashSecret(raw, PEPPER),
+      kind: "access",
+      clientId: null,
+      userId: null,
+      workspaceId: "ws_1",
+      registrationId: "reg_1",
+      scopes: ["vantage.read"],
+      expiresAt: new Date(Date.now() + 60_000),
+      familyId: crypto.randomUUID(),
+    });
+    let wrote = false;
+    registrations.consumeToolCall = async () => {
+      wrote = true;
+      return true;
+    };
+
+    const response = await mcpPost(mcpRequest({ jsonrpc: "2.0", id: 1, method: "tools/list" }, raw));
+    expect(response.status).toBe(403);
+    // The counter is never touched: authorization runs before the write.
+    expect(wrote).toBe(false);
   });
 });
