@@ -7,7 +7,6 @@ import {
 } from "ai";
 
 import type { EvidencePacket } from "@/lib/seo-agent/evidence";
-import { seoAutoRouterEnabled } from "@/lib/ai/gateway-config";
 import { costOfUsage, gatewayProvider } from "@/lib/seo-agent/models";
 import { summarizerPrompt, type PromptProfile } from "@/lib/seo-agent/prompt";
 import { fallbackFollowUps } from "@/lib/seo-agent/suggestions";
@@ -91,7 +90,6 @@ export async function summarizeEvidence(args: {
           feature: "seo.summarize",
           workspaceId: args.workspaceId,
           chatId: args.chatId ?? null,
-          autoRouter: seoAutoRouterEnabled(),
         })(modelId),
         system,
         messages,

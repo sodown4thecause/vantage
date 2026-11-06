@@ -180,17 +180,18 @@ export async function collectEvidence(
     });
     const usage = result.usage;
     const info = gatewayResponseInfo(result.response?.headers);
+    const servedModel = info.servedModel ?? modelId;
     return {
       value: {
         packet,
         finishReason: typeof result.finishReason === "string" ? result.finishReason : null,
       },
-      costUsd: costOfUsage(modelId, {
+      costUsd: costOfUsage(servedModel, {
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
         cachedInputTokens: usage.inputTokenDetails?.cacheReadTokens,
       }),
-      model: info.servedModel ?? modelId,
+      model: servedModel,
       gatewayRequestId: info.requestId ?? undefined,
     };
   });
