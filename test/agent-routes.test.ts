@@ -326,11 +326,31 @@ describe("MCP route", () => {
 
     const list = await mcpPost(mcpRequest({ jsonrpc: "2.0", id: 2, method: "tools/list" }, raw));
     const names = (await list.json()).result.tools.map((tool: { name: string }) => tool.name);
+    // A read-only credential never sees the draft tool.
     expect(names).toEqual([
       "get_workspace_context",
       "list_todays_conversations",
       "get_conversation",
     ]);
+  });
+
+  it("shows the draft tool only to a credential that holds the draft scope", async () => {
+    enable();
+    const store = state.store as ReturnType<typeof createFakeStore>;
+    const raw = "vat_draft_token";
+    await store.createToken({
+      tokenHash: await hashSecret(raw, PEPPER),
+      kind: "access",
+      clientId: "vcl_test",
+      userId: "user_1",
+      workspaceId: null,
+      scopes: ["vantage.read", "vantage.draft"],
+      expiresAt: new Date(Date.now() + 60_000),
+      familyId: crypto.randomUUID(),
+    });
+    const list = await mcpPost(mcpRequest({ jsonrpc: "2.0", id: 1, method: "tools/list" }, raw));
+    const names = (await list.json()).result.tools.map((tool: { name: string }) => tool.name);
+    expect(names).toContain("draft_reply");
   });
 
   it("rejects an unsupported protocol version header", async () => {

@@ -6,6 +6,7 @@ import {
   type DraftCitation,
   type DraftFlag,
   type ContributionReview,
+  type GeneratedDraft,
 } from "@/lib/drafting/generate";
 import { generateContribution, validateContribution } from "@/lib/drafting/contribution";
 import { contributionRule } from "@/lib/drafting/rules";
@@ -13,6 +14,7 @@ import { selectGrounding } from "@/lib/drafting/ground";
 import { getDb } from "@/lib/db/client";
 import { monitoringProfile, opportunityDraft } from "@/lib/db/schema";
 import { getOpportunityDetail } from "@/lib/opportunities/run";
+import type { OpportunityDetailView, OpportunityEvidenceView } from "@/lib/opportunities/types";
 
 export class DraftInputError extends Error {
   constructor(message: string) {
@@ -55,13 +57,24 @@ function toView(row: typeof opportunityDraft.$inferSelect): DraftView {
   };
 }
 
-export async function createDraftForOpportunity(opts: {
+export type DraftGeneration = {
+  detail: OpportunityDetailView;
+  target: OpportunityEvidenceView;
+  generated: GeneratedDraft;
+};
+
+/**
+ * Generates a draft without persisting it. `createDraftForOpportunity` stores the
+ * result; the MCP `draft_reply` tool returns it as text and stores nothing.
+ */
+export async function generateDraftForOpportunity(opts: {
   workspaceId: string;
   opportunityId: string;
   targetDocumentId?: string;
   rulesReviewed?: boolean;
+  draftForReview?: boolean;
   signal?: AbortSignal;
-}): Promise<DraftView> {
+}): Promise<DraftGeneration> {
   const db = getDb();
   const detail = await getOpportunityDetail({
     workspaceId: opts.workspaceId,
@@ -107,9 +120,26 @@ export async function createDraftForOpportunity(opts: {
       platform: e.platform,
       discoveryOnly: e.discoveryOnly,
     })),
-  }, { workspaceId: opts.workspaceId, rulesReviewed: opts.rulesReviewed, signal: opts.signal });
+  }, {
+    workspaceId: opts.workspaceId,
+    rulesReviewed: opts.rulesReviewed,
+    draftForReview: opts.draftForReview,
+    signal: opts.signal,
+  });
 
-  const inserted = await db
+  return { detail, target, generated };
+}
+
+export async function createDraftForOpportunity(opts: {
+  workspaceId: string;
+  opportunityId: string;
+  targetDocumentId?: string;
+  rulesReviewed?: boolean;
+  signal?: AbortSignal;
+}): Promise<DraftView> {
+  const { generated } = await generateDraftForOpportunity(opts);
+
+  const inserted = await getDb()
     .insert(opportunityDraft)
     .values({
       workspaceId: opts.workspaceId,
