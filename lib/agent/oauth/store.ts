@@ -99,7 +99,7 @@ export type AgentStore = {
    * caller falls back to the family seeded from the token's own id.
    */
   revokeTokensForSubject?(
-    input: { clientId: string; userId: string | null; workspaceId: string | null },
+    input: { clientId: string | null; userId: string | null; workspaceId: string | null },
     now: Date,
   ): Promise<number>;
   audit(entry: AuditEntry): Promise<void>;
@@ -219,7 +219,9 @@ export function drizzleAgentStore(): AgentStore {
         .set({ revokedAt: now })
         .where(
           and(
-            eq(oauthToken.clientId, input.clientId),
+            input.clientId === null
+              ? isNull(oauthToken.clientId)
+              : eq(oauthToken.clientId, input.clientId),
             input.userId === null ? isNull(oauthToken.userId) : eq(oauthToken.userId, input.userId),
             input.workspaceId === null
               ? isNull(oauthToken.workspaceId)

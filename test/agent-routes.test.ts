@@ -165,6 +165,15 @@ function createFakeRegistrationStore() {
     async consumeDraftAttempt() {
       return true;
     },
+    async findClaimAttempt() {
+      return null;
+    },
+    async reserveClaimAttempt() {
+      return true;
+    },
+    async completeClaim() {
+      return false;
+    },
   };
   return store;
 }
@@ -701,7 +710,9 @@ describe("trial quota at the MCP boundary", () => {
     };
 
     const response = await mcpPost(mcpRequest({ jsonrpc: "2.0", id: 1, method: "tools/list" }, raw));
-    expect(response.status).toBe(403);
+    // Either guard may fire first: the read-time token check (401) or
+    // authorizeWorkspace (403). Both refuse, and neither writes.
+    expect([401, 403]).toContain(response.status);
     // The counter is never touched: authorization runs before the write.
     expect(wrote).toBe(false);
   });

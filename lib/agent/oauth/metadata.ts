@@ -37,6 +37,7 @@ export function authorizationServerMetadata(origin: string) {
       "authorization_code",
       "refresh_token",
       "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      "urn:workos:agent-auth:grant-type:claim",
     ],
     code_challenge_methods_supported: ["S256"],
     token_endpoint_auth_methods_supported: ["none"],

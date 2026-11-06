@@ -11,7 +11,11 @@ import {
   type TokenResult,
 } from "@/lib/agent/oauth/flow";
 import { drizzleAgentStore } from "@/lib/agent/oauth/store";
-import { drizzleRegistrationStore, exchangeAssertion } from "@/lib/agent/registration";
+import {
+  drizzleRegistrationStore,
+  exchangeAssertion,
+  exchangeClaimGrant,
+} from "@/lib/agent/registration";
 import { agentIpHash, agentRateLimit } from "@/lib/agent/request";
 
 export const runtime = "nodejs";
@@ -45,7 +49,10 @@ export async function POST(req: Request) {
   const grantType = field("grant_type");
   const clientId = field("client_id");
   const isAssertionGrant = grantType === "urn:ietf:params:oauth:grant-type:jwt-bearer";
-  if (!clientId && !isAssertionGrant) {
+  const isClaimGrant = grantType === "urn:workos:agent-auth:grant-type:claim";
+  // Agent grants carry no client: the assertion, claim token or registration is
+  // the grant. A refresh of an agent token is therefore clientless too.
+  if (!clientId && !isAssertionGrant && !isClaimGrant && grantType !== "refresh_token") {
     return fail(400, { error: "invalid_client", error_description: "client_id is required." });
   }
 
@@ -93,11 +100,22 @@ export async function POST(req: Request) {
       clientId: clientId || null,
       now,
     });
+  } else if (isClaimGrant) {
+    const claimToken = field("claim_token");
+    if (!claimToken) {
+      return fail(400, { error: "invalid_request", error_description: "claim_token is required." });
+    }
+    outcome = await exchangeClaimGrant({
+      store: { ...store, ...drizzleRegistrationStore() },
+      claimToken,
+      pepper,
+      now,
+    });
   } else {
     return fail(400, {
       error: "unsupported_grant_type",
       error_description:
-        "Supported grants: authorization_code, refresh_token, urn:ietf:params:oauth:grant-type:jwt-bearer.",
+        "Supported grants: authorization_code, refresh_token, urn:ietf:params:oauth:grant-type:jwt-bearer, urn:workos:agent-auth:grant-type:claim.",
     });
   }
 

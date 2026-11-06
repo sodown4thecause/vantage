@@ -1,4 +1,4 @@
-import { and, eq, gt, lte, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, lte, sql } from "drizzle-orm";
 
 import { signAssertion, verifyAssertion } from "@/lib/agent/assertion";
 import {
@@ -20,6 +20,7 @@ import {
   agentClaimAttempt,
   agentRegistration,
   agentRegistrationDay,
+  oauthToken,
   workspace,
 } from "@/lib/db/schema";
 
@@ -75,6 +76,36 @@ export type RegistrationStore = {
     limit: number,
     now: Date,
   ): Promise<boolean>;
+  findClaimAttempt(id: string): Promise<ClaimAttemptRecord | null>;
+  /**
+   * Reserves one code guess atomically. False means the attempt is closed, has
+   * expired, or has no guesses left, so parallel submissions cannot each test a
+   * different code against the same allowance.
+   */
+  reserveClaimAttempt(id: string, maxAttempts: number, now: Date): Promise<boolean>;
+  /**
+   * Transfers the trial workspace, marks the registration claimed and revokes
+   * its tokens in one statement. False when the workspace is already owned, the
+   * user already owns a workspace, or the registration is no longer active.
+   */
+  completeClaim(input: {
+    attemptId: string;
+    registrationId: string;
+    workspaceId: string;
+    userId: string;
+    plan: string;
+    now: Date;
+  }): Promise<boolean>;
+};
+
+export type ClaimAttemptRecord = {
+  id: string;
+  registrationId: string;
+  userCodeHash: string;
+  email: string | null;
+  status: "pending" | "completed" | "expired";
+  attempts: number;
+  expiresAt: Date;
 };
 
 function toRecord(row: typeof agentRegistration.$inferSelect): RegistrationRecord {
@@ -85,6 +116,15 @@ function toRecord(row: typeof agentRegistration.$inferSelect): RegistrationRecor
     expiresAt: row.expiresAt,
     claimTokenExpiresAt: row.claimTokenExpiresAt,
   };
+}
+
+async function registrationStatus(id: string): Promise<string | null> {
+  const [row] = await getDb()
+    .select({ status: agentRegistration.status })
+    .from(agentRegistration)
+    .where(eq(agentRegistration.id, id))
+    .limit(1);
+  return row?.status ?? null;
 }
 
 export function drizzleRegistrationStore(): RegistrationStore {
@@ -190,6 +230,9 @@ export function drizzleRegistrationStore(): RegistrationStore {
 
       // Delete by status, not by the rows just marked, so a delete that failed
       // on an earlier run is retried instead of leaking the workspace forever.
+      // Only unowned workspaces are deleted: a workspace a human claimed must
+      // never be removed by cleanup, even if a registration row was left active
+      // by a failed transfer.
       const deleted = await getDb().execute(sql`
         delete from ${workspace}
         where ${workspace.id} in (
@@ -197,6 +240,7 @@ export function drizzleRegistrationStore(): RegistrationStore {
           where ${agentRegistration.status} = 'expired'
             and ${agentRegistration.workspaceId} is not null
         )
+        and ${workspace.ownerUserId} is null
         returning ${workspace.id}
       `);
       await getDb()
@@ -220,7 +264,10 @@ export function drizzleRegistrationStore(): RegistrationStore {
           ),
         )
         .returning({ id: agentRegistration.id });
-      return rows.length > 0;
+      if (rows.length > 0) return true;
+      // Trial quotas stop applying once a human claims the workspace: it is on
+      // their plan from then on.
+      return (await registrationStatus(registrationId)) === "claimed";
     },
 
     async consumeDraftAttempt(registrationId, workspaceId, limit, now) {
@@ -237,7 +284,86 @@ export function drizzleRegistrationStore(): RegistrationStore {
           ),
         )
         .returning({ id: agentRegistration.id });
+      if (rows.length > 0) return true;
+      return (await registrationStatus(registrationId)) === "claimed";
+    },
+
+    async findClaimAttempt(id) {
+      const [row] = await getDb()
+        .select()
+        .from(agentClaimAttempt)
+        .where(eq(agentClaimAttempt.id, id))
+        .limit(1);
+      return row
+        ? {
+            id: row.id,
+            registrationId: row.registrationId,
+            userCodeHash: row.userCodeHash,
+            email: row.email,
+            status: row.status,
+            attempts: row.attempts,
+            expiresAt: row.expiresAt,
+          }
+        : null;
+    },
+
+    async reserveClaimAttempt(id, maxAttempts, now) {
+      const rows = await getDb()
+        .update(agentClaimAttempt)
+        .set({ attempts: sql`${agentClaimAttempt.attempts} + 1` })
+        .where(
+          and(
+            eq(agentClaimAttempt.id, id),
+            eq(agentClaimAttempt.status, "pending"),
+            gt(agentClaimAttempt.expiresAt, now),
+            sql`${agentClaimAttempt.attempts} < ${maxAttempts}`,
+          ),
+        )
+        .returning({ attempts: agentClaimAttempt.attempts });
       return rows.length > 0;
+    },
+
+    async completeClaim(input) {
+      // One statement, so a failure cannot leave the workspace owned while the
+      // registration stays active (which cleanup would then delete). Each step
+      // is conditional on the previous one, so a lost race changes nothing.
+      // Timestamps are passed as ISO strings: the raw driver binding rejects a
+      // Date, and the cast keeps both drivers identical.
+      const now = input.now.toISOString();
+      const result = await getDb().execute(sql`
+        with claimed as (
+          update ${workspace}
+          set owner_user_id = ${input.userId}, plan = ${input.plan}, updated_at = ${now}::timestamptz
+          where ${workspace.id} = ${input.workspaceId}
+            and ${workspace.ownerUserId} is null
+            and not exists (
+              select 1 from ${workspace}
+              where ${workspace.ownerUserId} = ${input.userId}
+                and ${workspace.id} <> ${input.workspaceId}
+            )
+          returning ${workspace.id}
+        ), registered as (
+          update ${agentRegistration}
+          set status = 'claimed', claimed_at = ${now}::timestamptz, claimed_by_user_id = ${input.userId}
+          where ${agentRegistration.id} = ${input.registrationId}
+            and ${agentRegistration.status} = 'active'
+            and exists (select 1 from claimed)
+          returning ${agentRegistration.id}
+        ), revoked as (
+          update ${oauthToken}
+          set revoked_at = ${now}::timestamptz
+          where ${oauthToken.registrationId} = ${input.registrationId}
+            and ${oauthToken.revokedAt} is null
+            and exists (select 1 from registered)
+          returning ${oauthToken.id}
+        )
+        update ${agentClaimAttempt}
+        set status = 'completed', completed_at = ${now}::timestamptz
+        where ${agentClaimAttempt.id} = ${input.attemptId}
+          and exists (select 1 from registered)
+        returning ${agentClaimAttempt.id}
+      `);
+      return rowsOf(result).length > 0;
     },
   };
 }
@@ -407,4 +533,128 @@ export async function runAgentCleanup(
   now: Date = new Date(),
 ): Promise<{ expired: number; workspacesDeleted: number }> {
   return drizzleRegistrationStore().expireRegistrations(now);
+}
+
+export type ClaimCompletion =
+  | { ok: true; workspaceId: string }
+  | {
+      ok: false;
+      error:
+        | "not_found"
+        | "already_claimed"
+        | "expired"
+        | "too_many_attempts"
+        | "email_mismatch"
+        | "invalid_code";
+    };
+
+const MAX_CODE_ATTEMPTS = 5;
+
+/**
+ * Completes a claim: checks the code, binds the trial workspace to the signed-in
+ * user, and revokes every pre-claim token. The email on the attempt, when the
+ * agent supplied one, must match the signed-in user (claim interception
+ * mitigation).
+ */
+export async function completeClaim(opts: {
+  store: RegistrationStore;
+  attemptId: string;
+  userCode: string;
+  userId: string;
+  userEmail: string | null;
+  plan: string;
+  pepper: string;
+  now: Date;
+}): Promise<ClaimCompletion> {
+  const attempt = await opts.store.findClaimAttempt(opts.attemptId);
+  if (!attempt) return { ok: false, error: "not_found" };
+  if (attempt.status !== "pending") return { ok: false, error: "already_claimed" };
+  if (attempt.expiresAt.getTime() <= opts.now.getTime()) return { ok: false, error: "expired" };
+  if (attempt.email && attempt.email !== (opts.userEmail ?? "").trim().toLowerCase()) {
+    return { ok: false, error: "email_mismatch" };
+  }
+
+  // Reserve the guess before comparing, so concurrent submissions cannot all
+  // read a count below the limit and each test a different code.
+  if (!(await opts.store.reserveClaimAttempt(attempt.id, MAX_CODE_ATTEMPTS, opts.now))) {
+    return { ok: false, error: "too_many_attempts" };
+  }
+
+  const submitted = await hashSecret(opts.userCode.trim(), opts.pepper);
+  if (submitted !== attempt.userCodeHash) {
+    return { ok: false, error: "invalid_code" };
+  }
+
+  const registration = await opts.store.findRegistration(attempt.registrationId);
+  if (!registration || registration.status !== "active" || !registration.workspaceId) {
+    return { ok: false, error: "already_claimed" };
+  }
+
+  const claimed = await opts.store.completeClaim({
+    attemptId: attempt.id,
+    registrationId: registration.id,
+    workspaceId: registration.workspaceId,
+    userId: opts.userId,
+    plan: opts.plan,
+    now: opts.now,
+  });
+  if (!claimed) return { ok: false, error: "already_claimed" };
+
+  // Pre-claim credentials were revoked inside the same statement as the
+  // transfer; the agent polls for a new one.
+  return { ok: true, workspaceId: registration.workspaceId };
+}
+
+/** Claim-grant polling: pending until a human finishes, then a post-claim token. */
+export async function exchangeClaimGrant(opts: {
+  store: RegistrationStore & AgentStore;
+  claimToken: string;
+  pepper: string;
+  now: Date;
+}): Promise<TokenResult> {
+  const registration = await opts.store.findRegistrationByClaimTokenHash(
+    await hashSecret(opts.claimToken, opts.pepper),
+  );
+  if (!registration) {
+    return {
+      ok: false,
+      status: 400,
+      body: { error: "invalid_claim_token", error_description: "The claim token is wrong or expired." },
+    };
+  }
+  // A claimed registration is never expired by cleanup, so without this check
+  // its original claim token could mint fresh tokens forever.
+  if (registration.claimTokenExpiresAt.getTime() <= opts.now.getTime()) {
+    return {
+      ok: false,
+      status: 400,
+      body: { error: "expired_token", error_description: "The claim token has expired." },
+    };
+  }
+  if (registration.status === "active") {
+    return {
+      ok: false,
+      status: 400,
+      body: { error: "authorization_pending", error_description: "The user has not completed the claim yet." },
+    };
+  }
+  if (registration.status !== "claimed") {
+    return {
+      ok: false,
+      status: 400,
+      body: { error: "expired_token", error_description: "The registration expired before it was claimed." },
+    };
+  }
+  return {
+    ok: true,
+    body: await issueTokensFor(opts.store, {
+      clientId: null,
+      userId: null,
+      workspaceId: registration.workspaceId,
+      registrationId: registration.id,
+      scopes: [...AGENT_POST_CLAIM_SCOPES],
+      pepper: opts.pepper,
+      now: opts.now,
+    }),
+  };
 }

@@ -8,9 +8,12 @@ import {
 import { hashSecret } from "@/lib/agent/crypto";
 import type { AgentStore, AuditEntry, OAuthClientRecord } from "@/lib/agent/oauth/store";
 import {
+  completeClaim,
   createAnonymousRegistration,
+  exchangeClaimGrant,
   exchangeAssertion,
   initiateClaim,
+  type ClaimAttemptRecord,
   type RegistrationRecord,
   type RegistrationStore,
 } from "@/lib/agent/registration";
@@ -29,8 +32,9 @@ type FakeRegistration = RegistrationRecord & {
 
 function createFakeRegistrationStore() {
   const registrations = new Map<string, FakeRegistration>();
-  const attempts: Array<{ id: string; registrationId: string; userCodeHash: string; email: string | null; expiresAt: Date }> = [];
+  const attempts = new Map<string, ClaimAttemptRecord>();
   const workspaces: string[] = [];
+  const owned = new Set<string>();
   const slots = new Map<string, number>();
   let sequence = 0;
 
@@ -38,11 +42,13 @@ function createFakeRegistrationStore() {
     registrations: typeof registrations;
     attempts: typeof attempts;
     workspaces: typeof workspaces;
+    owned: typeof owned;
     slots: typeof slots;
   } = {
     registrations,
     attempts,
     workspaces,
+    owned,
     slots,
     async reserveRegistrationSlot(input) {
       // Mirrors the SQL: each cap increments only while under its limit.
@@ -86,7 +92,7 @@ function createFakeRegistrationStore() {
     async createClaimAttempt(input) {
       sequence += 1;
       const id = `cla_${sequence}`;
-      attempts.push({ id, ...input });
+      attempts.set(id, { id, status: "pending", attempts: 0, ...input });
       return { id };
     },
     async expireRegistrations(now) {
@@ -99,9 +105,10 @@ function createFakeRegistrationStore() {
       }
       // Mirrors the SQL: delete by status, so a delete that failed on an
       // earlier run is retried rather than leaking the workspace.
+      // Only unowned workspaces are deleted, mirroring the SQL guard.
       const doomed = new Set(
         [...registrations.values()]
-          .filter((row) => row.status === "expired" && row.workspaceId)
+          .filter((row) => row.status === "expired" && row.workspaceId && !owned.has(row.workspaceId))
           .map((row) => row.workspaceId!),
       );
       for (const workspaceId of doomed) {
@@ -113,6 +120,8 @@ function createFakeRegistrationStore() {
     async consumeToolCall(id, workspaceId, limit, now) {
       const row = registrations.get(id);
       if (!row || row.workspaceId !== workspaceId) return false;
+      // A claimed workspace is on the user's plan, so trial quotas stop applying.
+      if (row.status === "claimed") return true;
       if (row.status !== "active" || row.expiresAt <= now || row.toolCalls >= limit) return false;
       row.toolCalls += 1;
       return true;
@@ -120,8 +129,34 @@ function createFakeRegistrationStore() {
     async consumeDraftAttempt(id, workspaceId, limit, now) {
       const row = registrations.get(id);
       if (!row || row.workspaceId !== workspaceId) return false;
+      if (row.status === "claimed") return true;
       if (row.status !== "active" || row.expiresAt <= now || row.draftAttempts >= limit) return false;
       row.draftAttempts += 1;
+      return true;
+    },
+    async findClaimAttempt(id) {
+      return attempts.get(id) ?? null;
+    },
+    async reserveClaimAttempt(id, maxAttempts, now) {
+      const attempt = attempts.get(id);
+      if (!attempt) return false;
+      if (attempt.status !== "pending" || attempt.expiresAt <= now) return false;
+      if (attempt.attempts >= maxAttempts) return false;
+      attempt.attempts += 1;
+      return true;
+    },
+    async completeClaim(input) {
+      const registration = registrations.get(input.registrationId);
+      if (!registration || registration.status !== "active") return false;
+      // Mirrors the SQL guard: one workspace per user.
+      const alreadyOwned = [...registrations.values()].some(
+        (row) => row.status === "claimed" && row.id !== input.registrationId,
+      );
+      if (alreadyOwned) return false;
+      registration.status = "claimed";
+      if (registration.workspaceId) owned.add(registration.workspaceId);
+      const attempt = attempts.get(input.attemptId);
+      if (attempt) attempt.status = "completed";
       return true;
     },
   };
@@ -341,9 +376,9 @@ describe("claim initiation", () => {
     if (!claim.ok) return;
     expect(claim.userCode).toMatch(/^\d{6}$/);
     expect(claim.verificationUri).toBe(`${ORIGIN}/auth-agents/claim?attempt=${claim.attemptId}`);
-    expect(store.attempts[0]?.email).toBe("human@example.com");
+    expect([...store.attempts.values()][0]?.email).toBe("human@example.com");
     // The code is stored hashed, never raw.
-    expect(store.attempts[0]?.userCodeHash).not.toBe(claim.userCode);
+    expect([...store.attempts.values()][0]?.userCodeHash).not.toBe(claim.userCode);
   });
 
   it("refuses an unknown, claimed or expired registration", async () => {
@@ -490,6 +525,26 @@ describe("trial quotas", () => {
     expect(store.registrations.get(result.registrationId)?.status).toBe("expired");
   });
 
+  it("never deletes a workspace a human owns, even if its registration is still active", async () => {
+    const store = createFakeRegistrationStore();
+    const result = await createAnonymousRegistration({
+      store,
+      origin: ORIGIN,
+      signingKey: KEY,
+      keyId: "vantage-agent-1",
+      pepper: PEPPER,
+      ipHash: "ip_hash_1",
+      now: NOW,
+    });
+    if (!result.ok) throw new Error("registration failed");
+    // Simulate a transfer that set ownership but failed before marking the
+    // registration claimed: cleanup must not delete the human's workspace.
+    store.owned.add(store.workspaces[0]!);
+
+    const cleanup = await store.expireRegistrations(new Date("2026-11-20T00:00:00Z"));
+    expect(cleanup).toEqual({ expired: 1, workspacesDeleted: 0 });
+  });
+
   it("retries a workspace whose delete failed on an earlier run", async () => {
     const store = createFakeRegistrationStore();
     const result = await createAnonymousRegistration({
@@ -512,6 +567,24 @@ describe("trial quotas", () => {
     // Nothing new expired, but the leaked workspace is still found and removed.
     expect(cleanup).toEqual({ expired: 0, workspacesDeleted: 1 });
   });
+
+  it("stops applying trial quotas once the workspace is claimed", async () => {
+    const store = createFakeRegistrationStore();
+    const result = await createAnonymousRegistration({
+      store,
+      origin: ORIGIN,
+      signingKey: KEY,
+      keyId: "vantage-agent-1",
+      pepper: PEPPER,
+      ipHash: "ip_hash_1",
+      now: NOW,
+    });
+    if (!result.ok) throw new Error("registration failed");
+    const workspaceId = store.registrations.get(result.registrationId)!.workspaceId!;
+    store.registrations.get(result.registrationId)!.status = "claimed";
+    expect(await store.consumeToolCall(result.registrationId, workspaceId, 0, NOW)).toBe(true);
+    expect(await store.consumeDraftAttempt(result.registrationId, workspaceId, 0, NOW)).toBe(true);
+  });
 });
 
 describe("claim token hashing", () => {
@@ -530,5 +603,251 @@ describe("claim token hashing", () => {
     const row = store.registrations.get(result.registrationId)!;
     expect(row.claimTokenHash).toBe(await hashSecret(result.claimToken, PEPPER));
     expect(row.claimTokenHash).not.toContain(result.claimToken);
+  });
+});
+
+describe("claim completion", () => {
+  async function ceremony(email: string | null = null) {
+    const store = createFakeRegistrationStore();
+    const registration = await createAnonymousRegistration({
+      store,
+      origin: ORIGIN,
+      signingKey: KEY,
+      keyId: "vantage-agent-1",
+      pepper: PEPPER,
+      ipHash: "ip_hash_1",
+      now: NOW,
+    });
+    if (!registration.ok) throw new Error("registration failed");
+    const claim = await initiateClaim({
+      store,
+      claimToken: registration.claimToken,
+      email,
+      pepper: PEPPER,
+      origin: ORIGIN,
+      now: NOW,
+    });
+    if (!claim.ok) throw new Error("claim failed");
+    return { store, registration, claim };
+  }
+
+  const complete = (
+    store: ReturnType<typeof createFakeRegistrationStore>,
+    attemptId: string,
+    userCode: string,
+    overrides: Partial<{ userEmail: string | null; now: Date }> = {},
+  ) =>
+    completeClaim({
+      store,
+      attemptId,
+      userCode,
+      userId: "user_1",
+      userEmail: "human@example.com",
+      plan: "free",
+      pepper: PEPPER,
+      now: NOW,
+      ...overrides,
+    });
+
+  it("binds the workspace to the user and marks the registration claimed", async () => {
+    const { store, claim } = await ceremony();
+    const result = await complete(store, claim.attemptId, claim.userCode);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.workspaceId).toBe(store.workspaces[0]);
+    expect(store.registrations.get(claim.registrationId)?.status).toBe("claimed");
+    expect(store.attempts.get(claim.attemptId)?.status).toBe("completed");
+  });
+
+  it("rejects a wrong code and counts the attempt", async () => {
+    const { store, claim } = await ceremony();
+    const wrong = claim.userCode === "000000" ? "111111" : "000000";
+    const result = await complete(store, claim.attemptId, wrong);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("invalid_code");
+    expect(store.attempts.get(claim.attemptId)?.attempts).toBe(1);
+    expect(store.registrations.get(claim.registrationId)?.status).toBe("active");
+  });
+
+  it("stops after five wrong codes", async () => {
+    const { store, claim } = await ceremony();
+    const wrong = claim.userCode === "000000" ? "111111" : "000000";
+    for (let index = 0; index < 5; index += 1) await complete(store, claim.attemptId, wrong);
+    const result = await complete(store, claim.attemptId, claim.userCode);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("too_many_attempts");
+  });
+
+  it("reserves a guess before comparing, so parallel submissions cannot overspend", async () => {
+    const { store, claim } = await ceremony();
+    const wrong = claim.userCode === "000000" ? "111111" : "000000";
+    // Five concurrent submissions: exactly five guesses are reserved, so the
+    // sixth (even with the right code) is refused.
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () => complete(store, claim.attemptId, wrong)),
+    );
+    expect(results.filter((result) => !result.ok && result.error === "invalid_code")).toHaveLength(5);
+    expect(results.filter((result) => !result.ok && result.error === "too_many_attempts")).toHaveLength(1);
+    expect(store.attempts.get(claim.attemptId)?.attempts).toBe(5);
+  });
+
+  it("rejects an expired code", async () => {
+    const { store, claim } = await ceremony();
+    const result = await complete(store, claim.attemptId, claim.userCode, {
+      now: new Date("2026-11-06T01:00:00Z"),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("expired");
+  });
+
+  it("rejects a different signed-in email when the agent named one", async () => {
+    const { store, claim } = await ceremony("human@example.com");
+    const result = await complete(store, claim.attemptId, claim.userCode, {
+      userEmail: "someone.else@example.com",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("email_mismatch");
+  });
+
+  it("refuses a second claim of the same workspace", async () => {
+    const { store, claim } = await ceremony();
+    expect((await complete(store, claim.attemptId, claim.userCode)).ok).toBe(true);
+    const again = await complete(store, claim.attemptId, claim.userCode);
+    expect(again.ok).toBe(false);
+    if (!again.ok) expect(again.error).toBe("already_claimed");
+  });
+
+  it("refuses a second trial for the same account", async () => {
+    // One store, two trials, one account: the guard lives in the transfer, not
+    // only in the page, so the second claim must fail.
+    const store = createFakeRegistrationStore();
+    const start = async () => {
+      const registration = await createAnonymousRegistration({
+        store,
+        origin: ORIGIN,
+        signingKey: KEY,
+        keyId: "vantage-agent-1",
+        pepper: PEPPER,
+        ipHash: "ip_hash_1",
+        now: NOW,
+      });
+      if (!registration.ok) throw new Error("registration failed");
+      const claim = await initiateClaim({
+        store,
+        claimToken: registration.claimToken,
+        email: null,
+        pepper: PEPPER,
+        origin: ORIGIN,
+        now: NOW,
+      });
+      if (!claim.ok) throw new Error("claim failed");
+      return claim;
+    };
+
+    const first = await start();
+    expect((await complete(store, first.attemptId, first.userCode)).ok).toBe(true);
+
+    const second = await start();
+    const result = await complete(store, second.attemptId, second.userCode);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("already_claimed");
+  });
+});
+
+describe("claim grant polling", () => {
+  async function ceremony() {
+    const registrations = createFakeRegistrationStore();
+    const agents = createFakeAgentStore();
+    const registration = await createAnonymousRegistration({
+      store: registrations,
+      origin: ORIGIN,
+      signingKey: KEY,
+      keyId: "vantage-agent-1",
+      pepper: PEPPER,
+      ipHash: "ip_hash_1",
+      now: NOW,
+    });
+    if (!registration.ok) throw new Error("registration failed");
+    const claim = await initiateClaim({
+      store: registrations,
+      claimToken: registration.claimToken,
+      email: null,
+      pepper: PEPPER,
+      origin: ORIGIN,
+      now: NOW,
+    });
+    if (!claim.ok) throw new Error("claim failed");
+    return { registrations, agents, registration, claim };
+  }
+
+  it("reports authorization_pending until a human finishes", async () => {
+    const { registrations, agents, registration } = await ceremony();
+    const outcome = await exchangeClaimGrant({
+      store: { ...registrations, ...agents },
+      claimToken: registration.claimToken,
+      pepper: PEPPER,
+      now: NOW,
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.body.error).toBe("authorization_pending");
+  });
+
+  it("issues a read-and-draft token once claimed", async () => {
+    const { registrations, agents, registration, claim } = await ceremony();
+    await completeClaim({
+      store: registrations,
+      attemptId: claim.attemptId,
+      userCode: claim.userCode,
+      userId: "user_1",
+      userEmail: null,
+      plan: "free",
+      pepper: PEPPER,
+      now: NOW,
+    });
+    const outcome = await exchangeClaimGrant({
+      store: { ...registrations, ...agents },
+      claimToken: registration.claimToken,
+      pepper: PEPPER,
+      now: NOW,
+    });
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) expect(outcome.body.scope).toBe("vantage.read vantage.draft");
+  });
+
+  it("reports expired_token for a registration that lapsed", async () => {
+    const { registrations, agents, registration } = await ceremony();
+    const row = registrations.registrations.get(registration.registrationId)!;
+    row.status = "expired";
+    const outcome = await exchangeClaimGrant({
+      store: { ...registrations, ...agents },
+      claimToken: registration.claimToken,
+      pepper: PEPPER,
+      now: NOW,
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.body.error).toBe("expired_token");
+  });
+
+  it("refuses a claim token past its own expiry, even after the claim", async () => {
+    const { registrations, agents, registration, claim } = await ceremony();
+    await completeClaim({
+      store: registrations,
+      attemptId: claim.attemptId,
+      userCode: claim.userCode,
+      userId: "user_1",
+      userEmail: null,
+      plan: "free",
+      pepper: PEPPER,
+      now: NOW,
+    });
+    // Cleanup never expires a claimed registration, so the claim token's own
+    // expiry is the only thing that stops it minting tokens forever.
+    const outcome = await exchangeClaimGrant({
+      store: { ...registrations, ...agents },
+      claimToken: registration.claimToken,
+      pepper: PEPPER,
+      now: new Date("2026-11-20T00:00:00Z"),
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.body.error).toBe("expired_token");
   });
 });
