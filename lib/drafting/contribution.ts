@@ -118,13 +118,16 @@ async function modelJson(opts: { workspaceId: string; model: string; triage: boo
   }).then(text => JSON.parse(text));
 }
 
-export async function generateContribution(input: DraftInput, opts: { workspaceId: string; rulesReviewed?: boolean; signal?: AbortSignal }): Promise<GeneratedDraft> {
+export async function generateContribution(input: DraftInput, opts: { workspaceId: string; rulesReviewed?: boolean; draftForReview?: boolean; signal?: AbortSignal }): Promise<GeneratedDraft> {
   const target = input.evidence[0];
   if (!target || !isPublicHttpUrl(target.urlCanonical)) return buildContributionBrief(input, "A verified conversation URL is required.");
   if (target.discoveryOnly) return buildContributionBrief(input, "This evidence is a discovery passage or indexed snippet. Read the original conversation before preparing a reply.");
   const rule = contributionRule(target.platform, target.urlCanonical);
   if (rule.aiText === "prohibited") return buildContributionBrief(input, `${rule.venue} prohibits AI-written contributions. Research only. Policy: ${rule.url}`);
-  if (!opts.rulesReviewed) return buildContributionBrief(input, "Review this community's rules before generating a contribution.");
+  // `draftForReview` is for text that is shown to a human and never persisted or
+  // handed off. It skips the rules gate but leaves `rulesReviewed` false, so
+  // nothing downstream can mistake it for an approved draft.
+  if (!opts.rulesReviewed && !opts.draftForReview) return buildContributionBrief(input, "Review this community's rules before generating a contribution.");
   try {
     if (process.env.INCO_TRIAGE_ENABLED === "true") {
       const triage = record(await modelJson({ ...opts, input, model: "deepseek-v4.1-flash", triage: true }));
@@ -134,7 +137,7 @@ export async function generateContribution(input: DraftInput, opts: { workspaceI
     const model = process.env.COMMENT_DRAFT_MODEL || "openai/gpt-6.1-sol";
     if (!["openai/gpt-6.1-sol", "anthropic/claude-sonnet-5.5"].includes(model)) throw new ContributionValidationError("Choose a verified comment model.");
     const draft = validateContribution(await modelJson({ ...opts, input, model, triage: false }), input, model);
-    if (draft.quality) draft.quality.rulesReviewed = true;
+    if (draft.quality) draft.quality.rulesReviewed = opts.rulesReviewed === true;
     return draft;
   } catch (error) {
     if (opts.signal?.aborted) throw error;

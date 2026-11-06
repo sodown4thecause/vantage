@@ -1,9 +1,11 @@
 import { eq } from "drizzle-orm";
 
-import { AGENT_READ_SCOPE } from "@/lib/agent/config";
+import { AGENT_DRAFT_SCOPE, AGENT_READ_SCOPE } from "@/lib/agent/config";
 import type { McpTool } from "@/lib/agent/mcp/protocol";
 import { getDb } from "@/lib/db/client";
 import { workspace } from "@/lib/db/schema";
+import { DraftInputError, generateDraftForOpportunity } from "@/lib/drafting/repository";
+import { contributionRule } from "@/lib/drafting/rules";
 import { getOpportunityDetail } from "@/lib/opportunities/run";
 import { getLimits } from "@/lib/plans/limits";
 import { getLatestMonitoringProfile } from "@/lib/profile/repository";
@@ -226,7 +228,75 @@ const getConversation: McpTool = {
   },
 };
 
-/** Tools available to an agent credential. Read-only until the draft slice lands. */
+const draftReply: McpTool = {
+  name: "draft_reply",
+  title: "Draft a reply",
+  description:
+    "Draft a reply to one conversation, grounded in the posts behind it. Returns text only: " +
+    "nothing is saved, sent or posted. A human must check the community's rules, edit the text " +
+    "and post it themselves. Venues that prohibit AI-written contributions return a research " +
+    "brief instead.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      opportunityId: {
+        type: "string",
+        description: "The id from list_todays_conversations.",
+      },
+      targetDocumentId: {
+        type: "string",
+        description: "Optional: which post in the thread to reply to. Defaults to the first.",
+      },
+    },
+    required: ["opportunityId"],
+    additionalProperties: false,
+  },
+  requiredScope: AGENT_DRAFT_SCOPE,
+  async run(input, ctx) {
+    if (!ctx.workspaceId) return { draft: null, message: NO_WORKSPACE };
+
+    const opportunityId = typeof input.opportunityId === "string" ? input.opportunityId.trim() : "";
+    if (!UUID.test(opportunityId)) {
+      return { draft: null, message: "opportunityId must be a conversation id." };
+    }
+    const targetDocumentId =
+      typeof input.targetDocumentId === "string" ? input.targetDocumentId.trim() : "";
+    if (targetDocumentId && !UUID.test(targetDocumentId)) {
+      return { draft: null, message: "targetDocumentId must be a document id." };
+    }
+
+    try {
+      const { detail, target, generated } = await generateDraftForOpportunity({
+        workspaceId: ctx.workspaceId,
+        opportunityId,
+        ...(targetDocumentId ? { targetDocumentId } : {}),
+        // Text for a human to review, never persisted and never handed off.
+        draftForReview: true,
+      });
+      const rule = contributionRule(target.platform, target.urlCanonical);
+      return {
+        draft: {
+          text: generated.originalText,
+          kind: generated.quality?.kind ?? "draft",
+          citations: generated.citations,
+          flags: generated.flags,
+          venue: rule.venue,
+          venuePolicy: rule.aiText,
+          rulesReviewed: false,
+        },
+        conversation: { id: detail.id, title: detail.title },
+        warning:
+          "Text only. Nothing was saved or sent. Check this community's rules and edit before " +
+          "posting.",
+      };
+    } catch (err) {
+      if (err instanceof DraftInputError) return { draft: null, message: err.message };
+      throw err;
+    }
+  },
+};
+
+/** Tools available to an agent credential. Read and draft only; nothing writes or sends. */
 export function agentTools(): McpTool[] {
-  return [getWorkspaceContext, listTodaysConversations, getConversation];
+  return [getWorkspaceContext, listTodaysConversations, getConversation, draftReply];
 }

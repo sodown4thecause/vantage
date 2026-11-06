@@ -84,8 +84,7 @@ Access tokens last one hour. Refresh tokens rotate on every use.
 - \`get_workspace_context\` — the product being tracked, its audience, competitors and topics.
 - \`list_todays_conversations\` — up to five conversations worth joining today, best first.
 - \`get_conversation\` — one conversation with the original posts behind it.
-
-\`draft_reply\` arrives with the draft slice.
+- \`draft_reply\` — a grounded reply as text. Nothing is saved, sent or posted.
 
 ## Free tier
 

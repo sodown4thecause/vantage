@@ -4,13 +4,19 @@ const mocks = vi.hoisted(() => ({
   ensureTodaysPicks: vi.fn(),
   workspaceTimeZone: vi.fn(),
   getOpportunityDetail: vi.fn(),
+  generateDraftForOpportunity: vi.fn(),
 }));
 
 vi.mock("@/lib/retention/picks", () => ({ ensureTodaysPicks: mocks.ensureTodaysPicks }));
 vi.mock("@/lib/retention/zone", () => ({ workspaceTimeZone: mocks.workspaceTimeZone }));
 vi.mock("@/lib/opportunities/run", () => ({ getOpportunityDetail: mocks.getOpportunityDetail }));
+vi.mock("@/lib/drafting/repository", () => ({
+  DraftInputError: class DraftInputError extends Error {},
+  generateDraftForOpportunity: mocks.generateDraftForOpportunity,
+}));
 
 import { agentTools } from "@/lib/agent/mcp/tools";
+import { DraftInputError } from "@/lib/drafting/repository";
 
 const WORKSPACE = "11111111-1111-4111-8111-111111111111";
 const OPPORTUNITY = "22222222-2222-4222-8222-222222222222";
@@ -50,6 +56,7 @@ beforeEach(() => {
   mocks.ensureTodaysPicks.mockReset();
   mocks.workspaceTimeZone.mockReset();
   mocks.getOpportunityDetail.mockReset();
+  mocks.generateDraftForOpportunity.mockReset();
   mocks.workspaceTimeZone.mockResolvedValue("Australia/Brisbane");
 });
 
@@ -219,16 +226,109 @@ describe("get_conversation", () => {
 });
 
 describe("tool registry", () => {
-  it("exposes only read-scoped tools and no write surface", () => {
+  it("exposes read tools plus one draft tool, and no write surface", () => {
     const tools = agentTools();
     expect(tools.map((entry) => entry.name)).toEqual([
       "get_workspace_context",
       "list_todays_conversations",
       "get_conversation",
+      "draft_reply",
     ]);
-    for (const entry of tools) {
-      expect(entry.requiredScope).toBe("vantage.read");
-      expect(entry.inputSchema).toMatchObject({ type: "object" });
-    }
+    expect(tools.filter((entry) => entry.requiredScope === "vantage.read")).toHaveLength(3);
+    expect(tools.find((entry) => entry.name === "draft_reply")?.requiredScope).toBe("vantage.draft");
+    for (const entry of tools) expect(entry.inputSchema).toMatchObject({ type: "object" });
+  });
+});
+
+describe("draft_reply", () => {
+  const draftCtx = { ...ctx, scopes: ["vantage.read", "vantage.draft"] };
+
+  const generation = {
+    detail: { ...card, evidence: [] },
+    target: {
+      documentId: "doc_1",
+      title: "Thread",
+      urlCanonical: "https://www.reddit.com/r/saas/comments/1/thread",
+      platform: "reddit",
+      contentMd: "Looking for a cheaper tool.",
+      postedAt: null,
+      provider: null,
+    },
+    generated: {
+      originalText: "We moved off the expensive tier by consolidating seats first.",
+      citations: [{ label: "Thread", url: "https://www.reddit.com/r/saas/comments/1/thread" }],
+      flags: [],
+      quality: { kind: "draft" as const, rulesReviewed: false },
+    },
+  };
+
+  it("returns text, citations and the venue policy without persisting", async () => {
+    mocks.generateDraftForOpportunity.mockResolvedValue(generation);
+
+    const value = (await tool("draft_reply").run({ opportunityId: OPPORTUNITY }, draftCtx)) as {
+      draft: { text: string; venue: string; venuePolicy: string; rulesReviewed: boolean };
+      warning: string;
+    };
+
+    expect(mocks.generateDraftForOpportunity).toHaveBeenCalledWith({
+      workspaceId: WORKSPACE,
+      opportunityId: OPPORTUNITY,
+      draftForReview: true,
+    });
+    expect(value.draft.text).toContain("consolidating seats");
+    expect(value.draft.venue).toBe("reddit");
+    expect(value.draft.venuePolicy).toBe("unknown");
+    expect(value.draft.rulesReviewed).toBe(false);
+    expect(value.warning).toContain("Nothing was saved or sent");
+  });
+
+  it("reports a venue that prohibits AI-written contributions", async () => {
+    mocks.generateDraftForOpportunity.mockResolvedValue({
+      ...generation,
+      target: { ...generation.target, platform: "hn", urlCanonical: "https://news.ycombinator.com/item?id=1" },
+    });
+    const value = (await tool("draft_reply").run({ opportunityId: OPPORTUNITY }, draftCtx)) as {
+      draft: { venue: string; venuePolicy: string };
+    };
+    expect(value.draft.venue).toBe("Hacker News");
+    expect(value.draft.venuePolicy).toBe("prohibited");
+  });
+
+  it("passes a target document through and rejects a malformed one", async () => {
+    mocks.generateDraftForOpportunity.mockResolvedValue(generation);
+    await tool("draft_reply").run(
+      { opportunityId: OPPORTUNITY, targetDocumentId: "3a278fca-d937-42e4-8dbb-395de98de2a1" },
+      draftCtx,
+    );
+    expect(mocks.generateDraftForOpportunity).toHaveBeenCalledWith(
+      expect.objectContaining({ targetDocumentId: "3a278fca-d937-42e4-8dbb-395de98de2a1" }),
+    );
+
+    mocks.generateDraftForOpportunity.mockClear();
+    const bad = (await tool("draft_reply").run(
+      { opportunityId: OPPORTUNITY, targetDocumentId: "nope" },
+      draftCtx,
+    )) as { draft: null; message: string };
+    expect(bad.draft).toBeNull();
+    expect(mocks.generateDraftForOpportunity).not.toHaveBeenCalled();
+  });
+
+  it("turns a missing conversation into a message, not a crash", async () => {
+    mocks.generateDraftForOpportunity.mockRejectedValue(new DraftInputError("opportunity not found"));
+    const value = (await tool("draft_reply").run({ opportunityId: OPPORTUNITY }, draftCtx)) as {
+      draft: null;
+      message: string;
+    };
+    expect(value.draft).toBeNull();
+    expect(value.message).toBe("opportunity not found");
+  });
+
+  it("returns an honest empty answer without a workspace", async () => {
+    const value = (await tool("draft_reply").run(
+      { opportunityId: OPPORTUNITY },
+      { ...draftCtx, workspaceId: null },
+    )) as { draft: null; message: string };
+    expect(value.draft).toBeNull();
+    expect(mocks.generateDraftForOpportunity).not.toHaveBeenCalled();
   });
 });
