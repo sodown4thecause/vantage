@@ -80,6 +80,21 @@ function createFakeStore() {
       }
       return revoked;
     },
+    async revokeTokensForSubject(input, now) {
+      let revoked = 0;
+      for (const row of tokens.values()) {
+        if (
+          row.clientId === input.clientId &&
+          row.userId === input.userId &&
+          row.workspaceId === input.workspaceId &&
+          !row.revokedAt
+        ) {
+          row.revokedAt = now;
+          revoked += 1;
+        }
+      }
+      return revoked;
+    },
     async audit(entry) {
       audits.push(entry);
     },
@@ -311,7 +326,11 @@ describe("MCP route", () => {
 
     const list = await mcpPost(mcpRequest({ jsonrpc: "2.0", id: 2, method: "tools/list" }, raw));
     const names = (await list.json()).result.tools.map((tool: { name: string }) => tool.name);
-    expect(names).toEqual(["get_workspace_context"]);
+    expect(names).toEqual([
+      "get_workspace_context",
+      "list_todays_conversations",
+      "get_conversation",
+    ]);
   });
 
   it("rejects an unsupported protocol version header", async () => {

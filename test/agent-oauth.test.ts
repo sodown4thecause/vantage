@@ -126,6 +126,21 @@ function createFakeStore() {
       }
       return revoked;
     },
+    async revokeTokensForSubject(input, now) {
+      let revoked = 0;
+      for (const row of tokens.values()) {
+        if (
+          row.clientId === input.clientId &&
+          row.userId === input.userId &&
+          row.workspaceId === input.workspaceId &&
+          !row.revokedAt
+        ) {
+          row.revokedAt = now;
+          revoked += 1;
+        }
+      }
+      return revoked;
+    },
     async audit(entry) {
       audits.push(entry);
     },
@@ -525,9 +540,122 @@ describe("token exchange", () => {
     });
     expect(phoneRefresh.ok).toBe(true);
   });
+
+  it("revokes a pre-family token's replacement when the original is replayed", async () => {
+    const store = state.store as ReturnType<typeof createFakeStore>;
+    const now = new Date("2026-11-06T00:01:00Z");
+    const legacy = "vrt_legacy";
+    // A token issued before families existed: no family id.
+    await store.createToken({
+      tokenHash: await hashSecret(legacy, PEPPER),
+      kind: "refresh",
+      clientId: "vcl_test",
+      userId: "user_1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+      scopes: ["vantage.read"],
+      expiresAt: new Date("2026-12-06T00:00:00Z"),
+      familyId: null as unknown as string,
+    });
+
+    const rotated = await refreshAccessToken(store, {
+      clientId: "vcl_test",
+      refreshToken: legacy,
+      pepper: PEPPER,
+      now,
+    });
+    expect(rotated.ok).toBe(true);
+    if (!rotated.ok) return;
+
+    const replay = await refreshAccessToken(store, {
+      clientId: "vcl_test",
+      refreshToken: legacy,
+      pepper: PEPPER,
+      now,
+    });
+    expect(replay.ok).toBe(false);
+
+    const replacement = await refreshAccessToken(store, {
+      clientId: "vcl_test",
+      refreshToken: rotated.body.refresh_token,
+      pepper: PEPPER,
+      now,
+    });
+    expect(replacement.ok).toBe(false);
+  });
+
+  it("revokes a replacement that an earlier build gave a random family", async () => {
+    const store = state.store as ReturnType<typeof createFakeStore>;
+    const now = new Date("2026-11-06T00:01:00Z");
+    const legacy = "vrt_legacy_old_build";
+    await store.createToken({
+      tokenHash: await hashSecret(legacy, PEPPER),
+      kind: "refresh",
+      clientId: "vcl_test",
+      userId: "user_1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+      scopes: ["vantage.read"],
+      expiresAt: new Date("2026-12-06T00:00:00Z"),
+      familyId: null as unknown as string,
+    });
+    // A replacement rotated by the previous build: random family, unlinked.
+    const orphan = "vrt_orphan";
+    await store.createToken({
+      tokenHash: await hashSecret(orphan, PEPPER),
+      kind: "refresh",
+      clientId: "vcl_test",
+      userId: "user_1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+      scopes: ["vantage.read"],
+      expiresAt: new Date("2026-12-06T00:00:00Z"),
+      familyId: crypto.randomUUID(),
+    });
+
+    // Rotate the legacy token so a replay is possible, then replay it.
+    const rotated = await refreshAccessToken(store, {
+      clientId: "vcl_test",
+      refreshToken: legacy,
+      pepper: PEPPER,
+      now,
+    });
+    expect(rotated.ok).toBe(true);
+
+    const replay = await refreshAccessToken(store, {
+      clientId: "vcl_test",
+      refreshToken: legacy,
+      pepper: PEPPER,
+      now,
+    });
+    expect(replay.ok).toBe(false);
+
+    const orphaned = await refreshAccessToken(store, {
+      clientId: "vcl_test",
+      refreshToken: orphan,
+      pepper: PEPPER,
+      now,
+    });
+    expect(orphaned.ok).toBe(false);
+  });
 });
 
 describe("MCP authentication", () => {
+  it("accepts a store written before the subject revoke existed", () => {
+    // Compile-time guard. If revokeTokensForSubject became required, this object
+    // would fail typecheck, and so would every test double on the stacked
+    // branches that predates it.
+    const minimal: AgentStore = {
+      getClient: async () => null,
+      createClient: async () => {},
+      createAuthorizationCode: async () => {},
+      consumeAuthorizationCode: async () => null,
+      createToken: async () => {},
+      findToken: async () => null,
+      revokeToken: async () => false,
+      revokeTokenFamily: async () => 0,
+      audit: async () => {},
+    };
+    expect(minimal.revokeTokensForSubject).toBeUndefined();
+  });
+
   async function seedAccessToken(store: ReturnType<typeof createFakeStore>, expiresAt: Date) {
     const raw = "vat_test_token";
     await store.createToken({

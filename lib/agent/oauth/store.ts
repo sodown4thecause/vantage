@@ -87,6 +87,19 @@ export type AgentStore = {
    * die with the victim's, while other devices keep working.
    */
   revokeTokenFamily(familyId: string, now: Date): Promise<number>;
+  /**
+   * Revokes every live token for one client and subject. Used when a token
+   * issued before families existed is replayed: its replacement may carry a
+   * family this server cannot derive, so the whole subject is revoked.
+   *
+   * Optional so a test double written before this method existed still
+   * satisfies the interface; the Drizzle store always implements it, and the
+   * caller falls back to the family seeded from the token's own id.
+   */
+  revokeTokensForSubject?(
+    input: { clientId: string; userId: string | null; workspaceId: string | null },
+    now: Date,
+  ): Promise<number>;
   audit(entry: AuditEntry): Promise<void>;
 };
 
@@ -192,6 +205,24 @@ export function drizzleAgentStore(): AgentStore {
         .update(oauthToken)
         .set({ revokedAt: now })
         .where(and(eq(oauthToken.familyId, familyId), isNull(oauthToken.revokedAt)))
+        .returning({ id: oauthToken.id });
+      return rows.length;
+    },
+
+    async revokeTokensForSubject(input, now) {
+      const rows = await getDb()
+        .update(oauthToken)
+        .set({ revokedAt: now })
+        .where(
+          and(
+            eq(oauthToken.clientId, input.clientId),
+            input.userId === null ? isNull(oauthToken.userId) : eq(oauthToken.userId, input.userId),
+            input.workspaceId === null
+              ? isNull(oauthToken.workspaceId)
+              : eq(oauthToken.workspaceId, input.workspaceId),
+            isNull(oauthToken.revokedAt),
+          ),
+        )
         .returning({ id: oauthToken.id });
       return rows.length;
     },
