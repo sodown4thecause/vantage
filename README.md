@@ -265,10 +265,11 @@ Worker script limits are 3 MB (Free) and 10 MB (Paid). CI measures
 
 ## Contributing
 
-See [AGENTS.md](AGENTS.md) for the standard loop, the HumanLayer workflow,
-available MCP servers (agent-browser, Supermemory, Greptile), Cloudflare and
-Neon operating rules, security invariants, migration conventions and how
-Greptile reviews PRs.
+See [AGENTS.md](AGENTS.md) for how work is done here: the definition of done,
+the workflow, the MCP servers agents reach through Executor, secrets, the
+review and merge rules, and the product code rules. Platform reference detail
+(Cloudflare, Neon, Greptile, branch protection) is in
+[docs/agents/platform.md](docs/agents/platform.md).
 
 ## Ref orchestration
 
