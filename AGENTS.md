@@ -173,6 +173,9 @@ PR.
    open findings in the PR and report. Never open a new PR to reset a count.
 8. **Never** bypass protections (`--admin`), weaken or skip checks, edit
    reviewer config to get a pass, or claim an approval you haven't seen.
+   Changing reviewer config (`cubic.yaml`, `.greptile/`) or CI skip rules is a
+   Needs-Liam change: make it only when Liam asks, and say so in the PR
+   description.
 9. **Merge** with `gh pr merge --squash --delete-branch` after rebasing ordinary
    conflicts and re-running checks. Then confirm it merged, and watch `main` CI
    and the staging deploy. A broken staging deploy is yours to fix next.
