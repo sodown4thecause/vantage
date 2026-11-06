@@ -40,6 +40,9 @@ import {
   type NormalizedDocument,
 } from "@/lib/pipeline/normalize";
 import { getSemanticMode } from "@/lib/cf/env";
+import { getDecisionMode } from "@/lib/cf/env";
+import { profileSummary, recordRankingDecision } from "@/lib/decisions/shadow";
+import { contributionRule } from "@/lib/drafting/rules";
 import { nearDuplicates } from "@/lib/pipeline/dedupe";
 import { runSemanticStageDetailed } from "@/lib/pipeline/shadow";
 
@@ -375,6 +378,37 @@ export async function buildOpportunities(opts: {
     workspaceId: opts.workspaceId,
     limit: 5,
   });
+
+  // Clef runs beside the scorer for the queue the owner actually sees. It records
+  // answers only: no score, status or ordering changes here.
+  const decisionMode = getDecisionMode();
+  if ((decisionMode === "shadow" || decisionMode === "on") && top.length) {
+    const summary = profileSummary(profile);
+    for (const card of top) {
+      opts.signal?.throwIfAborted();
+      const evidence = await db
+        .select({
+          title: document.title,
+          text: document.contentMd,
+          platform: document.platform,
+          url: document.urlCanonical,
+        })
+        .from(opportunityEvidence)
+        .innerJoin(document, eq(document.id, opportunityEvidence.documentId))
+        .where(eq(opportunityEvidence.opportunityId, card.id))
+        .limit(5);
+      const rule = evidence[0] ? contributionRule(evidence[0].platform, evidence[0].url) : null;
+      await recordRankingDecision({
+        workspaceId: opts.workspaceId,
+        opportunityId: card.id,
+        thread: evidence.map((item) => `${item.title ?? ""}\n${item.text}`).join("\n\n").slice(0, 8_000),
+        profileSummary: summary,
+        rulesText: rule ? `${rule.venue}${rule.url ? ` (${rule.url})` : ""}` : null,
+        segments: profile.topics,
+        signal: opts.signal,
+      });
+    }
+  }
 
   return {
     scanned: normalized.length,

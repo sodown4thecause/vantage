@@ -397,6 +397,41 @@ export const opportunityEvidence = pgTable(
 );
 
 export type Workspace = typeof workspace.$inferSelect;
+/**
+ * Clef decisions recorded beside the current scorer. `subjectKind` is
+ * "opportunity" for ranking rows and "document" for the hydration pre-filter.
+ * Shadow rows never change what the owner sees.
+ */
+export const decisionShadow = pgTable(
+  "decision_shadow",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    subjectKind: text("subject_kind").notNull(),
+    /** An opportunity uuid, or a source id such as a Reddit post id. */
+    subjectId: text("subject_id").notNull(),
+    mode: text("mode").notNull(),
+    /** Clef answers, plus the pre-filter's would-skip verdict and saved spend. */
+    answers: jsonb("answers")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("decision_shadow_subject_mode_uidx").on(
+      table.workspaceId,
+      table.subjectKind,
+      table.subjectId,
+      table.mode,
+    ),
+  ],
+);
+
 export type NewWorkspace = typeof workspace.$inferInsert;
 export type Source = typeof source.$inferSelect;
 export type NewSource = typeof source.$inferInsert;

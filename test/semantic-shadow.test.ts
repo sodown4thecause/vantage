@@ -20,6 +20,7 @@ vi.mock("@/lib/cf/env", () => ({
   getCloudflareRequestContext: async () => null,
   getVectorize: async () => state.vectorize,
   getSemanticMode: () => state.mode,
+  getDecisionMode: () => "off" as const,
 }));
 vi.mock("@/lib/costs/ledger", () => ({
   recordCost: async () => true,

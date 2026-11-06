@@ -51,7 +51,7 @@ vi.mock("@/lib/plans/limits", () => ({
   release: async () => undefined,
 }));
 vi.mock("@/lib/learning/repository", () => ({ getActivePreferenceModel: async () => null }));
-vi.mock("@/lib/cf/env", () => ({ getSemanticMode: () => "off" }));
+vi.mock("@/lib/cf/env", () => ({ getSemanticMode: () => "off", getDecisionMode: () => "off" }));
 vi.mock("@/lib/pipeline/shadow", () => ({ runSemanticStageDetailed: async () => null }));
 
 import { document, opportunity, opportunityEvidence } from "@/lib/db/schema";
