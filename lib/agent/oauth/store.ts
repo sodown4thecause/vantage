@@ -28,9 +28,10 @@ export type AuthorizationCodeRecord = {
 export type TokenRecord = {
   id: string;
   kind: "access" | "refresh";
-  clientId: string;
+  clientId: string | null;
   userId: string | null;
   workspaceId: string | null;
+  registrationId: string | null;
   scopes: string[];
   expiresAt: Date;
   revokedAt: Date | null;
@@ -70,9 +71,10 @@ export type AgentStore = {
   createToken(input: {
     tokenHash: string;
     kind: "access" | "refresh";
-    clientId: string;
+    clientId: string | null;
     userId: string | null;
     workspaceId: string | null;
+    registrationId?: string | null;
     scopes: string[];
     expiresAt: Date;
     rotatedFrom?: string | null;
@@ -163,6 +165,7 @@ export function drizzleAgentStore(): AgentStore {
         clientId: input.clientId,
         userId: input.userId,
         workspaceId: input.workspaceId,
+        registrationId: input.registrationId ?? null,
         scopes: input.scopes,
         expiresAt: input.expiresAt,
         rotatedFrom: input.rotatedFrom ?? null,
@@ -183,6 +186,7 @@ export function drizzleAgentStore(): AgentStore {
             clientId: row.clientId,
             userId: row.userId,
             workspaceId: row.workspaceId,
+            registrationId: row.registrationId,
             scopes: row.scopes ?? [],
             expiresAt: row.expiresAt,
             revokedAt: row.revokedAt,

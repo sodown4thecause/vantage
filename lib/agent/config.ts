@@ -18,6 +18,17 @@ export const AGENT_REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 3_600;
 export const AGENT_AUTHORIZATION_CODE_TTL_SECONDS = 600;
 export const AGENT_MAX_REDIRECT_URIS = 5;
 
+/** Anonymous trial limits. Lifetime counters, because a trial lasts seven days. */
+export const AGENT_TRIAL_DAYS = 7;
+export const AGENT_TRIAL_TOOL_CALLS = 100;
+export const AGENT_TRIAL_DRAFT_ATTEMPTS = 10;
+export const AGENT_TRIAL_SCANS = 1;
+export const AGENT_TRIAL_MAX_PER_IP_PER_DAY = 3;
+export const AGENT_TRIAL_MAX_PER_DAY = 50;
+export const AGENT_ASSERTION_TTL_SECONDS = 900;
+export const AGENT_USER_CODE_TTL_SECONDS = 600;
+export const AGENT_CLAIM_POLL_INTERVAL_SECONDS = 5;
+
 export function isAgentScope(value: unknown): value is AgentScope {
   return typeof value === "string" && (AGENT_SCOPES as readonly string[]).includes(value);
 }
@@ -54,4 +65,19 @@ export function agentTokenPepper(env: Env = process.env): string {
   const configured = env.AGENT_TOKEN_PEPPER?.trim();
   if (configured) return configured;
   return env.NODE_ENV === "production" ? "" : "dev-agent-pepper";
+}
+
+/**
+ * Signing secret for anonymous identity assertions. HMAC rather than an
+ * asymmetric key: only Vantage verifies its own assertions, so a key pair would
+ * add key management without adding a security boundary.
+ */
+export function agentAssertionKey(env: Env = process.env): string {
+  const configured = env.AGENT_ASSERTION_SIGNING_KEY?.trim();
+  if (configured) return configured;
+  return env.NODE_ENV === "production" ? "" : "dev-agent-assertion-key";
+}
+
+export function agentAssertionKeyId(env: Env = process.env): string {
+  return env.AGENT_ASSERTION_KEY_ID?.trim() || "vantage-agent-1";
 }

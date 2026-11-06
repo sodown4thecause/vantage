@@ -8,6 +8,21 @@ export type WorkspaceAuthorization =
   | { ok: true; userId: string }
   | { ok: false; status: 401 | 403; error: "unauthorized" | "forbidden" };
 
+/** The same decision for an agent credential, which has no user id. */
+export type AgentWorkspaceAuthorization =
+  | { ok: true; via: "agent" }
+  | { ok: false; status: 401 | 403; error: "unauthorized" | "forbidden" };
+
+/**
+ * A credential an agent already proved with `authenticateMcpRequest`. Passing it
+ * lets `authorizeWorkspace` stay the single place that decides workspace access
+ * without pretending an agent has a Neon Auth session.
+ */
+export type AgentGrant = {
+  registrationId: string;
+  workspaceId: string | null;
+};
+
 export async function getCurrentWorkspace(): Promise<{ id: string; name: string } | null> {
   const { data: session } = await auth.getSession();
   if (!session?.user?.id) return null;
@@ -17,9 +32,40 @@ export async function getCurrentWorkspace(): Promise<{ id: string; name: string 
 }
 
 /** Require an authenticated Neon Auth user who owns the requested workspace. */
+export async function authorizeWorkspace(workspaceId: string): Promise<WorkspaceAuthorization>;
+/**
+ * The same check for an agent: its verified registration must still be active
+ * and bound to the workspace being written. A token can outlive either.
+ */
 export async function authorizeWorkspace(
   workspaceId: string,
-): Promise<WorkspaceAuthorization> {
+  agent: AgentGrant,
+): Promise<AgentWorkspaceAuthorization>;
+export async function authorizeWorkspace(
+  workspaceId: string,
+  agent?: AgentGrant,
+): Promise<WorkspaceAuthorization | AgentWorkspaceAuthorization> {
+  if (agent) {
+    if (agent.workspaceId !== workspaceId) {
+      return { ok: false, status: 403, error: "forbidden" };
+    }
+    // Imported lazily: most callers authorize a session and should not pull the
+    // agent registration code into their bundle.
+    const { drizzleRegistrationStore } = await import("@/lib/agent/registration");
+    const registration = await drizzleRegistrationStore().findRegistration(agent.registrationId);
+    if (!registration || registration.workspaceId !== workspaceId) {
+      return { ok: false, status: 403, error: "forbidden" };
+    }
+    // `claimed` is live: the workspace now belongs to a human and no longer
+    // expires, and the agent keeps read-and-draft access through the same
+    // registration. Only a trial still runs against its expiry.
+    if (registration.status === "claimed") return { ok: true, via: "agent" };
+    if (registration.status !== "active" || registration.expiresAt.getTime() <= Date.now()) {
+      return { ok: false, status: 403, error: "forbidden" };
+    }
+    return { ok: true, via: "agent" };
+  }
+
   const { data: session } = await auth.getSession();
   const userId = session?.user?.id;
   if (!userId) {

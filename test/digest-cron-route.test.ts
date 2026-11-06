@@ -3,6 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const { dispatch } = vi.hoisted(() => ({ dispatch: vi.fn() }));
 
 vi.mock("@/lib/digest/dispatch", () => ({ runDueDigests: dispatch }));
+vi.mock("@/lib/agent/registration", () => ({
+  runAgentCleanup: async () => ({ expired: 0, workspacesDeleted: 0 }),
+}));
 
 import { POST } from "@/app/api/cron/digest/route";
 
@@ -42,7 +45,11 @@ describe("digest cron route", () => {
     dispatch.mockResolvedValue(digest);
     const response = await call("Bearer secret");
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, digest });
+    expect(await response.json()).toEqual({
+      ok: true,
+      digest,
+      agentCleanup: { expired: 0, workspacesDeleted: 0 },
+    });
     expect(dispatch).toHaveBeenCalledOnce();
   });
 
