@@ -51,6 +51,7 @@ function fakeCall(overrides = {}) {
     "/api/internal/scan/collect": () => json({ inserted: 1, skipped: 0 }),
     "/api/internal/scan/embed": () => json({ embedded: 3 }),
     "/api/internal/scan/build": () => json({ ok: true }),
+    "/api/internal/scan/review": () => json({ checked: 2, flagged: [] }),
     "/api/internal/scan/finish": () => json({ released: true }),
     ...overrides,
   };
@@ -64,10 +65,10 @@ function fakeCall(overrides = {}) {
 const names = (step) => step.steps.map((record) => record.name);
 const record = (step, name) => step.steps.find((entry) => entry.name === name);
 
-test("runs plan, every collect, embed, build, then finish in that order", async () => {
+test("runs plan, every collect, embed, build, review, then finish in that order", async () => {
   const step = fakeStep();
   const result = await runScan(PARAMS, step, fakeCall().call);
-  assert.deepEqual(names(step), ["plan", "collect:src-a", "collect:src-b", "embed", "build", "finish"]);
+  assert.deepEqual(names(step), ["plan", "collect:src-a", "collect:src-b", "embed", "build", "review", "finish"]);
   assert.deepEqual(result, { status: "done", failures: 0 });
 });
 
@@ -91,8 +92,31 @@ test("posts the documented bodies to each internal route", async () => {
     { path: "/api/internal/scan/collect", body: { workspaceId: "ws-1", sourceId: "src-b" } },
     { path: "/api/internal/scan/embed", body: { workspaceId: "ws-1" } },
     { path: "/api/internal/scan/build", body: { workspaceId: "ws-1" } },
+    { path: "/api/internal/scan/review", body: { workspaceId: "ws-1" } },
     { path: "/api/internal/scan/finish", body: { workspaceId: "ws-1", leaseToken: LEASE, read: 2, relevant: 0, picked: 0, capped: false, status: "success" } },
   ]);
+});
+
+test("the ingestion review is best-effort: a failing review neither fails the scan nor skips finish", async () => {
+  const step = fakeStep();
+  const fake = fakeCall({
+    "/api/internal/scan/review": () => {
+      throw new Error("review exploded");
+    },
+  });
+  const result = await runScan(PARAMS, step, fake.call);
+  assert.deepEqual(result, { status: "done", failures: 0 });
+  assert.equal(names(step).at(-1), "finish");
+});
+
+test("the review step gets one retry and a one minute timeout, and is skipped when build fails", async () => {
+  const step = fakeStep();
+  await runScan(PARAMS, step, fakeCall().call);
+  assert.deepEqual(record(step, "review").options, { retries: { limit: 1, delay: "5 seconds" }, timeout: "1 minute" });
+
+  const failed = fakeStep();
+  await assert.rejects(runScan(PARAMS, failed, fakeCall({ "/api/internal/scan/build": () => { throw new Error("nope"); } }).call), /nope/);
+  assert.equal(names(failed).includes("review"), false);
 });
 
 test("a skipped plan ends the run without collecting or finishing", async () => {
@@ -170,7 +194,7 @@ test("forwards bounded scan counts to finish and wraps each workflow callback", 
   assert.deepEqual(fake.calls.at(-1).body, {
     workspaceId: "ws-1", leaseToken: LEASE, read: 2, relevant: 4, picked: 2, capped: true, status: "success",
   });
-  assert.deepEqual(spans.map(({ name }) => name), ["plan", "collect", "collect", "embed", "build", "finish"]);
+  assert.deepEqual(spans.map(({ name }) => name), ["plan", "collect", "collect", "embed", "build", "review", "finish"]);
   assert.ok(spans.every(({ workspaceId }) => workspaceId === "ws-1"));
 });
 
@@ -183,7 +207,7 @@ test("observer failures do not fail or repeat workflow callbacks", async () => {
       throw new Error("telemetry unavailable");
     });
     assert.deepEqual(result, { status: "done", failures: 0 });
-    assert.equal(fake.calls.length, 6);
+    assert.equal(fake.calls.length, 7);
   }
 
   const fake = fakeCall({

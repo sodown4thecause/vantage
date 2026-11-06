@@ -65,6 +65,7 @@ export function OnboardingForm({ workspaceId }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const [skippedMessage, setSkippedMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,6 +152,7 @@ export function OnboardingForm({ workspaceId }: Props) {
     setSaving(true);
     setError(null);
     setSavedMessage(null);
+    setSkippedMessage(null);
     setFieldErrors({});
     try {
       const res = await fetch("/api/profile", {
@@ -174,6 +176,7 @@ export function OnboardingForm({ workspaceId }: Props) {
         setSavedMessage(
           `Saved monitoring profile version ${data.profile.version}.`,
         );
+        setSkippedMessage(data.profile.skippedSources?.message ?? null);
       }
     } catch {
       setError("Save failed.");
@@ -347,6 +350,11 @@ export function OnboardingForm({ workspaceId }: Props) {
         <p role="status" className="text-sm text-emerald-700 dark:text-emerald-300">
           {savedMessage}
         </p>
+        {skippedMessage ? (
+          <p role="status" data-testid="skipped-sources-notice" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+            {skippedMessage}
+          </p>
+        ) : null}
         <div className="flex flex-wrap items-center gap-4">
           <Link href={`/settings/sources?workspaceId=${encodeURIComponent(workspaceId)}`} className="btn">Next: choose where to search</Link>
           <Link href={`/queue?workspaceId=${encodeURIComponent(workspaceId)}`} className="link text-sm">Go to the opportunity queue</Link>

@@ -38,7 +38,8 @@ export type LinkupSearchResult = { title: string; url: string; snippet: string }
 export type LinkupSearchResponse = { results: LinkupSearchResult[] };
 export type LinkupPageResponse = { url: string; markdown: string };
 
-type CallOptions = { workspaceId: string; signal?: AbortSignal; fetchImpl?: typeof fetch };
+/** `sourceKey` attributes the spend in the cost ledger; callers other than the SEO agent (discovery) pass their own. */
+type CallOptions = { workspaceId: string; sourceKey?: string; signal?: AbortSignal; fetchImpl?: typeof fetch };
 
 export class LinkupNotConfiguredError extends Error {
   constructor() {
@@ -120,7 +121,7 @@ export async function searchLinkup(input: LinkupSearchInput, opts: CallOptions):
   if (!optionalEnv("LINKUP_API_KEY")) throw new LinkupNotConfiguredError();
 
   const value = await runPaidCall<LinkupSearchResponse>({
-    context: { workspaceId: opts.workspaceId, sourceKey: "seo" },
+    context: { workspaceId: opts.workspaceId, sourceKey: opts.sourceKey ?? "seo" },
     provider: "linkup",
     action: "web_research",
     estimateUsd: SEARCH_COST_USD,
@@ -154,7 +155,7 @@ export async function fetchLinkupPage(url: string, opts: CallOptions): Promise<{
   if (!optionalEnv("LINKUP_API_KEY")) throw new LinkupNotConfiguredError();
 
   const value = await runPaidCall<LinkupPageResponse>({
-    context: { workspaceId: opts.workspaceId, sourceKey: "seo" },
+    context: { workspaceId: opts.workspaceId, sourceKey: opts.sourceKey ?? "seo" },
     provider: "linkup",
     action: "fetch_page",
     estimateUsd: FETCH_COST_USD,

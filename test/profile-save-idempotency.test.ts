@@ -161,3 +161,19 @@ it("leaves newer searches untouched when an old retry reloads after an insert co
   await saveMonitoringProfile({ workspaceId, input, profileId: id });
   expect(state.sourceWrites).toBe(0);
 });
+
+it("tells the caller which topics were skipped, and why, when the gate refuses the default sources", async () => {
+  state.reads = [[]]; state.latestReads = [[]]; state.inserted = [{ ...row, topics: ["ai", "tools"] }];
+  const saved = await saveMonitoringProfile({ workspaceId, input: { ...input, topics: ["ai", "tools"] } });
+  expect(state.sourceWrites).toBe(0);
+  expect(saved.skippedSources).toMatchObject({ topics: ["ai", "tools"] });
+  expect(saved.skippedSources!.reasons.join(" ")).toMatch(/generic/i);
+  expect(saved.skippedSources!.message).toContain('"ai", "tools"');
+});
+
+it("says nothing about skipped sources when the default sources were created", async () => {
+  state.reads = [[]]; state.latestReads = [[]]; state.inserted = [row];
+  const saved = await saveMonitoringProfile({ workspaceId, input });
+  expect(state.sourceWrites).toBeGreaterThan(0);
+  expect(saved.skippedSources).toBeUndefined();
+});

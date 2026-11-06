@@ -1,0 +1,165 @@
+import { MockLanguageModelV4 } from "ai/test";
+import { describe, expect, it, vi } from "vitest";
+
+import { runDiscovery, type DiscoveryRunDeps } from "@/lib/agents/discovery";
+import { PaidCallDeniedError } from "@/lib/providers/paid-call";
+import { memoryBudgetStore } from "./helpers/budget-store";
+
+// Anything that reaches the database fails loudly: agents must never write, and the budget reader is injected.
+vi.mock("@/lib/db/client", () => ({ getDb: () => { throw new Error("agents must not touch the database"); } }));
+
+const MODEL_ID = "anthropic/claude-sonnet-5.5";
+const usage = {
+  inputTokens: { total: 1000, noCache: 1000, cacheRead: 0, cacheWrite: 0 },
+  outputTokens: { total: 200, text: 200, reasoning: 0 },
+};
+const STEP_COST = (1000 * 2 + 200 * 10) / 1_000_000; // sonnet-5.5 price table: $2 in, $10 out per million
+
+const call = (toolName: string, input: unknown, id = `${toolName}-${Math.random()}`) =>
+  ({ type: "tool-call" as const, toolCallId: id, toolName, input: JSON.stringify(input) });
+const step = (...calls: ReturnType<typeof call>[]) => ({
+  content: calls, finishReason: { unified: "tool-calls" as const, raw: "tool_calls" }, usage, warnings: [],
+});
+const done = { content: [{ type: "text" as const, text: "Done." }], finishReason: { unified: "stop" as const, raw: "stop" }, usage, warnings: [] };
+
+const profile = {
+  productName: "Vantage", description: "Finds the conversations where developers ask for tools like yours.",
+  category: "Go-to-market tooling for AI developer products", audience: "Founders of AI developer tools", pricingTier: "paid",
+  differentiators: ["Owner writes every reply", "Scores buying intent"], evidenceUrl: "https://contextfor.dev/",
+};
+
+function deps(over: Partial<DiscoveryRunDeps> & { script?: unknown[] } = {}) {
+  const meta: Array<Record<string, unknown>> = [];
+  const model = new MockLanguageModelV4({ doGenerate: (over.script ?? [done]) as never });
+  const full: DiscoveryRunDeps = {
+    model, modelId: MODEL_ID, env: {}, store: memoryBudgetStore().store,
+    runPaidCall: (async (m: Record<string, unknown>, work: () => Promise<{ value?: unknown; costUsd?: number; error?: Error }>) => {
+      meta.push(m);
+      const outcome = await work();
+      meta.push({ costUsd: outcome.costUsd });
+      if (outcome.error) throw outcome.error;
+      return outcome.value;
+    }) as never,
+    tools: {
+      fetchPage: async (url) => ({ value: { url, markdown: "# Vantage\nFinds buying-intent threads." }, cached: false }),
+      search: async () => ({ value: { results: [] }, cached: false }),
+    },
+    ...over,
+  };
+  delete (full as { script?: unknown }).script;
+  return { full, model, meta };
+}
+
+describe("runDiscovery", () => {
+  it("runs a ToolLoopAgent through runPaidCall on the gateway, attributes cost to discovery and collects typed proposals", async () => {
+    const script = [
+      step(call("read_page", { url: "https://contextfor.dev/" })),
+      step(call("propose_profile", profile)),
+      step(
+        call("propose_competitor", { domain: "syften.com", positioning: "Reddit alerts.", evidenceUrl: "https://syften.com/" }),
+        call("propose_keyword", { keyword: "syften alternative", kind: "competitor", rationale: "Buyers compare.", evidenceUrl: "https://syften.com/" }),
+        call("propose_source", { sourceType: "hn", name: "Profile: Hacker News", queries: ["ai", "startup", "tools"], rationale: "Founders hang out here.", relevanceScore: 0.9 }),
+        call("propose_source", { sourceType: "hn", name: "HN: syften alternative", queries: ["syften alternative"], rationale: "Comparison threads.", relevanceScore: 0.8 }),
+      ),
+      done,
+    ];
+    const judgeModel = new MockLanguageModelV4({
+      doGenerate: {
+        content: [{ type: "text", text: JSON.stringify({ queries: [{ query: "syften alternative", fit: 0.9, rung: 3, situation: "alternative_request", why: "Comparison threads." }] }) }],
+        finishReason: { unified: "stop", raw: "stop" }, usage, warnings: [],
+      } as never,
+    });
+    const { full, meta } = deps({ script, judgeModel });
+    const outcome = await runDiscovery({ workspaceId: "ws", productUrl: "https://contextfor.dev/" }, full);
+
+    expect(outcome.status).toBe("complete");
+    // Only the specific source reached the reviewer; the broad HN profile source was stopped by the term pre-filter.
+    expect(judgeModel.doGenerateCalls).toHaveLength(1);
+    expect(outcome.sources.find((s) => s.review.accepted)!.review.method).toBe("ai");
+    expect(meta.filter((m) => m.action === "discovery_relevance")).toHaveLength(1);
+    expect(outcome.profile?.productName).toBe("Vantage");
+    expect(outcome.competitors.map((c) => c.domain)).toEqual(["syften.com"]);
+    expect(outcome.keywords).toHaveLength(1);
+    const accepted = outcome.sources.filter((s) => s.review.accepted).map((s) => s.proposal.name);
+    const rejected = outcome.sources.filter((s) => !s.review.accepted).map((s) => s.proposal.name);
+    expect(accepted).toEqual(["HN: syften alternative"]);
+    expect(rejected).toEqual(["Profile: Hacker News"]);
+    expect(outcome.results.filter((r) => r.kind === "source").map((r) => r.status)).toEqual(["rejected", "proposed"]);
+
+    expect(meta[0]).toMatchObject({ provider: "gateway", action: "discovery_initial", context: { workspaceId: "ws", sourceKey: "discovery" } });
+    const costs = meta.filter((m) => "costUsd" in m).map((m) => m.costUsd as number);
+    expect(costs).toHaveLength(2); // the relevance review settles first, then the run itself
+    expect(costs[0]).toBeCloseTo(STEP_COST, 6);
+    expect(costs[1]).toBeCloseTo(STEP_COST * 4, 6);
+    expect(outcome.modelCostUsd).toBeCloseTo(STEP_COST * 4, 6);
+  });
+
+  it("does not call the model when the workspace's discovery budget is used up", async () => {
+    const { full, model } = deps({ store: memoryBudgetStore({ "ws|initial": 0.5 }).store });
+    await expect(runDiscovery({ workspaceId: "ws", productUrl: "https://contextfor.dev/" }, full))
+      .rejects.toMatchObject({ name: "PaidCallDeniedError", code: "budget_exhausted" });
+    expect(model.doGenerateCalls).toHaveLength(0);
+  });
+
+  it("ends the loop when the run's own spend reaches the remaining budget", async () => {
+    // $0.03 left; one model step costs $0.004 but the first read costs $0.001 and the next searches cost $0.005 each.
+    const script = Array.from({ length: 10 }, () => step(call("search_web", { query: "alternatives" })));
+    const { full, model } = deps({ script, store: memoryBudgetStore({ "ws|initial": 0.47 }).store });
+    const outcome = await runDiscovery({ workspaceId: "ws", productUrl: "https://contextfor.dev/" }, full);
+    expect(model.doGenerateCalls.length).toBeLessThan(10);
+    expect(outcome.status).toBe("budget_exhausted");
+  });
+
+  it("stops before a model step whose worst case (its input plus a full 2,048-token answer) the remaining budget cannot cover", async () => {
+    // $0.03 left. Step one costs $0.004 plus a $0.005 search, leaving $0.021: enough for another search, but a step can
+    // cost up to ~$0.023 (2,048 output tokens alone are $0.02), so the loop stops instead of risking an overshoot.
+    const script = Array.from({ length: 10 }, () => step(call("search_web", { query: "alternatives" })));
+    const { full, model } = deps({ script, store: memoryBudgetStore({ "ws|initial": 0.47 }).store });
+    const outcome = await runDiscovery({ workspaceId: "ws", productUrl: "https://contextfor.dev/" }, full);
+    expect(model.doGenerateCalls).toHaveLength(1);
+    expect(outcome.status).toBe("budget_exhausted");
+  });
+
+  it("does not start the first model step when the reservation cannot cover its worst case", async () => {
+    const { full, model } = deps({ store: memoryBudgetStore({ "ws|initial": 0.48 }).store });
+    const outcome = await runDiscovery({ workspaceId: "ws", productUrl: "https://contextfor.dev/" }, full);
+    expect(model.doGenerateCalls).toHaveLength(0);
+    expect(outcome.status).toBe("budget_exhausted");
+  });
+
+  it("uses the review cap and the review source key for a review run", async () => {
+    const { full, meta } = deps();
+    await runDiscovery({ workspaceId: "ws", productUrl: "https://contextfor.dev/", kind: "review" }, full);
+    expect(meta[0]).toMatchObject({ action: "discovery_review", context: { sourceKey: "discovery_review" } });
+    expect(meta[0]!.estimateUsd as number).toBeLessThanOrEqual(0.05);
+  });
+
+  it("returns not_configured when the AI Gateway key is missing and no model is injected", async () => {
+    const outcome = await runDiscovery({ workspaceId: "ws", productUrl: "https://contextfor.dev/" },
+      { env: {}, store: memoryBudgetStore().store });
+    expect(outcome.status).toBe("not_configured");
+  });
+
+  it("keeps the model call's estimate charged against the workspace when the model fails after the call started", async () => {
+    const memory = memoryBudgetStore();
+    const failing = new MockLanguageModelV4({ doGenerate: () => { throw new Error("gateway down"); } });
+    const { full } = deps({ model: failing, store: memory.store });
+    await expect(runDiscovery({ workspaceId: "ws", productUrl: "https://contextfor.dev/" }, full)).rejects.toThrow("gateway down");
+    // runPaidCall charges its estimate (the run's reservation, at most $0.15) for a call that started and failed.
+    expect(memory.get("ws", "initial")).toBeCloseTo(0.15, 6);
+  });
+
+  it("refunds the whole reservation when the call is denied before it starts", async () => {
+    const memory = memoryBudgetStore();
+    const { full, model } = deps({ store: memory.store, runPaidCall: (async () => { throw new PaidCallDeniedError("provider_disabled", "off"); }) as never });
+    await expect(runDiscovery({ workspaceId: "ws", productUrl: "https://contextfor.dev/" }, full)).rejects.toBeInstanceOf(PaidCallDeniedError);
+    expect(model.doGenerateCalls).toHaveLength(0);
+    expect(memory.get("ws", "initial")).toBe(0);
+  });
+
+  it("surfaces a paid-call denial from the provider as a denial, not a crash", async () => {
+    const { full } = deps({ runPaidCall: (async () => { throw new PaidCallDeniedError("provider_disabled", "off"); }) as never });
+    await expect(runDiscovery({ workspaceId: "ws", productUrl: "https://contextfor.dev/" }, full))
+      .rejects.toBeInstanceOf(PaidCallDeniedError);
+  });
+});

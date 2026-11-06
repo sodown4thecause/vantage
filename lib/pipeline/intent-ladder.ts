@@ -61,7 +61,7 @@ const RULES: Array<{
   },
 ];
 
-const RUNG_LABELS: Record<number, string> = {
+export const RUNG_LABELS: Record<number, string> = {
   1: "awareness",
   2: "research",
   3: "comparison",

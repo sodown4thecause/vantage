@@ -29,6 +29,19 @@ beforeEach(() => {
   mocks.writeCache.mockReset().mockResolvedValue(undefined);
 });
 
+describe("Linkup cost attribution", () => {
+  const okFetch = (body: unknown) => (async () => new Response(JSON.stringify(body), { status: 200 })) as unknown as typeof fetch;
+
+  it("records spend under the caller's sourceKey, and under seo when none is given", async () => {
+    await searchLinkup({ query: "a" }, { workspaceId: WORKSPACE, sourceKey: "discovery", fetchImpl: okFetch({ results: [result] }) });
+    expect(mocks.runPaidCall).toHaveBeenLastCalledWith(expect.objectContaining({ context: { workspaceId: WORKSPACE, sourceKey: "discovery" } }), expect.any(Function));
+    await fetchLinkupPage("https://example.com/", { workspaceId: WORKSPACE, sourceKey: "discovery_review", fetchImpl: okFetch({ markdown: "# Hi" }) });
+    expect(mocks.runPaidCall).toHaveBeenLastCalledWith(expect.objectContaining({ context: { workspaceId: WORKSPACE, sourceKey: "discovery_review" } }), expect.any(Function));
+    await searchLinkup({ query: "b" }, { workspaceId: WORKSPACE, fetchImpl: okFetch({ results: [result] }) });
+    expect(mocks.runPaidCall).toHaveBeenLastCalledWith(expect.objectContaining({ context: { workspaceId: WORKSPACE, sourceKey: "seo" } }), expect.any(Function));
+  });
+});
+
 describe("Linkup client", () => {
   it("uses standard searchResults with normalized filters, provider budgeting and a workspace-scoped 24-hour cache key", async () => {
     const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {

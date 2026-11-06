@@ -14,6 +14,7 @@ const PLAN_PATH = "/api/internal/scan/plan";
 const COLLECT_PATH = "/api/internal/scan/collect";
 const EMBED_PATH = "/api/internal/scan/embed";
 const BUILD_PATH = "/api/internal/scan/build";
+const REVIEW_PATH = "/api/internal/scan/review";
 const FINISH_PATH = "/api/internal/scan/finish";
 const OBSERVER_START_TIMEOUT_MS = 100;
 
@@ -26,6 +27,9 @@ const BUILD_STEP = {
   retries: { limit: 2, delay: "10 seconds", backoff: "exponential" },
   timeout: "5 minutes",
 };
+
+// Feedback on what the scan just inserted. It never blocks or fails a scan, so it gets one quick retry only.
+const REVIEW_STEP = { retries: { limit: 1, delay: "5 seconds" }, timeout: "1 minute" };
 
 async function readJson(response, path) {
   if (!response.ok) throw new Error(`${path} failed: HTTP ${response.status}`);
@@ -79,6 +83,12 @@ export async function runScan(params, step, call, observeStep) {
       picked: Array.isArray(built.top) ? built.top.length : Number(built.picked) || 0,
       capped: summary.capped || built.coverage === "budget_limited",
     };
+    try {
+      // Ingestion feedback loop: flag sources that keep returning irrelevant documents, for the owner to confirm.
+      await step.do("review", REVIEW_STEP, async () => readJson(await call(REVIEW_PATH, { workspaceId }), REVIEW_PATH));
+    } catch {
+      // Best effort: a failed review must not turn a good scan into a failed one.
+    }
   } catch (error) {
     status = "failed";
     throw error;

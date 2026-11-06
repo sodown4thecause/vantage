@@ -7,11 +7,14 @@ import {
   type MonitoringProfile,
   type NewSource,
 } from "@/lib/db/schema";
+import { gateProfileTopics, type FormGateDeps, type FormProfile } from "@/lib/agents/discovery/form-gate";
+import type { SourceReview } from "@/lib/agents/discovery/proposals";
 import { WEB_DISCUSSIONS_PROVIDER, bareHost } from "@/lib/collectors/web-provider";
 import { pickForumDomains } from "@/lib/communities/forum-packs";
 import { assertWithinCount } from "@/lib/plans/limits";
 import { PlanLimitError } from "@/lib/plans/types";
 import { retrieveProductMaterial } from "@/lib/profile/retrieve";
+import { skippedSourcesNotice } from "@/lib/profile/skipped-sources";
 import type {
   MonitoringProfileInput,
   MonitoringProfileView,
@@ -131,9 +134,11 @@ export async function saveMonitoringProfile(args: {
     if (latest && latest.version > row.version) return toProfileView(row);
   }
   const topics = row.topics ?? [];
-  await provisionProfileSources(args.workspaceId, topics, row.productUrl,
-    [row.productDescription, row.targetCustomer, topics.join(" ")].join(" "));
-  return toProfileView(row);
+  const review = await provisionProfileSources(args.workspaceId, topics, row.productUrl,
+    [row.productDescription, row.targetCustomer, topics.join(" ")].join(" "),
+    { profile: { productDescription: row.productDescription, targetCustomer: row.targetCustomer, competitors: row.competitors ?? [] } });
+  const skippedSources = skippedSourcesNotice(topics, review);
+  return skippedSources ? { ...toProfileView(row), skippedSources } : toProfileView(row);
 }
 
 export const PROFILE_SOURCE_NAME = "Profile: Hacker News";
@@ -166,7 +171,22 @@ export function keyedProfileSources(topics: string[], productUrl: string | undef
   return rows;
 }
 
-export async function provisionProfileSources(workspaceId: string, topics: string[], productUrl?: string, profileText?: string): Promise<void> {
+/**
+ * Creates the profile's default sources, but only if the topics pass the same relevance gate as agent discovery.
+ * Broad or unrelated topics create nothing (the 25 Oct "Profile: Hacker News" regression); sources already on the
+ * workspace are left as they are.
+ */
+export async function provisionProfileSources(
+  workspaceId: string, topics: string[], productUrl?: string, profileText?: string,
+  extra: { profile?: FormProfile; gate?: FormGateDeps } = {},
+): Promise<SourceReview> {
+  const review = await gateProfileTopics(workspaceId, { topics, productUrl, profile: extra.profile }, extra.gate).catch(
+    () => ({ accepted: false, score: 0, threshold: 0.5, matchedTerms: [], reasons: ["The relevance gate could not run, so no default sources were created."], method: "terms" as const }),
+  );
+  if (!review.accepted) {
+    console.warn("[profile] default sources skipped by the relevance gate");
+    return review;
+  }
   const db = getDb();
   const config = { queries: topics.slice(0, 5), maxPages: 1, enrich: false };
   await db.insert(source).values({
@@ -177,7 +197,7 @@ export async function provisionProfileSources(workspaceId: string, topics: strin
   });
 
   const keyed = keyedProfileSources(topics, productUrl, undefined, profileText);
-  if (!keyed.length) return;
+  if (!keyed.length) return review;
   const existing = await db.select({ name: source.name }).from(source).where(eq(source.workspaceId, workspaceId)).limit(100);
   let count = existing.length;
   for (const row of keyed) {
@@ -193,4 +213,5 @@ export async function provisionProfileSources(workspaceId: string, topics: strin
       set: { config: sql`${source.config} || ${JSON.stringify(row.config)}::jsonb`, updatedAt: new Date() },
     });
   }
+  return review;
 }
