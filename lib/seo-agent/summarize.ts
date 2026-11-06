@@ -85,7 +85,7 @@ export async function summarizeEvidence(args: {
     let stepBreak = false;
     try {
       const result = streamer({
-        model: gatewayProvider()(modelId),
+        model: gatewayProvider({ feature: "seo.summarize", workspaceId: args.workspaceId })(modelId),
         system,
         messages,
         tools,

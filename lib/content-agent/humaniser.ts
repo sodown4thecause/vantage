@@ -1,6 +1,7 @@
 import { generateText } from "ai";
 
 import { runPaidCall } from "@/lib/providers/paid-call";
+import { gatewayResponseInfo } from "@/lib/ai/gateway";
 import type { ContentBrandVoiceProfile, ContentDraftInput } from "./contracts";
 import { createContentGatewayModel, contentUsageCost, type ContentAgentModels } from "./models";
 
@@ -23,7 +24,7 @@ export async function humaniseContentDraft(args: {
     signal: args.signal,
   }, async () => {
     const result = await generateText({
-      model: createContentGatewayModel(args.models),
+      model: createContentGatewayModel(args.models, { feature: "content.humaniser", workspaceId: args.workspaceId }),
       system: [
         "You are a careful Vantage Content voice editor, writing in Australian English.",
         "Revise the supplied private draft to match its saved brand voice and read naturally.",
@@ -40,10 +41,13 @@ export async function humaniseContentDraft(args: {
       maxRetries: 0,
       abortSignal: args.signal,
     });
+    const info = gatewayResponseInfo(result.response?.headers);
+    const served = { model: info.servedModel ?? args.models.model, gatewayRequestId: info.requestId ?? undefined };
     if (result.finishReason === "length") {
       return {
         error: new Error("The Content humaniser output was truncated."),
         costUsd: contentUsageCost(args.models.model, result.usage),
+        ...served,
       };
     }
     const text = result.text.trim();
@@ -51,8 +55,9 @@ export async function humaniseContentDraft(args: {
       return {
         error: new Error("The Content humaniser returned an empty draft."),
         costUsd: contentUsageCost(args.models.model, result.usage),
+        ...served,
       };
     }
-    return { value: text, costUsd: contentUsageCost(args.models.model, result.usage) };
+    return { value: text, costUsd: contentUsageCost(args.models.model, result.usage), ...served };
   });
 }

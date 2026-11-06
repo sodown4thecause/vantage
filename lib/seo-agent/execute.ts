@@ -348,9 +348,14 @@ export async function runAgent(
   const intent: Intent = input.classification.intent;
   const concept = !approved && (intent === "concept" || intent === "out_of_scope");
 
-  const executor = { id: models.executor, model: gatewayProvider()(models.executor) };
-  const classifier = { id: models.classifier, model: gatewayProvider()(models.classifier) };
-  const fallback = models.fallback ? { id: models.fallback, model: gatewayProvider()(models.fallback) } : null;
+  const gatewayMeta = {
+    feature: "seo.execute",
+    workspaceId: input.workspaceId,
+    chatId: input.execution?.rootMessageId ?? null,
+  };
+  const executor = { id: models.executor, model: gatewayProvider(gatewayMeta)(models.executor) };
+  const classifier = { id: models.classifier, model: gatewayProvider(gatewayMeta)(models.classifier) };
+  const fallback = models.fallback ? { id: models.fallback, model: gatewayProvider(gatewayMeta)(models.fallback) } : null;
 
   const messageId = crypto.randomUUID();
   const rootMessageId = input.execution?.rootMessageId ?? messageId;

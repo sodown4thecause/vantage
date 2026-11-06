@@ -1,5 +1,4 @@
-import { createGateway } from "ai";
-
+import { gatewayModel, type GatewayMeta } from "@/lib/ai/gateway";
 import { executorModel, nonBlank } from "@/lib/seo-agent/model-config";
 
 export { DEFAULT_CLASSIFIER_MODEL, DEFAULT_EXECUTOR_MODEL, seoModels, type SeoModels } from "@/lib/seo-agent/model-config";
@@ -14,10 +13,8 @@ export const MODEL_PRICES_PER_MTOK: Record<string, ModelPrice> = {
   "anthropic/claude-sonnet-5.5": { input: 2, output: 10, cacheRead: 0.2 },
 };
 
-export function gatewayProvider(env: Env = process.env) {
-  const apiKey = nonBlank(env.AI_GATEWAY_API_KEY);
-  if (!apiKey) throw new Error("AI_GATEWAY_API_KEY is not set");
-  return createGateway({ apiKey });
+export function gatewayProvider(meta: GatewayMeta, env: Env = process.env) {
+  return (modelId: string) => gatewayModel(modelId, meta, env);
 }
 
 /**

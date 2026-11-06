@@ -15,6 +15,10 @@ export type CostInput = {
   workspaceId?: string | null;
   billableTo?: CostBillable;
   requestRef?: string | null;
+  /** The model that actually served the call, when the gateway reports it. */
+  model?: string | null;
+  /** AI Gateway request id, for joining a ledger row to a gateway log. */
+  gatewayRequestId?: string | null;
   /** Failed calls the provider does not charge for are recorded at zero cost. */
   ok?: boolean;
   /** Set when the provider charges even though the call failed. */
@@ -72,6 +76,8 @@ export async function recordCost(input: CostInput): Promise<boolean> {
       workspaceId: input.workspaceId ?? null,
       billableTo: input.billableTo ?? "platform",
       requestRef: input.requestRef ?? null,
+      model: input.model ?? null,
+      gatewayRequestId: input.gatewayRequestId ?? null,
       ok: input.ok ?? true,
       ...row,
     });

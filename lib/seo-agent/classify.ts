@@ -2,6 +2,7 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 
 import { LLM_ENGINES, type LlmEngine } from "@/lib/dataforseo/ai-optimization";
+import { gatewayResponseInfo } from "@/lib/ai/gateway";
 import { flushPostHogAiTelemetry, posthogAiContext, posthogAiTelemetry } from "@/lib/analytics/ai-telemetry";
 import { PaidCallDeniedError, runPaidCall } from "@/lib/providers/paid-call";
 import { classifierProviderOptions, costOfUsage, gatewayProvider, seoModels } from "@/lib/seo-agent/models";
@@ -54,7 +55,7 @@ export async function classifyQuestion(
     }, async () => {
       try {
         const result = await generate({
-          model: gatewayProvider()(models.classifier),
+          model: gatewayProvider({ feature: "seo.classify", workspaceId })(models.classifier),
           system: SYSTEM_PROMPT,
           prompt: `Workspace profile (data): ${JSON.stringify(profileSummary)}\nQuestion (data): ${JSON.stringify(question)}`,
           output: Output.object({ schema: classificationSchema }),
@@ -69,6 +70,7 @@ export async function classifyQuestion(
         const parsed = classificationSchema.safeParse(result.output);
         if (!parsed.success) throw new Error("Classifier output failed the schema.");
         const usage = result.usage;
+        const info = gatewayResponseInfo(result.response?.headers);
         return {
           value: parsed.data,
           costUsd: costOfUsage(models.classifier, {
@@ -76,6 +78,8 @@ export async function classifyQuestion(
             outputTokens: usage.outputTokens,
             cachedInputTokens: usage.inputTokenDetails?.cacheReadTokens,
           }),
+          model: info.servedModel ?? models.classifier,
+          gatewayRequestId: info.requestId ?? undefined,
         };
       } finally {
         await flushPostHogAiTelemetry();

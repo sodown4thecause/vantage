@@ -62,7 +62,7 @@ const profile = {
 const createAgent = (draftUpdate?: { draftId: string; title: string; body: string }) => createContentAgent({
   workspaceId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a11",
   threadId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a12",
-  models: { apiKey: "test-key", model: "anthropic/claude-sonnet-5.5" },
+  models: { model: "anthropic/claude-sonnet-5.5" },
   brandVoiceProfile: profile,
   ...(draftUpdate ? { draftUpdate } : {}),
 });

@@ -2,6 +2,7 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 
 import { normaliseDraft, type ProfileDraft } from "@/lib/onboarding/draft";
+import { gatewayResponseInfo } from "@/lib/ai/gateway";
 import { flushPostHogAiTelemetry, posthogAiContext, posthogAiTelemetry } from "@/lib/analytics/ai-telemetry";
 import { retrieveProductMaterial, type FetchLike } from "@/lib/profile/retrieve";
 import { runPaidCall } from "@/lib/providers/paid-call";
@@ -80,7 +81,7 @@ export async function deriveProfileFromUrl(input: { workspaceId: string; userId?
     }, async () => {
       try {
         const result = await generateText({
-          model: gatewayProvider()(models.executor),
+          model: gatewayProvider({ feature: "onboarding.derive", workspaceId: input.workspaceId })(models.executor),
           instructions: INSTRUCTIONS,
           prompt: JSON.stringify({ url: input.url, websiteText: site }),
           output: Output.object({ schema: derivedProfileModelSchema }),
@@ -95,7 +96,13 @@ export async function deriveProfileFromUrl(input: { workspaceId: string; userId?
           outputTokens: result.usage.outputTokens,
           cachedInputTokens: result.usage.inputTokenDetails?.cacheReadTokens,
         });
-        return { value: normaliseDraft(result.output), costUsd };
+        const info = gatewayResponseInfo(result.response?.headers);
+        return {
+          value: normaliseDraft(result.output),
+          costUsd,
+          model: info.servedModel ?? models.executor,
+          gatewayRequestId: info.requestId ?? undefined,
+        };
       } finally {
         await flushPostHogAiTelemetry();
       }

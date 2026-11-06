@@ -60,7 +60,7 @@ export function createContentAgent(args: {
   });
   return new ToolLoopAgent({
     id: "vantage-content-agent",
-    model: createContentGatewayModel(args.models),
+    model: createContentGatewayModel(args.models, { feature: "content.agent", workspaceId: args.workspaceId }),
     instructions: buildContentAgentInstructions(brandVoiceProfile),
     tools: {
       ...sourceTools,

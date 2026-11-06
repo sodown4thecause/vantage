@@ -659,6 +659,10 @@ export const costEvent = pgTable(
       .notNull()
       .default("platform"),
     requestRef: text("request_ref"),
+    /** The model that actually served the call, when the gateway reports it. */
+    model: text("model"),
+    /** AI Gateway request id, for joining a ledger row to a gateway log. */
+    gatewayRequestId: text("gateway_request_id"),
     ok: boolean("ok").notNull().default(true),
   },
   (table) => [

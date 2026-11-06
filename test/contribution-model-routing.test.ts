@@ -16,7 +16,7 @@ const response = (content: unknown) => ({ response: { ok: true }, text: JSON.str
 beforeEach(() => {
   vi.stubEnv("AI_GATEWAY_API_KEY", "test-key"); vi.stubEnv("INCO_API_KEY", "test-key");
   vi.stubEnv("INCO_TRIAGE_ENABLED", "false"); vi.stubEnv("COMMENT_DRAFT_MODEL", "openai/gpt-6.1-sol");
-  vi.stubEnv("CF_AIG_BASE_URL", ""); vi.stubEnv("CF_AIG_TOKEN", "");
+  vi.stubEnv("AI_GATEWAY_PROVIDER", "vercel"); vi.stubEnv("CF_AIG_ACCOUNT_ID", ""); vi.stubEnv("CF_AIG_GATEWAY_ID", ""); vi.stubEnv("CF_AIG_TOKEN", "");
   mocks.calls = []; mocks.http.mockReset().mockImplementation(async (_url, init) => { mocks.calls.push({ model: JSON.parse(init.body).model, cost: undefined }); return response(candidate); });
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -93,43 +93,45 @@ it("keeps arbitrary provider exceptions private", async () => {
   expect(result.originalText).not.toContain("private provider token");
 });
 const GATEWAY = "https://gateway.ai.cloudflare.com/v1/account/gateway/compat";
-const resolve = (vars: Record<string, string>) => resolveModelEndpoint(vars as NodeJS.ProcessEnv);
-it("keeps today's AI Gateway endpoint and key when CF_AIG_BASE_URL is unset or blank", () => {
-  const today = { url: "https://ai-gateway.vercel.sh/v1/chat/completions", key: "vercel-key" };
-  expect(resolve({ AI_GATEWAY_API_KEY: "vercel-key", CF_AIG_TOKEN: "cf-token" })).toEqual(today);
-  expect(resolve({ AI_GATEWAY_API_KEY: "vercel-key", CF_AIG_BASE_URL: "   ", CF_AIG_TOKEN: "cf-token" })).toEqual(today);
-  expect(resolve({})).toEqual({ url: today.url, key: undefined });
+const resolve = (vars: Record<string, string>) =>
+  resolveModelEndpoint(vars as NodeJS.ProcessEnv, { feature: "draft.contribution", workspaceId: "ws" });
+it("keeps today's AI Gateway endpoint when AI_GATEWAY_PROVIDER is unset or vercel", () => {
+  const today = { url: "https://ai-gateway.vercel.sh/v1/chat/completions", headers: { Authorization: "Bearer vercel-key" } };
+  expect(resolve({ AI_GATEWAY_API_KEY: "vercel-key" })).toEqual(today);
+  expect(resolve({ AI_GATEWAY_PROVIDER: "vercel", AI_GATEWAY_API_KEY: "vercel-key" })).toEqual(today);
 });
-it("routes draft models through Cloudflare AI Gateway with CF_AIG_TOKEN when CF_AIG_BASE_URL is set", () => {
-  expect(resolve({ CF_AIG_BASE_URL: GATEWAY, CF_AIG_TOKEN: "cf-token", AI_GATEWAY_API_KEY: "vercel-key" })).toEqual({ url: `${GATEWAY}/chat/completions`, key: "cf-token" });
-  expect(resolve({ CF_AIG_BASE_URL: `${GATEWAY}/`, CF_AIG_TOKEN: "cf-token" }).url).toBe(`${GATEWAY}/chat/completions`);
-  expect(resolve({ CF_AIG_BASE_URL: GATEWAY, AI_GATEWAY_API_KEY: "vercel-key" }).key).toBeUndefined();
+it("routes draft models through Cloudflare AI Gateway when the flag selects it", () => {
+  const endpoint = resolve({ AI_GATEWAY_PROVIDER: "cloudflare", CF_AIG_ACCOUNT_ID: "account", CF_AIG_GATEWAY_ID: "gateway", CF_AIG_TOKEN: "cf-token" });
+  expect(endpoint.url).toBe(`${GATEWAY}/chat/completions`);
+  expect(endpoint.headers.Authorization).toBe("Bearer cf-token");
+  expect(JSON.parse(endpoint.headers["cf-aig-metadata"])).toEqual({ feature: "draft.contribution", workspaceId: "ws" });
+  expect(endpoint.headers["cf-aig-skip-cache"]).toBe("true");
 });
 it("sends draft requests to the gateway with unchanged model names and the gateway token", async () => {
-  vi.stubEnv("CF_AIG_BASE_URL", GATEWAY); vi.stubEnv("CF_AIG_TOKEN", "cf-token");
+  vi.stubEnv("AI_GATEWAY_PROVIDER", "cloudflare"); vi.stubEnv("CF_AIG_ACCOUNT_ID", "account"); vi.stubEnv("CF_AIG_GATEWAY_ID", "gateway"); vi.stubEnv("CF_AIG_TOKEN", "cf-token");
   const result = await generateContribution(input, { workspaceId: "ws", rulesReviewed: true });
   expect(result.quality).toMatchObject({ kind: "draft", model: "openai/gpt-6.1-sol" });
   expect(mocks.http).toHaveBeenCalledTimes(1);
   const [url, init] = mocks.http.mock.calls[0];
   expect(url).toBe(`${GATEWAY}/chat/completions`);
-  expect(init.headers.authorization).toBe("Bearer cf-token");
+  expect(init.headers.Authorization).toBe("Bearer cf-token");
   expect(JSON.parse(init.body).model).toBe("openai/gpt-6.1-sol");
 });
 it("keeps DeepSeek triage on Inco when draft routing goes through the gateway", async () => {
-  vi.stubEnv("CF_AIG_BASE_URL", GATEWAY); vi.stubEnv("CF_AIG_TOKEN", "cf-token"); vi.stubEnv("INCO_TRIAGE_ENABLED", "true");
+  vi.stubEnv("AI_GATEWAY_PROVIDER", "cloudflare"); vi.stubEnv("CF_AIG_ACCOUNT_ID", "account"); vi.stubEnv("CF_AIG_GATEWAY_ID", "gateway"); vi.stubEnv("CF_AIG_TOKEN", "cf-token"); vi.stubEnv("INCO_TRIAGE_ENABLED", "true");
   mocks.http.mockImplementationOnce(async (_url, init) => { mocks.calls.push({ model: JSON.parse(init.body).model, cost: undefined }); return response({ decision: "continue" }); });
   await generateContribution(input, { workspaceId: "ws", rulesReviewed: true });
   expect(mocks.http.mock.calls.map(call => call[0])).toEqual(["https://api.inco.ai/v1/chat/completions", `${GATEWAY}/chat/completions`]);
 });
 it("reports access pending without calling the provider when the gateway URL has no token", async () => {
-  vi.stubEnv("CF_AIG_BASE_URL", GATEWAY);
+  vi.stubEnv("AI_GATEWAY_PROVIDER", "cloudflare"); vi.stubEnv("CF_AIG_ACCOUNT_ID", "account"); vi.stubEnv("CF_AIG_GATEWAY_ID", "gateway");
   const result = await generateContribution(input, { workspaceId: "ws", rulesReviewed: true });
   expect(result.quality?.kind).toBe("brief");
   expect(result.originalText).toContain("AI Gateway access is pending.");
   expect(mocks.http).not.toHaveBeenCalled();
 });
 it("still rejects models outside the verified allow-list when routed through the gateway", async () => {
-  vi.stubEnv("CF_AIG_BASE_URL", GATEWAY); vi.stubEnv("CF_AIG_TOKEN", "cf-token"); vi.stubEnv("COMMENT_DRAFT_MODEL", "unverified/model");
+  vi.stubEnv("AI_GATEWAY_PROVIDER", "cloudflare"); vi.stubEnv("CF_AIG_ACCOUNT_ID", "account"); vi.stubEnv("CF_AIG_GATEWAY_ID", "gateway"); vi.stubEnv("CF_AIG_TOKEN", "cf-token"); vi.stubEnv("COMMENT_DRAFT_MODEL", "unverified/model");
   const result = await generateContribution(input, { workspaceId: "ws", rulesReviewed: true });
   expect(result.quality?.kind).toBe("brief");
   expect(result.originalText).toContain("Choose a verified comment model.");

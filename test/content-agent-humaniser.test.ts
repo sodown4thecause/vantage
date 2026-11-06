@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   createGateway: vi.fn(),
@@ -28,6 +28,8 @@ const profile = {
 };
 
 beforeEach(() => {
+  vi.stubEnv("AI_GATEWAY_API_KEY", "test-key");
+  vi.stubEnv("AI_GATEWAY_PROVIDER", "vercel");
   mocks.paidMeta = undefined;
   mocks.paidResult = undefined;
   mocks.gatewayOptions = undefined;
@@ -48,6 +50,7 @@ beforeEach(() => {
     return result.value;
   });
 });
+afterEach(() => vi.unstubAllEnvs());
 
 describe("Content brand-voice humaniser", () => {
   it("records actual usage when the model returns an empty draft", async () => {
@@ -61,9 +64,9 @@ describe("Content brand-voice humaniser", () => {
       workspaceId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a11",
       draft: { title: "A useful post", body: "Original wording.", format: "blog_post" },
       profile,
-      models: { apiKey: "test-key", model: "anthropic/claude-sonnet-5.5" },
+      models: { model: "anthropic/claude-sonnet-5.5" },
     })).rejects.toThrow("The Content humaniser returned an empty draft.");
-    expect(mocks.paidResult).toEqual({
+    expect(mocks.paidResult).toMatchObject({
       error: expect.objectContaining({ message: "The Content humaniser returned an empty draft." }),
       costUsd: 0.0052,
     });
@@ -80,9 +83,9 @@ describe("Content brand-voice humaniser", () => {
       workspaceId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a11",
       draft: { title: "A useful post", body: "Original wording.", format: "blog_post" },
       profile,
-      models: { apiKey: "test-key", model: "anthropic/claude-sonnet-5.5" },
+      models: { model: "anthropic/claude-sonnet-5.5" },
     })).rejects.toThrow("The Content humaniser output was truncated.");
-    expect(mocks.paidResult).toEqual({
+    expect(mocks.paidResult).toMatchObject({
       error: expect.objectContaining({ message: "The Content humaniser output was truncated." }),
       costUsd: 0.0502,
     });
@@ -96,7 +99,7 @@ describe("Content brand-voice humaniser", () => {
       workspaceId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a11",
       draft,
       profile,
-      models: { apiKey: "test-key", model: "anthropic/claude-sonnet-5.5" },
+      models: { model: "anthropic/claude-sonnet-5.5" },
     });
 
     // Returned unchanged, a 24,120-character draft needs about 12,000 tokens at a dense 2 characters per token.
@@ -110,7 +113,7 @@ describe("Content brand-voice humaniser", () => {
       workspaceId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a11",
       draft: { title: "A useful post", body: "Original wording.", format: "blog_post" },
       profile,
-      models: { apiKey: "test-key", model: "anthropic/claude-sonnet-5.5" },
+      models: { model: "anthropic/claude-sonnet-5.5" },
       signal,
     })).resolves.toBe("A clearer, more natural Australian English draft.");
 
@@ -127,7 +130,7 @@ describe("Content brand-voice humaniser", () => {
       maxRetries: 0,
       abortSignal: signal,
     }));
-    expect(mocks.paidResult).toEqual({
+    expect(mocks.paidResult).toMatchObject({
       value: "A clearer, more natural Australian English draft.",
       costUsd: 0.0004,
     });

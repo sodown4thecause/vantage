@@ -1,6 +1,7 @@
 import { generateText, stepCountIs, type ModelMessage, type SystemModelMessage, type Tool } from "ai";
 
 import { dataForSeoAvailable } from "@/lib/dataforseo/config";
+import { gatewayResponseInfo } from "@/lib/ai/gateway";
 import { runPaidCall } from "@/lib/providers/paid-call";
 import {
   isTakoFilterRequest,
@@ -117,7 +118,7 @@ export async function collectEvidence(
     let result: Awaited<ReturnType<typeof generate>>;
     try {
       result = await generate({
-        model: gatewayProvider()(modelId),
+        model: gatewayProvider({ feature: "seo.collect", workspaceId: input.workspaceId })(modelId),
         system,
         messages,
         tools: dataTools,
@@ -171,6 +172,7 @@ export async function collectEvidence(
       pendingApprovals: ctx.budget.planned,
     });
     const usage = result.usage;
+    const info = gatewayResponseInfo(result.response?.headers);
     return {
       value: {
         packet,
@@ -181,6 +183,8 @@ export async function collectEvidence(
         outputTokens: usage.outputTokens,
         cachedInputTokens: usage.inputTokenDetails?.cacheReadTokens,
       }),
+      model: info.servedModel ?? modelId,
+      gatewayRequestId: info.requestId ?? undefined,
     };
   });
 

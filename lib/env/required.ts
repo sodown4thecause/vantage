@@ -1,5 +1,5 @@
-// Optional, never checked here: CF_AIG_BASE_URL and CF_AIG_TOKEN route draft models
-// through Cloudflare AI Gateway (see resolveModelEndpoint); both are documented in .env.example.
+// Optional, never checked here: AI_GATEWAY_PROVIDER and the CF_AIG_* values route model
+// traffic through Cloudflare AI Gateway (see lib/ai/gateway.ts); all are documented in .env.example.
 export function requiredEnv(
   name: string,
   env: Record<string, string | undefined> = process.env,
