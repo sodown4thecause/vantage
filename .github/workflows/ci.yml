@@ -18,8 +18,44 @@ env:
   NEXT_TELEMETRY_DISABLED: "1"
 
 jobs:
+  # Decides whether a pull request touches only files that need no build or
+  # test: Markdown docs and the AI reviewers' config. Pushes to main and manual
+  # runs always run the full suite.
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read # paths-filter lists PR files through the API
+    outputs:
+      docs-only: ${{ github.event_name == 'pull_request' && steps.filter.outputs.code == 'false' }}
+    steps:
+      # Pull requests use the API, so no checkout is needed.
+      - uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          # "every": a file counts as code only if it matches all patterns,
+          # so the "!" lines subtract from "**". (With the default "some", the
+          # "**" alone would make every file code.)
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!*.md'
+              - '!docs/**'
+              - '!.agents/**/*.md'
+              - '!.greptile/**'
+              - '!cubic.yaml'
+
   verify:
     name: Lint, typecheck, test, build
+    needs: changes
+    # Skipped on docs-only pull requests; a skipped job reports success, so the
+    # required check still passes. If path detection fails, docs-only is not
+    # "true" and the full job runs.
+    if: ${{ !cancelled() && needs.changes.outputs.docs-only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -56,6 +92,11 @@ jobs:
     # No secrets or placeholder env on purpose: this job fails if the Worker
     # build ever starts needing DATABASE_URL or NEON_AUTH_* again.
     name: Cloudflare Worker bundle (no secrets)
+    needs: changes
+    # Skipped on docs-only pull requests; a skipped job reports success, so the
+    # required check still passes. If path detection fails, docs-only is not
+    # "true" and the full job runs.
+    if: ${{ !cancelled() && needs.changes.outputs.docs-only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

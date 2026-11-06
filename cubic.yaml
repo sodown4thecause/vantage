@@ -1,0 +1,36 @@
+# Cubic review settings. Reference: https://docs.cubic.dev/configure/cubic-yaml
+# This file takes precedence over the Cubic dashboard.
+# yaml-language-server: $schema=https://cubic.dev/schema/cubic-repository-config.schema.json
+#
+# Cubic reviews all code, plus the files agents act on: AGENTS.md, CLAUDE.md,
+# every doc AGENTS.md points agents to (docs/agents/, docs/costs.md,
+# docs/operations/), the agent skills in .agents/skills/, and the reviewers'
+# own config (this file and .greptile/). It skips prose nobody acts on.
+#
+# Cubic has no "!" pattern to un-ignore a file, so skipped docs are listed one
+# by one. A new docs folder is reviewed until someone adds it here.
+
+version: 1
+reviews:
+  enabled: true
+  incremental_commits: true
+  sensitivity: medium
+  ignore:
+    files:
+      - 'README.md'
+      - 'docs/README.md'
+      - 'docs/browser-run.md'
+      - 'docs/design.md'
+      - 'docs/hyperdrive.md'
+      - 'docs/semantic-scoring.md'
+      - 'docs/billing/**'
+      - 'docs/plans/**'
+      - 'docs/research/**'
+      - 'docs/reviews/**'
+      - 'docs/scrollcraft/**'
+      - 'docs/sources/**'
+      - 'docs/superpowers/**'
+      # Blog prose. CI still builds the posts and tests the blog routes.
+      - 'content/blog/**'
+      # Generated from package.json, which Cubic still reviews.
+      - 'pnpm-lock.yaml'

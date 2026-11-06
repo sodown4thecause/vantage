@@ -23,8 +23,11 @@ BMAD or similar): their skills overlap and fight over the same stages.
 
 - Configuration lives in `.greptile/config.json` and is read from the PR's
   **source** branch, so changes only affect new PRs. It reviews on open and
-  push (`autoReview: ["open", "push"]`), skips drafts, ignores `*.md`, and posts
-  a summary comment, inline comments with P0–P2 severity, and a status check.
+  push (`autoReview: ["open", "push"]`), skips drafts, ignores `*.md` at any
+  depth and `pnpm-lock.yaml`, skips Dependabot and Renovate PRs, and posts a
+  summary comment, inline comments with P0–P2 severity, and a status check.
+- Keep Greptile settings in `.greptile/config.json`. When the `.greptile/`
+  folder exists, Greptile ignores a root `greptile.json`.
 - The check run is named `Greptile Review`. It fails when the confidence score
   is below 4/5, even though the review itself ran successfully.
 - It is not a required check in branch protection. The free Starter plan
@@ -33,6 +36,20 @@ BMAD or similar): their skills overlap and fight over the same stages.
   required. The merge rule in `AGENTS.md` decides what happens when a review is
   missing. Revisit once credit headroom is confirmed.
 
+## Cubic
+
+- Configuration lives in `cubic.yaml` at the repo root and overrides the Cubic
+  dashboard. It reviews new commits pushed to an open PR and posts only new
+  issues (`incremental_commits: true`).
+- It reviews all code, plus the files agents act on: `AGENTS.md`, `CLAUDE.md`,
+  the docs `AGENTS.md` points to (`docs/agents/`, `docs/costs.md`,
+  `docs/operations/`), `.agents/skills/`, and both reviewers' config. It skips
+  other prose, blog posts and `pnpm-lock.yaml`.
+- Cubic has no `!` pattern, so skipped docs are listed one by one in
+  `cubic.yaml`. A new docs folder is reviewed until it's added there.
+- Its check is `cubic · AI code reviewer`. It's not a required check in branch
+  protection; the merge rule in `AGENTS.md` makes it gate merges.
+
 ## Branch protection (GitHub → Settings → Rules)
 
 - `main` requires the `CI` checks (`Lint, typecheck, test, build` and
@@ -40,7 +57,7 @@ BMAD or similar): their skills overlap and fight over the same stages.
   or deletion. These rules also apply to admins.
 - No human approval is required, because agents merge their own PRs and GitHub
   doesn't let an author approve their own PR. There is no CODEOWNERS file.
-- Neither reviewer's status check is required (see Greptile above).
+- Neither reviewer's status check is required (see Greptile and Cubic above).
 - Don't add restrictions that would lock the sole founder out of their own repo.
 
 ## Cloudflare Workers
@@ -138,3 +155,11 @@ sample data honestly.
   `.agents/skills/verify-dataflow`. A bug they find becomes a test in `test/`.
 - CI (`.github/workflows/ci.yml`) runs lint, typecheck, Vitest and node tests,
   the migration drift gate, the build, and the Cloudflare Worker bundle job.
+- **Docs-only fast path**: on a pull request, the `Detect changed paths` job
+  checks whether every changed file is root Markdown, under `docs/`, Markdown
+  under `.agents/`, under `.greptile/`, or `cubic.yaml`. If so, both required
+  jobs are skipped, and GitHub counts a skipped job as passing. Blog posts in
+  `content/` always build. Pushes to `main` and manual runs always run the full
+  suite, and so does a pull request if path detection fails. The filter uses
+  `predicate-quantifier: every` so the `!` patterns subtract from `**`; with the
+  default (`some`), every file would count as code.

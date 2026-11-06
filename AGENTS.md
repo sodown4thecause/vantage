@@ -160,8 +160,11 @@ PR.
    satisfied. Results on an older commit don't count.
 5. **Missing, skipped, timed-out or quota-exhausted review is not approval.**
    Re-request once and wait 30 minutes. Still missing: label the PR `blocked`
-   and report. Exception: Greptile ignores `*.md`, so a docs-only PR needs green
-   CI and Cubic only.
+   and report. Exception: a reviewer isn't required when every changed file is
+   on its skip list (`ignorePatterns` in `.greptile/config.json`,
+   `ignore.files` in `cubic.yaml`). Greptile skips all Markdown, so a PR that
+   only changes AGENTS.md needs green CI and Cubic; a PR that only changes
+   docs both reviewers skip needs green CI only.
 6. **One push per review round:** wait for every reviewer to finish, fix all
    findings together, then push once. Each push cancels the running CI and
    restarts every reviewer.
@@ -170,6 +173,9 @@ PR.
    open findings in the PR and report. Never open a new PR to reset a count.
 8. **Never** bypass protections (`--admin`), weaken or skip checks, edit
    reviewer config to get a pass, or claim an approval you haven't seen.
+   Changing reviewer config (`cubic.yaml`, `.greptile/`) or CI skip rules is a
+   Needs-Liam change: make it only when Liam asks, and say so in the PR
+   description.
 9. **Merge** with `gh pr merge --squash --delete-branch` after rebasing ordinary
    conflicts and re-running checks. Then confirm it merged, and watch `main` CI
    and the staging deploy. A broken staging deploy is yours to fix next.
