@@ -1,0 +1,7 @@
+# Add this to ~/.codex/config.toml, then run: codex mcp login vantage
+#
+# The endpoint is enabled on staging only for now. Point `url` at that origin
+# plus /api/mcp until agent registration is enabled in production.
+
+[mcp_servers.vantage]
+url = "https://contextfor.dev/api/mcp"

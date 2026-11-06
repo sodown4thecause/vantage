@@ -271,6 +271,23 @@ review and merge rules, and the product code rules. Platform reference detail
 (Cloudflare, Neon, Greptile, branch protection) is in
 [docs/agents/platform.md](docs/agents/platform.md).
 
+## Use Vantage from an agent
+
+Vantage speaks the Model Context Protocol at `https://contextfor.dev/api/mcp`,
+with OAuth 2.1 + PKCE and anonymous registration described in
+[`/auth.md`](https://contextfor.dev/auth.md). Agents can read today's ranked
+conversations and draft replies. They cannot post, reply or message anyone.
+
+**Claude Code:** `/plugin marketplace add sodown4thecause/vantage` then
+`/plugin install vantage@vantage`.
+
+**Codex:** add the block in
+[`plugins/codex/config.toml.example`](plugins/codex/config.toml.example) to
+`~/.codex/config.toml`, then run `codex mcp login vantage`.
+
+The endpoint is enabled on staging only for now, behind
+`AGENT_REGISTRATION_ENABLED`.
+
 ## Ref orchestration
 
 See `.warp/REF_ORCHESTRATOR_SETUP.md` for Warp Oz ↔ Ref Plans wiring.

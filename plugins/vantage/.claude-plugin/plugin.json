@@ -1,0 +1,18 @@
+{
+  "name": "vantage",
+  "displayName": "Vantage",
+  "version": "0.1.0",
+  "description": "Read today's ranked conversations and draft replies from Vantage. Read and draft only: nothing is posted for you.",
+  "author": {
+    "name": "Vantage",
+    "url": "https://contextfor.dev"
+  },
+  "homepage": "https://contextfor.dev",
+  "keywords": ["mcp", "vantage", "community", "gtm"],
+  "mcpServers": {
+    "vantage": {
+      "type": "http",
+      "url": "https://contextfor.dev/api/mcp"
+    }
+  }
+}

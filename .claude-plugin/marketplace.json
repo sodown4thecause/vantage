@@ -1,0 +1,14 @@
+{
+  "name": "vantage",
+  "owner": {
+    "name": "Vantage",
+    "url": "https://contextfor.dev"
+  },
+  "plugins": [
+    {
+      "name": "vantage",
+      "source": "./plugins/vantage",
+      "description": "Read today's ranked conversations and draft replies from Vantage. Read and draft only: nothing is posted for you."
+    }
+  ]
+}
