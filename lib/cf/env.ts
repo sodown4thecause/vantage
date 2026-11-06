@@ -18,6 +18,8 @@ export type VectorizeBinding = {
 
 export type SemanticMode = "off" | "shadow" | "on";
 
+export type DecisionMode = "off" | "shadow" | "on";
+
 export type CloudflareRequestContext = {
   waitUntil?: (promise: Promise<unknown>) => void;
   tracing?: {
@@ -79,5 +81,11 @@ export async function getVectorize(): Promise<VectorizeBinding | null> {
 /** Semantic scoring rollout mode. Anything unrecognised, including unset, is "off". */
 export function getSemanticMode(): SemanticMode {
   const raw = process.env.VANTAGE_SEMANTIC_MODE?.trim();
+  return raw === "shadow" || raw === "on" ? raw : "off";
+}
+
+/** Clef decision rollout mode. Anything unrecognised, including unset, is "off". */
+export function getDecisionMode(): DecisionMode {
+  const raw = process.env.VANTAGE_DECISION_MODE?.trim();
   return raw === "shadow" || raw === "on" ? raw : "off";
 }

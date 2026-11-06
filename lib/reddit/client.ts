@@ -1,6 +1,8 @@
 import fixture from "@/test/fixtures/reddit.json";
+import { getDecisionMode } from "@/lib/cf/env";
 import { reserveCostAttemptToday } from "@/lib/costs/ledger";
 import type { CostContext } from "@/lib/costs/meter";
+import { prefilterHydration, profileSummary } from "@/lib/decisions/shadow";
 import { firecrawlSearch, firecrawlTbs, hasFirecrawlApiKey, type FirecrawlSearchHit } from "@/lib/firecrawl/search";
 import { hasLinkupApiKey, linkupFromDate, linkupSearch } from "@/lib/linkup/search";
 import { isPaidCallDenied, PaidCallDeniedError, runPaidCall } from "@/lib/providers/paid-call";
@@ -9,6 +11,7 @@ import { createScavioClient, hasScavioApiKey } from "@/lib/scavio/client";
 import { asRecordArray, normalizeAgentResult, numberField, stringField } from "@/lib/tinyfish/agent";
 import { createTinyFishClient, hasTinyFishApiKey } from "@/lib/tinyfish/client";
 import { tinyFishFetchMarkdown, tinyFishSearch } from "@/lib/tinyfish/search-fetch";
+import { getLatestMonitoringProfile } from "@/lib/profile/repository";
 import { ScanFailure, scanIssuesFromError, type ScanIssue } from "@/lib/scan/health";
 
 export type RedditPost = {
@@ -205,9 +208,26 @@ async function hydratePreviews(posts: RedditPost[], ctx: CostContext, issues: Sc
     issues.push({ stage: "hydration", kind: "access_pending", provider: "scavio", retryable: false });
     return posts;
   }
+  // The Clef pre-filter is measurement only in shadow mode; it never skips a fetch there.
+  const decisionMode = getDecisionMode();
+  const decisionActive = decisionMode === "shadow" || decisionMode === "on";
+  const summary = decisionActive
+    ? profileSummary(await getLatestMonitoringProfile(ctx.workspaceId).catch(() => null))
+    : "";
   const hydrated = [...posts];
   for (let i = 0; i < hydrated.length; i++) {
     if (!shouldHydrate(hydrated[i], i)) continue;
+    if (decisionActive) {
+      const verdict = await prefilterHydration({
+        workspaceId: ctx.workspaceId,
+        documentId: hydrated[i].id,
+        thread: `${hydrated[i].title}\n\n${hydrated[i].body}`.slice(0, 8_000),
+        profileSummary: summary,
+        hydrationCostUsd: 2 * SCAVIO_REQUEST_USD,
+        signal,
+      });
+      if (verdict?.skip) continue;
+    }
     try {
       if (!await reserveCostAttemptToday({ workspaceId: ctx.workspaceId, provider: "scavio",
         action: HYDRATE_ACTION, max: hydrateDailyMax() })) {
