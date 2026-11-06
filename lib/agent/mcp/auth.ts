@@ -1,3 +1,4 @@
+import { AGENT_DRAFT_SCOPE } from "@/lib/agent/config";
 import { hashSecret } from "@/lib/agent/crypto";
 import type { AgentStore, TokenRecord } from "@/lib/agent/oauth/store";
 
@@ -17,7 +18,13 @@ export function resourceMetadataUrl(origin: string): string {
 export async function authenticateMcpRequest(
   req: Request,
   store: AgentStore,
-  opts: { pepper: string; origin: string; now: Date },
+  opts: {
+    pepper: string;
+    origin: string;
+    now: Date;
+    /** Registration status for an agent token, or null when the row is gone. */
+    registrationStatus?: (registrationId: string) => Promise<string | null>;
+  },
 ): Promise<McpAuth> {
   if (!opts.pepper) return { ok: false, status: 503, body: { error: "not_configured" } };
 
@@ -34,6 +41,20 @@ export async function authenticateMcpRequest(
     token.expiresAt.getTime() <= opts.now.getTime()
   ) {
     return { ok: false, status: 401, challenge, body: { error: "invalid_token" } };
+  }
+
+  // A token insert can race the claim: it may have read `active` before the
+  // transfer and land after the revocation. Checking the registration here, at
+  // use time, closes that window whatever the insert order was.
+  if (token.registrationId && opts.registrationStatus) {
+    const status = await opts.registrationStatus(token.registrationId);
+    const preClaim = !token.scopes.includes(AGENT_DRAFT_SCOPE);
+    if (status === null || status === "expired" || status === "revoked") {
+      return { ok: false, status: 401, challenge, body: { error: "invalid_token" } };
+    }
+    if (status === "claimed" && preClaim) {
+      return { ok: false, status: 401, challenge, body: { error: "invalid_token" } };
+    }
   }
   return { ok: true, token };
 }

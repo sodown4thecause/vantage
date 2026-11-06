@@ -637,6 +637,41 @@ describe("token exchange", () => {
     });
     expect(orphaned.ok).toBe(false);
   });
+
+  it("refreshes a clientless agent token, and refuses one that names a client", async () => {
+    const store = state.store as ReturnType<typeof createFakeStore>;
+    const now = new Date("2026-11-06T00:01:00Z");
+    const raw = "vrt_agent_token";
+    await store.createToken({
+      tokenHash: await hashSecret(raw, PEPPER),
+      kind: "refresh",
+      clientId: null,
+      userId: null,
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+      registrationId: "reg_1",
+      scopes: ["vantage.read", "vantage.draft"],
+      expiresAt: new Date("2026-12-06T00:00:00Z"),
+      familyId: crypto.randomUUID(),
+    });
+
+    const refreshed = await refreshAccessToken(store, {
+      clientId: "",
+      refreshToken: raw,
+      pepper: PEPPER,
+      now,
+    });
+    expect(refreshed.ok).toBe(true);
+    if (refreshed.ok) expect(refreshed.body.scope).toBe("vantage.read vantage.draft");
+
+    // A caller that names a client is trying to use a token it was not issued.
+    const named = await refreshAccessToken(store, {
+      clientId: "vcl_test",
+      refreshToken: raw,
+      pepper: PEPPER,
+      now,
+    });
+    expect(named.ok).toBe(false);
+  });
 });
 
 describe("MCP authentication", () => {
@@ -721,6 +756,82 @@ describe("MCP authentication", () => {
     );
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) expect(outcome.status).toBe(503);
+  });
+
+  it("rejects a pre-claim token once the workspace is claimed", async () => {
+    const store = state.store as ReturnType<typeof createFakeStore>;
+    const now = new Date("2026-11-06T00:00:00Z");
+    const raw = "vat_pre_claim";
+    await store.createToken({
+      tokenHash: await hashSecret(raw, PEPPER),
+      kind: "access",
+      clientId: null,
+      userId: null,
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+      registrationId: "reg_1",
+      scopes: ["vantage.read"],
+      expiresAt: new Date("2026-11-06T01:00:00Z"),
+      familyId: crypto.randomUUID(),
+    });
+    const request = () =>
+      new Request(`${ORIGIN}/api/mcp`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${raw}` },
+      });
+
+    const active = await authenticateMcpRequest(request(), store, {
+      pepper: PEPPER,
+      origin: ORIGIN,
+      now,
+      registrationStatus: async () => "active",
+    });
+    expect(active.ok).toBe(true);
+
+    // The claim landed after this token was issued: it must stop working even
+    // though its row was never revoked.
+    const claimed = await authenticateMcpRequest(request(), store, {
+      pepper: PEPPER,
+      origin: ORIGIN,
+      now,
+      registrationStatus: async () => "claimed",
+    });
+    expect(claimed.ok).toBe(false);
+
+    for (const status of ["expired", "revoked", null]) {
+      const outcome = await authenticateMcpRequest(request(), store, {
+        pepper: PEPPER,
+        origin: ORIGIN,
+        now,
+        registrationStatus: async () => status,
+      });
+      expect(outcome.ok).toBe(false);
+    }
+  });
+
+  it("keeps a post-claim token working after the claim", async () => {
+    const store = state.store as ReturnType<typeof createFakeStore>;
+    const now = new Date("2026-11-06T00:00:00Z");
+    const raw = "vat_post_claim";
+    await store.createToken({
+      tokenHash: await hashSecret(raw, PEPPER),
+      kind: "access",
+      clientId: null,
+      userId: null,
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+      registrationId: "reg_1",
+      scopes: ["vantage.read", "vantage.draft"],
+      expiresAt: new Date("2026-11-06T01:00:00Z"),
+      familyId: crypto.randomUUID(),
+    });
+    const outcome = await authenticateMcpRequest(
+      new Request(`${ORIGIN}/api/mcp`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${raw}` },
+      }),
+      store,
+      { pepper: PEPPER, origin: ORIGIN, now, registrationStatus: async () => "claimed" },
+    );
+    expect(outcome.ok).toBe(true);
   });
 });
 

@@ -251,7 +251,15 @@ export async function refreshAccessToken(
   const tokenHash = await hashSecret(input.refreshToken, input.pepper);
   const record = await store.findToken(tokenHash);
   if (!record || record.kind !== "refresh") return invalidGrant("Unknown refresh token.");
-  if (record.clientId !== input.clientId) return invalidGrant("The token was issued to another client.");
+  if (record.clientId === null) {
+    // Agent tokens have no client: the registration is the grant. A caller that
+    // names a client is trying to use a token it was not issued.
+    if (!record.registrationId || input.clientId) {
+      return invalidGrant("The token was issued to another client.");
+    }
+  } else if (record.clientId !== input.clientId) {
+    return invalidGrant("The token was issued to another client.");
+  }
   if (record.revokedAt) {
     // A rotated token was replayed. Either the client raced itself or a thief is
     // holding a copy, so revoke this grant's family: the next legitimate refresh

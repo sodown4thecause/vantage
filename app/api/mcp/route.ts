@@ -56,7 +56,14 @@ export async function POST(req: Request) {
   const pepper = agentTokenPepper();
   const store = drizzleAgentStore();
 
-  const auth = await authenticateMcpRequest(req, store, { pepper, origin, now: new Date() });
+  const registrations = drizzleRegistrationStore();
+  const auth = await authenticateMcpRequest(req, store, {
+    pepper,
+    origin,
+    now: new Date(),
+    registrationStatus: async (registrationId) =>
+      (await registrations.findRegistration(registrationId))?.status ?? null,
+  });
   if (!auth.ok) {
     const headers: Record<string, string> = { "cache-control": "no-store" };
     if (auth.challenge) headers["www-authenticate"] = auth.challenge;
