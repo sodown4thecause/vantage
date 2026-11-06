@@ -538,6 +538,7 @@ export async function runAgent(
         } else {
           await collectEvidence({
             workspaceId: input.workspaceId,
+            chatId: input.execution?.rootMessageId ?? null,
             question: input.question,
             history: input.history,
             intent,
@@ -559,6 +560,7 @@ export async function runAgent(
         let erred = false;
         const summarized = await summarizeEvidence({
           workspaceId: input.workspaceId,
+          chatId: input.execution?.rootMessageId ?? null,
           question: input.question || packet.question,
           packet,
           profile,

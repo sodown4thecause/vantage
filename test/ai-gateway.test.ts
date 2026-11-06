@@ -18,6 +18,7 @@ import {
   gatewayConfigured,
   gatewayRequestHeaders,
   gatewayResponseInfo,
+  seoAutoRouterEnabled,
 } from "@/lib/ai/gateway-config";
 import { gatewayFetch, gatewayModel } from "@/lib/ai/gateway";
 
@@ -45,6 +46,12 @@ describe("gateway backend selection", () => {
     expect(gatewayConfigured({})).toBe(false);
     expect(gatewayConfigured(CLOUDFLARE)).toBe(true);
     expect(gatewayConfigured({ ...CLOUDFLARE, CF_AIG_TOKEN: "" })).toBe(false);
+  });
+
+  it("enables Auto Router only on Cloudflare with the SEO flag", () => {
+    expect(seoAutoRouterEnabled({ SEO_AUTO_ROUTER_ENABLED: "true" })).toBe(false);
+    expect(seoAutoRouterEnabled(CLOUDFLARE)).toBe(false);
+    expect(seoAutoRouterEnabled({ ...CLOUDFLARE, SEO_AUTO_ROUTER_ENABLED: "true" })).toBe(true);
   });
 });
 

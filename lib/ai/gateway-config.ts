@@ -52,6 +52,11 @@ export function gatewayConfigured(env: Env = process.env): boolean {
   return Boolean(env.AI_GATEWAY_API_KEY?.trim());
 }
 
+/** Auto Router is Cloudflare-only and off unless the SEO executor flag is on. */
+export function seoAutoRouterEnabled(env: Env = process.env): boolean {
+  return gatewayBackend(env) === "cloudflare" && env.SEO_AUTO_ROUTER_ENABLED?.trim() === "true";
+}
+
 /** cf-aig-* headers. Metadata never exceeds five entries. */
 export function gatewayRequestHeaders(meta: GatewayMeta, env: Env = process.env): Record<string, string> {
   const metadata: Record<string, string> = { feature: meta.feature };

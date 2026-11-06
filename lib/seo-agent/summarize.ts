@@ -7,6 +7,7 @@ import {
 } from "ai";
 
 import type { EvidencePacket } from "@/lib/seo-agent/evidence";
+import { seoAutoRouterEnabled } from "@/lib/ai/gateway-config";
 import { costOfUsage, gatewayProvider } from "@/lib/seo-agent/models";
 import { summarizerPrompt, type PromptProfile } from "@/lib/seo-agent/prompt";
 import { fallbackFollowUps } from "@/lib/seo-agent/suggestions";
@@ -47,6 +48,7 @@ function writeText(writer: UIMessageStreamWriter, value: string): void {
  */
 export async function summarizeEvidence(args: {
   workspaceId: string;
+  chatId?: string | null;
   question: string;
   packet: EvidencePacket;
   profile: PromptProfile;
@@ -85,7 +87,12 @@ export async function summarizeEvidence(args: {
     let stepBreak = false;
     try {
       const result = streamer({
-        model: gatewayProvider({ feature: "seo.summarize", workspaceId: args.workspaceId })(modelId),
+        model: gatewayProvider({
+          feature: "seo.summarize",
+          workspaceId: args.workspaceId,
+          chatId: args.chatId ?? null,
+          autoRouter: seoAutoRouterEnabled(),
+        })(modelId),
         system,
         messages,
         tools,

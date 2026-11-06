@@ -1,4 +1,5 @@
 import fixture from "@/test/fixtures/x.json";
+import { gatewayConfigured } from "@/lib/ai/gateway-config";
 import type { CostContext } from "@/lib/costs/meter";
 import { isPaidCallDenied, runPaidCall } from "@/lib/providers/paid-call";
 import { createScavioClient, hasScavioApiKey } from "@/lib/scavio/client";
@@ -110,7 +111,7 @@ export async function fetchXPostsWithMeta(opts: XOptions = {}): Promise<{
   const meta: XFetchMeta = { provider: "scavio" };
   if (!posts.length || process.env.X_GATEWAY_EXPERIMENT_ENABLED !== "true") return { posts, meta, cursor };
   meta.gatewayMode = "scavio_significance";
-  if (!process.env.AI_GATEWAY_API_KEY?.trim()) return { posts, meta: { ...meta, gatewayStatus: "access_pending" }, cursor };
+  if (!gatewayConfigured()) return { posts, meta: { ...meta, gatewayStatus: "access_pending" }, cursor };
   try {
     const result = await analyzeXPostSignificance(posts, { ctx: opts.ctx, signal: opts.signal });
     return { posts: result.posts, cursor,
