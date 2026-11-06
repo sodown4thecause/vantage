@@ -1245,6 +1245,64 @@ export const oauthClient = pgTable("oauth_client", {
 });
 
 /**
+ * An anonymous agent registration (auth.md). It owns a trial workspace until a
+ * human claims it, and carries the lifetime counters that enforce the trial
+ * quotas. `workspace_id` is set null on delete so the row survives as an audit
+ * record after the trial workspace is cleaned up.
+ */
+export const agentRegistration = pgTable(
+  "agent_registration",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    type: text("type").$type<"anonymous">().notNull().default("anonymous"),
+    status: text("status")
+      .$type<"active" | "claimed" | "expired" | "revoked">()
+      .notNull()
+      .default("active"),
+    workspaceId: uuid("workspace_id").references(() => workspace.id, { onDelete: "set null" }),
+    clientId: text("client_id").references(() => oauthClient.id, { onDelete: "set null" }),
+    claimTokenHash: text("claim_token_hash").notNull(),
+    claimTokenExpiresAt: timestamp("claim_token_expires_at", { withTimezone: true }).notNull(),
+    assertionKeyId: text("assertion_key_id").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    claimedByUserId: text("claimed_by_user_id"),
+    ipHash: text("ip_hash"),
+    toolCalls: integer("tool_calls").notNull().default(0),
+    draftAttempts: integer("draft_attempts").notNull().default(0),
+    scans: integer("scans").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("agent_registration_claim_token_uidx").on(table.claimTokenHash),
+    index("agent_registration_status_expires_idx").on(table.status, table.expiresAt),
+    index("agent_registration_ip_created_idx").on(table.ipHash, table.createdAt),
+  ],
+);
+
+/** One 6-digit claim ceremony. Only the hash of the code is stored. */
+export const agentClaimAttempt = pgTable(
+  "agent_claim_attempt",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    registrationId: uuid("registration_id")
+      .notNull()
+      .references(() => agentRegistration.id, { onDelete: "cascade" }),
+    userCodeHash: text("user_code_hash").notNull(),
+    email: text("email"),
+    status: text("status").$type<"pending" | "completed" | "expired">().notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("agent_claim_attempt_registration_idx").on(table.registrationId),
+    index("agent_claim_attempt_expires_idx").on(table.expiresAt),
+  ],
+);
+
+/**
  * Single-use authorization codes. Only the SHA-256 hash is stored; the raw code
  * is returned to the client once. `consumedAt` makes replay detectable rather
  * than merely rejected.
@@ -1283,11 +1341,13 @@ export const oauthToken = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     tokenHash: text("token_hash").notNull(),
     kind: text("kind").$type<"access" | "refresh">().notNull(),
-    clientId: text("client_id")
-      .notNull()
-      .references(() => oauthClient.id, { onDelete: "cascade" }),
+    /** Null for an agent token: the assertion, not a registered client, is the grant. */
+    clientId: text("client_id").references(() => oauthClient.id, { onDelete: "cascade" }),
     userId: text("user_id"),
     workspaceId: uuid("workspace_id").references(() => workspace.id, { onDelete: "cascade" }),
+    registrationId: uuid("registration_id").references(() => agentRegistration.id, {
+      onDelete: "cascade",
+    }),
     scopes: jsonb("scopes").$type<string[]>().notNull().default([]),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
@@ -1305,6 +1365,7 @@ export const oauthToken = pgTable(
     index("oauth_token_client_idx").on(table.clientId),
     index("oauth_token_workspace_idx").on(table.workspaceId),
     index("oauth_token_family_idx").on(table.familyId),
+    index("oauth_token_registration_idx").on(table.registrationId),
     check("oauth_token_kind_check", sql`${table.kind} in ('access', 'refresh')`),
   ],
 );

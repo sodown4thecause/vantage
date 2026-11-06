@@ -6,6 +6,7 @@ import { scanWorkspace } from "@/lib/cron/scan";
 import { isCronAuthorized } from "@/lib/cron/authorize";
 import { ScanLeaseBusyError } from "@/lib/cron/lease-error";
 import { runDueDigests } from "@/lib/digest/dispatch";
+import { runAgentCleanup } from "@/lib/agent/registration";
 import { getDb } from "@/lib/db/client";
 import { workspace } from "@/lib/db/schema";
 
@@ -60,6 +61,17 @@ export async function GET(req: Request) {
     // Best effort: cost rollups must never fail the tick (rollupRecent swallows errors).
     await rollupRecent();
 
+    // Best effort: expired agent trials are cleaned up, never blocking the tick.
+    let agentCleanup: Awaited<ReturnType<typeof runAgentCleanup>> | null = null;
+    try {
+      agentCleanup = await runAgentCleanup();
+    } catch (error) {
+      console.error(
+        "[tick] agent cleanup failed",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+
     // Best effort: one workspace failing its digest must never fail the tick.
     let digest: Awaited<ReturnType<typeof runDueDigests>> | null = null;
     try {
@@ -78,6 +90,7 @@ export async function GET(req: Request) {
       collectorResults,
       opportunityResults,
       digest,
+      agentCleanup,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

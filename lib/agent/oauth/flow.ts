@@ -153,30 +153,33 @@ export async function issueAuthorizationCode(
   return code;
 }
 
-async function issueTokens(
+export async function issueTokensFor(
   store: AgentStore,
   input: {
-    clientId: string;
+    clientId: string | null;
     userId: string | null;
     workspaceId: string | null;
+    registrationId?: string | null;
     scopes: string[];
     pepper: string;
     now: Date;
     rotatedFrom?: string | null;
-    familyId: string;
+    familyId?: string;
   },
 ): Promise<TokenResponse> {
   const accessToken = randomToken("vat");
   const refreshToken = randomToken("vrt");
+  const familyId = input.familyId ?? crypto.randomUUID();
   await store.createToken({
     tokenHash: await hashSecret(accessToken, input.pepper),
     kind: "access",
     clientId: input.clientId,
     userId: input.userId,
     workspaceId: input.workspaceId,
+    registrationId: input.registrationId ?? null,
     scopes: input.scopes,
     expiresAt: new Date(input.now.getTime() + AGENT_ACCESS_TOKEN_TTL_SECONDS * 1_000),
-    familyId: input.familyId,
+    familyId,
   });
   await store.createToken({
     tokenHash: await hashSecret(refreshToken, input.pepper),
@@ -184,10 +187,11 @@ async function issueTokens(
     clientId: input.clientId,
     userId: input.userId,
     workspaceId: input.workspaceId,
+    registrationId: input.registrationId ?? null,
     scopes: input.scopes,
     expiresAt: new Date(input.now.getTime() + AGENT_REFRESH_TOKEN_TTL_SECONDS * 1_000),
     rotatedFrom: input.rotatedFrom ?? null,
-    familyId: input.familyId,
+    familyId,
   });
   return {
     access_token: accessToken,
@@ -229,14 +233,13 @@ export async function exchangeAuthorizationCode(
   }
   return {
     ok: true,
-    body: await issueTokens(store, {
+    body: await issueTokensFor(store, {
       clientId: record.clientId,
       userId: record.userId,
       workspaceId: record.workspaceId,
       scopes: record.scopes,
       pepper: input.pepper,
       now: input.now,
-      familyId: crypto.randomUUID(),
     }),
   };
 }
@@ -281,10 +284,11 @@ export async function refreshAccessToken(
   }
   return {
     ok: true,
-    body: await issueTokens(store, {
+    body: await issueTokensFor(store, {
       clientId: record.clientId,
       userId: record.userId,
       workspaceId: record.workspaceId,
+      registrationId: record.registrationId,
       scopes: record.scopes,
       pepper: input.pepper,
       now: input.now,

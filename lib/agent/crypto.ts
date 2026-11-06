@@ -6,6 +6,11 @@ export function base64Url(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+export function fromBase64Url(value: string): Uint8Array {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
+}
+
 /** A prefixed, URL-safe random token. The prefix makes leaked values identifiable in logs. */
 export function randomToken(prefix: string, byteLength = 32): string {
   return `${prefix}_${base64Url(crypto.getRandomValues(new Uint8Array(byteLength)))}`;

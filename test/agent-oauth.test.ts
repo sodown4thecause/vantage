@@ -48,9 +48,10 @@ type FakeCode = {
 type FakeToken = {
   id: string;
   kind: "access" | "refresh";
-  clientId: string;
+  clientId: string | null;
   userId: string | null;
   workspaceId: string | null;
+  registrationId: string | null;
   scopes: string[];
   expiresAt: Date;
   revokedAt: Date | null;
@@ -101,6 +102,7 @@ function createFakeStore() {
         clientId: input.clientId,
         userId: input.userId,
         workspaceId: input.workspaceId,
+        registrationId: input.registrationId ?? null,
         scopes: input.scopes,
         expiresAt: input.expiresAt,
         revokedAt: null,

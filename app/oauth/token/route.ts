@@ -1,4 +1,9 @@
-import { agentOrigin, agentRegistrationEnabled, agentTokenPepper } from "@/lib/agent/config";
+import {
+  agentAssertionKey,
+  agentOrigin,
+  agentRegistrationEnabled,
+  agentTokenPepper,
+} from "@/lib/agent/config";
 import {
   exchangeAuthorizationCode,
   refreshAccessToken,
@@ -6,6 +11,7 @@ import {
   type TokenResult,
 } from "@/lib/agent/oauth/flow";
 import { drizzleAgentStore } from "@/lib/agent/oauth/store";
+import { drizzleRegistrationStore, exchangeAssertion } from "@/lib/agent/registration";
 import { agentIpHash, agentRateLimit } from "@/lib/agent/request";
 
 export const runtime = "nodejs";
@@ -18,7 +24,8 @@ const fail = (status: number, body: OAuthErrorBody) => Response.json(body, { sta
 export async function POST(req: Request) {
   if (!agentRegistrationEnabled()) return new Response("Not found", { status: 404 });
   const pepper = agentTokenPepper();
-  if (!pepper || !agentOrigin()) return fail(503, { error: "server_error", error_description: "Not configured." });
+  const origin = agentOrigin();
+  if (!pepper || !origin) return fail(503, { error: "server_error", error_description: "Not configured." });
 
   const ipHash = await agentIpHash(req);
   if (!(await agentRateLimit("agent-token", ipHash ?? "unknown"))) {
@@ -37,7 +44,10 @@ export async function POST(req: Request) {
 
   const grantType = field("grant_type");
   const clientId = field("client_id");
-  if (!clientId) return fail(400, { error: "invalid_client", error_description: "client_id is required." });
+  const isAssertionGrant = grantType === "urn:ietf:params:oauth:grant-type:jwt-bearer";
+  if (!clientId && !isAssertionGrant) {
+    return fail(400, { error: "invalid_client", error_description: "client_id is required." });
+  }
 
   const store = drizzleAgentStore();
   const now = new Date();
@@ -67,10 +77,27 @@ export async function POST(req: Request) {
       return fail(400, { error: "invalid_request", error_description: "refresh_token is required." });
     }
     outcome = await refreshAccessToken(store, { clientId, refreshToken, pepper, now });
+  } else if (isAssertionGrant) {
+    const assertion = field("assertion");
+    if (!assertion) {
+      return fail(400, { error: "invalid_request", error_description: "assertion is required." });
+    }
+    const signingKey = agentAssertionKey();
+    if (!signingKey) return fail(503, { error: "server_error", error_description: "Not configured." });
+    outcome = await exchangeAssertion({
+      store: { ...store, ...drizzleRegistrationStore() },
+      assertion,
+      signingKey,
+      origin,
+      pepper,
+      clientId: clientId || null,
+      now,
+    });
   } else {
     return fail(400, {
       error: "unsupported_grant_type",
-      error_description: "Supported grants: authorization_code, refresh_token.",
+      error_description:
+        "Supported grants: authorization_code, refresh_token, urn:ietf:params:oauth:grant-type:jwt-bearer.",
     });
   }
 

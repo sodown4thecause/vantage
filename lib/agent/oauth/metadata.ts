@@ -33,10 +33,21 @@ export function authorizationServerMetadata(origin: string) {
     revocation_endpoint: `${origin}/oauth/revoke`,
     scopes_supported: [...AGENT_SCOPES],
     response_types_supported: ["code"],
-    grant_types_supported: ["authorization_code", "refresh_token"],
+    grant_types_supported: [
+      "authorization_code",
+      "refresh_token",
+      "urn:ietf:params:oauth:grant-type:jwt-bearer",
+    ],
     code_challenge_methods_supported: ["S256"],
     token_endpoint_auth_methods_supported: ["none"],
     bearer_methods_supported: ["header"],
+    agent_auth: {
+      skill: `${origin}/auth.md`,
+      identity_endpoint: `${origin}/agent/identity`,
+      claim_endpoint: `${origin}/agent/identity/claim`,
+      identity_types_supported: ["anonymous"],
+      events_supported: [],
+    },
   };
 }
 
@@ -95,10 +106,22 @@ finishes.
 
 ## Anonymous registration
 
-Not enabled on this deployment yet. When it ships, an agent will be able to
-register without a human, receive a short-lived read-only credential and a
-seven-day trial workspace, then hand the human a link and a six-digit code to
-claim that workspace onto their own account.
+No human is needed to start.
+
+1. \`POST ${origin}/agent/identity\` with \`{"type":"anonymous"}\`.
+2. You get \`identity_assertion\` (15 minutes), \`pre_claim_scopes\`,
+   \`claim_token\` and \`claim_url\`.
+3. Exchange the assertion at \`${origin}/oauth/token\` with
+   \`grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=...\`.
+4. The token is bound to a trial workspace: one workspace, one scan, seven days,
+   100 tool calls and 10 draft attempts, with \`vantage.read\` only.
+5. To unlock \`vantage.draft\` and keep the workspace, start a claim:
+   \`POST ${origin}/agent/identity/claim\` with \`claim_token\` and, optionally,
+   the human's \`email\`. Show the human \`verification_uri\` and \`user_code\`.
+6. The human signs in, enters the code, and the workspace moves onto their
+   account.
+
+Trial workspaces are deleted when they expire.
 
 ## Rules
 

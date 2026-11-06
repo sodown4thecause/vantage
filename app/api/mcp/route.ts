@@ -1,4 +1,10 @@
-import { agentOrigin, agentRegistrationEnabled, agentTokenPepper } from "@/lib/agent/config";
+import {
+  AGENT_TRIAL_DRAFT_ATTEMPTS,
+  AGENT_TRIAL_TOOL_CALLS,
+  agentOrigin,
+  agentRegistrationEnabled,
+  agentTokenPepper,
+} from "@/lib/agent/config";
 import { authenticateMcpRequest } from "@/lib/agent/mcp/auth";
 import {
   MCP_SUPPORTED_PROTOCOL_VERSIONS,
@@ -6,11 +12,26 @@ import {
 } from "@/lib/agent/mcp/protocol";
 import { agentTools } from "@/lib/agent/mcp/tools";
 import { drizzleAgentStore } from "@/lib/agent/oauth/store";
+import { drizzleRegistrationStore } from "@/lib/agent/registration";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const NOT_FOUND = () => new Response("Not found", { status: 404 });
+
+function isDraftCall(body: unknown): boolean {
+  if (typeof body !== "object" || body === null) return false;
+  const message = body as Record<string, unknown>;
+  if (message.method !== "tools/call") return false;
+  const params = message.params;
+  return typeof params === "object" && params !== null && (params as Record<string, unknown>).name === "draft_reply";
+}
+
+const quotaExceeded = (message: string) =>
+  Response.json(
+    { jsonrpc: "2.0", id: null, error: { code: -32000, message } },
+    { status: 429, headers: { "cache-control": "no-store" } },
+  );
 
 /**
  * Streamable HTTP MCP endpoint. Stateless: no session id is issued, so each
@@ -44,6 +65,31 @@ export async function POST(req: Request) {
       { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } },
       { status: 400 },
     );
+  }
+
+  // Trial quotas are durable counters, checked before any tool runs.
+  if (auth.token.registrationId) {
+    const registrations = drizzleRegistrationStore();
+    const now = new Date();
+    if (
+      isDraftCall(body) &&
+      !(await registrations.consumeDraftAttempt(
+        auth.token.registrationId,
+        AGENT_TRIAL_DRAFT_ATTEMPTS,
+        now,
+      ))
+    ) {
+      return quotaExceeded("The trial's draft quota is spent. Claim the workspace to continue.");
+    }
+    if (
+      !(await registrations.consumeToolCall(
+        auth.token.registrationId,
+        AGENT_TRIAL_TOOL_CALLS,
+        now,
+      ))
+    ) {
+      return quotaExceeded("The trial's tool-call quota is spent. Claim the workspace to continue.");
+    }
   }
 
   const outcome = await handleMcpMessage(
