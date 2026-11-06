@@ -1228,3 +1228,107 @@ export const contentDraft = pgTable(
     check("content_draft_status_check", sql`${table.status} in ('idea', 'draft', 'ready')`),
   ],
 );
+
+/**
+ * OAuth 2.1 clients for agent access (auth.md / MCP). Public clients only:
+ * there is no client secret, and every authorization code is bound to a PKCE
+ * challenge. Rows come from dynamic client registration, so they are
+ * unverified: only the exact redirect URIs recorded here are ever trusted.
+ */
+export const oauthClient = pgTable("oauth_client", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  redirectUris: jsonb("redirect_uris").$type<string[]>().notNull().default([]),
+  scopes: jsonb("scopes").$type<string[]>().notNull().default([]),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+});
+
+/**
+ * Single-use authorization codes. Only the SHA-256 hash is stored; the raw code
+ * is returned to the client once. `consumedAt` makes replay detectable rather
+ * than merely rejected.
+ */
+export const oauthAuthorizationCode = pgTable(
+  "oauth_authorization_code",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    codeHash: text("code_hash").notNull(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => oauthClient.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
+    workspaceId: uuid("workspace_id").references(() => workspace.id, { onDelete: "cascade" }),
+    scopes: jsonb("scopes").$type<string[]>().notNull().default([]),
+    redirectUri: text("redirect_uri").notNull(),
+    codeChallenge: text("code_challenge").notNull(),
+    codeChallengeMethod: text("code_challenge_method").notNull().default("S256"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("oauth_authorization_code_hash_uidx").on(table.codeHash),
+    index("oauth_authorization_code_client_idx").on(table.clientId),
+  ],
+);
+
+/**
+ * Access and refresh tokens, stored as SHA-256 hashes. `userId` is null for
+ * agent registrations, which are bound to a workspace instead of a person.
+ */
+export const oauthToken = pgTable(
+  "oauth_token",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tokenHash: text("token_hash").notNull(),
+    kind: text("kind").$type<"access" | "refresh">().notNull(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => oauthClient.id, { onDelete: "cascade" }),
+    userId: text("user_id"),
+    workspaceId: uuid("workspace_id").references(() => workspace.id, { onDelete: "cascade" }),
+    scopes: jsonb("scopes").$type<string[]>().notNull().default([]),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    rotatedFrom: uuid("rotated_from"),
+    /**
+     * One id per authorization grant, copied onto every token it rotates into.
+     * Replaying a rotated token revokes this family only, so a second device's
+     * connection survives.
+     */
+    familyId: uuid("family_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("oauth_token_hash_uidx").on(table.tokenHash),
+    index("oauth_token_client_idx").on(table.clientId),
+    index("oauth_token_workspace_idx").on(table.workspaceId),
+    index("oauth_token_family_idx").on(table.familyId),
+    check("oauth_token_kind_check", sql`${table.kind} in ('access', 'refresh')`),
+  ],
+);
+
+/**
+ * Append-only record of every agent lifecycle event: client registration,
+ * authorization, token issue, revocation, tool call, claim and quota denial.
+ * Never stores raw tokens, codes, IP addresses or conversation content.
+ */
+export const agentAuditLog = pgTable(
+  "agent_audit_log",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    event: text("event").notNull(),
+    clientId: text("client_id"),
+    userId: text("user_id"),
+    workspaceId: uuid("workspace_id").references(() => workspace.id, { onDelete: "set null" }),
+    registrationId: uuid("registration_id"),
+    ipHash: text("ip_hash"),
+    detail: jsonb("detail").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("agent_audit_log_created_idx").on(table.createdAt),
+    index("agent_audit_log_event_created_idx").on(table.event, table.createdAt),
+  ],
+);

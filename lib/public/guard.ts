@@ -37,14 +37,14 @@ const fail = (status: number, code: GuardErrorCode): GuardResult => ({
   code,
 });
 
-type RateLimitBinding = { limit(opts: { key: string }): Promise<{ success: boolean }> };
+export type RateLimitBinding = { limit(opts: { key: string }): Promise<{ success: boolean }> };
 
 function isRateLimitBinding(value: unknown): value is RateLimitBinding {
   return typeof value === "object" && value !== null && "limit" in value && typeof value.limit === "function";
 }
 
 /** The S02 rate-limit binding is optional: absent locally and until S02 lands. */
-async function getRateLimiter(): Promise<RateLimitBinding | null> {
+export async function getRateLimiter(): Promise<RateLimitBinding | null> {
   try {
     const { getCloudflareContext } = await import("@opennextjs/cloudflare");
     const env: unknown = getCloudflareContext().env;
@@ -66,7 +66,7 @@ async function getRateLimiter(): Promise<RateLimitBinding | null> {
  * x-forwarded-for is client-controlled, so it is only honoured outside
  * production (local dev). Returns null when the client cannot be identified.
  */
-function clientIp(req: Request, isProd: boolean): string | null {
+export function clientIp(req: Request, isProd: boolean): string | null {
   const cf = req.headers.get("cf-connecting-ip")?.trim();
   if (cf) return cf;
   if (isProd) return null;
