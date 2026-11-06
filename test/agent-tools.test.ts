@@ -160,6 +160,62 @@ describe("get_conversation", () => {
     expect(value.conversation).toBeNull();
     expect(mocks.getOpportunityDetail).not.toHaveBeenCalled();
   });
+
+  it("caps the evidence count and reports what it left out", async () => {
+    const evidence = Array.from({ length: 12 }, (_, index) => ({
+      documentId: `doc_${index}`,
+      title: `Thread ${index}`,
+      urlCanonical: `https://example.com/${index}`,
+      platform: "reddit",
+      contentMd: "short post",
+      postedAt: null,
+      provider: null,
+    }));
+    mocks.getOpportunityDetail.mockResolvedValue({ ...card, evidence });
+
+    const value = (await tool("get_conversation").run({ opportunityId: OPPORTUNITY }, ctx)) as {
+      conversation: { evidence: unknown[]; evidenceCount: number; omittedEvidence: number };
+      message: string;
+    };
+
+    expect(value.conversation.evidence).toHaveLength(5);
+    expect(value.conversation.evidenceCount).toBe(12);
+    expect(value.conversation.omittedEvidence).toBe(7);
+    expect(value.message).toContain("7 more posts");
+  });
+
+  it("holds one total text budget across posts and replies", async () => {
+    // Six posts of 6,000 characters plus ten 1,000-character replies each would
+    // be 96,000 characters without a shared budget.
+    const evidence = Array.from({ length: 6 }, (_, index) => ({
+      documentId: `doc_${index}`,
+      title: `Thread ${index}`,
+      urlCanonical: `https://example.com/${index}`,
+      platform: "reddit",
+      contentMd: "x".repeat(6_000),
+      postedAt: null,
+      provider: null,
+      existingReplies: Array.from({ length: 10 }, () => "y".repeat(1_000)),
+    }));
+    mocks.getOpportunityDetail.mockResolvedValue({ ...card, evidence });
+
+    const value = (await tool("get_conversation").run({ opportunityId: OPPORTUNITY }, ctx)) as {
+      conversation: {
+        evidence: Array<{ content: string; existingReplies: string[]; truncated: boolean }>;
+      };
+    };
+
+    const total = value.conversation.evidence.reduce(
+      (sum, item) =>
+        sum + item.content.length + item.existingReplies.reduce((n, reply) => n + reply.length, 0),
+      0,
+    );
+    expect(total).toBeLessThanOrEqual(24_000);
+    // The first post is complete; later ones are cut, and say so.
+    expect(value.conversation.evidence[0]!.content).toHaveLength(6_000);
+    expect(value.conversation.evidence[0]!.truncated).toBe(false);
+    expect(value.conversation.evidence.at(-1)!.truncated).toBe(true);
+  });
 });
 
 describe("tool registry", () => {

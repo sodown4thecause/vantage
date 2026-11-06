@@ -12,8 +12,44 @@ import { workspaceTimeZone } from "@/lib/retention/zone";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Evidence is capped so one long thread cannot fill the model's context. */
+/**
+ * Response budget. A cluster can hold hundreds of documents, each with replies,
+ * so per-post caps alone are not enough: the total is what protects the model's
+ * context and the response time.
+ */
+const MAX_EVIDENCE_ITEMS = 5;
 const MAX_EVIDENCE_CHARS = 6_000;
+const MAX_REPLY_CHARS = 1_000;
+const MAX_TOTAL_TEXT_CHARS = 24_000;
+
+type EvidenceText = { content: string; truncated: boolean; existingReplies: string[] };
+
+/**
+ * Fills one shared text budget across posts and replies, in order. Once the
+ * budget is spent the remaining posts keep their metadata but carry no text, so
+ * the caller can see what was omitted instead of silently losing it.
+ */
+function budgetEvidence(
+  items: Array<{ contentMd: string; existingReplies?: string[] }>,
+): EvidenceText[] {
+  let remaining = MAX_TOTAL_TEXT_CHARS;
+  return items.map((item) => {
+    const content = item.contentMd.slice(0, Math.min(MAX_EVIDENCE_CHARS, Math.max(remaining, 0)));
+    remaining -= content.length;
+    const replies: string[] = [];
+    for (const reply of item.existingReplies ?? []) {
+      if (remaining <= 0) break;
+      const text = reply.slice(0, Math.min(MAX_REPLY_CHARS, remaining));
+      remaining -= text.length;
+      replies.push(text);
+    }
+    return {
+      content,
+      truncated: content.length < item.contentMd.length,
+      existingReplies: replies,
+    };
+  });
+}
 
 const round = (value: number) => Number(value.toFixed(2));
 
@@ -147,6 +183,10 @@ const getConversation: McpTool = {
       };
     }
 
+    const shown = detail.evidence.slice(0, MAX_EVIDENCE_ITEMS);
+    const texts = budgetEvidence(shown);
+    const omitted = detail.evidence.length - shown.length;
+
     return {
       conversation: {
         id: detail.id,
@@ -158,7 +198,7 @@ const getConversation: McpTool = {
         whyItMatters: detail.whyItMatters,
         whyNow: detail.whyNow,
         recommendedAction: detail.recommendedAction,
-        evidence: detail.evidence.map((item) => ({
+        evidence: shown.map((item, index) => ({
           documentId: item.documentId,
           title: item.title,
           url: item.urlCanonical,
@@ -167,11 +207,20 @@ const getConversation: McpTool = {
           contentKind: item.contentKind ?? null,
           subreddit: item.subreddit ?? null,
           score: item.score ?? null,
-          existingReplies: item.existingReplies ?? [],
-          content: item.contentMd.slice(0, MAX_EVIDENCE_CHARS),
-          truncated: item.contentMd.length > MAX_EVIDENCE_CHARS,
+          existingReplies: texts[index]!.existingReplies,
+          content: texts[index]!.content,
+          truncated: texts[index]!.truncated,
         })),
+        evidenceCount: detail.evidence.length,
+        omittedEvidence: omitted,
       },
+      ...(omitted > 0
+        ? {
+            message:
+              `${omitted} more ${omitted === 1 ? "post is" : "posts are"} in this conversation but ` +
+              `not shown. Ask for a specific post if you need it.`,
+          }
+        : {}),
       posting: "Vantage never posts, replies or messages on anyone's behalf.",
     };
   },

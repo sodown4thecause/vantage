@@ -126,6 +126,21 @@ function createFakeStore() {
       }
       return revoked;
     },
+    async revokeTokensForSubject(input, now) {
+      let revoked = 0;
+      for (const row of tokens.values()) {
+        if (
+          row.clientId === input.clientId &&
+          row.userId === input.userId &&
+          row.workspaceId === input.workspaceId &&
+          !row.revokedAt
+        ) {
+          row.revokedAt = now;
+          revoked += 1;
+        }
+      }
+      return revoked;
+    },
     async audit(entry) {
       audits.push(entry);
     },
@@ -524,6 +539,49 @@ describe("token exchange", () => {
       now,
     });
     expect(phoneRefresh.ok).toBe(true);
+  });
+
+  it("revokes the whole subject when a pre-family token is replayed", async () => {
+    const store = state.store as ReturnType<typeof createFakeStore>;
+    const now = new Date("2026-11-06T00:01:00Z");
+    const legacy = "vrt_legacy";
+    // A token issued before families existed: no family id.
+    await store.createToken({
+      tokenHash: await hashSecret(legacy, PEPPER),
+      kind: "refresh",
+      clientId: "vcl_test",
+      userId: "user_1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+      scopes: ["vantage.read"],
+      expiresAt: new Date("2026-12-06T00:00:00Z"),
+      familyId: null as unknown as string,
+    });
+
+    const rotated = await refreshAccessToken(store, {
+      clientId: "vcl_test",
+      refreshToken: legacy,
+      pepper: PEPPER,
+      now,
+    });
+    expect(rotated.ok).toBe(true);
+    if (!rotated.ok) return;
+
+    // Replaying the legacy token must kill its unlinked replacement too.
+    const replay = await refreshAccessToken(store, {
+      clientId: "vcl_test",
+      refreshToken: legacy,
+      pepper: PEPPER,
+      now,
+    });
+    expect(replay.ok).toBe(false);
+
+    const replacement = await refreshAccessToken(store, {
+      clientId: "vcl_test",
+      refreshToken: rotated.body.refresh_token,
+      pepper: PEPPER,
+      now,
+    });
+    expect(replacement.ok).toBe(false);
   });
 });
 
