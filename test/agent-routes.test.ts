@@ -609,6 +609,17 @@ describe("trial quota at the MCP boundary", () => {
     enable();
     const store = state.store as ReturnType<typeof createFakeStore>;
     const registrations = state.registrationStore as ReturnType<typeof createFakeRegistrationStore>;
+    // A live registration, so the read-time guard (added with the claim flow)
+    // lets the request through to the quota check.
+    registrations.registrations.set("reg_1", {
+      id: "reg_1",
+      status: "active",
+      workspaceId: "ws_1",
+      expiresAt: new Date(Date.now() + 86_400_000),
+      claimTokenExpiresAt: new Date(Date.now() + 86_400_000),
+      claimTokenHash: "hash",
+      createdAt: new Date(),
+    });
     const raw = "vat_scoped_token";
     await store.createToken({
       tokenHash: await hashSecret(raw, PEPPER),
