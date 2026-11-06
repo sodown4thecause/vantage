@@ -9,7 +9,8 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 
-import { computeFeatures } from "@/lib/opportunities/features";
+import type { AiBinding } from "@/lib/cf/env";
+import { computeFeatures, scoreFeatures } from "@/lib/opportunities/features";
 import type { NormalizedDocument } from "@/lib/pipeline/normalize";
 import { askClef } from "@/lib/decisions/clef";
 import { rankingQuestions, rankingState } from "@/lib/decisions/shadow";
@@ -17,6 +18,29 @@ import { rankingQuestions, rankingState } from "@/lib/decisions/shadow";
 const MIN_LABELLED = 30;
 const TOP_N = 5;
 const LABEL_COLUMNS = ["expertise_label", "gap_label", "stakes_label", "fit_label"] as const;
+
+/**
+ * A CLI process has no Cloudflare request context, so the Worker's AI binding is
+ * absent. This calls the same Workers AI REST endpoint the binding wraps.
+ */
+function restAi(accountId: string, token: string): AiBinding {
+  return {
+    async run(model, input) {
+      const response = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        },
+      );
+      if (!response.ok) throw new Error(`Workers AI returned HTTP ${response.status}`);
+      const body = await response.json() as { result?: unknown; success?: boolean };
+      if (body.success === false || body.result === undefined) throw new Error("Workers AI returned no result");
+      return body.result;
+    },
+  };
+}
 
 type Row = Record<string, string>;
 
@@ -141,10 +165,18 @@ async function main(): Promise<void> {
   }
   const profile = process.env.CLEF_EVAL_PROFILE?.trim() || "No workspace profile is saved.";
   const segments = (process.env.CLEF_EVAL_SEGMENTS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const accountId = process.env.CF_AIG_ACCOUNT_ID?.trim();
+  const token = process.env.CF_AIG_TOKEN?.trim();
+  if (!accountId || !token) {
+    console.error("CF_AIG_ACCOUNT_ID and CF_AIG_TOKEN are required to call Clef from the CLI.");
+    process.exit(2);
+  }
+  const ai = restAi(accountId, token);
+  const baselineProfile = { productDescription: profile, topics: segments, competitors: [] };
 
   const current = new Map<Row, number>();
   for (const [index, row] of rows.entries()) {
-    current.set(row, computeFeatures([asDocument(row, index)], null).fit);
+    current.set(row, scoreFeatures(computeFeatures([asDocument(row, index)], baselineProfile)));
   }
 
   const clef = new Map<Row, number>();
@@ -158,6 +190,7 @@ async function main(): Promise<void> {
       variant: "clef",
       state,
       questions: rankingQuestions(segments),
+      ai,
     });
     if (!result) { console.error("Clef call failed; aborting the comparison."); process.exit(1); }
     tokens += result.inputTokens;

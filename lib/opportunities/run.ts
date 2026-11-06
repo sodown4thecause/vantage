@@ -395,7 +395,11 @@ export async function buildOpportunities(opts: {
         })
         .from(opportunityEvidence)
         .innerJoin(document, eq(document.id, opportunityEvidence.documentId))
-        .where(eq(opportunityEvidence.opportunityId, card.id))
+        .where(and(
+          eq(opportunityEvidence.opportunityId, card.id),
+          eq(opportunityEvidence.workspaceId, opts.workspaceId),
+          eq(document.workspaceId, opts.workspaceId),
+        ))
         .limit(5);
       const rule = evidence[0] ? contributionRule(evidence[0].platform, evidence[0].url) : null;
       await recordRankingDecision({

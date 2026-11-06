@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { withObservedSpan } from "@/lib/analytics/spans.mjs";
-import { getAi } from "@/lib/cf/env";
+import { getAi, type AiBinding } from "@/lib/cf/env";
 import { runPaidCall } from "@/lib/providers/paid-call";
 
 export const CLEF_MODEL = "@cf/cloudflare/clef";
@@ -122,9 +122,11 @@ export async function askClef(input: {
   questions: Record<string, ClefQuestion>;
   signal?: AbortSignal;
   timeoutMs?: number;
+  /** Injected binding for CLI harnesses; defaults to the Worker's AI binding. */
+  ai?: AiBinding | null;
 }): Promise<ClefResult | null> {
   input.signal?.throwIfAborted();
-  const ai = await getAi();
+  const ai = input.ai ?? await getAi();
   if (!ai) return null;
   const modelId = input.variant === "clef" ? CLEF_MODEL : CLEF_FLASH_MODEL;
   const estimateUsd = estimateClefUsd(input.state);

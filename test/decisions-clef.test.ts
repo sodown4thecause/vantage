@@ -114,6 +114,17 @@ describe("Clef wrapper", () => {
     expect(mocks.paid).not.toHaveBeenCalled();
   });
 
+  it("uses an injected binding so a CLI harness can call Clef", async () => {
+    mocks.ai = null;
+    const injected = { run: vi.fn().mockResolvedValue(answer({ urgent: { type: "noul", noul: 0.4 } })) };
+    const result = await askClef({
+      workspaceId: WORKSPACE, sourceKey: "eval", action: "clef_eval",
+      variant: "clef", state: "state", questions: QUESTIONS, ai: injected,
+    });
+    expect(result?.answers.urgent).toEqual({ type: "noul", noul: 0.4 });
+    expect(injected.run).toHaveBeenCalledOnce();
+  });
+
   it("returns null on a malformed answer so the current scorer stands", async () => {
     mocks.ai!.run.mockResolvedValue({ answers: { urgent: { type: "noul", noul: 4 } } });
     expect(await askClef({
