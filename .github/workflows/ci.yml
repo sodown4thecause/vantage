@@ -17,45 +17,93 @@ env:
   CI: "true"
   NEXT_TELEMETRY_DISABLED: "1"
 
+# Setup sequence shared by the leaf jobs is spelled out per job (Actions
+# rejects YAML anchors). Each leaf boots in ~13 s; the pnpm store cache keeps
+# each install around 10 s.
+
 jobs:
-  # Decides whether a pull request touches only files that need no build or
-  # test: Markdown docs and the AI reviewers' config. Pushes to main and manual
-  # runs always run the full suite.
   changes:
     name: Detect changed paths
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      pull-requests: read # paths-filter lists PR files through the API
+    timeout-minutes: 10
     outputs:
-      docs-only: ${{ github.event_name == 'pull_request' && steps.filter.outputs.code == 'false' }}
+      # True when every changed file is a doc or an AI-reviewer config file.
+      # The leaf jobs skip their expensive steps but still report, so the
+      # required status checks on main stay green.
+      docs-only: ${{ steps.filter.outputs.docs == 'true' && steps.filter.outputs.code == 'false' }}
     steps:
-      # Pull requests use the API, so no checkout is needed.
-      - uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4
-        if: github.event_name == 'pull_request'
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v3
         id: filter
         with:
-          # "every": a file counts as code only if it matches all patterns,
-          # so the "!" lines subtract from "**". (With the default "some", the
-          # "**" alone would make every file code.)
-          predicate-quantifier: every
           filters: |
+            docs:
+              - '**/*.md'
+              - 'docs/**'
+              - '.greptile/**'
+              - 'greptile.json'
+              - 'cubic.yaml'
             code:
               - '**'
-              - '!*.md'
+              - '!**/*.md'
               - '!docs/**'
-              - '!.agents/**/*.md'
               - '!.greptile/**'
+              - '!greptile.json'
               - '!cubic.yaml'
 
-  verify:
-    name: Lint, typecheck, test, build
+  lint:
+    name: lint
     needs: changes
-    # Skipped on docs-only pull requests; a skipped job reports success, so the
-    # required check still passes. If path detection fails, docs-only is not
-    # "true" and the full job runs.
-    if: ${{ !cancelled() && needs.changes.outputs.docs-only != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Docs-only PR; lint skipped
+        if: needs.changes.outputs.docs-only == 'true'
+        run: echo "Docs-only PR; step skipped."
+      - uses: pnpm/action-setup@v6
+        if: needs.changes.outputs.docs-only != 'true'
+        with:
+          version: 11.5.0
+      - uses: actions/setup-node@v7
+        if: needs.changes.outputs.docs-only != 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        if: needs.changes.outputs.docs-only != 'true'
+      - name: Lint
+        if: needs.changes.outputs.docs-only != 'true'
+        run: pnpm lint
+
+  typecheck:
+    name: typecheck
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Docs-only PR; typecheck skipped
+        if: needs.changes.outputs.docs-only == 'true'
+        run: echo "Docs-only PR; step skipped."
+      - uses: pnpm/action-setup@v6
+        if: needs.changes.outputs.docs-only != 'true'
+        with:
+          version: 11.5.0
+      - uses: actions/setup-node@v7
+        if: needs.changes.outputs.docs-only != 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        if: needs.changes.outputs.docs-only != 'true'
+      - name: Typecheck
+        if: needs.changes.outputs.docs-only != 'true'
+        run: pnpm typecheck
+
+  test:
+    name: test
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -65,63 +113,160 @@ jobs:
       NEON_AUTH_COOKIE_SECRET: 0123456789abcdef0123456789abcdef
     steps:
       - uses: actions/checkout@v7
+      - name: Docs-only PR; tests skipped
+        if: needs.changes.outputs.docs-only == 'true'
+        run: echo "Docs-only PR; step skipped."
       - uses: pnpm/action-setup@v6
+        if: needs.changes.outputs.docs-only != 'true'
         with:
           version: 11.5.0
       - uses: actions/setup-node@v7
+        if: needs.changes.outputs.docs-only != 'true'
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Lint
-        run: pnpm lint
-      - name: Typecheck
-        run: pnpm typecheck
+        if: needs.changes.outputs.docs-only != 'true'
       - name: Test
+        if: needs.changes.outputs.docs-only != 'true'
         run: |
           pnpm test
           node --test test/worker-entry.test.mjs test/scan-run.test.mjs test/queue-consumer.test.mjs
+
+  db-drift:
+    name: db drift
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://user:pass@localhost:5432/vantage
+    steps:
+      - uses: actions/checkout@v7
+      - name: Docs-only PR; migration check skipped
+        if: needs.changes.outputs.docs-only == 'true'
+        run: echo "Docs-only PR; step skipped."
+      - uses: pnpm/action-setup@v6
+        if: needs.changes.outputs.docs-only != 'true'
+        with:
+          version: 11.5.0
+      - uses: actions/setup-node@v7
+        if: needs.changes.outputs.docs-only != 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        if: needs.changes.outputs.docs-only != 'true'
       - name: Check migration drift
+        if: needs.changes.outputs.docs-only != 'true'
         run: |
           pnpm db:generate
           git diff --exit-code -- drizzle
+
+  app-build:
+    name: app build
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://user:pass@localhost:5432/vantage
+      NEON_AUTH_BASE_URL: https://example.invalid/auth
+      NEON_AUTH_COOKIE_SECRET: 0123456789abcdef0123456789abcdef
+    steps:
+      - uses: actions/checkout@v7
+      - name: Docs-only PR; app build skipped
+        if: needs.changes.outputs.docs-only == 'true'
+        run: echo "Docs-only PR; step skipped."
+      - uses: pnpm/action-setup@v6
+        if: needs.changes.outputs.docs-only != 'true'
+        with:
+          version: 11.5.0
+      - uses: actions/setup-node@v7
+        if: needs.changes.outputs.docs-only != 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        if: needs.changes.outputs.docs-only != 'true'
+      - name: Restore Next.js build cache
+        if: needs.changes.outputs.docs-only != 'true'
+        uses: actions/cache@v6
+        with:
+          path: .next/cache
+          key: ${{ runner.os }}-nextjs-appbuild-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-appbuild-
       - name: Build
+        if: needs.changes.outputs.docs-only != 'true'
         run: pnpm build
+
+  verify:
+    # Required-check aggregator: keeps the branch-protection name
+    # "Lint, typecheck, test, build" while the real work runs in the leaf
+    # jobs above in parallel. Fails if any leaf failed or was cancelled.
+    name: Lint, typecheck, test, build
+    needs: [lint, typecheck, test, db-drift, app-build]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate summary
+        run: |
+          results="${{ join(needs.*.result, ' ') }}"
+          echo "leaf results: $results"
+          if echo "$results" | grep -Eq 'failure|cancelled'; then
+            echo "::error::one or more gating checks failed"
+            exit 1
+          fi
+          echo "All gating checks passed."
 
   workers-build:
     # No secrets or placeholder env on purpose: this job fails if the Worker
     # build ever starts needing DATABASE_URL or NEON_AUTH_* again.
     name: Cloudflare Worker bundle (no secrets)
     needs: changes
-    # Skipped on docs-only pull requests; a skipped job reports success, so the
-    # required check still passes. If path detection fails, docs-only is not
-    # "true" and the full job runs.
-    if: ${{ !cancelled() && needs.changes.outputs.docs-only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+      - name: Docs-only PR; Worker bundle steps skipped
+        if: needs.changes.outputs.docs-only == 'true'
+        run: echo "Docs-only PR; Worker bundle steps skipped to keep PR turnaround fast."
       - uses: pnpm/action-setup@v6
+        if: needs.changes.outputs.docs-only != 'true'
         with:
           version: 11.5.0
       - uses: actions/setup-node@v7
+        if: needs.changes.outputs.docs-only != 'true'
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        if: needs.changes.outputs.docs-only != 'true'
       - name: Verify no secrets are present
+        if: needs.changes.outputs.docs-only != 'true'
         run: |
           if [ -n "${NEON_AUTH_BASE_URL:-}" ] || [ -n "${NEON_AUTH_COOKIE_SECRET:-}" ] || [ -n "${DATABASE_URL:-}" ]; then
             echo "This job must run without database or auth secrets."
             exit 1
           fi
+      - name: Restore Next.js build cache (worker bundle)
+        if: needs.changes.outputs.docs-only != 'true'
+        uses: actions/cache@v6
+        with:
+          path: .next/cache
+          key: ${{ runner.os }}-nextjs-cfbuild-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-cfbuild-
       - name: Build Cloudflare Worker bundle
+        if: needs.changes.outputs.docs-only != 'true'
         run: pnpm cf:build
       - name: Test blog routes in Cloudflare Worker runtime
+        if: needs.changes.outputs.docs-only != 'true'
         run: pnpm test:blog-worker
       - name: Smoke test built Worker (wrangler dev)
+        if: needs.changes.outputs.docs-only != 'true'
         run: pnpm cf:smoke
       - name: Validate complete Worker upload (dry run)
+        if: needs.changes.outputs.docs-only != 'true'
         run: pnpm exec wrangler deploy --dry-run --env staging --outdir .wrangler/audit-bundle
       # .open-next/worker.js is only the ~2 KB entry shim; wrangler bundles it
       # into the modules under .wrangler/audit-bundle, which are what uploads.
@@ -130,6 +275,7 @@ jobs:
       # grow past the limit unnoticed. Cloudflare counts the compressed script
       # size against the 10 MB paid limit.
       - name: Check Worker size (10 MB compressed paid-plan limit)
+        if: needs.changes.outputs.docs-only != 'true'
         run: |
           dir=.wrangler/audit-bundle
           raw=0
@@ -150,6 +296,7 @@ jobs:
             exit 1
           fi
       - uses: actions/upload-artifact@v7
+        if: needs.changes.outputs.docs-only != 'true'
         with:
           name: worker-bundle
           path: .wrangler/audit-bundle
