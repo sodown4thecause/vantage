@@ -638,6 +638,24 @@ describe("token exchange", () => {
 });
 
 describe("MCP authentication", () => {
+  it("accepts a store written before the subject revoke existed", () => {
+    // Compile-time guard. If revokeTokensForSubject became required, this object
+    // would fail typecheck, and so would every test double on the stacked
+    // branches that predates it.
+    const minimal: AgentStore = {
+      getClient: async () => null,
+      createClient: async () => {},
+      createAuthorizationCode: async () => {},
+      consumeAuthorizationCode: async () => null,
+      createToken: async () => {},
+      findToken: async () => null,
+      revokeToken: async () => false,
+      revokeTokenFamily: async () => 0,
+      audit: async () => {},
+    };
+    expect(minimal.revokeTokensForSubject).toBeUndefined();
+  });
+
   async function seedAccessToken(store: ReturnType<typeof createFakeStore>, expiresAt: Date) {
     const raw = "vat_test_token";
     await store.createToken({
