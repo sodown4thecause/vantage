@@ -4,7 +4,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 const mocks = vi.hoisted(() => ({ condition: undefined as unknown, query: undefined as unknown, select: vi.fn(), update: vi.fn() }));
 vi.mock("@/lib/db/client", () => ({ getDb: () => ({ select: mocks.select, update: mocks.update }) }));
 
-import { getContentBrandVoiceProfile, getContentThread, getContentThreadContext, listContentDraftsForThread, updateContentDraft } from "@/lib/content-agent/repository";
+import { getContentBrandVoiceProfile, getContentDraft, getContentThread, getContentThreadContext, listContentDraftsForThread, updateContentDraft } from "@/lib/content-agent/repository";
 
 const workspaceId = "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a11";
 const threadId = "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a12";
@@ -74,6 +74,19 @@ describe("Content repository", () => {
     expect(mocks.update).toHaveBeenCalledOnce();
     const updateQuery = mocks.update.mock.results[0]?.value as { set: ReturnType<typeof vi.fn> };
     expect(updateQuery.set).toHaveBeenCalledWith(expect.objectContaining({ title: "Edited", body: "Updated copy" }));
+    const filter = new PgDialect().sqlToQuery(mocks.condition as never);
+    expect(filter.sql).toContain('"content_draft"."workspace_id" = $1');
+    expect(filter.sql).toContain('"content_draft"."id" = $2');
+    expect(filter.params).toEqual([workspaceId, draftId]);
+  });
+
+  it("loads a saved draft only when both its ID and workspace match", async () => {
+    const draftId = "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a13";
+    const draft = { id: draftId, workspaceId, body: "Sources\n- https://source.example/page" };
+    const query = mocks.query as { limit: ReturnType<typeof vi.fn> };
+    query.limit.mockResolvedValueOnce([draft]);
+
+    await expect(getContentDraft(workspaceId, draftId)).resolves.toEqual(draft);
     const filter = new PgDialect().sqlToQuery(mocks.condition as never);
     expect(filter.sql).toContain('"content_draft"."workspace_id" = $1');
     expect(filter.sql).toContain('"content_draft"."id" = $2');

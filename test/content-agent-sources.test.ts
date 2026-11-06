@@ -18,7 +18,7 @@ vi.mock("@/lib/dataforseo/labs", () => ({
 }));
 vi.mock("@/lib/dataforseo/backlinks", () => ({ normalizeTarget: mocks.normalizeTarget }));
 
-import { appendContentSourceCitations, createContentSourceTools } from "@/lib/content-agent/sources";
+import { appendContentSourceCitations, createContentSourceTools, extractContentSourceCitations } from "@/lib/content-agent/sources";
 
 type Runnable = {
   inputSchema: { safeParse: (input: unknown) => { success: boolean } };
@@ -162,8 +162,39 @@ describe("Content source tools", () => {
     ];
 
     expect(appendContentSourceCitations(`See [the page](${parenthesizedUrl}) and ${punctuationUrl}`, citations)).toContain(parenthesizedUrl);
-    expect(appendContentSourceCitations(`See ${parenthesizedUrl}.`, [{ title: "Parenthesized source", url: parenthesizedUrl }])).toBe(`See ${parenthesizedUrl}.`);
-    expect(appendContentSourceCitations("See https://example.com/wiki/Foo.", [{ title: "Source", url: "https://example.com/wiki/Foo" }])).toBe("See https://example.com/wiki/Foo.");
+    expect(appendContentSourceCitations(`See ${parenthesizedUrl}.`, [{ title: "Parenthesized source", url: parenthesizedUrl }])).toBe(
+      `See ${parenthesizedUrl}.\n\nSources:\n- ${parenthesizedUrl}`,
+    );
+    expect(appendContentSourceCitations("See https://example.com/wiki/Foo.", [{ title: "Source", url: "https://example.com/wiki/Foo" }])).toBe(
+      "See https://example.com/wiki/Foo.\n\nSources:\n- https://example.com/wiki/Foo",
+    );
+  });
+
+  it("reloads only listed saved source citations while preserving balanced and trailing-punctuation URLs", () => {
+    const body = [
+      "Source-backed copy references https://community.example/thread/1.",
+      "",
+      "Sources:",
+      "- https://example.com/wiki/Foo_(bar)",
+      "- https://example.com/end.",
+    ].join("\n");
+
+    expect(extractContentSourceCitations(body)).toEqual([
+      { title: "Saved source", url: "https://example.com/wiki/Foo_(bar)" },
+      { title: "Saved source", url: "https://example.com/end." },
+    ]);
+  });
+
+  it("does not treat arbitrary inline URLs as verified saved citations", () => {
+    expect(extractContentSourceCitations("An ordinary draft mentions https://example.com/claim.")).toEqual([]);
+    expect(extractContentSourceCitations("Bold text **https://example.com/claim** is not a source-list citation.")).toEqual([]);
+  });
+
+  it("adds a durable Sources list when a verified citation already appears inline", () => {
+    const body = `Grounded copy references ${conversationUrl}.`;
+    expect(appendContentSourceCitations(body, [{ title: "Verified", url: conversationUrl }])).toBe(
+      `${body}\n\nSources:\n- ${conversationUrl}`,
+    );
   });
 
   it.each([

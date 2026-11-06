@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   createThread: vi.fn(),
   getThread: vi.fn(),
   getBrandProfile: vi.fn(),
+  getDraft: vi.fn(),
   appendMessage: vi.fn(),
   createAgent: vi.fn(),
   createResponse: vi.fn(),
@@ -16,6 +17,7 @@ vi.mock("@/lib/content-agent/repository", () => ({
   createContentThread: mocks.createThread,
   getContentThreadContext: mocks.getThread,
   getContentBrandVoiceProfile: mocks.getBrandProfile,
+  getContentDraft: mocks.getDraft,
   appendContentMessage: mocks.appendMessage,
 }));
 vi.mock("@/lib/content-agent/agent", () => ({ createContentAgent: mocks.createAgent }));
@@ -37,6 +39,7 @@ beforeEach(() => {
   mocks.createThread.mockReset().mockResolvedValue({ id: threadId, workspaceId, title: "Write a post" });
   mocks.getThread.mockReset().mockResolvedValue({ thread: { id: threadId }, messages: [] });
   mocks.getBrandProfile.mockReset().mockResolvedValue(null);
+  mocks.getDraft.mockReset().mockResolvedValue(null);
   mocks.appendMessage.mockReset().mockImplementation(async (args) => ({
     id: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a13",
     ...args,
@@ -105,6 +108,46 @@ describe("POST /api/content/chat", () => {
     expect(mocks.createThread).toHaveBeenCalledWith(workspaceId, message);
     expect(mocks.appendMessage).toHaveBeenCalledWith(expect.objectContaining({ workspaceId, threadId, role: "user", content: message }));
     expect(mocks.createAgent).toHaveBeenCalledWith(expect.objectContaining({ workspaceId, threadId, draftUpdate }));
+  });
+
+  it("reloads the source draft by workspace-scoped ID for repurposing", async () => {
+    const draftId = "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a13";
+    const originalDraft = {
+      id: draftId,
+      workspaceId,
+      threadId,
+      title: "Original source-backed draft",
+      body: "Original copy\n\nSources:\n- https://community.example/thread/1",
+      format: "blog_post",
+    };
+    mocks.getDraft.mockResolvedValue(originalDraft);
+
+    const response = await POST(request({
+      workspaceId,
+      threadId,
+      message: "Create a private LinkedIn version.",
+      repurposeDraft: { draftId, format: "linkedin_post" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.getDraft).toHaveBeenCalledWith(workspaceId, draftId);
+    expect(mocks.createAgent).toHaveBeenCalledWith(expect.objectContaining({
+      repurposeCitations: [{ title: "Saved source", url: "https://community.example/thread/1" }],
+    }));
+  });
+
+  it("does not reveal a repurpose draft unavailable in the authorized workspace", async () => {
+    const response = await POST(request({
+      workspaceId,
+      threadId,
+      message: "Create a private LinkedIn version.",
+      repurposeDraft: { draftId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a13", format: "linkedin_post" },
+    }));
+
+    expect(response.status).toBe(404);
+    expect(mocks.createThread).not.toHaveBeenCalled();
+    expect(mocks.appendMessage).not.toHaveBeenCalled();
+    expect(mocks.createAgent).not.toHaveBeenCalled();
   });
 
   it("rejects structured draft edits when the request does not preserve exact text", async () => {

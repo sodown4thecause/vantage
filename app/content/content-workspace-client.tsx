@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useReducer, useRef, useState, type FormEvent } from "react";
 
+import type { ContentDraftRepurposeInput } from "@/lib/content-agent/contracts";
 import type { ContentBrandVoiceProfileRow, ContentDraftRow, ContentMessageRow, ContentThreadRow } from "@/lib/content-agent/repository";
 
 import { buildContentDraftUpdatePrompt, buildContentRepurposePrompt, buildContentSectionRegenerationPrompt, contentDraftSaveReducer, contentDraftSections, contentDraftUpdateSucceeded, contentDraftsNeedingRestore, ContentToolCard, type ContentCardDraft, type ContentDraftSaveResult, type ContentSectionProposal, type ContentToolPart } from "./content-workspace-cards";
@@ -42,6 +43,13 @@ function formatLabel(format: ContentDraftRow["format"]): string {
 
 function dateLabel(date: Date): string {
   return new Intl.DateTimeFormat("en-AU", { timeZone: "UTC", day: "numeric", month: "short" }).format(date);
+}
+
+export function contentRepurposeDraftAfterFinish(
+  pending: ContentDraftRepurposeInput | null,
+  outcome: { isAbort: boolean; isDisconnect: boolean; isError: boolean },
+): ContentDraftRepurposeInput | null {
+  return outcome.isAbort || outcome.isDisconnect || outcome.isError ? pending : null;
 }
 
 function toolDraftId(part: ContentToolPart): string | null {
@@ -101,6 +109,7 @@ export function ContentWorkspaceClient({
           message: latestUser ? textOf(latestUser) : "",
           preserveText: body?.preserveText === true,
           draftUpdate: body?.draftUpdate,
+          repurposeDraft: body?.repurposeDraft,
           retry: body?.retry === true || trigger === "regenerate-message",
         },
       };
@@ -108,13 +117,14 @@ export function ContentWorkspaceClient({
   }), [selectThread, workspaceId]);
   const pendingSectionProposal = useRef<Omit<ContentSectionProposal, "text"> | null>(null);
   const pendingDraftSave = useRef<Pick<ContentDraftSaveResult, "draftId" | "title" | "body"> | null>(null);
+  const pendingRepurposeDraft = useRef<ContentDraftRepurposeInput | null>(null);
   const [sectionProposal, setSectionProposal] = useState<ContentSectionProposal | null>(null);
   const [draftSaveState, dispatchDraftSave] = useReducer(contentDraftSaveReducer, { confirmed: {}, results: {} });
   const [savingDraftId, setSavingDraftId] = useState<string | null>(null);
   const { messages: turns, sendMessage, setMessages, clearError, status, error, stop } = useChat<ContentChatMessage>({
     transport,
     messages,
-    onFinish: ({ message }) => {
+    onFinish: ({ message, isAbort, isDisconnect, isError }) => {
       const completedThreadId = message.metadata?.threadId ?? threadId;
       if (completedThreadId) selectThread(completedThreadId);
       const pendingSection = pendingSectionProposal.current;
@@ -131,6 +141,11 @@ export function ContentWorkspaceClient({
           && contentDraftUpdateSucceeded((part as ContentToolPart).output, pendingSave));
         dispatchDraftSave({ type: "finished", result: { ...pendingSave, ok: saved } });
       }
+      pendingRepurposeDraft.current = contentRepurposeDraftAfterFinish(pendingRepurposeDraft.current, {
+        isAbort,
+        isDisconnect,
+        isError,
+      });
       router.refresh();
     },
     onError: () => {
@@ -149,16 +164,18 @@ export function ContentWorkspaceClient({
     threadDrafts.map((draft): ContentCardDraft => ({ draftId: draft.id, title: draft.title, body: draft.body, format: draft.format })),
     turns.map((turn) => ({ parts: turn.parts as ContentToolPart[] })),
   );
-  const send = (text: string, preserve?: "section" | "draft") => {
+  const send = (text: string, preserve?: "section" | "draft", repurposeDraft?: ContentDraftRepurposeInput) => {
     const prompt = preserve === "draft" ? text : text.trim();
     if (!prompt.trim() || busy) return;
     if (preserve !== "section") pendingSectionProposal.current = null;
     if (preserve !== "draft") pendingDraftSave.current = null;
+    pendingRepurposeDraft.current = repurposeDraft ?? null;
     void sendMessage({ text: prompt }, { body: {
       workspaceId,
       threadId: threadId ?? undefined,
       preserveText: preserve === "draft",
       ...(preserve === "draft" && pendingDraftSave.current ? { draftUpdate: pendingDraftSave.current } : {}),
+      ...(repurposeDraft ? { repurposeDraft } : {}),
     } });
   };
   const regenerateSection = (draft: Parameters<typeof buildContentSectionRegenerationPrompt>[0], sectionIndex: number) => {
@@ -174,7 +191,7 @@ export function ContentWorkspaceClient({
   };
   const repurposeDraft = (draft: Parameters<typeof buildContentRepurposePrompt>[0], format: Parameters<typeof buildContentRepurposePrompt>[1]) => {
     if (busy) return;
-    send(buildContentRepurposePrompt(draft, format));
+    send(buildContentRepurposePrompt(draft, format), undefined, { draftId: draft.draftId, format });
   };
   const saveDraft = (draft: Parameters<typeof buildContentDraftUpdatePrompt>[0]) => {
     if (busy) return;
@@ -206,6 +223,7 @@ export function ContentWorkspaceClient({
         retry: true,
         preserveText: pendingDraftSave.current !== null,
         ...(pendingDraftSave.current ? { draftUpdate: pendingDraftSave.current } : {}),
+        ...(pendingRepurposeDraft.current ? { repurposeDraft: pendingRepurposeDraft.current } : {}),
       },
     });
   };

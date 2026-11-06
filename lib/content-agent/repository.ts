@@ -137,6 +137,13 @@ export async function createContentDraft(args: {
   return draft;
 }
 
+export async function getContentDraft(workspaceId: string, draftId: string): Promise<ContentDraftRow | null> {
+  const [draft] = await getDb().select().from(contentDraft)
+    .where(and(eq(contentDraft.workspaceId, workspaceId), eq(contentDraft.id, draftId)))
+    .limit(1);
+  return draft ?? null;
+}
+
 export async function updateContentDraft(args: {
   workspaceId: string;
   draftId: string;

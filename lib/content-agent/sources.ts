@@ -53,6 +53,16 @@ function isReturnedUrl(raw: string, allowed: Set<string>): boolean {
   return allowed.has(withoutMarkdownDelimiter.replace(/[.,;:!?]+$/, ""));
 }
 
+export function extractContentSourceCitations(body: string): ContentSourceCitation[] {
+  const sourcesSection = /(?:^|\n)Sources:\s*\n([\s\S]*)$/i.exec(body);
+  const listedCitations = (sourcesSection?.[1] ?? "").split(/\r?\n/).flatMap((line) => {
+    const match = /^[ \t]*-[ \t]+(https?:\/\/\S+)[ \t]*$/i.exec(line);
+    const citation = match ? safeCitation("Saved source", match[1]) : null;
+    return citation ? [citation] : [];
+  });
+  return unique(listedCitations);
+}
+
 export function appendContentSourceCitations(body: string, citations: ContentSourceCitation[]): string {
   const checked = citations.map((item) => safeCitation(item.title, item.url));
   if (checked.some((item) => item === null)) throw new Error("Unsafe source citation.");
@@ -62,8 +72,17 @@ export function appendContentSourceCitations(body: string, citations: ContentSou
   for (const raw of new Set(draftUrls)) {
     if (!isReturnedUrl(raw, allowed)) throw new Error("Draft contains a citation URL that was not returned by a source tool.");
   }
-  const missing = sources.filter((item) => !body.includes(item.url));
-  return missing.length ? `${body.trimEnd()}\n\nSources:\n${missing.map((item) => `- ${item.url}`).join("\n")}` : body.trim();
+  if (!sources.length) return body.trim();
+  const sourcesSection = /(?:^|\n)Sources:\s*\n([\s\S]*)$/i.exec(body);
+  const listedUrls = new Set((sourcesSection?.[1] ?? "").split(/\r?\n/).flatMap((line) => {
+    const match = /^[ \t]*-[ \t]+(https?:\/\/\S+)[ \t]*$/i.exec(line);
+    const citation = match ? safeCitation("Saved source", match[1]) : null;
+    return citation ? [citation.url] : [];
+  }));
+  const missing = sources.filter((item) => !listedUrls.has(item.url));
+  if (!missing.length) return body;
+  const rows = (sourcesSection ? missing : sources).map((item) => `- ${item.url}`).join("\n");
+  return `${body.trimEnd()}${sourcesSection ? "\n" : "\n\nSources:\n"}${rows}`;
 }
 
 function notify(callback: ((notice: SourceLookupNotice) => void) | undefined, citations: ContentSourceCitation[] = [], unsafeCitation = false) {

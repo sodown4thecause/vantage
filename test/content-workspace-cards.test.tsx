@@ -199,6 +199,31 @@ describe("Content generative cards", () => {
     expect(otherCard.results[draft.draftId]).toEqual(afterFailure.results[draft.draftId]);
   });
 
+  it("replaces only the selected text range and preserves formatting outside it", () => {
+    const body = [
+      "# Intro",
+      "",
+      "",
+      "\tSelected section  ",
+      " \t",
+      "",
+      "",
+      "  ```ts",
+      "  const value = 1;",
+      "",
+      "  console.log(value);",
+      "  ```",
+      "",
+      "",
+      "# Tail",
+      "",
+    ].join("\n");
+
+    expect(replaceContentDraftSection(body, 1, "Regenerated section", "Selected section")).toBe(
+      body.replace("Selected section", "Regenerated section"),
+    );
+  });
+
   it("keeps regeneration as an unapplied proposal and repurposes only through private drafting", () => {
     const regeneration = buildContentSectionRegenerationPrompt(draft, 1);
     expect(regeneration).toContain("Regenerate section 2");

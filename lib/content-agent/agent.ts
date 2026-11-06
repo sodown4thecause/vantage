@@ -4,7 +4,7 @@ import { z } from "zod";
 import { createHumanisedContentDraft } from "./drafts";
 import { contentBrandVoiceProfileSchema, contentDraftInputSchema, contentDraftUpdateInputSchema, type ContentBrandVoiceProfile, type ContentDraftUpdateInput } from "./contracts";
 import { createContentGatewayModel, type ContentAgentModels } from "./models";
-import { appendContentSourceCitations, createContentSourceTools } from "./sources";
+import { appendContentSourceCitations, createContentSourceTools, type ContentSourceCitation } from "./sources";
 import type { ContentBrandVoiceProfileRow } from "./repository";
 import { saveContentBrandVoiceProfile, updateContentDraft } from "./repository";
 
@@ -35,6 +35,7 @@ export function createContentAgent(args: {
   models: ContentAgentModels;
   brandVoiceProfile: ContentBrandVoiceProfileRow | null;
   draftUpdate?: ContentDraftUpdateInput;
+  repurposeCitations?: ContentSourceCitation[];
 }) {
   let brandVoiceProfile: ContentBrandVoiceProfile | null = args.brandVoiceProfile
     ? {
@@ -51,6 +52,7 @@ export function createContentAgent(args: {
     citations: [] as Array<{ title: string; url: string }>,
     unsafeCitation: false,
   };
+  let repurposeCitations = args.repurposeCitations ?? [];
   const usedSourceUrls = new Set<string>();
   const sourceTools = createContentSourceTools({
     workspaceId: args.workspaceId,
@@ -98,14 +100,19 @@ export function createContentAgent(args: {
 
           const hasSourcesSection = /(?:^|\n)Sources:\s*(?:\n|$)/i.test(input.body);
           const reusesSourceUrl = [...usedSourceUrls].some((url) => input.body.includes(url));
-          const sourceBacked = lookup.performed || requestedSourceBacked || hasSourcesSection || reusesSourceUrl;
-          if (sourceBacked && lookup.citations.length === 0) {
-            if (!lookup.performed && (hasSourcesSection || reusesSourceUrl)) {
+          if (lookup.performed && lookup.citations.length === 0) {
+            if (!repurposeCitations.length && (hasSourcesSection || reusesSourceUrl)) {
               appendContentSourceCitations(input.body, []);
             }
             throw new Error("Cannot save a source-based draft without a safe source citation.");
           }
-          const citations = sourceBacked ? lookup.citations : [];
+          const citations = [...repurposeCitations, ...lookup.citations];
+          repurposeCitations = [];
+          const sourceBacked = lookup.performed || requestedSourceBacked || hasSourcesSection || reusesSourceUrl || citations.length > 0;
+          if (sourceBacked && citations.length === 0) {
+            if (hasSourcesSection || reusesSourceUrl) appendContentSourceCitations(input.body, []);
+            throw new Error("Cannot save a source-based draft without a safe source citation.");
+          }
           const draftInput = {
             ...input,
             body: sourceBacked ? appendContentSourceCitations(input.body, citations) : input.body,
