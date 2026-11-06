@@ -126,21 +126,6 @@ function createFakeStore() {
       }
       return revoked;
     },
-    async revokeTokensForSubject(input, now) {
-      let revoked = 0;
-      for (const row of tokens.values()) {
-        if (
-          row.clientId === input.clientId &&
-          row.userId === input.userId &&
-          row.workspaceId === input.workspaceId &&
-          !row.revokedAt
-        ) {
-          row.revokedAt = now;
-          revoked += 1;
-        }
-      }
-      return revoked;
-    },
     async audit(entry) {
       audits.push(entry);
     },
@@ -541,7 +526,7 @@ describe("token exchange", () => {
     expect(phoneRefresh.ok).toBe(true);
   });
 
-  it("revokes the whole subject when a pre-family token is replayed", async () => {
+  it("revokes a pre-family token's replacement when the original is replayed", async () => {
     const store = state.store as ReturnType<typeof createFakeStore>;
     const now = new Date("2026-11-06T00:01:00Z");
     const legacy = "vrt_legacy";
@@ -566,7 +551,13 @@ describe("token exchange", () => {
     expect(rotated.ok).toBe(true);
     if (!rotated.ok) return;
 
-    // Replaying the legacy token must kill its unlinked replacement too.
+    // The replacement is seeded with the legacy token's id as its family, so a
+    // replay of the legacy token can still find it.
+    const legacyRow = [...store.tokens.values()].find(
+      (row) => row.kind === "refresh" && row.familyId !== null,
+    );
+    expect(legacyRow?.familyId).toBeTruthy();
+
     const replay = await refreshAccessToken(store, {
       clientId: "vcl_test",
       refreshToken: legacy,

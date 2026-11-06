@@ -253,17 +253,10 @@ export async function refreshAccessToken(
     // A rotated token was replayed. Either the client raced itself or a thief is
     // holding a copy, so revoke this grant's family: the next legitimate refresh
     // fails and the user re-authorizes, while other devices keep working.
-    if (record.familyId) {
-      await store.revokeTokenFamily(record.familyId, input.now);
-    } else {
-      // A token issued before families existed has no family to revoke, and its
-      // replacement is unlinked. Fall back to the whole client and subject so a
-      // stolen token's replacement cannot outlive detection.
-      await store.revokeTokensForSubject(
-        { clientId: record.clientId, userId: record.userId, workspaceId: record.workspaceId },
-        input.now,
-      );
-    }
+    // A token issued before families existed has no family of its own, but its
+    // replacement was given this token's id as its family at rotation time, so
+    // revoking that id still kills the replacement.
+    await store.revokeTokenFamily(record.familyId ?? record.id, input.now);
     return invalidGrant("The refresh token was already used; the session was revoked.");
   }
   if (record.expiresAt.getTime() <= input.now.getTime()) {
@@ -284,7 +277,9 @@ export async function refreshAccessToken(
       pepper: input.pepper,
       now: input.now,
       rotatedFrom: record.id,
-      familyId: record.familyId ?? crypto.randomUUID(),
+      // A legacy token seeds the family with its own id, so a later replay of it
+      // can still find and revoke the replacement.
+      familyId: record.familyId ?? record.id,
     }),
   };
 }
