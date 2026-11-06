@@ -1,5 +1,5 @@
 {
-  "id": "c683a950-1f12-4a7b-acb4-5d8d61ee3b3f",
+  "id": "f3efb76b-ac97-4890-a08e-3f33a288d0a1",
   "prevId": "1b4db5e6-62c9-4953-87c7-e32723986849",
   "version": "7",
   "dialect": "postgresql",
@@ -2156,6 +2156,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "family_id": {
+          "name": "family_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2200,6 +2206,21 @@
           "columns": [
             {
               "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "oauth_token_family_idx": {
+          "name": "oauth_token_family_idx",
+          "columns": [
+            {
+              "expression": "family_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

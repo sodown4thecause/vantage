@@ -163,6 +163,7 @@ async function issueTokens(
     pepper: string;
     now: Date;
     rotatedFrom?: string | null;
+    familyId: string;
   },
 ): Promise<TokenResponse> {
   const accessToken = randomToken("vat");
@@ -175,6 +176,7 @@ async function issueTokens(
     workspaceId: input.workspaceId,
     scopes: input.scopes,
     expiresAt: new Date(input.now.getTime() + AGENT_ACCESS_TOKEN_TTL_SECONDS * 1_000),
+    familyId: input.familyId,
   });
   await store.createToken({
     tokenHash: await hashSecret(refreshToken, input.pepper),
@@ -185,6 +187,7 @@ async function issueTokens(
     scopes: input.scopes,
     expiresAt: new Date(input.now.getTime() + AGENT_REFRESH_TOKEN_TTL_SECONDS * 1_000),
     rotatedFrom: input.rotatedFrom ?? null,
+    familyId: input.familyId,
   });
   return {
     access_token: accessToken,
@@ -233,6 +236,7 @@ export async function exchangeAuthorizationCode(
       scopes: record.scopes,
       pepper: input.pepper,
       now: input.now,
+      familyId: crypto.randomUUID(),
     }),
   };
 }
@@ -247,12 +251,9 @@ export async function refreshAccessToken(
   if (record.clientId !== input.clientId) return invalidGrant("The token was issued to another client.");
   if (record.revokedAt) {
     // A rotated token was replayed. Either the client raced itself or a thief is
-    // holding a copy, so revoke the whole family: the next legitimate refresh
-    // fails and the user re-authorizes, which is the safe outcome.
-    await store.revokeTokensForSubject(
-      { clientId: record.clientId, userId: record.userId, workspaceId: record.workspaceId },
-      input.now,
-    );
+    // holding a copy, so revoke this grant's family: the next legitimate refresh
+    // fails and the user re-authorizes, while other devices keep working.
+    if (record.familyId) await store.revokeTokenFamily(record.familyId, input.now);
     return invalidGrant("The refresh token was already used; the session was revoked.");
   }
   if (record.expiresAt.getTime() <= input.now.getTime()) {
@@ -273,6 +274,7 @@ export async function refreshAccessToken(
       pepper: input.pepper,
       now: input.now,
       rotatedFrom: record.id,
+      familyId: record.familyId ?? crypto.randomUUID(),
     }),
   };
 }

@@ -54,6 +54,7 @@ type FakeToken = {
   scopes: string[];
   expiresAt: Date;
   revokedAt: Date | null;
+  familyId: string | null;
 };
 
 function createFakeStore() {
@@ -103,6 +104,7 @@ function createFakeStore() {
         scopes: input.scopes,
         expiresAt: input.expiresAt,
         revokedAt: null,
+        familyId: input.familyId,
       });
     },
     async findToken(tokenHash) {
@@ -114,15 +116,10 @@ function createFakeStore() {
       row.revokedAt = now;
       return true;
     },
-    async revokeTokensForSubject(input, now) {
+    async revokeTokenFamily(familyId, now) {
       let revoked = 0;
       for (const row of tokens.values()) {
-        if (
-          row.clientId === input.clientId &&
-          row.userId === input.userId &&
-          row.workspaceId === input.workspaceId &&
-          !row.revokedAt
-        ) {
+        if (row.familyId === familyId && !row.revokedAt) {
           row.revokedAt = now;
           revoked += 1;
         }
@@ -481,6 +478,53 @@ describe("token exchange", () => {
     const hash = await hashSecret(issued.body.access_token, PEPPER);
     expect(store.tokens.get(hash)?.revokedAt).not.toBeNull();
   });
+
+  it("revokes only the replayed grant's family, not another device's", async () => {
+    const store = state.store as ReturnType<typeof createFakeStore>;
+    await seedClient(store);
+    const now = new Date("2026-11-06T00:01:00Z");
+
+    const grant = async () => {
+      const { code, verifier } = await issueCode(store);
+      const issued = await exchangeAuthorizationCode(store, {
+        clientId: "vcl_test",
+        code,
+        redirectUri: REDIRECT,
+        codeVerifier: verifier,
+        pepper: PEPPER,
+        now,
+      });
+      if (!issued.ok) throw new Error("expected tokens");
+      return issued.body;
+    };
+
+    const laptop = await grant();
+    const phone = await grant();
+
+    // Replay the laptop's rotated token: its family dies.
+    const rotated = await refreshAccessToken(store, {
+      clientId: "vcl_test",
+      refreshToken: laptop.refresh_token,
+      pepper: PEPPER,
+      now,
+    });
+    expect(rotated.ok).toBe(true);
+    await refreshAccessToken(store, {
+      clientId: "vcl_test",
+      refreshToken: laptop.refresh_token,
+      pepper: PEPPER,
+      now,
+    });
+
+    // The phone's grant is untouched.
+    const phoneRefresh = await refreshAccessToken(store, {
+      clientId: "vcl_test",
+      refreshToken: phone.refresh_token,
+      pepper: PEPPER,
+      now,
+    });
+    expect(phoneRefresh.ok).toBe(true);
+  });
 });
 
 describe("MCP authentication", () => {
@@ -494,6 +538,7 @@ describe("MCP authentication", () => {
       workspaceId: "11111111-1111-4111-8111-111111111111",
       scopes: ["vantage.read"],
       expiresAt,
+      familyId: crypto.randomUUID(),
     });
     return raw;
   }

@@ -34,6 +34,7 @@ export type TokenRecord = {
   scopes: string[];
   expiresAt: Date;
   revokedAt: Date | null;
+  familyId: string | null;
 };
 
 export type AuditEntry = {
@@ -75,19 +76,17 @@ export type AgentStore = {
     scopes: string[];
     expiresAt: Date;
     rotatedFrom?: string | null;
+    familyId: string;
   }): Promise<void>;
   findToken(tokenHash: string): Promise<TokenRecord | null>;
   /** Atomically revokes. False means it was already revoked or unknown. */
   revokeToken(tokenHash: string, now: Date): Promise<boolean>;
   /**
-   * Revokes every live token for one client and subject. Used when a rotated
-   * refresh token is replayed: the whole session family is compromised, so the
-   * thief's tokens must die with the victim's.
+   * Revokes every live token in one authorization family. Used when a rotated
+   * refresh token is replayed: that grant is compromised, so the thief's tokens
+   * die with the victim's, while other devices keep working.
    */
-  revokeTokensForSubject(
-    input: { clientId: string; userId: string | null; workspaceId: string | null },
-    now: Date,
-  ): Promise<number>;
+  revokeTokenFamily(familyId: string, now: Date): Promise<number>;
   audit(entry: AuditEntry): Promise<void>;
 };
 
@@ -154,6 +153,7 @@ export function drizzleAgentStore(): AgentStore {
         scopes: input.scopes,
         expiresAt: input.expiresAt,
         rotatedFrom: input.rotatedFrom ?? null,
+        familyId: input.familyId,
       });
     },
 
@@ -173,6 +173,7 @@ export function drizzleAgentStore(): AgentStore {
             scopes: row.scopes ?? [],
             expiresAt: row.expiresAt,
             revokedAt: row.revokedAt,
+            familyId: row.familyId,
           }
         : null;
     },
@@ -186,20 +187,11 @@ export function drizzleAgentStore(): AgentStore {
       return rows.length > 0;
     },
 
-    async revokeTokensForSubject(input, now) {
+    async revokeTokenFamily(familyId, now) {
       const rows = await getDb()
         .update(oauthToken)
         .set({ revokedAt: now })
-        .where(
-          and(
-            eq(oauthToken.clientId, input.clientId),
-            input.userId === null ? isNull(oauthToken.userId) : eq(oauthToken.userId, input.userId),
-            input.workspaceId === null
-              ? isNull(oauthToken.workspaceId)
-              : eq(oauthToken.workspaceId, input.workspaceId),
-            isNull(oauthToken.revokedAt),
-          ),
-        )
+        .where(and(eq(oauthToken.familyId, familyId), isNull(oauthToken.revokedAt)))
         .returning({ id: oauthToken.id });
       return rows.length;
     },

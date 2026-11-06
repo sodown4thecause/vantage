@@ -70,15 +70,10 @@ function createFakeStore() {
       row.revokedAt = now;
       return true;
     },
-    async revokeTokensForSubject(input, now) {
+    async revokeTokenFamily(familyId, now) {
       let revoked = 0;
       for (const row of tokens.values()) {
-        if (
-          row.clientId === input.clientId &&
-          row.userId === input.userId &&
-          row.workspaceId === input.workspaceId &&
-          !row.revokedAt
-        ) {
+        if (row.familyId === familyId && !row.revokedAt) {
           row.revokedAt = now;
           revoked += 1;
         }
@@ -305,6 +300,7 @@ describe("MCP route", () => {
       workspaceId: null,
       scopes: ["vantage.read"],
       expiresAt: new Date(Date.now() + 60_000),
+      familyId: crypto.randomUUID(),
     });
 
     const init = await mcpPost(
@@ -330,6 +326,7 @@ describe("MCP route", () => {
       workspaceId: null,
       scopes: ["vantage.read"],
       expiresAt: new Date(Date.now() + 60_000),
+      familyId: crypto.randomUUID(),
     });
     const request = new Request(`${ORIGIN}/api/mcp`, {
       method: "POST",

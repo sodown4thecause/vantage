@@ -1292,12 +1292,19 @@ export const oauthToken = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     rotatedFrom: uuid("rotated_from"),
+    /**
+     * One id per authorization grant, copied onto every token it rotates into.
+     * Replaying a rotated token revokes this family only, so a second device's
+     * connection survives.
+     */
+    familyId: uuid("family_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     uniqueIndex("oauth_token_hash_uidx").on(table.tokenHash),
     index("oauth_token_client_idx").on(table.clientId),
     index("oauth_token_workspace_idx").on(table.workspaceId),
+    index("oauth_token_family_idx").on(table.familyId),
     check("oauth_token_kind_check", sql`${table.kind} in ('access', 'refresh')`),
   ],
 );

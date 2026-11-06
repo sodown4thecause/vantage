@@ -45,6 +45,7 @@ CREATE TABLE "oauth_token" (
 	"expires_at" timestamp with time zone NOT NULL,
 	"revoked_at" timestamp with time zone,
 	"rotated_from" uuid,
+	"family_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "oauth_token_kind_check" CHECK ("oauth_token"."kind" in ('access', 'refresh'))
 );
@@ -60,4 +61,5 @@ CREATE UNIQUE INDEX "oauth_authorization_code_hash_uidx" ON "oauth_authorization
 CREATE INDEX "oauth_authorization_code_client_idx" ON "oauth_authorization_code" USING btree ("client_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "oauth_token_hash_uidx" ON "oauth_token" USING btree ("token_hash");--> statement-breakpoint
 CREATE INDEX "oauth_token_client_idx" ON "oauth_token" USING btree ("client_id");--> statement-breakpoint
-CREATE INDEX "oauth_token_workspace_idx" ON "oauth_token" USING btree ("workspace_id");
+CREATE INDEX "oauth_token_workspace_idx" ON "oauth_token" USING btree ("workspace_id");--> statement-breakpoint
+CREATE INDEX "oauth_token_family_idx" ON "oauth_token" USING btree ("family_id");
