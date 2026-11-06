@@ -311,7 +311,11 @@ describe("MCP route", () => {
 
     const list = await mcpPost(mcpRequest({ jsonrpc: "2.0", id: 2, method: "tools/list" }, raw));
     const names = (await list.json()).result.tools.map((tool: { name: string }) => tool.name);
-    expect(names).toEqual(["get_workspace_context"]);
+    expect(names).toEqual([
+      "get_workspace_context",
+      "list_todays_conversations",
+      "get_conversation",
+    ]);
   });
 
   it("rejects an unsupported protocol version header", async () => {
