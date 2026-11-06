@@ -255,7 +255,7 @@ export async function refreshAccessToken(
     // fails and the user re-authorizes, while other devices keep working.
     if (record.familyId) {
       await store.revokeTokenFamily(record.familyId, input.now);
-    } else {
+    } else if (store.revokeTokensForSubject) {
       // A token issued before families existed has no family, and its
       // replacement may carry one this server cannot derive (an earlier build
       // assigned a random one). Revoke the whole subject so the replacement
@@ -264,6 +264,10 @@ export async function refreshAccessToken(
         { clientId: record.clientId, userId: record.userId, workspaceId: record.workspaceId },
         input.now,
       );
+    } else {
+      // No subject revoke available: fall back to the family seeded from this
+      // token's own id, which covers replacements rotated by this build.
+      await store.revokeTokenFamily(record.id, input.now);
     }
     return invalidGrant("The refresh token was already used; the session was revoked.");
   }

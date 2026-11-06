@@ -91,8 +91,12 @@ export type AgentStore = {
    * Revokes every live token for one client and subject. Used when a token
    * issued before families existed is replayed: its replacement may carry a
    * family this server cannot derive, so the whole subject is revoked.
+   *
+   * Optional so a test double written before this method existed still
+   * satisfies the interface; the Drizzle store always implements it, and the
+   * caller falls back to the family seeded from the token's own id.
    */
-  revokeTokensForSubject(
+  revokeTokensForSubject?(
     input: { clientId: string; userId: string | null; workspaceId: string | null },
     now: Date,
   ): Promise<number>;
