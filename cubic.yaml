@@ -14,7 +14,7 @@ version: 1
 reviews:
   enabled: true
   incremental_commits: true
-  sensitivity: medium
+  sensitivity: low
   ignore:
     files:
       - 'README.md'
