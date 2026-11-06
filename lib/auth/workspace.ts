@@ -53,12 +53,14 @@ export async function authorizeWorkspace(
     // agent registration code into their bundle.
     const { drizzleRegistrationStore } = await import("@/lib/agent/registration");
     const registration = await drizzleRegistrationStore().findRegistration(agent.registrationId);
-    if (
-      !registration ||
-      registration.status !== "active" ||
-      registration.workspaceId !== workspaceId ||
-      registration.expiresAt.getTime() <= Date.now()
-    ) {
+    if (!registration || registration.workspaceId !== workspaceId) {
+      return { ok: false, status: 403, error: "forbidden" };
+    }
+    // `claimed` is live: the workspace now belongs to a human and no longer
+    // expires, and the agent keeps read-and-draft access through the same
+    // registration. Only a trial still runs against its expiry.
+    if (registration.status === "claimed") return { ok: true, via: "agent" };
+    if (registration.status !== "active" || registration.expiresAt.getTime() <= Date.now()) {
       return { ok: false, status: 403, error: "forbidden" };
     }
     return { ok: true, via: "agent" };

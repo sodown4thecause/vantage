@@ -104,8 +104,16 @@ describe("authorizeWorkspace", () => {
       ).resolves.toEqual({ ok: false, status: 403, error: "forbidden" });
     });
 
-    it("refuses a registration that is no longer active", async () => {
-      for (const status of ["claimed", "expired", "revoked"]) {
+    it("allows a claimed registration, which is how a claimed agent keeps access", async () => {
+      // The claim flow issues post-claim tokens against the same registration.
+      live({ status: "claimed", expiresAt: new Date(Date.now() - 1_000) });
+      await expect(
+        authorizeWorkspace("workspace-1", { registrationId: "reg_1", workspaceId: "workspace-1" }),
+      ).resolves.toEqual({ ok: true, via: "agent" });
+    });
+
+    it("refuses a registration that is no longer live", async () => {
+      for (const status of ["expired", "revoked"]) {
         live({ status });
         await expect(
           authorizeWorkspace("workspace-1", { registrationId: "reg_1", workspaceId: "workspace-1" }),
