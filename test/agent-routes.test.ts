@@ -482,6 +482,19 @@ describe("anonymous registration route", () => {
     expect(missing.status).toBe(400);
     expect((await missing.json()).error).toBe("invalid_request");
   });
+
+  it("audits a registration-cap denial", async () => {
+    enable();
+    const registrations = state.registrationStore as ReturnType<typeof createFakeRegistrationStore>;
+    registrations.reserveRegistrationSlot = async () => ({ ok: false, reason: "rate_limited" });
+
+    const response = await identityRoute(jsonPost("/agent/identity", { type: "anonymous" }));
+    expect(response.status).toBe(429);
+
+    const store = state.store as ReturnType<typeof createFakeStore>;
+    const denial = store.audits.find((entry) => entry.event === "registration_denied");
+    expect(denial?.detail).toEqual({ reason: "rate_limited" });
+  });
 });
 
 describe("claim route", () => {
