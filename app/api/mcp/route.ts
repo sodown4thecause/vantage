@@ -37,6 +37,17 @@ const quotaExceeded = (message: string) =>
  * Streamable HTTP MCP endpoint. Stateless: no session id is issued, so each
  * request carries its own bearer token. GET (server-initiated SSE) is not
  * offered, which the transport permits.
+ *
+ * Authorization: `authorizeWorkspace` checks that a Neon Auth *session* owns the
+ * workspace, and an agent has no session. The equivalent check here is the
+ * bearer token plus workspace scoping, both required before any write:
+ *
+ *   1. `authenticateMcpRequest` proves the token is live and unrevoked.
+ *   2. Every write below is scoped by `auth.token.workspaceId`, so a token can
+ *      only touch the workspace it was issued for.
+ *
+ * This follows the existing bearer-token routes under /api/internal/scan, which
+ * authorize with `isCronAuthorized` rather than a session.
  */
 export async function POST(req: Request) {
   if (!agentRegistrationEnabled()) return NOT_FOUND();

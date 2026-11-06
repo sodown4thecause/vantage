@@ -604,4 +604,41 @@ describe("trial quota at the MCP boundary", () => {
     // The denial is recorded, so an operator can see why the trial was blocked.
     expect(store.audits.map((entry) => entry.event)).toContain("quota_denied");
   });
+
+  it("scopes the quota write to the token's workspace, not the request body", async () => {
+    enable();
+    const store = state.store as ReturnType<typeof createFakeStore>;
+    const registrations = state.registrationStore as ReturnType<typeof createFakeRegistrationStore>;
+    const raw = "vat_scoped_token";
+    await store.createToken({
+      tokenHash: await hashSecret(raw, PEPPER),
+      kind: "access",
+      clientId: null,
+      userId: null,
+      workspaceId: "ws_1",
+      registrationId: "reg_1",
+      scopes: ["vantage.read"],
+      expiresAt: new Date(Date.now() + 60_000),
+      familyId: crypto.randomUUID(),
+    });
+    const seen: Array<{ registrationId: string; workspaceId: string }> = [];
+    registrations.consumeToolCall = async (registrationId, workspaceId) => {
+      seen.push({ registrationId, workspaceId });
+      return true;
+    };
+
+    // A caller-supplied workspace id in the body must not reach the write.
+    await mcpPost(
+      mcpRequest(
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "get_workspace_context", arguments: { workspaceId: "ws_other" } },
+        },
+        raw,
+      ),
+    );
+    expect(seen).toEqual([{ registrationId: "reg_1", workspaceId: "ws_1" }]);
+  });
 });
