@@ -78,7 +78,7 @@ Table legend:
 | `NEXT_PUBLIC_SITE_URL` | `lib/site.ts` | Unconfirmed | Unconfirmed | Marketing URLs default to `https://contextfor.dev`; browser settings compile at build time. |
 | `PH_DEV_TOKEN` | `lib/producthunt/client.ts` | Unconfirmed | Unconfirmed | Product Hunt API lane unavailable; production scheduling excludes it anyway. |
 | `YOUTUBE_API_KEY` | `lib/youtube/client.ts` | Unconfirmed | Unconfirmed | YouTube Data API lane unavailable; production scheduling excludes it anyway. |
-| `CF_AIG_BASE_URL` / `CF_AIG_TOKEN` | `lib/drafting/contribution.ts` | Unconfirmed | Unconfirmed | Drafts use `AI_GATEWAY_API_KEY` directly instead of a Cloudflare AI Gateway endpoint. |
+| `AI_GATEWAY_PROVIDER` / `CF_AIG_ACCOUNT_ID` / `CF_AIG_GATEWAY_ID` / `CF_AIG_TOKEN` | `lib/ai/gateway.ts` | Unconfirmed | Unconfirmed | Defaults to Vercel; set `AI_GATEWAY_PROVIDER=cloudflare` to route all model traffic through Cloudflare AI Gateway. |
 | `DATAFORSEO_*` | `lib/dataforseo/*` (login/password, env, budgets, model pins) | Unconfirmed | Unconfirmed | DataForSEO research unavailable; sandbox mode is refused in production without fixtures. |
 | `INCO_API_KEY` / `INCO_TRIAGE_ENABLED` | `lib/drafting/contribution.ts` | Unconfirmed | Unconfirmed | Optional Inco triage stays off. |
 | `X_GATEWAY_EXPERIMENT_ENABLED` / `X_GATEWAY_MODEL` | `lib/x/{client,gateway}.ts` | Unconfirmed | Unconfirmed | Optional X/Grok analysis experiment stays off. |

@@ -47,6 +47,7 @@ function writeText(writer: UIMessageStreamWriter, value: string): void {
  */
 export async function summarizeEvidence(args: {
   workspaceId: string;
+  chatId?: string | null;
   question: string;
   packet: EvidencePacket;
   profile: PromptProfile;
@@ -85,7 +86,11 @@ export async function summarizeEvidence(args: {
     let stepBreak = false;
     try {
       const result = streamer({
-        model: gatewayProvider()(modelId),
+        model: gatewayProvider({
+          feature: "seo.summarize",
+          workspaceId: args.workspaceId,
+          chatId: args.chatId ?? null,
+        })(modelId),
         system,
         messages,
         tools,

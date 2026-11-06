@@ -17,7 +17,7 @@ const args = {
   workspaceId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a11",
   threadId: "019b4a1e-f2cc-7f3a-9e2d-a8fb50481a12",
   draft: { title: "A useful post", body: "Original text.", format: "blog_post" as const },
-  models: { apiKey: "test-key", model: "anthropic/claude-sonnet-5.5" },
+  models: { model: "anthropic/claude-sonnet-5.5" },
 };
 
 beforeEach(() => {

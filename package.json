@@ -27,6 +27,7 @@
     "cf:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "^3.0.71",
     "@ai-sdk/otel": "1.0.143",
     "@ai-sdk/react": "4.0.147",
     "@neondatabase/auth": "0.7.0-beta",

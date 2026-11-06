@@ -3,6 +3,8 @@
  * every render to decide whether to show the SEO item, and the SDK is only needed for answers.
  */
 
+import { gatewayConfigured } from "@/lib/ai/gateway-config";
+
 export const DEFAULT_EXECUTOR_MODEL = "anthropic/claude-sonnet-5.5";
 export const DEFAULT_CLASSIFIER_MODEL = "reflection/beam";
 
@@ -31,7 +33,7 @@ export function summarizerModel(env: Env = process.env): string {
 
 /** Null when the gateway key is blank, so the agent is off rather than failing per request. */
 export function seoModels(env: Env = process.env): SeoModels | null {
-  if (!nonBlank(env.AI_GATEWAY_API_KEY)) return null;
+  if (!gatewayConfigured(env)) return null;
   return {
     executor: executorModel(env),
     classifier: nonBlank(env.SEO_CLASSIFIER_MODEL) ?? DEFAULT_CLASSIFIER_MODEL,

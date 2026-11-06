@@ -37,7 +37,7 @@ async function startStream(controller: AbortController): Promise<StreamOptions> 
     agent: { id: "content-agent", tools: {}, stream: vi.fn() } as never,
     messages: [],
     abortSignal: controller.signal,
-    models: { apiKey: "test-key", model: "anthropic/claude-sonnet-5.5" },
+    models: { model: "anthropic/claude-sonnet-5.5" },
   });
   return mocks.streamOptions as StreamOptions;
 }
@@ -63,7 +63,7 @@ beforeEach(() => {
 describe("Content agent stream metering and persistence", () => {
   it("holds one Gateway reservation through the streamed turn and records token cost", async () => {
     const controller = new AbortController();
-    const models = { apiKey: "test-key", model: "anthropic/claude-sonnet-5.5" };
+    const models = { model: "anthropic/claude-sonnet-5.5" };
     const agent = { id: "content-agent", tools: {}, stream: vi.fn() } as never;
     const response = await createContentAgentResponse({
       workspaceId,

@@ -16,8 +16,8 @@ export function isPaidCallDenied(error: unknown): error is PaidCallDeniedError {
   return error instanceof PaidCallDeniedError;
 }
 
-type PaidResult<T> = { value: T; costUsd?: number; error?: never }
-  | { error: Error; costUsd?: number; value?: never };
+type PaidResult<T> = { value: T; costUsd?: number; model?: string; gatewayRequestId?: string; error?: never }
+  | { error: Error; costUsd?: number; model?: string; gatewayRequestId?: string; value?: never };
 
 /**
  * VANTAGE_PAID_DAILY_BUDGET_<PROVIDER>_USD when it is a positive number (provider upper-cased,
@@ -82,10 +82,11 @@ export async function runPaidCall<T>(meta: {
       where day = ${day}::date and provider = ${meta.provider}::text`);
     throw new PaidCallDeniedError("budget_exhausted", "First scan allowance unavailable.");
   }
-  const record = (cost: number, ok: boolean) => recordCost({
+  const record = (cost: number, ok: boolean, model?: string, gatewayRequestId?: string) => recordCost({
     ...meta.context, provider: meta.provider, action: meta.action,
     units: 1, unitCostUsd: cost, ok, chargedOnFailure: !ok,
     requestRef: reservationRef,
+    model, gatewayRequestId,
   });
   const settle = async (cost: number) => {
     await scanSpend?.settle(cost);
@@ -121,7 +122,7 @@ export async function runPaidCall<T>(meta: {
     await settle(estimate);
     throw new Error("Provider returned invalid cost.");
   }
-  if (!(await record(cost, result.error === undefined))) throw new PaidCallDeniedError("access_pending", "Provider cost recording is pending; further paid calls are blocked.");
+  if (!(await record(cost, result.error === undefined, result.model, result.gatewayRequestId))) throw new PaidCallDeniedError("access_pending", "Provider cost recording is pending; further paid calls are blocked.");
   await settle(cost);
   if (result.error !== undefined) throw result.error;
   return result.value;

@@ -1,23 +1,21 @@
-import { createGateway } from "ai";
+import { gatewayConfigured, gatewayModel, type GatewayMeta } from "@/lib/ai/gateway";
 
 export const DEFAULT_CONTENT_AGENT_MODEL = "anthropic/claude-sonnet-5.5";
 const AGENT_ESTIMATE_USD = 0.15;
 
-export type ContentAgentModels = { apiKey: string; model: string };
+export type ContentAgentModels = { model: string };
 
 type Env = Record<string, string | undefined>;
 
 export function contentAgentModels(env: Env = process.env): ContentAgentModels | null {
-  const apiKey = env.AI_GATEWAY_API_KEY?.trim();
-  if (!apiKey) return null;
+  if (!gatewayConfigured(env)) return null;
   return {
-    apiKey,
     model: env.CONTENT_AGENT_MODEL?.trim() || DEFAULT_CONTENT_AGENT_MODEL,
   };
 }
 
-export function createContentGatewayModel(models: ContentAgentModels) {
-  return createGateway({ apiKey: models.apiKey })(models.model);
+export function createContentGatewayModel(models: ContentAgentModels, meta: GatewayMeta) {
+  return gatewayModel(models.model, meta);
 }
 
 export function contentAgentEstimateUsd(): number {

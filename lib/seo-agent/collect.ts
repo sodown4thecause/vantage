@@ -1,6 +1,8 @@
 import { generateText, stepCountIs, type ModelMessage, type SystemModelMessage, type Tool } from "ai";
 
 import { dataForSeoAvailable } from "@/lib/dataforseo/config";
+import { gatewayResponseInfo } from "@/lib/ai/gateway";
+import { seoAutoRouterEnabled } from "@/lib/ai/gateway-config";
 import { runPaidCall } from "@/lib/providers/paid-call";
 import {
   isTakoFilterRequest,
@@ -26,6 +28,7 @@ const NOT_SET_UP_NOTICE = "SEO data is not set up yet.";
 
 export type CollectInput = {
   workspaceId: string;
+  chatId?: string | null;
   question: string;
   history: ModelMessage[];
   intent: Intent;
@@ -117,7 +120,12 @@ export async function collectEvidence(
     let result: Awaited<ReturnType<typeof generate>>;
     try {
       result = await generate({
-        model: gatewayProvider()(modelId),
+        model: gatewayProvider({
+          feature: "seo.collect",
+          workspaceId: input.workspaceId,
+          chatId: input.chatId ?? null,
+          autoRouter: seoAutoRouterEnabled(),
+        })(modelId),
         system,
         messages,
         tools: dataTools,
@@ -171,16 +179,20 @@ export async function collectEvidence(
       pendingApprovals: ctx.budget.planned,
     });
     const usage = result.usage;
+    const info = gatewayResponseInfo(result.response?.headers);
+    const servedModel = info.servedModel ?? modelId;
     return {
       value: {
         packet,
         finishReason: typeof result.finishReason === "string" ? result.finishReason : null,
       },
-      costUsd: costOfUsage(modelId, {
+      costUsd: costOfUsage(servedModel, {
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
         cachedInputTokens: usage.inputTokenDetails?.cacheReadTokens,
       }),
+      model: servedModel,
+      gatewayRequestId: info.requestId ?? undefined,
     };
   });
 
