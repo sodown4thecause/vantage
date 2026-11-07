@@ -3,6 +3,7 @@ import { getUnitCost } from "@/lib/costs/prices";
 import { isPublicHttpUrl } from "@/lib/http/public-fetch";
 import { artifactKey, putArtifact } from "@/lib/r2/artifacts";
 import { getSourceSwitch } from "@/lib/sources/switch";
+import { loadCloudflareWorkers } from "@/lib/cf/workers";
 
 /**
  * The only module allowed to touch the Browser Run binding. Pages and
@@ -92,11 +93,11 @@ export function isBrowserBinding(value: unknown): value is BrowserBinding {
   return typeof value === "object" && value !== null && "quickAction" in value && typeof value.quickAction === "function";
 }
 
-/** getCloudflareContext() only works inside an OpenNext request; anywhere else it throws. */
+/** Only works inside a Cloudflare Workers invocation; anywhere else it returns undefined. */
 async function defaultGetBinding(): Promise<BrowserBinding | undefined> {
   try {
-    const { getCloudflareContext } = await import("@opennextjs/cloudflare");
-    const env: unknown = getCloudflareContext().env;
+    const mod = await loadCloudflareWorkers();
+    const env = mod.env;
     const candidate = typeof env === "object" && env !== null && "BROWSER" in env ? env.BROWSER : undefined;
     return isBrowserBinding(candidate) ? candidate : undefined;
   } catch {

@@ -5,11 +5,13 @@ import { describe, expect, expectTypeOf, it, vi } from "vitest";
 vi.mock("@/lib/db/client", () => ({ getDb: () => ({}) }));
 
 const ctx = vi.hoisted(() => ({ env: undefined as unknown, throws: false }));
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => {
+vi.mock("cloudflare:workers", () => ({
+  get env() {
     if (ctx.throws) throw new Error("OpenNext context is not available");
-    return { env: ctx.env };
+    return ctx.env;
   },
+  waitUntil: () => {},
+  tracing: {},
 }));
 
 import {
@@ -308,7 +310,7 @@ describe("limits and failures", () => {
 describe("single entry point", () => {
   it("no file outside lib/browser/run.ts touches the BROWSER binding", () => {
     const root = process.cwd();
-    const skip = new Set(["node_modules", ".next", ".open-next", ".git", ".claude", ".wrangler", "docs", "drizzle"]);
+    const skip = new Set(["node_modules", ".next", ".open-next", ".git", ".claude", ".wrangler", "docs", "drizzle", ".cloudflare"]);
     const hits: string[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {
@@ -318,7 +320,7 @@ describe("single entry point", () => {
         else if (/\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$/.test(name) && !name.endsWith(".d.ts")) {
           const rel = relative(root, full);
           const posixRel = rel.replaceAll("\\", "/");
-          if (posixRel === "lib/browser/run.ts" || posixRel.startsWith("test/")) continue;
+          if (posixRel === "lib/browser/run.ts" || posixRel === "cloudflare.config.ts" || posixRel.startsWith("test/")) continue;
           if (/quickAction|\bBROWSER\b/.test(readFileSync(full, "utf8"))) hits.push(rel);
         }
       }

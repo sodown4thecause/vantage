@@ -15,6 +15,7 @@ const eslintConfig = defineConfig([
     // Cloudflare/OpenNext build output and local state. Not source.
     ".open-next/**",
     ".wrangler/**",
+    ".cloudflare/**",
     "cloudflare-env.d.ts",
     // Third-party code vendored verbatim; see lib/vendor/scrollcraft/README.md.
     "lib/vendor/**",

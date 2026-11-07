@@ -10,11 +10,13 @@ const mocks = vi.hoisted(() => ({
   postgres: vi.fn((url: string, options: unknown) => ({ url, options, end: async () => {} })),
 }));
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => {
+vi.mock("cloudflare:workers", () => ({
+  get env() {
     if (state.throwContext) throw new Error("no cloudflare context");
-    return { env: state.env };
+    return state.env;
   },
+  waitUntil: () => {},
+  tracing: {},
 }));
 
 vi.mock("@neondatabase/serverless", () => ({

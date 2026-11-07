@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 
+import { loadCloudflareWorkers } from "@/lib/cf/workers";
 import { getDb } from "@/lib/db/client";
 import {
   assertValidUsd,
@@ -46,9 +47,9 @@ function isRateLimitBinding(value: unknown): value is RateLimitBinding {
 /** The S02 rate-limit binding is optional: absent locally and until S02 lands. */
 async function getRateLimiter(): Promise<RateLimitBinding | null> {
   try {
-    const { getCloudflareContext } = await import("@opennextjs/cloudflare");
-    const env: unknown = getCloudflareContext().env;
-    const binding = typeof env === "object" && env !== null && "RADAR_LIMITER" in env ? env.RADAR_LIMITER : undefined;
+    const mod = await loadCloudflareWorkers();
+    const env = mod.env;
+    const binding = typeof env === "object" && env !== null && "RADAR_LIMITER" in env ? (env as Record<string, unknown>).RADAR_LIMITER : undefined;
     return isRateLimitBinding(binding) ? binding : null;
   } catch (err) {
     // Expected locally (no Cloudflare context); logged so a broken binding in

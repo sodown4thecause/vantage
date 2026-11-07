@@ -149,7 +149,7 @@ describe("sendDigestEmail", () => {
   it("aborts a stalled provider call within the configured timeout without logging credentials", async () => {
     // The send's tracing span loads this with a real dynamic import before it creates the
     // timeout. Load it now, under real timers, so a busy machine can't delay it past the clock.
-    await import("@opennextjs/cloudflare");
+    await import("cloudflare:workers");
     vi.useFakeTimers();
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     let providerCalled!: () => void;

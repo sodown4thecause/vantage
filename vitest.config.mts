@@ -11,6 +11,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL(".", import.meta.url)),
+      // workerd builtin; resolved to a benign stub so vitest can load it before vi.mock kicks in.
+      "cloudflare:workers": fileURLToPath(new URL("./test/stubs/cloudflare-workers.ts", import.meta.url)),
     },
   },
 });

@@ -41,6 +41,10 @@ yarn-error.log*
 .open-next
 .wrangler
 cloudflare-env.d.ts
+# vinext build output and generated types (v2 "Build Output")
+.cloudflare
+/dist
+.vinext
 
 # typescript
 *.tsbuildinfo

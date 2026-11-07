@@ -1,25 +1,25 @@
 /**
- * Cloudflare Workers entrypoint.
+ * Cloudflare Workers entrypoint for the vinext trial (branch spike/vinext).
  *
- * `@opennextjs/cloudflare` emits a Worker whose only export is `fetch`, but Cron
- * Triggers invoke `scheduled`. This wrapper delegates `fetch` to the generated
- * OpenNext worker and adds the scheduled handler.
+ * `vinext` emits a Worker whose only export is `fetch`, but Cron Triggers
+ * invoke `scheduled` and Queues invoke `queue`. This wrapper delegates
+ * `fetch` to vinext's generated fetch handler and adds the scheduled handler
+ * and the queue consumer. The Workflow class is re-exported for the SCAN
+ * binding; `cloudflare.config.ts` declares it under `exports.workflow`.
  *
  * The handler reaches the scan, digest and fallback tick logic through the
  * `WORKER_SELF_REFERENCE` service binding rather than importing app source
- * directly. Importing app source here would make esbuild emit a *second* copy
- * of the pipelines and Drizzle alongside the OpenNext bundle. A service binding
- * instead re-enters the single bundle that is already deployed, so there is one
- * copy of the code and one set of credentials.
+ * directly. Importing app source here would make the Vite build emit a
+ * *second* copy of the pipelines and Drizzle alongside the vinext bundle.
+ * A service binding instead re-enters the single bundle that is already
+ * deployed, so there is one copy of the code and one set of credentials.
  *
  * The self-fetch carries `Authorization: Bearer <CRON_SECRET>`, which
- * `lib/cron/authorize.ts` already verifies with a constant-time compare, so the
- * existing route needs no Cloudflare-specific authorization path. Keep this file
- * as plain `.mjs`: it references `.open-next/`, which does not exist until the
- * adapter build runs, and `.mjs` is deliberately excluded from `tsconfig`.
+ * `lib/cron/authorize.ts` already verifies with a constant-time compare, so
+ * the existing route needs no Cloudflare-specific authorization path.
  */
 
-import openNextWorker from "./.open-next/worker.js";
+import handler from "vinext/server/fetch-handler";
 import { handleQueue } from "./worker/queue.mjs";
 
 // Workflow class export (the `SCAN` binding). Wrangler requires it on the main module.
@@ -128,7 +128,7 @@ async function triggerDigests(env) {
 
 const worker = {
 	fetch(request, env, ctx) {
-		return openNextWorker.fetch(request, env, ctx);
+		return handler.fetch(request, env, ctx);
 	},
 
 	queue(batch, env) {

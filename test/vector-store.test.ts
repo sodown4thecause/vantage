@@ -3,11 +3,13 @@ import { join, relative } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const ctx = vi.hoisted(() => ({ env: undefined as unknown, throws: false }));
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => {
+vi.mock("cloudflare:workers", () => ({
+  get env() {
     if (ctx.throws) throw new Error("OpenNext context is not available");
-    return { env: ctx.env };
+    return ctx.env;
   },
+  waitUntil: () => {},
+  tracing: {},
 }));
 
 import { deleteVectors, queryVectors, upsertVectors, type VectorItem } from "@/lib/embeddings/store";
@@ -148,8 +150,8 @@ describe("failure handling", () => {
 describe("single entry point", () => {
   it("no file outside lib/embeddings/store.ts and lib/cf/env.ts touches the VECTORIZE binding", () => {
     const root = process.cwd();
-    const skip = new Set(["node_modules", ".superpowers", ".next", ".open-next", ".git", ".claude", ".wrangler", "docs", "drizzle"]);
-    const allowed = new Set(["lib/embeddings/store.ts", "lib/cf/env.ts"]);
+    const skip = new Set(["node_modules", ".superpowers", ".next", ".open-next", ".git", ".claude", ".wrangler", "docs", "drizzle", ".cloudflare"]);
+    const allowed = new Set(["lib/embeddings/store.ts", "lib/cf/env.ts", "cloudflare.config.ts"]);
     const hits: string[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {

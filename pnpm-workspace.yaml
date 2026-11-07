@@ -18,6 +18,14 @@ minimumReleaseAgeExclude:
   - '@next/swc-win32-x64-msvc@16.4.3'
   - eslint-config-next@16.4.3
   - next@16.4.3
+  - '@cloudflare/build-output-utils@0.9.10'
+  - '@cloudflare/config@0.30.2'
+  - '@cloudflare/runtime-types@0.1.23'
+  - '@cloudflare/vite-plugin@2.0.0-beta.v.12'
+  - '@vitejs/plugin-rsc@0.5.39'
+  - cf@1.0.0-beta.28
+  - miniflare@5.20261104.0-beta
+  - vite@8.3.6
 nodeLinker: hoisted
 overrides:
   zod@<4.6.6: 4.6.7

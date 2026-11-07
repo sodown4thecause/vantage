@@ -3,11 +3,13 @@ import { join, relative } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const ctx = vi.hoisted(() => ({ env: undefined as unknown, throws: false }));
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => {
+vi.mock("cloudflare:workers", () => ({
+  get env() {
     if (ctx.throws) throw new Error("OpenNext context is not available");
-    return { env: ctx.env };
+    return ctx.env;
   },
+  waitUntil: () => {},
+  tracing: {},
 }));
 
 import { artifactKey, putArtifact } from "@/lib/r2/artifacts";
@@ -115,8 +117,8 @@ describe("wrangler bindings", () => {
 describe("single entry point", () => {
   it("no file outside lib/r2/artifacts.ts and lib/cf/env.ts mentions ARTIFACTS", () => {
     const root = process.cwd();
-    const skip = new Set(["node_modules", ".next", ".open-next", ".git", ".claude", ".wrangler", "docs", "drizzle"]);
-    const allowed = new Set(["lib/r2/artifacts.ts", "lib/cf/env.ts"]);
+    const skip = new Set(["node_modules", ".next", ".open-next", ".git", ".claude", ".wrangler", "docs", "drizzle", ".cloudflare"]);
+    const allowed = new Set(["lib/r2/artifacts.ts", "lib/cf/env.ts", "cloudflare.config.ts"]);
     const hits: string[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {

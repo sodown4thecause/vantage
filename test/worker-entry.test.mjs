@@ -7,8 +7,8 @@ mock.method(console, "error", () => {});
 // Run the real wrapper without requiring a generated OpenNext bundle.
 // The Workflow re-export is stubbed too: relative and cloudflare:* imports cannot load from a data: URL.
 const source = readFileSync(new URL("../worker-entry.mjs", import.meta.url), "utf8")
-  .replace('import openNextWorker from "./.open-next/worker.js";',
-    'const openNextWorker = { fetch: () => new Response("app") };')
+  .replace('import handler from "vinext/server/fetch-handler";',
+    'const handler = { fetch: () => new Response("app") };')
   .replace('export { ScanWorkspace } from "./worker/workflows.mjs";',
     "export class ScanWorkspace {}")
   .replace('import { handleQueue } from "./worker/queue.mjs";',

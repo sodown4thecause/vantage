@@ -5,11 +5,13 @@ const state = vi.hoisted(() => ({
   env: {} as Record<string, unknown>,
 }));
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => {
+vi.mock("cloudflare:workers", () => ({
+  get env() {
     if (state.throwContext) throw new Error("no cloudflare context");
-    return { env: state.env };
+    return state.env;
   },
+  waitUntil: () => {},
+  tracing: {},
 }));
 
 vi.mock("@/lib/auth/workspace", () => ({ authorizeWorkspace: async () => ({ ok: true }) }));

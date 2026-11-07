@@ -1,9 +1,12 @@
 /**
  * Typed accessors for optional Cloudflare bindings. Each binding is declared in
- * wrangler.jsonc but absent locally, so every accessor returns null instead of
- * throwing. Shapes are structural (not imported from workers-types) so the
- * module stays usable in tests and outside the Worker runtime.
+ * cloudflare.config.ts here (wrangler.jsonc on the OpenNext build), but absent
+ * locally, so every accessor returns null instead of throwing. Shapes are
+ * structural (not imported from workers-types) so the module stays usable in
+ * tests and outside the Worker runtime.
  */
+
+import { loadCloudflareWorkers } from "./workers";
 
 export type AiBinding = {
   run(model: string, input: unknown, options?: unknown): Promise<unknown>;
@@ -28,12 +31,17 @@ export type CloudflareRequestContext = {
   };
 };
 
-/** Reads the request context, or null outside an OpenNext Cloudflare request. */
+/** Reads the request context, or null outside a Cloudflare Workers invocation. */
 export async function getCloudflareRequestContext(): Promise<CloudflareRequestContext | null> {
   try {
-    const { getCloudflareContext } = await import("@opennextjs/cloudflare");
-    const context: unknown = getCloudflareContext().ctx;
-    return typeof context === "object" && context !== null ? context as CloudflareRequestContext : null;
+    const mod = await loadCloudflareWorkers();
+    // Reading env is what surfaces an unavailable module to us; outside the runtime it throws.
+    void mod.env;
+    if (typeof mod.waitUntil !== "function") return null;
+    return {
+      waitUntil: mod.waitUntil,
+      tracing: mod.tracing as unknown as CloudflareRequestContext["tracing"],
+    };
   } catch {
     return null;
   }
@@ -47,12 +55,12 @@ function isVectorizeBinding(value: unknown): value is VectorizeBinding {
   return typeof value === "object" && value !== null && "query" in value && typeof value.query === "function";
 }
 
-/** Reads one binding from the Cloudflare request context, or null when unavailable. */
+/** Reads one binding from the Cloudflare Workers env, or null when unavailable. */
 export async function readBinding(name: string): Promise<unknown> {
   try {
-    const { getCloudflareContext } = await import("@opennextjs/cloudflare");
-    const env: unknown = getCloudflareContext().env;
-    return typeof env === "object" && env !== null && name in env ? (env as Record<string, unknown>)[name] : undefined;
+    const mod = await loadCloudflareWorkers();
+    const env = mod.env;
+    return typeof env === "object" && env !== null && name in env ? env[name] : undefined;
   } catch (err) {
     // Expected locally (no Cloudflare context). Only the error class is logged:
     // exception text can embed connection details.

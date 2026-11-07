@@ -24,7 +24,11 @@
     "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "test:blog-worker": "node --test test/blog-worker.test.mjs",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
-    "cf:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
+    "cf:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
+    "dev:vinext": "vite dev --port 3001",
+    "build:vinext": "vite build",
+    "start:vinext": "vite preview",
+    "deploy:vinext": "vinext-cloudflare deploy"
   },
   "dependencies": {
     "@ai-sdk/otel": "1.0.143",
@@ -38,6 +42,7 @@
     "@polar-sh/sdk": "1.0.2",
     "@posthog/ai": "^8.16.3",
     "@tiny-fish/sdk": "^0.10.0",
+    "@vinext/cloudflare": "^1.3.3",
     "ai": "7.0.143",
     "drizzle-orm": "^0.45.4",
     "fast-xml-parser": "^5.11.1",
@@ -46,15 +51,21 @@
     "posthog-js": "^1.438.20",
     "react": "19.3.1",
     "react-dom": "19.3.1",
+    "react-server-dom-webpack": "^19.3.1",
     "scavio": "^0.16.0",
+    "vinext": "^1.4.3",
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "2.0.0-beta.v.12",
     "@opennextjs/cloudflare": "1.20.13",
     "@tailwindcss/postcss": "^4",
+    "@vitejs/plugin-react": "^6.2.1",
+    "@vitejs/plugin-rsc": "^0.5.39",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "cf": "1.0.0-beta.28",
     "dotenv": "^18.0.9",
     "drizzle-kit": "^0.31.11",
     "eslint": "^9",
@@ -64,7 +75,10 @@
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5",
+    "vite": "^8.3.6",
+    "vite-css-modules": "^1.16.1",
     "vitest": "^5.0.5",
     "wrangler": "4.152.0"
-  }
+  },
+  "type": "module"
 }

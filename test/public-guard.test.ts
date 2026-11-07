@@ -64,11 +64,12 @@ vi.mock("@/lib/db/client", () => {
   };
 });
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => {
-    if (!state.limiter) return { env: {} };
-    return { env: { RADAR_LIMITER: state.limiter } };
+vi.mock("cloudflare:workers", () => ({
+  get env() {
+    return state.limiter ? { RADAR_LIMITER: state.limiter } : {};
   },
+  waitUntil: () => {},
+  tracing: {},
 }));
 
 import { refundPublicSpend, reservePublicBudget, settlePublicSpend } from "@/lib/public/budget";
